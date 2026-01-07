@@ -27,8 +27,8 @@ func TestCreateLeaveRecord_Success(t *testing.T) {
 	require.Len(t, leaves, 1)
 	require.Equal(t, memberID, leaves[0].MemberID)
 	require.Equal(t, "sick", leaves[0].Type)
-	require.Contains(t, leaves[0].StartDate, "2024-01-15")
-	require.Contains(t, leaves[0].EndDate, "2024-01-17")
+	require.Equal(t, "2024-01-15", leaves[0].StartDate.Format("2006-01-02"))
+	require.Equal(t, "2024-01-17", leaves[0].EndDate.Format("2006-01-02"))
 	require.Equal(t, "pending", leaves[0].Status)
 }
 

@@ -2,7 +2,6 @@ package rota
 
 import (
 	"testing"
-	"time"
 
 	"github.com/inful/madhatter/internal/database"
 	"github.com/stretchr/testify/require"
@@ -37,19 +36,18 @@ func TestDebugLeaveDates(t *testing.T) {
 	leave, err := db.GetLeaveByID(leaveID)
 	require.NoError(t, err)
 	t.Logf("Retrieved leave: %+v", leave)
-	t.Logf("StartDate: '%s' (len=%d)", leave.StartDate, len(leave.StartDate))
-	t.Logf("EndDate: '%s' (len=%d)", leave.EndDate, len(leave.EndDate))
+	t.Logf("StartDate: %v", leave.StartDate)
+	t.Logf("EndDate: %v", leave.EndDate)
 
-	// Try parsing
-	parsedStart, err := time.Parse("2006-01-02", leave.StartDate)
-	t.Logf("Parsed start: %v, err: %v", parsedStart, err)
+	// Try parsing (no longer needed since it's already time.Time)
+	t.Logf("StartDate is already time.Time: %v", leave.StartDate)
 
 	// Check what GetLeaveByDate returns
 	leaves, err := db.GetLeaveByDate("2024-01-15")
 	require.NoError(t, err)
 	t.Logf("GetLeaveByDate result: %+v", leaves)
 	if len(leaves) > 0 {
-		t.Logf("First leave StartDate: '%s'", leaves[0].StartDate)
+		t.Logf("First leave StartDate: %v", leaves[0].StartDate)
 	}
 }
 

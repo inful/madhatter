@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -46,10 +47,31 @@ func (db *DB) GetLeaveByDate(date string) ([]LeaveRecord, error) {
 	for rows.Next() {
 		var l LeaveRecord
 		var coverMemberID sql.NullString
-		err := rows.Scan(&l.ID, &l.MemberID, &l.StartDate, &l.EndDate, &l.Type, &coverMemberID, &l.Status, &l.CreatedAt)
+		var startDateStr, endDateStr string
+		err := rows.Scan(&l.ID, &l.MemberID, &startDateStr, &endDateStr, &l.Type, &coverMemberID, &l.Status, &l.CreatedAt)
 		if err != nil {
 			return nil, err
 		}
+		// Convert string dates to time.Time
+		startDate, err := time.Parse("2006-01-02", startDateStr)
+		if err != nil {
+			// Try with time component
+			startDate, err = time.Parse(time.RFC3339, startDateStr)
+			if err != nil {
+				return nil, err
+			}
+		}
+		endDate, err := time.Parse("2006-01-02", endDateStr)
+		if err != nil {
+			// Try with time component
+			endDate, err = time.Parse(time.RFC3339, endDateStr)
+			if err != nil {
+				return nil, err
+			}
+		}
+		l.StartDate = startDate
+		l.EndDate = endDate
+
 		if coverMemberID.Valid {
 			l.CoverMemberID = coverMemberID.String
 		}
@@ -73,10 +95,32 @@ func (db *DB) GetLeaveByID(leaveID string) (*LeaveRecord, error) {
 
 	var l LeaveRecord
 	var coverMemberID sql.NullString
-	err := row.Scan(&l.ID, &l.MemberID, &l.StartDate, &l.EndDate, &l.Type, &coverMemberID, &l.Status, &l.CreatedAt)
+	var startDateStr, endDateStr string
+	err := row.Scan(&l.ID, &l.MemberID, &startDateStr, &endDateStr, &l.Type, &coverMemberID, &l.Status, &l.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
+
+	// Convert string dates to time.Time
+	startDate, err := time.Parse("2006-01-02", startDateStr)
+	if err != nil {
+		// Try with time component
+		startDate, err = time.Parse(time.RFC3339, startDateStr)
+		if err != nil {
+			return nil, err
+		}
+	}
+	endDate, err := time.Parse("2006-01-02", endDateStr)
+	if err != nil {
+		// Try with time component
+		endDate, err = time.Parse(time.RFC3339, endDateStr)
+		if err != nil {
+			return nil, err
+		}
+	}
+	l.StartDate = startDate
+	l.EndDate = endDate
+
 	if coverMemberID.Valid {
 		l.CoverMemberID = coverMemberID.String
 	}
@@ -111,10 +155,24 @@ func (db *DB) GetLeaveRecords(statusFilter ...string) ([]LeaveRecord, error) {
 	for rows.Next() {
 		var l LeaveRecord
 		var coverMemberID sql.NullString
-		err := rows.Scan(&l.ID, &l.MemberID, &l.StartDate, &l.EndDate, &l.Type, &coverMemberID, &l.Status, &l.CreatedAt)
+		var startDateStr, endDateStr string
+		err := rows.Scan(&l.ID, &l.MemberID, &startDateStr, &endDateStr, &l.Type, &coverMemberID, &l.Status, &l.CreatedAt)
 		if err != nil {
 			return nil, err
 		}
+
+		// Convert string dates to time.Time
+		startDate, err := time.Parse("2006-01-02", startDateStr)
+		if err != nil {
+			return nil, err
+		}
+		endDate, err := time.Parse("2006-01-02", endDateStr)
+		if err != nil {
+			return nil, err
+		}
+		l.StartDate = startDate
+		l.EndDate = endDate
+
 		if coverMemberID.Valid {
 			l.CoverMemberID = coverMemberID.String
 		}

@@ -2,7 +2,6 @@ package rota
 
 import (
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/inful/madhatter/internal/database"
@@ -115,26 +114,6 @@ func (e *Engine) findCover(members []database.TeamMember, leaves []database.Leav
 	return database.TeamMember{}, errors.New("no available cover found")
 }
 
-// parseLeaveDate parses a date string from leave record, handling various formats.
-func parseLeaveDate(dateStr string) (time.Time, error) {
-	// First try the simple format
-	if t, err := time.Parse("2006-01-02", dateStr); err == nil {
-		return t, nil
-	}
-
-	// Try with time component
-	if t, err := time.Parse("2006-01-02T15:04:05Z07:00", dateStr); err == nil {
-		return t, nil
-	}
-
-	// Try RFC3339
-	if t, err := time.Parse(time.RFC3339, dateStr); err == nil {
-		return t, nil
-	}
-
-	return time.Time{}, fmt.Errorf("unable to parse date: %s", dateStr)
-}
-
 // AssignCoversForLeave creates cover assignments for a leave record.
 func (e *Engine) AssignCoversForLeave(leaveID string) error {
 	// Get leave record
@@ -162,15 +141,9 @@ func (e *Engine) AssignCoversForLeave(leaveID string) error {
 		return errors.New("member not found")
 	}
 
-	// Parse dates, handling various formats
-	startDate, err := parseLeaveDate(leave.StartDate)
-	if err != nil {
-		return err
-	}
-	endDate, err := parseLeaveDate(leave.EndDate)
-	if err != nil {
-		return err
-	}
+	// Dates are now time.Time, no parsing needed
+	startDate := leave.StartDate
+	endDate := leave.EndDate
 
 	// Process each day of leave
 	for d := startDate; d.Before(endDate.AddDate(0, 0, 1)); d = d.AddDate(0, 0, 1) {

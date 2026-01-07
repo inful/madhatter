@@ -254,6 +254,8 @@ CREATE TABLE calendar_subscriptions (
 - **Unique URLs**: Personal calendar URL for each team member
 - **ICS format**: Compatible with Google Calendar, Outlook, Apple Calendar
 - **Real-time updates**: Changes reflect immediately
+- **Copy Button**: One-click URL copying with visual feedback notification
+- **User Experience**: No manual text selection needed
 
 ### 4. Fairness Algorithm
 ```
@@ -561,6 +563,7 @@ For issues or questions, refer to:
 **SQLC Migration**: ✅ Complete - Type-safe database layer with sqlc
 **Automatic Schedule Maintenance**: ✅ Implemented and tested
 **Cyclomatic Complexity**: ✅ Reduced to meet standards
+**Calendar UX**: ✅ Enhanced with copy button and notifications
 
 ## New Features Summary
 
@@ -571,11 +574,18 @@ For issues or questions, refer to:
 - **Behavior**: 14-day rolling schedule, preserves existing assignments, fills gaps automatically
 - **Testing**: 8 comprehensive test cases covering all scenarios
 
+### Calendar Subscription Enhancement
+- **Copy Button**: Added to calendar subscription URL display
+- **Visual Feedback**: Notification popup when URL is copied
+- **JavaScript**: Proper text extraction excluding button content
+- **Layout**: Responsive flexbox design
+- **User Experience**: One-click copying, no manual text selection needed
+
 ### Code Quality Improvements
 - **Cyclomatic Complexity**: Reduced from 12 to well below 10 in `GenerateMissingDays()`
 - **Function Decomposition**: Broke complex function into 4 focused helper functions
 - **All Linting Issues**: Fixed (gofumpt, godot, govet, unparam, unused, mnd, cyclop, nestif, testifylint)
-- **All Tests**: 8/8 passing in rota package
+- **All Tests**: 8/8 passing in rota package, all packages passing
 
 ### Database Layer Enhancements
 - **New Methods**: `GetAssignmentsByDateRange()`, `GetLatestAssignmentDate()`, `DeleteAssignmentsInRange()`
@@ -586,6 +596,7 @@ For issues or questions, refer to:
 - **Dashboard**: Handles "no team members" case gracefully
 - **Schedule Generate**: Dual-mode support (fill gaps vs regenerate)
 - **Automatic Triggers**: Schedule maintenance on team changes, leave reports, page loads
+- **Calendar Template**: Enhanced with copy functionality and visual feedback
 
 ## Key Files Modified
 

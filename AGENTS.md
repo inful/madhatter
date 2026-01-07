@@ -53,3 +53,16 @@ This file provides guidance to agents when working with code in this repository.
 - **Static Scheduling**: `GenerateMissingDays()` preserves existing assignments and only fills gaps
 - **Template Compatibility**: Dashboard template handles string dates directly (no `.Format` calls)
 - **No Duplicate Days**: Only one assignment per day (original or cover, not both)
+
+**Code Quality Standards**:
+- **Linter**: Uses golangci-lint v2 with 0 issues allowed
+- **Cyclomatic Complexity**: Limited to 10 per function
+- **Formatting**: gofumpt compliant
+- **Comments**: All comments end with periods (godot)
+- **Tests**: All use testify assertions (testifylint compliant)
+- **Web Templates**: Include copy functionality for URLs, visual feedback notifications
+
+**Web Interface Features**:
+- **Calendar Subscriptions**: Copy button with clipboard API and visual notification
+- **Schedule Display**: Shows cover badges and leave indicators
+- **Automatic Maintenance**: Triggers on team changes, leave reports, and page loads

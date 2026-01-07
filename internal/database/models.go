@@ -22,14 +22,14 @@ type LeaveRecord struct {
 }
 
 type RotaAssignment struct {
-	ID                   string    `json:"id"`
-	Date                 string    `json:"date"`
-	MemberID             string    `json:"member_id"`
-	IsCover              bool      `json:"is_cover"`
-	OriginalAssignmentID *string   `json:"original_assignment_id"`
-	CreatedAt            time.Time `json:"created_at"`
-	MemberName           string    `json:"member_name,omitempty"`
-	MemberEmail          string    `json:"member_email,omitempty"`
+	ID          string    `json:"id"`
+	Date        string    `json:"date"`
+	MemberID    string    `json:"member_id"`
+	IsCover     bool      `json:"is_cover"`
+	LeaveID     *string   `json:"leave_id"`
+	CreatedAt   time.Time `json:"created_at"`
+	MemberName  string    `json:"member_name,omitempty"`
+	MemberEmail string    `json:"member_email,omitempty"`
 }
 
 type CalendarSubscription struct {

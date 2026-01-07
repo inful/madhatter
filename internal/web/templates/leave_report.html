@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Report Leave</title>
+    <style>
+        body { font-family: system-ui; max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
+        form { display: grid; gap: 1rem; margin: 1rem 0; }
+        input, select { padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; }
+        .btn { background: #007bff; color: white; padding: 0.5rem 1rem; border: none; border-radius: 4px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>Report Leave</h1>
+    <a href="/">← Back to Dashboard</a>
+    
+    <form method="POST" action="/leave/report">
+        <select name="member_id" required>
+            <option value="">Select Team Member</option>
+            {{range .Members}}
+                <option value="{{.ID}}">{{.Name}} - {{.Email}}</option>
+            {{end}}
+        </select>
+        
+        <select name="type" required>
+            <option value="sick">Sick Leave</option>
+            <option value="vacation">Vacation</option>
+            <option value="other">Other</option>
+        </select>
+        
+        <input type="date" name="start_date" placeholder="Start Date" required>
+        <input type="date" name="end_date" placeholder="End Date" required>
+        
+        <button type="submit" class="btn">Report Leave</button>
+    </form>
+</body>
+</html>

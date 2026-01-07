@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Support Rota - Dashboard</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <style>
+        body { font-family: system-ui; max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
+        .card { border: 1px solid #ddd; padding: 1rem; margin: 1rem 0; border-radius: 8px; }
+        .btn { background: #007bff; color: white; padding: 0.5rem 1rem; text-decoration: none; border-radius: 4px; }
+        .btn-secondary { background: #6c757d; }
+        .cover { background: #fff3cd; padding: 0.25rem; border-radius: 4px; }
+        .leave { background: #f8d7da; padding: 0.25rem; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <h1>Support Rota Dashboard</h1>
+    
+    <div class="card">
+        <h2>Quick Actions</h2>
+        <a href="/team" class="btn">Add Team Member</a>
+        <a href="/leave/report" class="btn">Report Leave</a>
+        <a href="/schedule/generate" class="btn">Generate Schedule</a>
+        <a href="/schedule/current" class="btn">View Schedule</a>
+        <a href="/calendar" class="btn">Calendar Subscriptions</a>
+    </div>
+    
+    <div class="card">
+        <h2>Today's Assignment</h2>
+        <p><strong>{{.Today}}</strong></p>
+        {{if .TodayAssignment}}
+            <p>{{.TodayAssignment.MemberName}} ({{.TodayAssignment.MemberEmail}})</p>
+            {{if .TodayAssignment.IsCover}}
+                <span class="cover">COVER for original assignment</span>
+            {{end}}
+        {{else}}
+            <div style="text-align: center; padding: 1rem;">
+                <p style="margin-bottom: 1rem;">No schedule for today</p>
+                <a href="/schedule/generate" class="btn">Generate Schedule</a>
+            </div>
+        {{end}}
+    </div>
+    
+    <div class="card">
+        <h2>This Week</h2>
+        {{if .WeekAssignments}}
+            {{range .WeekAssignments}}
+                <div>
+                    <strong>{{.Date.Format "Jan 2 (Mon)"}}:</strong>
+                    {{.MemberName}}
+                    {{if .IsCover}}<span class="cover">COVER</span>{{end}}
+                </div>
+            {{end}}
+        {{else}}
+            <div style="text-align: center; padding: 1rem;">
+                <p style="margin-bottom: 1rem;">No schedule for this week</p>
+                <a href="/schedule/generate" class="btn">Generate Schedule</a>
+            </div>
+        {{end}}
+    </div>
+</body>
+</html>

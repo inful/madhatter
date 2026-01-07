@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"database/sql"
 	"path/filepath"
 	"testing"
@@ -9,7 +10,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// setupTestDB creates a temporary test database
+// setupTestDB creates a temporary test database.
 func setupTestDB(t *testing.T) (*DB, func()) {
 	t.Helper()
 
@@ -99,7 +100,8 @@ func TestGetActiveTeamMembers_OnlyActive(t *testing.T) {
 	id2, _ := db.AddTeamMember("Bob", "bob@example.com")
 
 	// Deactivate one
-	_, err := db.Exec("UPDATE team_members SET is_active = 0 WHERE id = ?", id1)
+	ctx := context.Background()
+	_, err := db.ExecContext(ctx, "UPDATE team_members SET is_active = 0 WHERE id = ?", id1)
 	require.NoError(t, err)
 
 	// Act

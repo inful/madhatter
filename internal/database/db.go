@@ -1,8 +1,9 @@
 package database
 
 import (
+	"context"
 	"database/sql"
-	"fmt"
+	"errors"
 
 	"github.com/google/uuid"
 	_ "modernc.org/sqlite"
@@ -18,8 +19,10 @@ func New(path string) (*DB, error) {
 		return nil, err
 	}
 
+	ctx := context.Background()
+
 	// Enable foreign keys
-	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
+	if _, err := db.ExecContext(ctx, "PRAGMA foreign_keys = ON"); err != nil {
 		return nil, err
 	}
 
@@ -51,10 +54,10 @@ func New(path string) (*DB, error) {
         date DATE NOT NULL,
         member_id TEXT NOT NULL,
         is_cover INTEGER DEFAULT 0,
-        leave_id TEXT,
+        original_assignment_id TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (member_id) REFERENCES team_members(id),
-        FOREIGN KEY (leave_id) REFERENCES leave_records(id)
+        FOREIGN KEY (original_assignment_id) REFERENCES rota_assignments(id)
     );
 
     CREATE TABLE IF NOT EXISTS calendar_subscriptions (
@@ -66,7 +69,7 @@ func New(path string) (*DB, error) {
     );
     `
 
-	if _, err := db.Exec(schema); err != nil {
+	if _, err := db.ExecContext(ctx, schema); err != nil {
 		return nil, err
 	}
 
@@ -75,16 +78,18 @@ func New(path string) (*DB, error) {
 
 func (db *DB) AddTeamMember(name, email string) (string, error) {
 	if name == "" || email == "" {
-		return "", fmt.Errorf("name and email cannot be empty")
+		return "", errors.New("name and email cannot be empty")
 	}
+	ctx := context.Background()
 	id := uuid.New().String()
 	query := `INSERT INTO team_members (id, name, email) VALUES (?, ?, ?)`
-	_, err := db.Exec(query, id, name, email)
+	_, err := db.ExecContext(ctx, query, id, name, email)
 	return id, err
 }
 
 func (db *DB) GetActiveTeamMembers() ([]TeamMember, error) {
-	rows, err := db.Query(`SELECT id, name, email, is_active, created_at FROM team_members WHERE is_active = 1 ORDER BY name`)
+	ctx := context.Background()
+	rows, err := db.QueryContext(ctx, `SELECT id, name, email, is_active, created_at FROM team_members WHERE is_active = 1 ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
@@ -104,11 +109,67 @@ func (db *DB) GetActiveTeamMembers() ([]TeamMember, error) {
 }
 
 func (db *DB) GetMemberByEmail(email string) (*TeamMember, error) {
-	row := db.QueryRow(`SELECT id, name, email, is_active, created_at FROM team_members WHERE email = ?`, email)
+	ctx := context.Background()
+	row := db.QueryRowContext(ctx, `SELECT id, name, email, is_active, created_at FROM team_members WHERE email = ?`, email)
 
 	var m TeamMember
 	if err := row.Scan(&m.ID, &m.Name, &m.Email, &m.IsActive, &m.CreatedAt); err != nil {
 		return nil, err
 	}
 	return &m, nil
+}
+
+// CreateCalendarSubscription creates a new calendar subscription for a team member.
+func (db *DB) CreateCalendarSubscription(memberID string) (string, error) {
+	ctx := context.Background()
+	token := uuid.New().String()
+	id := uuid.New().String()
+	query := `INSERT INTO calendar_subscriptions (id, member_id, token) VALUES (?, ?, ?)`
+	_, err := db.ExecContext(ctx, query, id, memberID, token)
+	return token, err
+}
+
+func (db *DB) GetMemberByToken(token string) (*TeamMember, error) {
+	ctx := context.Background()
+	query := `SELECT tm.id, tm.name, tm.email, tm.is_active, tm.created_at
+              FROM calendar_subscriptions cs
+              JOIN team_members tm ON cs.member_id = tm.id
+              WHERE cs.token = ?`
+	row := db.QueryRowContext(ctx, query, token)
+
+	var m TeamMember
+	if err := row.Scan(&m.ID, &m.Name, &m.Email, &m.IsActive, &m.CreatedAt); err != nil {
+		return nil, err
+	}
+	return &m, nil
+}
+
+func (db *DB) GetUpcomingAssignments(memberID string, days int) ([]RotaAssignment, error) {
+	ctx := context.Background()
+	query := `SELECT id, date, member_id, is_cover, original_assignment_id
+              FROM rota_assignments
+              WHERE member_id = ? AND date >= date('now') AND date <= date('now', '+'||?||' days')
+              ORDER BY date`
+	rows, err := db.QueryContext(ctx, query, memberID, days)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = rows.Close()
+	}()
+
+	var assignments []RotaAssignment
+	for rows.Next() {
+		var a RotaAssignment
+		var originalAssignmentID sql.NullString
+		err := rows.Scan(&a.ID, &a.Date, &a.MemberID, &a.IsCover, &originalAssignmentID)
+		if err != nil {
+			return nil, err
+		}
+		if originalAssignmentID.Valid {
+			a.OriginalAssignmentID = &originalAssignmentID.String
+		}
+		assignments = append(assignments, a)
+	}
+	return assignments, nil
 }

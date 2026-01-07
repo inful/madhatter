@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Current Schedule</title>
+    <style>
+        body { font-family: system-ui; max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
+        .day { border: 1px solid #ddd; padding: 1rem; margin: 0.5rem 0; border-radius: 8px; }
+        .cover { background: #fff3cd; padding: 0.25rem; border-radius: 4px; }
+        .leave { background: #f8d7da; padding: 0.25rem; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <h1>Current Week Schedule</h1>
+    <a href="/">← Back to Dashboard</a>
+    
+    {{range .Schedule}}
+        <div class="day">
+            <h3>{{.Date}}</h3>
+            {{range .Assignments}}
+                <div>
+                    <strong>{{.MemberName}}</strong> - {{.MemberEmail}}
+                    {{if .IsCover}}<span class="cover">COVER</span>{{end}}
+                </div>
+            {{else}}
+                <em>No assignment</em>
+            {{end}}
+        </div>
+    {{end}}
+</body>
+</html>

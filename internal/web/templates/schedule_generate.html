@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Generate Schedule</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <style>
+        body { font-family: system-ui; max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
+        form { display: grid; gap: 1rem; margin: 1rem 0; }
+        input { padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; }
+        .btn { background: #007bff; color: white; padding: 0.5rem 1rem; border: none; border-radius: 4px; cursor: pointer; text-decoration: none; display: inline-block; }
+        .btn-secondary { background: #6c757d; }
+        .card { border: 1px solid #ddd; padding: 1rem; margin: 1rem 0; border-radius: 8px; }
+        .info { background: #e7f3ff; padding: 1rem; border-radius: 4px; margin: 1rem 0; }
+    </style>
+</head>
+<body>
+    <h1>Generate Schedule</h1>
+    <a href="/">← Back to Dashboard</a>
+    
+    <div class="card">
+        <h2>Generate Round-Robin Schedule</h2>
+        <div class="info">
+            <strong>How it works:</strong>
+            <ul>
+                <li>Creates weekday assignments (Mon-Fri)</li>
+                <li>Each team member gets one day per cycle</li>
+                <li>Automatically skips weekends</li>
+                <li>Handles existing leave assignments</li>
+            </ul>
+        </div>
+        
+        <form method="POST" action="/schedule/generate">
+            <div>
+                <label for="start_date">Start Date:</label><br>
+                <input type="date" id="start_date" name="start_date" value="{{.DefaultStart}}" required>
+            </div>
+            
+            <div>
+                <label for="end_date">End Date:</label><br>
+                <input type="date" id="end_date" name="end_date" value="{{.DefaultEnd}}" required>
+            </div>
+            
+            <div style="display: flex; gap: 1rem;">
+                <button type="submit" class="btn">Generate Schedule</button>
+                <a href="/schedule/current" class="btn btn-secondary">View Schedule</a>
+            </div>
+        </form>
+    </div>
+    
+    <div class="card">
+        <h3>Quick Actions</h3>
+        <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+            <a href="/team" class="btn btn-secondary">Manage Team</a>
+            <a href="/leave/report" class="btn btn-secondary">Report Leave</a>
+            <a href="/calendar" class="btn btn-secondary">Calendar Subscriptions</a>
+        </div>
+    </div>
+</body>
+</html>

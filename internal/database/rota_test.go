@@ -27,7 +27,7 @@ func TestCreateRotaAssignment_Success(t *testing.T) {
 	require.Len(t, assignments, 1)
 	require.Equal(t, memberID, assignments[0].MemberID)
 	require.False(t, assignments[0].IsCover)
-	require.Nil(t, assignments[0].LeaveID)
+	require.Nil(t, assignments[0].OriginalAssignmentID)
 }
 
 func TestCreateRotaAssignment_CoverAssignment(t *testing.T) {
@@ -37,12 +37,12 @@ func TestCreateRotaAssignment_CoverAssignment(t *testing.T) {
 
 	memberID, _ := db.AddTeamMember("Alice", "alice@example.com")
 
-	// First create a leave record
-	leaveID, _ := db.CreateLeaveRecord(memberID, "sick", "2024-01-15", "2024-01-15")
+	// First create original assignment
+	originalAssignmentID, _ := db.CreateRotaAssignment("2024-01-15", memberID, false, nil)
 
 	// Act - Create cover assignment
 	coverMemberID, _ := db.AddTeamMember("Bob", "bob@example.com")
-	assignmentID, err := db.CreateRotaAssignment("2024-01-15", coverMemberID, true, &leaveID)
+	assignmentID, err := db.CreateRotaAssignment("2024-01-15", coverMemberID, true, &originalAssignmentID)
 
 	// Assert
 	require.NoError(t, err)
@@ -50,10 +50,10 @@ func TestCreateRotaAssignment_CoverAssignment(t *testing.T) {
 
 	assignments, err := db.GetAssignmentsByDate("2024-01-15")
 	require.NoError(t, err)
-	require.Len(t, assignments, 1)
-	require.True(t, assignments[0].IsCover)
-	require.Equal(t, coverMemberID, assignments[0].MemberID)
-	require.Equal(t, leaveID, *assignments[0].LeaveID)
+	require.Len(t, assignments, 2) // Both original and cover
+	require.True(t, assignments[1].IsCover)
+	require.Equal(t, coverMemberID, assignments[1].MemberID)
+	require.Equal(t, originalAssignmentID, *assignments[1].OriginalAssignmentID)
 }
 
 func TestCreateRotaAssignment_InvalidMember(t *testing.T) {

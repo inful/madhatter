@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Calendar Subscriptions</title>
+    <style>
+        body { font-family: system-ui; max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
+        form { display: grid; gap: 1rem; margin: 1rem 0; }
+        select, input { padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; }
+        .btn { background: #007bff; color: white; padding: 0.5rem 1rem; border: none; border-radius: 4px; cursor: pointer; }
+        .result { background: #d4edda; padding: 1rem; border-radius: 8px; margin: 1rem 0; }
+        .url { background: #f8f9fa; padding: 0.5rem; border-radius: 4px; word-break: break-all; font-family: monospace; }
+    </style>
+</head>
+<body>
+    <h1>Calendar Subscriptions</h1>
+    <a href="/">← Back to Dashboard</a>
+    
+    {{if .ShowResult}}
+        <div class="result">
+            <h3>✅ Calendar Subscription Created</h3>
+            <p><strong>Calendar URL:</strong></p>
+            <div class="url">{{.CalendarURL}}</div>
+            <p><strong>Token:</strong> {{.Token}}</p>
+            <p>Copy this URL and add it to your calendar app (Google Calendar, Outlook, Apple Calendar, etc.)</p>
+        </div>
+    {{end}}
+    
+    <h2>Create New Subscription</h2>
+    <form method="POST" action="/calendar">
+        <select name="member_id" required>
+            <option value="">Select Team Member</option>
+            {{range .Members}}
+                <option value="{{.ID}}">{{.Name}} - {{.Email}}</option>
+            {{end}}
+        </select>
+        <button type="submit" class="btn">Create Subscription</button>
+    </form>
+    
+    <h3>How to Subscribe:</h3>
+    <ol>
+        <li>Copy your calendar URL above</li>
+        <li>Open your calendar app (Google Calendar, Outlook, Apple Calendar, etc.)</li>
+        <li>Add new calendar by URL</li>
+        <li>Paste the URL</li>
+        <li>Your support days will appear automatically</li>
+    </ol>
+</body>
+</html>

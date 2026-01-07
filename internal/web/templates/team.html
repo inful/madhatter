@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Team Management</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <style>
+        body { font-family: system-ui; max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
+        form { display: grid; gap: 1rem; margin: 1rem 0; }
+        input { padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; }
+        .btn { background: #007bff; color: white; padding: 0.5rem 1rem; border: none; border-radius: 4px; cursor: pointer; }
+        .member { padding: 0.5rem; border-bottom: 1px solid #eee; }
+    </style>
+</head>
+<body>
+    <h1>Team Management</h1>
+    <a href="/">← Back to Dashboard</a>
+    
+    <h2>Add Team Member</h2>
+    <form method="POST" action="/team">
+        <input type="text" name="name" placeholder="Name" required>
+        <input type="email" name="email" placeholder="Email" required>
+        <button type="submit" class="btn">Add Member</button>
+    </form>
+    
+    <h2>Current Members</h2>
+    {{range .Members}}
+        <div class="member">
+            <strong>{{.Name}}</strong> - {{.Email}}
+        </div>
+    {{else}}
+        <p>No team members yet</p>
+    {{end}}
+</body>
+</html>

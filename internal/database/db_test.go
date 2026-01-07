@@ -87,7 +87,7 @@ func TestGetActiveTeamMembers_Empty(t *testing.T) {
 
 	// Assert
 	require.NoError(t, err)
-	require.Len(t, members, 0)
+	require.Empty(t, members)
 }
 
 func TestGetActiveTeamMembers_OnlyActive(t *testing.T) {

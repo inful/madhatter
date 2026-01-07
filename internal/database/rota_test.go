@@ -97,7 +97,7 @@ func TestGetAssignmentsByDate_Empty(t *testing.T) {
 
 	// Assert
 	require.NoError(t, err)
-	require.Len(t, assignments, 0)
+	require.Empty(t, assignments)
 }
 
 func TestGetAssignmentsByDate_DifferentDates(t *testing.T) {
@@ -114,7 +114,7 @@ func TestGetAssignmentsByDate_DifferentDates(t *testing.T) {
 
 	// Assert
 	require.Len(t, assignments1, 1)
-	require.Len(t, assignments2, 0)
+	require.Empty(t, assignments2)
 }
 
 func TestGetUpcomingAssignments(t *testing.T) {
@@ -149,5 +149,5 @@ func TestGetUpcomingAssignments_Empty(t *testing.T) {
 
 	// Assert
 	require.NoError(t, err)
-	require.Len(t, assignments, 0)
+	require.Empty(t, assignments)
 }

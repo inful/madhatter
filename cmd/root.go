@@ -75,27 +75,26 @@ func Execute() {
 	}
 
 	ctx := kong.Parse(&CLI)
-	switch ctx.Command() {
-	case "serve", "serve <port>":
-		serveCommand(db)
-	case "team add <name> <email>":
-		teamAddCommand(db)
-	case "team list":
-		teamListCommand(db)
-	case "leave report <member-id> <type> <start> <end>":
-		leaveReportCommand(db)
-	case "leave list":
-		leaveListCommand(db)
-	case "schedule generate <start> <end>":
-		scheduleGenerateCommand(db)
-	case "schedule view <date>":
-		scheduleViewCommand(db)
-	case "calendar subscribe <email>":
-		calendarSubscribeCommand(db)
-	case "calendar export <email> <output>":
-		calendarExportCommand(db)
-	default:
-		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", ctx.Command())
+	command := ctx.Command()
+
+	// Map command to handler
+	handlers := map[string]func(*database.DB){
+		"serve":                   serveCommand,
+		"serve <port>":            serveCommand,
+		"team add <name> <email>": teamAddCommand,
+		"team list":               teamListCommand,
+		"leave report <member-id> <type> <start> <end>": leaveReportCommand,
+		"leave list":                       leaveListCommand,
+		"schedule generate <start> <end>":  scheduleGenerateCommand,
+		"schedule view <date>":             scheduleViewCommand,
+		"calendar subscribe <email>":       calendarSubscribeCommand,
+		"calendar export <email> <output>": calendarExportCommand,
+	}
+
+	if handler, exists := handlers[command]; exists {
+		handler(db)
+	} else {
+		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", command)
 		os.Exit(1)
 	}
 }

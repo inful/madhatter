@@ -20,8 +20,20 @@ This file provides guidance to agents when working with code in this repository.
 
 **Linter Configuration**: Uses golangci-lint v2 with extensive rules including shadow variable detection, performance checks, and custom tag alignment rules.
 
-**Critical Gotchas**: 
+**SQLC Migration**: Database layer uses sqlc for type-safe SQL generation. Key files:
+- `sqlc.yaml` - sqlc configuration
+- `internal/database/sqlc/` - Generated type-safe code
+- `internal/database/sqlc_wrapper.go` - Backward compatibility wrapper
+- `SQLC_MIGRATION_GUIDE.md` - Detailed migration documentation
+
+**SQLC Commands**:
+- Generate code: `export PATH=$PATH:$(go env GOPATH)/bin && sqlc generate`
+- Run tests: `go test ./internal/database -v`
+
+**Critical Gotchas**:
 - Foreign keys must be enabled manually with `PRAGMA foreign_keys = ON`
 - Leave assignment creates cover records that reference original assignments
 - Weekend dates are automatically skipped in scheduling
 - Calendar subscriptions require creating a token entry before generating ICS feeds
+- SQLC generates `time.Time` for dates, but your existing code uses string dates - use the wrapper for compatibility
+- SQLC uses `sql.NullInt64` for nullable integers - wrapper converts to/from bool

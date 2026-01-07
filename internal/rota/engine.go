@@ -30,64 +30,74 @@ func (e *Engine) GenerateSchedule(startDate, endDate time.Time) error {
 	memberIndex := 0
 
 	for currentDate.Before(endDate.AddDate(0, 0, 1)) {
-		// Skip weekends
-		if currentDate.Weekday() == time.Saturday || currentDate.Weekday() == time.Sunday {
-			currentDate = currentDate.AddDate(0, 0, 1)
-			continue
-		}
-
-		// Check for leave
-		dateStr := currentDate.Format("2006-01-02")
-		leaves, err := e.db.GetLeaveByDate(dateStr)
-		if err != nil {
+		if err := e.processDate(currentDate, members, &memberIndex); err != nil {
 			return err
 		}
-
-		// Find available member
-		originalMember := members[memberIndex]
-		coveringMember := originalMember
-
-		// Check if original member is on leave
-		for i := range leaves {
-			if leaves[i].MemberID == originalMember.ID {
-				// Find cover
-				cover, coverErr := e.findCover(members, leaves, memberIndex)
-				if coverErr != nil {
-					// No cover available, skip this day
-					memberIndex = (memberIndex + 1) % len(members)
-					currentDate = currentDate.AddDate(0, 0, 1)
-					continue
-				}
-				coveringMember = cover
-				break
-			}
-		}
-
-		// Create assignment
-		isCover := coveringMember.ID != originalMember.ID
-		var originalAssignmentID *string
-		if isCover {
-			// Find the leave record for this date and member
-			for i := range leaves {
-				if leaves[i].MemberID == originalMember.ID {
-					// Store leave ID temporarily - will be updated later
-					leaveID := leaves[i].ID
-					originalAssignmentID = &leaveID
-					break
-				}
-			}
-		}
-
-		_, err = e.db.CreateRotaAssignment(dateStr, coveringMember.ID, isCover, originalAssignmentID)
-		if err != nil {
-			return err
-		}
-
-		// Move to next member
-		memberIndex = (memberIndex + 1) % len(members)
 		currentDate = currentDate.AddDate(0, 0, 1)
 	}
 
+	return nil
+}
+
+// processDate handles assignment for a single date.
+func (e *Engine) processDate(currentDate time.Time, members []database.TeamMember, memberIndex *int) error {
+	// Skip weekends
+	if currentDate.Weekday() == time.Saturday || currentDate.Weekday() == time.Sunday {
+		return nil
+	}
+
+	dateStr := currentDate.Format("2006-01-02")
+	leaves, err := e.db.GetLeaveByDate(dateStr)
+	if err != nil {
+		return err
+	}
+
+	originalMember := members[*memberIndex]
+	coveringMember := e.determineCoveringMember(originalMember, leaves, members, *memberIndex)
+
+	if err := e.createAssignment(dateStr, originalMember, coveringMember, leaves); err != nil {
+		return err
+	}
+
+	*memberIndex = (*memberIndex + 1) % len(members)
+	return nil
+}
+
+// determineCoveringMember finds who should cover the assignment.
+func (e *Engine) determineCoveringMember(originalMember database.TeamMember, leaves []database.LeaveRecord, members []database.TeamMember, memberIndex int) database.TeamMember {
+	for i := range leaves {
+		if leaves[i].MemberID == originalMember.ID {
+			cover, coverErr := e.findCover(members, leaves, memberIndex)
+			if coverErr == nil {
+				return cover
+			}
+			break
+		}
+	}
+	return originalMember
+}
+
+// createAssignment creates the rota assignment.
+func (e *Engine) createAssignment(dateStr string, originalMember, coveringMember database.TeamMember, leaves []database.LeaveRecord) error {
+	isCover := coveringMember.ID != originalMember.ID
+	var originalAssignmentID *string
+
+	if isCover {
+		originalAssignmentID = e.findLeaveIDForMember(leaves, originalMember.ID)
+	}
+
+	_, err := e.db.CreateRotaAssignment(dateStr, coveringMember.ID, isCover, originalAssignmentID)
+	return err
+}
+
+// findLeaveIDForMember finds the leave ID for a specific member.
+func (e *Engine) findLeaveIDForMember(leaves []database.LeaveRecord, memberID string) *string {
+	for i := range leaves {
+		if leaves[i].MemberID == memberID {
+			leaveID := leaves[i].ID
+			return &leaveID
+		}
+	}
 	return nil
 }
 
@@ -116,87 +126,88 @@ func (e *Engine) findCover(members []database.TeamMember, leaves []database.Leav
 
 // AssignCoversForLeave creates cover assignments for a leave record.
 func (e *Engine) AssignCoversForLeave(leaveID string) error {
-	// Get leave record
 	leave, err := e.db.GetLeaveByID(leaveID)
 	if err != nil {
 		return err
 	}
 
-	// Get active members
 	members, err := e.db.GetActiveTeamMembers()
 	if err != nil {
 		return err
 	}
 
-	// Find original member index
-	originalIndex := -1
-	for i := range members {
-		if members[i].ID == leave.MemberID {
-			originalIndex = i
-			break
-		}
-	}
-
+	originalIndex := e.findMemberIndex(members, leave.MemberID)
 	if originalIndex == -1 {
 		return errors.New("member not found")
 	}
 
-	// Dates are now time.Time, no parsing needed
-	startDate := leave.StartDate
-	endDate := leave.EndDate
+	return e.processLeaveDates(leave, members, originalIndex, leaveID)
+}
 
-	// Process each day of leave
-	for d := startDate; d.Before(endDate.AddDate(0, 0, 1)); d = d.AddDate(0, 0, 1) {
-		// Skip weekends
-		if d.Weekday() == time.Saturday || d.Weekday() == time.Sunday {
-			continue
+// findMemberIndex finds the index of a member in the members slice.
+func (e *Engine) findMemberIndex(members []database.TeamMember, memberID string) int {
+	for i := range members {
+		if members[i].ID == memberID {
+			return i
 		}
+	}
+	return -1
+}
 
-		dateStr := d.Format("2006-01-02")
-
-		// Get existing assignments for this date
-		existingAssignments, err := e.db.GetAssignmentsByDate(dateStr)
-		if err != nil {
-			return err
-		}
-
-		// Find the original assignment for the person on leave
-		var originalAssignmentID string
-		hasOriginalAssignment := false
-		for _, a := range existingAssignments {
-			if a.MemberID == leave.MemberID && !a.IsCover {
-				hasOriginalAssignment = true
-				originalAssignmentID = a.ID
-				break
-			}
-		}
-
-		// If no original assignment exists, create one first
-		if !hasOriginalAssignment {
-			newAssignmentID, createErr := e.db.CreateRotaAssignment(dateStr, leave.MemberID, false, nil)
-			if createErr != nil {
-				return createErr
-			}
-			originalAssignmentID = newAssignmentID
-		}
-
-		// Find cover
-		cover, err := e.findCover(members, []database.LeaveRecord{*leave}, originalIndex)
-		if err != nil {
-			continue // Skip if no cover available
-		}
-
-		// Create cover assignment referencing the original assignment
-		_, err = e.db.CreateRotaAssignment(dateStr, cover.ID, true, &originalAssignmentID)
-		if err != nil {
-			return err
-		}
-
-		// Update leave record status
-		if err := e.db.UpdateLeaveStatus(leaveID, "assigned"); err != nil {
+// processLeaveDates processes each day of leave and creates cover assignments.
+func (e *Engine) processLeaveDates(leave *database.LeaveRecord, members []database.TeamMember, originalIndex int, leaveID string) error {
+	for d := leave.StartDate; d.Before(leave.EndDate.AddDate(0, 0, 1)); d = d.AddDate(0, 0, 1) {
+		if err := e.processLeaveDate(d, members, originalIndex, leave, leaveID); err != nil {
 			return err
 		}
 	}
-
 	return nil
+}
+
+// processLeaveDate handles a single day of leave.
+func (e *Engine) processLeaveDate(d time.Time, members []database.TeamMember, originalIndex int, leave *database.LeaveRecord, leaveID string) error {
+	// Skip weekends
+	if d.Weekday() == time.Saturday || d.Weekday() == time.Sunday {
+		return nil
+	}
+
+	dateStr := d.Format("2006-01-02")
+	originalAssignmentID, err := e.ensureOriginalAssignment(dateStr, leave)
+	if err != nil {
+		return err
+	}
+
+	cover, err := e.findCover(members, []database.LeaveRecord{*leave}, originalIndex)
+	if err != nil {
+		// Skip if no cover available - this is intentional
+		return nil //nolint:nilerr
+	}
+
+	if err := e.createCoverAssignment(dateStr, cover.ID, originalAssignmentID); err != nil {
+		return err
+	}
+
+	return e.db.UpdateLeaveStatus(leaveID, "assigned")
+}
+
+// ensureOriginalAssignment finds or creates the original assignment for the person on leave.
+func (e *Engine) ensureOriginalAssignment(dateStr string, leave *database.LeaveRecord) (string, error) {
+	existingAssignments, err := e.db.GetAssignmentsByDate(dateStr)
+	if err != nil {
+		return "", err
+	}
+
+	for _, a := range existingAssignments {
+		if a.MemberID == leave.MemberID && !a.IsCover {
+			return a.ID, nil
+		}
+	}
+
+	return e.db.CreateRotaAssignment(dateStr, leave.MemberID, false, nil)
+}
+
+// createCoverAssignment creates a cover assignment.
+func (e *Engine) createCoverAssignment(dateStr, coverMemberID, originalAssignmentID string) error {
+	_, err := e.db.CreateRotaAssignment(dateStr, coverMemberID, true, &originalAssignmentID)
+	return err
 }

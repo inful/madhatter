@@ -2,11 +2,11 @@ package database
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/inful/madhatter/internal/database/sqlc"
 )
 
 func (db *DB) CreateLeaveRecord(memberID, leaveType, startDate, endDate string) (string, error) {
@@ -14,169 +14,136 @@ func (db *DB) CreateLeaveRecord(memberID, leaveType, startDate, endDate string) 
 		return "", errors.New("all fields are required")
 	}
 
-	ctx := context.Background()
-
 	// Verify member exists
-	var exists bool
-	err := db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM team_members WHERE id = ?)", memberID).Scan(&exists)
-	if err != nil || !exists {
+	_, err := db.queries.GetMemberByID(context.Background(), memberID)
+	if err != nil {
 		return "", errors.New("member not found")
 	}
 
 	id := uuid.New().String()
-	query := `INSERT INTO leave_records (id, member_id, type, start_date, end_date, status)
-              VALUES (?, ?, ?, ?, ?, 'pending')`
-	_, err = db.ExecContext(ctx, query, id, memberID, leaveType, startDate, endDate)
+
+	startTime, err := time.Parse("2006-01-02", startDate)
+	if err != nil {
+		return "", err
+	}
+	endTime, err := time.Parse("2006-01-02", endDate)
+	if err != nil {
+		return "", err
+	}
+
+	params := sqlc.CreateLeaveRecordParams{
+		ID:        id,
+		MemberID:  memberID,
+		Type:      leaveType,
+		StartDate: startTime,
+		EndDate:   endTime,
+	}
+
+	_, err = db.queries.CreateLeaveRecord(context.Background(), params)
 	return id, err
 }
 
 func (db *DB) GetLeaveByDate(date string) ([]LeaveRecord, error) {
-	ctx := context.Background()
-	query := `SELECT id, member_id, start_date, end_date, type, cover_member_id, status, created_at
-              FROM leave_records
-              WHERE ? >= start_date AND ? <= end_date AND status != 'completed'`
-	rows, err := db.QueryContext(ctx, query, date, date)
+	// Parse date to time.Time for sqlc
+	dateTime, err := time.Parse("2006-01-02", date)
 	if err != nil {
 		return nil, err
 	}
-	defer func() {
-		_ = rows.Close()
-	}()
 
-	var leaves []LeaveRecord
-	for rows.Next() {
-		var l LeaveRecord
-		var coverMemberID sql.NullString
-		var startDateStr, endDateStr string
-		err := rows.Scan(&l.ID, &l.MemberID, &startDateStr, &endDateStr, &l.Type, &coverMemberID, &l.Status, &l.CreatedAt)
-		if err != nil {
-			return nil, err
-		}
-		// Convert string dates to time.Time
-		startDate, err := time.Parse("2006-01-02", startDateStr)
-		if err != nil {
-			// Try with time component
-			startDate, err = time.Parse(time.RFC3339, startDateStr)
-			if err != nil {
-				return nil, err
-			}
-		}
-		endDate, err := time.Parse("2006-01-02", endDateStr)
-		if err != nil {
-			// Try with time component
-			endDate, err = time.Parse(time.RFC3339, endDateStr)
-			if err != nil {
-				return nil, err
-			}
-		}
-		l.StartDate = startDate
-		l.EndDate = endDate
-
-		if coverMemberID.Valid {
-			l.CoverMemberID = coverMemberID.String
-		}
-		leaves = append(leaves, l)
+	params := sqlc.GetLeaveByDateParams{
+		StartDate: dateTime,
+		EndDate:   dateTime,
 	}
-	return leaves, nil
+
+	leaveRecords, err := db.queries.GetLeaveByDate(context.Background(), params)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]LeaveRecord, len(leaveRecords))
+	for i := range leaveRecords {
+		l := &leaveRecords[i]
+		coverMemberID := ""
+		if l.CoverMemberID.Valid {
+			coverMemberID = l.CoverMemberID.String
+		}
+		result[i] = LeaveRecord{
+			ID:            l.ID,
+			MemberID:      l.MemberID,
+			StartDate:     l.StartDate,
+			EndDate:       l.EndDate,
+			Type:          l.Type,
+			CoverMemberID: coverMemberID,
+			Status:        l.Status,
+			CreatedAt:     l.CreatedAt.Time,
+		}
+	}
+	return result, nil
 }
 
 func (db *DB) UpdateLeaveStatus(leaveID, status string) error {
-	ctx := context.Background()
-	query := `UPDATE leave_records SET status = ? WHERE id = ?`
-	_, err := db.ExecContext(ctx, query, status, leaveID)
-	return err
+	params := sqlc.UpdateLeaveStatusParams{
+		Status: status,
+		ID:     leaveID,
+	}
+	return db.queries.UpdateLeaveStatus(context.Background(), params)
 }
 
 func (db *DB) GetLeaveByID(leaveID string) (*LeaveRecord, error) {
-	ctx := context.Background()
-	query := `SELECT id, member_id, start_date, end_date, type, cover_member_id, status, created_at
-              FROM leave_records WHERE id = ?`
-	row := db.QueryRowContext(ctx, query, leaveID)
-
-	var l LeaveRecord
-	var coverMemberID sql.NullString
-	var startDateStr, endDateStr string
-	err := row.Scan(&l.ID, &l.MemberID, &startDateStr, &endDateStr, &l.Type, &coverMemberID, &l.Status, &l.CreatedAt)
+	leave, err := db.queries.GetLeaveByID(context.Background(), leaveID)
 	if err != nil {
 		return nil, err
 	}
 
-	// Convert string dates to time.Time
-	startDate, err := time.Parse("2006-01-02", startDateStr)
-	if err != nil {
-		// Try with time component
-		startDate, err = time.Parse(time.RFC3339, startDateStr)
-		if err != nil {
-			return nil, err
-		}
+	coverMemberID := ""
+	if leave.CoverMemberID.Valid {
+		coverMemberID = leave.CoverMemberID.String
 	}
-	endDate, err := time.Parse("2006-01-02", endDateStr)
-	if err != nil {
-		// Try with time component
-		endDate, err = time.Parse(time.RFC3339, endDateStr)
-		if err != nil {
-			return nil, err
-		}
-	}
-	l.StartDate = startDate
-	l.EndDate = endDate
-
-	if coverMemberID.Valid {
-		l.CoverMemberID = coverMemberID.String
-	}
-	return &l, nil
+	return &LeaveRecord{
+		ID:            leave.ID,
+		MemberID:      leave.MemberID,
+		StartDate:     leave.StartDate,
+		EndDate:       leave.EndDate,
+		Type:          leave.Type,
+		CoverMemberID: coverMemberID,
+		Status:        leave.Status,
+		CreatedAt:     leave.CreatedAt.Time,
+	}, nil
 }
 
 // GetLeaveRecords retrieves all leave records (optionally filtered by status).
 func (db *DB) GetLeaveRecords(statusFilter ...string) ([]LeaveRecord, error) {
-	ctx := context.Background()
-	var query string
-	var rows *sql.Rows
-	var err error
-
+	params := sqlc.GetLeaveRecordsParams{
+		Status:  "",
+		Column2: "",
+	}
 	if len(statusFilter) > 0 {
-		query = `SELECT id, member_id, start_date, end_date, type, cover_member_id, status, created_at
-                 FROM leave_records WHERE status = ? ORDER BY start_date DESC`
-		rows, err = db.QueryContext(ctx, query, statusFilter[0])
-	} else {
-		query = `SELECT id, member_id, start_date, end_date, type, cover_member_id, status, created_at
-                 FROM leave_records ORDER BY start_date DESC`
-		rows, err = db.QueryContext(ctx, query)
+		params.Status = statusFilter[0]
+		params.Column2 = statusFilter[0]
 	}
 
+	leaveRecords, err := db.queries.GetLeaveRecords(context.Background(), params)
 	if err != nil {
 		return nil, err
 	}
-	defer func() {
-		_ = rows.Close()
-	}()
 
-	var leaves []LeaveRecord
-	for rows.Next() {
-		var l LeaveRecord
-		var coverMemberID sql.NullString
-		var startDateStr, endDateStr string
-		err := rows.Scan(&l.ID, &l.MemberID, &startDateStr, &endDateStr, &l.Type, &coverMemberID, &l.Status, &l.CreatedAt)
-		if err != nil {
-			return nil, err
+	result := make([]LeaveRecord, len(leaveRecords))
+	for i := range leaveRecords {
+		l := &leaveRecords[i]
+		coverMemberID := ""
+		if l.CoverMemberID.Valid {
+			coverMemberID = l.CoverMemberID.String
 		}
-
-		// Convert string dates to time.Time
-		startDate, err := time.Parse("2006-01-02", startDateStr)
-		if err != nil {
-			return nil, err
+		result[i] = LeaveRecord{
+			ID:            l.ID,
+			MemberID:      l.MemberID,
+			StartDate:     l.StartDate,
+			EndDate:       l.EndDate,
+			Type:          l.Type,
+			CoverMemberID: coverMemberID,
+			Status:        l.Status,
+			CreatedAt:     l.CreatedAt.Time,
 		}
-		endDate, err := time.Parse("2006-01-02", endDateStr)
-		if err != nil {
-			return nil, err
-		}
-		l.StartDate = startDate
-		l.EndDate = endDate
-
-		if coverMemberID.Valid {
-			l.CoverMemberID = coverMemberID.String
-		}
-		leaves = append(leaves, l)
 	}
-	return leaves, nil
+	return result, nil
 }

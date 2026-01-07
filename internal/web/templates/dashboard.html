@@ -45,7 +45,7 @@
         {{if .WeekAssignments}}
             {{range .WeekAssignments}}
                 <div>
-                    <strong>{{.Date.Format "Jan 2 (Mon)"}}:</strong>
+                    <strong>{{.Date}}:</strong>
                     {{.MemberName}}
                     {{if .IsCover}}<span class="cover">COVER</span>{{end}}
                 </div>

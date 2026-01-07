@@ -4,13 +4,17 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strconv"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/inful/madhatter/internal/database/sqlc"
 	_ "modernc.org/sqlite"
 )
 
 type DB struct {
-	*sql.DB
+	queries *sqlc.Queries
+	db      *sql.DB
 }
 
 func New(path string) (*DB, error) {
@@ -73,103 +77,139 @@ func New(path string) (*DB, error) {
 		return nil, err
 	}
 
-	return &DB{db}, nil
+	queries := sqlc.New(db)
+	return &DB{queries: queries, db: db}, nil
+}
+
+func (db *DB) Close() error {
+	return db.db.Close()
+}
+
+func (db *DB) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	return db.db.ExecContext(ctx, query, args...)
 }
 
 func (db *DB) AddTeamMember(name, email string) (string, error) {
 	if name == "" || email == "" {
 		return "", errors.New("name and email cannot be empty")
 	}
-	ctx := context.Background()
+
 	id := uuid.New().String()
-	query := `INSERT INTO team_members (id, name, email) VALUES (?, ?, ?)`
-	_, err := db.ExecContext(ctx, query, id, name, email)
+	params := sqlc.AddTeamMemberParams{
+		ID:    id,
+		Name:  name,
+		Email: email,
+	}
+
+	_, err := db.queries.AddTeamMember(context.Background(), params)
 	return id, err
 }
 
 func (db *DB) GetActiveTeamMembers() ([]TeamMember, error) {
-	ctx := context.Background()
-	rows, err := db.QueryContext(ctx, `SELECT id, name, email, is_active, created_at FROM team_members WHERE is_active = 1 ORDER BY name`)
+	members, err := db.queries.GetActiveTeamMembers(context.Background())
 	if err != nil {
 		return nil, err
 	}
-	defer func() {
-		_ = rows.Close()
-	}()
 
-	var members []TeamMember
-	for rows.Next() {
-		var m TeamMember
-		if err := rows.Scan(&m.ID, &m.Name, &m.Email, &m.IsActive, &m.CreatedAt); err != nil {
-			return nil, err
+	result := make([]TeamMember, len(members))
+	for i, m := range members {
+		result[i] = TeamMember{
+			ID:        m.ID,
+			Name:      m.Name,
+			Email:     m.Email,
+			IsActive:  m.IsActive.Valid && m.IsActive.Int64 == 1,
+			CreatedAt: m.CreatedAt.Time,
 		}
-		members = append(members, m)
 	}
-	return members, nil
+	return result, nil
 }
 
 func (db *DB) GetMemberByEmail(email string) (*TeamMember, error) {
-	ctx := context.Background()
-	row := db.QueryRowContext(ctx, `SELECT id, name, email, is_active, created_at FROM team_members WHERE email = ?`, email)
-
-	var m TeamMember
-	if err := row.Scan(&m.ID, &m.Name, &m.Email, &m.IsActive, &m.CreatedAt); err != nil {
+	member, err := db.queries.GetMemberByEmail(context.Background(), email)
+	if err != nil {
 		return nil, err
 	}
-	return &m, nil
+
+	return &TeamMember{
+		ID:        member.ID,
+		Name:      member.Name,
+		Email:     member.Email,
+		IsActive:  member.IsActive.Valid && member.IsActive.Int64 == 1,
+		CreatedAt: member.CreatedAt.Time,
+	}, nil
 }
 
-// CreateCalendarSubscription creates a new calendar subscription for a team member.
 func (db *DB) CreateCalendarSubscription(memberID string) (string, error) {
-	ctx := context.Background()
+	// Verify member exists
+	_, err := db.queries.GetMemberByID(context.Background(), memberID)
+	if err != nil {
+		return "", errors.New("member not found")
+	}
+
 	token := uuid.New().String()
 	id := uuid.New().String()
-	query := `INSERT INTO calendar_subscriptions (id, member_id, token) VALUES (?, ?, ?)`
-	_, err := db.ExecContext(ctx, query, id, memberID, token)
+
+	params := sqlc.CreateCalendarSubscriptionParams{
+		ID:       id,
+		MemberID: memberID,
+		Token:    token,
+	}
+
+	_, err = db.queries.CreateCalendarSubscription(context.Background(), params)
 	return token, err
 }
 
 func (db *DB) GetMemberByToken(token string) (*TeamMember, error) {
-	ctx := context.Background()
-	query := `SELECT tm.id, tm.name, tm.email, tm.is_active, tm.created_at
-              FROM calendar_subscriptions cs
-              JOIN team_members tm ON cs.member_id = tm.id
-              WHERE cs.token = ?`
-	row := db.QueryRowContext(ctx, query, token)
-
-	var m TeamMember
-	if err := row.Scan(&m.ID, &m.Name, &m.Email, &m.IsActive, &m.CreatedAt); err != nil {
-		return nil, err
-	}
-	return &m, nil
-}
-
-func (db *DB) GetUpcomingAssignments(memberID string, days int) ([]RotaAssignment, error) {
-	ctx := context.Background()
-	query := `SELECT id, date, member_id, is_cover, original_assignment_id
-              FROM rota_assignments
-              WHERE member_id = ? AND date >= date('now') AND date <= date('now', '+'||?||' days')
-              ORDER BY date`
-	rows, err := db.QueryContext(ctx, query, memberID, days)
+	member, err := db.queries.GetMemberByToken(context.Background(), token)
 	if err != nil {
 		return nil, err
 	}
-	defer func() {
-		_ = rows.Close()
-	}()
 
-	var assignments []RotaAssignment
-	for rows.Next() {
-		var a RotaAssignment
-		var originalAssignmentID sql.NullString
-		err := rows.Scan(&a.ID, &a.Date, &a.MemberID, &a.IsCover, &originalAssignmentID)
-		if err != nil {
-			return nil, err
-		}
-		if originalAssignmentID.Valid {
-			a.OriginalAssignmentID = &originalAssignmentID.String
-		}
-		assignments = append(assignments, a)
+	return &TeamMember{
+		ID:        member.ID,
+		Name:      member.Name,
+		Email:     member.Email,
+		IsActive:  member.IsActive.Valid && member.IsActive.Int64 == 1,
+		CreatedAt: member.CreatedAt.Time,
+	}, nil
+}
+
+func (db *DB) GetUpcomingAssignments(memberID string, days int) ([]RotaAssignment, error) {
+	params := sqlc.GetUpcomingAssignmentsParams{
+		MemberID: memberID,
+		Column2:  sql.NullString{String: strconv.Itoa(days), Valid: true},
 	}
-	return assignments, nil
+
+	assignments, err := db.queries.GetUpcomingAssignments(context.Background(), params)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]RotaAssignment, len(assignments))
+	for i, a := range assignments {
+		result[i] = RotaAssignment{
+			ID:                   a.ID,
+			Date:                 a.Date.Format("2006-01-02"),
+			MemberID:             a.MemberID,
+			IsCover:              a.IsCover.Valid && a.IsCover.Int64 == 1,
+			OriginalAssignmentID: getNullString(a.OriginalAssignmentID),
+			CreatedAt:            time.Now(),
+		}
+	}
+	return result, nil
+}
+
+// Helper functions.
+func getNullString(nullStr sql.NullString) *string {
+	if nullStr.Valid {
+		return &nullStr.String
+	}
+	return nil
+}
+
+func boolToInt(b bool) int64 {
+	if b {
+		return 1
+	}
+	return 0
 }

@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/inful/madhatter/internal/database/sqlc"
 )
 
 func (db *DB) CreateRotaAssignment(date, memberID string, isCover bool, originalAssignmentID *string) (string, error) {
@@ -13,58 +15,57 @@ func (db *DB) CreateRotaAssignment(date, memberID string, isCover bool, original
 		return "", errors.New("date and member_id are required")
 	}
 
-	ctx := context.Background()
-
 	// Verify member exists
-	var exists bool
-	err := db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM team_members WHERE id = ?)", memberID).Scan(&exists)
-	if err != nil || !exists {
+	_, err := db.queries.GetMemberByID(context.Background(), memberID)
+	if err != nil {
 		return "", errors.New("member not found")
 	}
 
 	id := uuid.New().String()
-	isCoverInt := 0
-	if isCover {
-		isCoverInt = 1
+	dateTime, err := time.Parse("2006-01-02", date)
+	if err != nil {
+		return "", err
 	}
 
-	var origIDNull sql.NullString
+	params := sqlc.CreateRotaAssignmentParams{
+		ID:       id,
+		Date:     dateTime,
+		MemberID: memberID,
+		IsCover:  sql.NullInt64{Int64: boolToInt(isCover), Valid: true},
+	}
+
 	if originalAssignmentID != nil {
-		origIDNull = sql.NullString{String: *originalAssignmentID, Valid: true}
+		params.OriginalAssignmentID = sql.NullString{String: *originalAssignmentID, Valid: true}
 	}
 
-	query := `INSERT INTO rota_assignments (id, date, member_id, is_cover, original_assignment_id)
-	             VALUES (?, ?, ?, ?, ?)`
-	_, err = db.ExecContext(ctx, query, id, date, memberID, isCoverInt, origIDNull)
+	_, err = db.queries.CreateRotaAssignment(context.Background(), params)
 	return id, err
 }
 
 func (db *DB) GetAssignmentsByDate(date string) ([]RotaAssignment, error) {
-	ctx := context.Background()
-	query := `SELECT ra.id, ra.date, ra.member_id, ra.is_cover, ra.original_assignment_id, tm.name, tm.email
-	             FROM rota_assignments ra
-	             JOIN team_members tm ON ra.member_id = tm.id
-	             WHERE ra.date = ?`
-	rows, err := db.QueryContext(ctx, query, date)
+	dateTime, err := time.Parse("2006-01-02", date)
 	if err != nil {
 		return nil, err
 	}
-	defer func() {
-		_ = rows.Close()
-	}()
 
-	var assignments []RotaAssignment
-	for rows.Next() {
-		var a RotaAssignment
-		var originalAssignmentID sql.NullString
-		err := rows.Scan(&a.ID, &a.Date, &a.MemberID, &a.IsCover, &originalAssignmentID, &a.MemberName, &a.MemberEmail)
-		if err != nil {
-			return nil, err
-		}
-		if originalAssignmentID.Valid {
-			a.OriginalAssignmentID = &originalAssignmentID.String
-		}
-		assignments = append(assignments, a)
+	assignments, err := db.queries.GetAssignmentsByDate(context.Background(), dateTime)
+	if err != nil {
+		return nil, err
 	}
-	return assignments, nil
+
+	result := make([]RotaAssignment, len(assignments))
+	for i := range assignments {
+		a := &assignments[i]
+		result[i] = RotaAssignment{
+			ID:                   a.ID,
+			Date:                 a.Date.Format("2006-01-02"),
+			MemberID:             a.MemberID,
+			IsCover:              a.IsCover.Valid && a.IsCover.Int64 == 1,
+			OriginalAssignmentID: getNullString(a.OriginalAssignmentID),
+			CreatedAt:            time.Now(),
+			MemberName:           a.MemberName,
+			MemberEmail:          a.MemberEmail,
+		}
+	}
+	return result, nil
 }

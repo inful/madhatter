@@ -10,6 +10,7 @@ linters:
     - containedctx
     - contextcheck
     - copyloopvar
+    - cyclop
     - dogsled
     - dupl
     - dupword
@@ -58,6 +59,8 @@ linters:
     - unused
     - usestdlibvars
     - whitespace
+    - cyclop
+    - testifylint
   settings:
     tagalign:
       sort: true

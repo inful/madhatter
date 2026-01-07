@@ -70,11 +70,11 @@ func TestGetLeaveByDate_Range(t *testing.T) {
 	// Should NOT find leave outside range
 	leaves, err = db.GetLeaveByDate("2024-01-14")
 	require.NoError(t, err)
-	require.Len(t, leaves, 0)
+	require.Empty(t, leaves)
 
 	leaves, err = db.GetLeaveByDate("2024-01-18")
 	require.NoError(t, err)
-	require.Len(t, leaves, 0)
+	require.Empty(t, leaves)
 }
 
 func TestGetLeaveByDate_MultipleMembers(t *testing.T) {

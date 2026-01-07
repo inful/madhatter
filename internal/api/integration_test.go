@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -41,36 +42,22 @@ func TestTeamEndpoints(t *testing.T) {
 
 	// Test adding team member
 	t.Run("AddTeamMember", func(t *testing.T) {
-		body := `{"name":"Alice Johnson","email":"alice@example.com"}`
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/team", bytes.NewBufferString(body))
-		req.Header.Set("Content-Type", "application/json")
-		w := httptest.NewRecorder()
+		input := &AddTeamInput{}
+		input.Body.Name = "Alice Johnson"
+		input.Body.Email = "alice@example.com"
 
-		server.handleAddTeam(w, req)
-
-		assert.Equal(t, http.StatusOK, w.Code)
-
-		var resp AddTeamOutput
-		err := json.NewDecoder(w.Body).Decode(&resp)
+		resp, err := server.handleAddTeam(context.Background(), input)
 		require.NoError(t, err)
-		assert.NotEmpty(t, resp.ID)
-		assert.Equal(t, "Team member added successfully", resp.Message)
+		assert.NotEmpty(t, resp.Body.ID)
+		assert.Equal(t, "Team member added successfully", resp.Body.Message)
 	})
 
 	// Test listing team members
 	t.Run("ListTeamMembers", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/team", nil)
-		w := httptest.NewRecorder()
-
-		server.handleListTeam(w, req)
-
-		assert.Equal(t, http.StatusOK, w.Code)
-
-		var resp ListTeamOutput
-		err := json.NewDecoder(w.Body).Decode(&resp)
+		resp, err := server.handleListTeam(context.Background(), &struct{}{})
 		require.NoError(t, err)
-		assert.Len(t, resp.Members, 1)
-		assert.Equal(t, "Alice Johnson", resp.Members[0].Name)
+		assert.Len(t, resp.Body.Members, 1)
+		assert.Equal(t, "Alice Johnson", resp.Body.Members[0].Name)
 	})
 }
 
@@ -87,19 +74,13 @@ func TestScheduleEndpoints(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("GenerateSchedule", func(t *testing.T) {
-		body := `{"start_date":"2024-01-01","end_date":"2024-01-31"}`
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/schedule/generate", bytes.NewBufferString(body))
-		req.Header.Set("Content-Type", "application/json")
-		w := httptest.NewRecorder()
+		input := &GenerateScheduleInput{}
+		input.Body.StartDate = "2024-01-01"
+		input.Body.EndDate = "2024-01-31"
 
-		server.handleGenerateSchedule(w, req)
-
-		assert.Equal(t, http.StatusOK, w.Code)
-
-		var resp GenerateScheduleOutput
-		err := json.NewDecoder(w.Body).Decode(&resp)
+		resp, err := server.handleGenerateSchedule(context.Background(), input)
 		require.NoError(t, err)
-		assert.Equal(t, "Schedule generated successfully", resp.Message)
+		assert.Equal(t, "Schedule generated successfully", resp.Body.Message)
 
 		// Verify assignments were created
 		assignments, err := server.db.GetAssignmentsByDate("2024-01-01")
@@ -125,19 +106,15 @@ func TestLeaveEndpoints(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("ReportLeaveWithAutoCover", func(t *testing.T) {
-		body := `{"member_id":"` + aliceID + `","type":"sick","start_date":"2024-01-15","end_date":"2024-01-17"}`
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/leave", bytes.NewBufferString(body))
-		req.Header.Set("Content-Type", "application/json")
-		w := httptest.NewRecorder()
+		input := &ReportLeaveInput{}
+		input.Body.MemberID = aliceID
+		input.Body.Type = "sick"
+		input.Body.StartDate = "2024-01-15"
+		input.Body.EndDate = "2024-01-17"
 
-		server.handleReportLeave(w, req)
-
-		assert.Equal(t, http.StatusOK, w.Code)
-
-		var resp ReportLeaveOutput
-		err := json.NewDecoder(w.Body).Decode(&resp)
+		resp, err := server.handleReportLeave(context.Background(), input)
 		require.NoError(t, err)
-		assert.NotEmpty(t, resp.LeaveID)
+		assert.NotEmpty(t, resp.Body.LeaveID)
 
 		// Verify covers were assigned
 		// Jan 15 is a Monday, Alice was assigned, now should be covered
@@ -173,21 +150,14 @@ func TestCalendarEndpoints(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("SubscribeCalendar", func(t *testing.T) {
-		body := `{"member_id":"` + aliceID + `"}`
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/calendar/subscribe", bytes.NewBufferString(body))
-		req.Header.Set("Content-Type", "application/json")
-		w := httptest.NewRecorder()
+		input := &SubscribeCalendarInput{}
+		input.Body.MemberID = aliceID
 
-		server.handleSubscribeCalendar(w, req)
-
-		assert.Equal(t, http.StatusOK, w.Code)
-
-		var resp SubscribeCalendarOutput
-		err := json.NewDecoder(w.Body).Decode(&resp)
+		resp, err := server.handleSubscribeCalendar(context.Background(), input)
 		require.NoError(t, err)
-		assert.NotEmpty(t, resp.Token)
-		assert.Contains(t, resp.CalendarURL, "/api/v1/calendar/")
-		assert.Contains(t, resp.CalendarURL, "/ics")
+		assert.NotEmpty(t, resp.Body.Token)
+		assert.Contains(t, resp.Body.CalendarURL, "/api/v1/calendar/")
+		assert.Contains(t, resp.Body.CalendarURL, "/ics")
 	})
 
 	t.Run("GetICSFeed", func(t *testing.T) {
@@ -219,5 +189,49 @@ func TestCalendarEndpoints(t *testing.T) {
 		assert.Contains(t, body, "BEGIN:VCALENDAR")
 		assert.Contains(t, body, "BEGIN:VEVENT")
 		assert.Contains(t, body, "END:VCALENDAR")
+	})
+}
+
+// TestHUMAAPIIntegration tests the full HUMA API integration.
+func TestHUMAAPIIntegration(t *testing.T) {
+	server, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	// Create a test request to the HUMA API
+	router := server.router
+
+	t.Run("TeamAPI", func(t *testing.T) {
+		// Test POST /api/v1/team
+		body := `{"name":"Test User","email":"test@example.com"}`
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/team", bytes.NewBufferString(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		var resp map[string]any
+		err := json.NewDecoder(w.Body).Decode(&resp)
+		require.NoError(t, err)
+		assert.NotEmpty(t, resp["id"])
+		assert.Equal(t, "Team member added successfully", resp["message"])
+	})
+
+	t.Run("TeamAPIList", func(t *testing.T) {
+		// Test GET /api/v1/team
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/team", nil)
+		w := httptest.NewRecorder()
+
+		router.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		var resp map[string]any
+		err := json.NewDecoder(w.Body).Decode(&resp)
+		require.NoError(t, err)
+
+		members := resp["members"].([]any)
+		assert.Len(t, members, 1)
 	})
 }

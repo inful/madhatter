@@ -12,13 +12,15 @@
         .card-header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px 8px 0 0; }
         .card-header-title { color: white !important; }
         .result-box { background: #d4edda; border: 2px solid #28a745; border-radius: 8px; padding: 1.5rem; margin: 1rem 0; }
-        .url-box { background: #f8f9fa; padding: 1rem; border-radius: 6px; word-break: break-all; font-family: monospace; border: 1px solid #dee2e6; }
+        .url-box { background: #f8f9fa; padding: 1rem; border-radius: 6px; word-break: break-all; font-family: monospace; border: 1px solid #dee2e6; display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
         .back-btn { transition: transform 0.2s; }
         .back-btn:hover { transform: translateX(-2px); }
         .submit-btn { transition: transform 0.2s; }
         .submit-btn:hover { transform: translateY(-2px); }
         .step { background: #f8f9fa; padding: 1rem; border-radius: 6px; margin-bottom: 0.5rem; }
         .step-number { background: #667eea; color: white; width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: bold; margin-right: 0.5rem; }
+        .copy-btn { flex-shrink: 0; white-space: nowrap; }
+        .copy-notification { background: #28a745; color: white; padding: 0.5rem 1rem; border-radius: 4px; position: fixed; top: 20px; right: 20px; display: none; z-index: 1000; }
     </style>
 </head>
 <body>
@@ -47,7 +49,12 @@
                                 <i class="fas fa-check-circle"></i> Calendar Subscription Created
                             </h3>
                             <p class="has-text-weight-semibold mb-2">Calendar URL:</p>
-                            <div class="url-box">{{.CalendarURL}}</div>
+                            <div class="url-box" id="calendar-url-box">
+                                {{.CalendarURL}}
+                                <button class="button is-success is-small copy-btn" onclick="copyCalendarURL()">
+                                    <i class="fas fa-copy"></i> Copy
+                                </button>
+                            </div>
                             <p class="mt-3"><strong>Token:</strong> <code>{{.Token}}</code></p>
                             <p class="mt-3 is-size-6">Copy this URL and add it to your calendar app (Google Calendar, Outlook, Apple Calendar, etc.)</p>
                         </div>
@@ -129,5 +136,50 @@
             </div>
         </div>
     </section>
+
+    <!-- Copy Notification -->
+    <div id="copy-notification" class="copy-notification">
+        <i class="fas fa-check mr-2"></i> URL copied to clipboard!
+    </div>
+
+    <!-- JavaScript for Copy Functionality -->
+    <script>
+        function copyCalendarURL() {
+            const urlBox = document.getElementById('calendar-url-box');
+            // Get only the text nodes (excluding the button)
+            let urlText = '';
+            urlBox.childNodes.forEach(node => {
+                if (node.nodeType === Node.TEXT_NODE) {
+                    urlText += node.textContent;
+                }
+            });
+            urlText = urlText.trim();
+            
+            // Create a temporary textarea to copy the text
+            const textarea = document.createElement('textarea');
+            textarea.value = urlText;
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            document.body.appendChild(textarea);
+            textarea.select();
+            
+            try {
+                // Copy to clipboard
+                document.execCommand('copy');
+                
+                // Show notification
+                const notification = document.getElementById('copy-notification');
+                notification.style.display = 'block';
+                setTimeout(() => {
+                    notification.style.display = 'none';
+                }, 2000);
+            } catch (err) {
+                console.error('Failed to copy:', err);
+                alert('Failed to copy URL. Please copy it manually.');
+            } finally {
+                document.body.removeChild(textarea);
+            }
+        }
+    </script>
 </body>
 </html>

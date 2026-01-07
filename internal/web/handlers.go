@@ -16,6 +16,7 @@ const (
 	weekDaysOffset               = 4
 	schedulePrealloc             = 5
 	defaultCalendarLookaheadDays = 90
+	weekDaysInWeek               = 7
 )
 
 type Handler struct {
@@ -135,25 +136,79 @@ func (h *Handler) loadDashboardData(data map[string]any) {
 		data["TodayAssignment"] = assignments[0]
 	}
 
-	// Get this week's assignments
-	data["WeekAssignments"] = h.getWeekAssignments()
+	// Get current and next week assignments
+	weeksData, err := h.getFullWeeks()
+	if err == nil {
+		// Separate into current week and next week
+		now := time.Now()
+		currentWeekStart := now.AddDate(0, 0, -int(now.Weekday())+1)
+		currentWeekEnd := currentWeekStart.AddDate(0, 0, weekDaysOffset)
+		nextWeekStart := currentWeekStart.AddDate(0, 0, weekDaysInWeek)
+		nextWeekEnd := nextWeekStart.AddDate(0, 0, weekDaysOffset)
+
+		var currentWeek []database.RotaAssignment
+		var nextWeek []database.RotaAssignment
+
+		// Build current week (Monday-Friday) - always show all days
+		for d := currentWeekStart; d.Before(currentWeekEnd.AddDate(0, 0, 1)); d = d.AddDate(0, 0, 1) {
+			dateStr := d.Format("2006-01-02")
+			if assignments, ok := weeksData[dateStr]; ok && len(assignments) > 0 {
+				currentWeek = append(currentWeek, assignments[0])
+			} else {
+				// Add empty assignment for days without assignments
+				currentWeek = append(currentWeek, database.RotaAssignment{
+					Date:       dateStr,
+					MemberName: "Unassigned",
+				})
+			}
+		}
+
+		// Build next week (Monday-Friday) - always show all days
+		for d := nextWeekStart; d.Before(nextWeekEnd.AddDate(0, 0, 1)); d = d.AddDate(0, 0, 1) {
+			dateStr := d.Format("2006-01-02")
+			if assignments, ok := weeksData[dateStr]; ok && len(assignments) > 0 {
+				nextWeek = append(nextWeek, assignments[0])
+			} else {
+				// Add empty assignment for days without assignments
+				nextWeek = append(nextWeek, database.RotaAssignment{
+					Date:       dateStr,
+					MemberName: "Unassigned",
+				})
+			}
+		}
+
+		data["CurrentWeek"] = currentWeek
+		data["NextWeek"] = nextWeek
+	}
 }
 
-// getWeekAssignments retrieves assignments for the current week.
-func (h *Handler) getWeekAssignments() []database.RotaAssignment {
+// getFullWeeks retrieves assignments for current and next week.
+func (h *Handler) getFullWeeks() (map[string][]database.RotaAssignment, error) {
 	now := time.Now()
-	weekStart := now.AddDate(0, 0, -int(now.Weekday())+1) // Monday
-	weekEnd := weekStart.AddDate(0, 0, weekDaysOffset)    // Friday
 
-	var weekAssignments []database.RotaAssignment
-	for d := weekStart; d.Before(weekEnd.AddDate(0, 0, 1)); d = d.AddDate(0, 0, 1) {
-		dateStr := d.Format("2006-01-02")
-		dayAssignments, err := h.db.GetAssignmentsByDate(dateStr)
-		if err == nil && len(dayAssignments) > 0 {
-			weekAssignments = append(weekAssignments, dayAssignments[0])
-		}
+	// Current week (Monday to Friday)
+	currentWeekStart := now.AddDate(0, 0, -int(now.Weekday())+1)
+
+	// Next week (Monday to Friday)
+	nextWeekStart := currentWeekStart.AddDate(0, 0, weekDaysInWeek)
+	nextWeekEnd := nextWeekStart.AddDate(0, 0, weekDaysOffset)
+
+	// Get all assignments for both weeks
+	startDate := currentWeekStart.Format("2006-01-02")
+	endDate := nextWeekEnd.Format("2006-01-02")
+
+	assignments, err := h.db.GetAssignmentsByDateRange(startDate, endDate)
+	if err != nil {
+		return nil, err
 	}
-	return weekAssignments
+
+	// Build map by date
+	result := make(map[string][]database.RotaAssignment)
+	for _, a := range assignments {
+		result[a.Date] = append(result[a.Date], a)
+	}
+
+	return result, nil
 }
 
 func (h *Handler) handleTeam(w http.ResponseWriter, r *http.Request) {
@@ -237,24 +292,72 @@ func (h *Handler) handleLeaveReport(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleScheduleCurrent(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
-	weekStart := now.AddDate(0, 0, -int(now.Weekday())+1)
 
-	// Pre-allocate schedule slice
-	schedule := make([]map[string]any, 0, schedulePrealloc)
-	for i := range weekDaysCount {
-		d := weekStart.AddDate(0, 0, i)
+	// Get current week (Monday-Friday)
+	currentWeekStart := now.AddDate(0, 0, -int(now.Weekday())+1)
+	currentWeekEnd := currentWeekStart.AddDate(0, 0, weekDaysOffset)
+
+	// Get next week (Monday-Friday)
+	nextWeekStart := currentWeekStart.AddDate(0, 0, weekDaysInWeek)
+	nextWeekEnd := nextWeekStart.AddDate(0, 0, weekDaysOffset)
+
+	// Get assignments for both weeks
+	startDate := currentWeekStart.Format("2006-01-02")
+	endDate := nextWeekEnd.Format("2006-01-02")
+
+	assignments, err := h.db.GetAssignmentsByDateRange(startDate, endDate)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Build a map for quick lookup
+	assignmentMap := make(map[string][]database.RotaAssignment)
+	for _, a := range assignments {
+		assignmentMap[a.Date] = append(assignmentMap[a.Date], a)
+	}
+
+	// Build calendar view - show all weekdays for both weeks
+	calendar := make([]map[string]any, 0)
+
+	// Current week
+	for d := currentWeekStart; d.Before(currentWeekEnd.AddDate(0, 0, 1)); d = d.AddDate(0, 0, 1) {
 		dateStr := d.Format("2006-01-02")
-		assignments, _ := h.db.GetAssignmentsByDate(dateStr)
+		dayAssignments := assignmentMap[dateStr]
+		isToday := d.Format("2006-01-02") == now.Format("2006-01-02")
 
 		day := map[string]any{
 			"Date":        d.Format("Jan 2 (Mon)"),
-			"Assignments": assignments,
+			"DateISO":     dateStr,
+			"Assignments": dayAssignments,
+			"IsToday":     isToday,
+			"IsWeekend":   d.Weekday() == 0 || d.Weekday() == 6,
+			"WeekLabel":   "Current Week",
 		}
-		schedule = append(schedule, day)
+		calendar = append(calendar, day)
+	}
+
+	// Next week
+	for d := nextWeekStart; d.Before(nextWeekEnd.AddDate(0, 0, 1)); d = d.AddDate(0, 0, 1) {
+		dateStr := d.Format("2006-01-02")
+		dayAssignments := assignmentMap[dateStr]
+		isToday := d.Format("2006-01-02") == now.Format("2006-01-02")
+
+		day := map[string]any{
+			"Date":        d.Format("Jan 2 (Mon)"),
+			"DateISO":     dateStr,
+			"Assignments": dayAssignments,
+			"IsToday":     isToday,
+			"IsWeekend":   d.Weekday() == 0 || d.Weekday() == 6,
+			"WeekLabel":   "Next Week",
+		}
+		calendar = append(calendar, day)
 	}
 
 	if err := h.tmpl.ExecuteTemplate(w, "schedule_current.html", map[string]any{
-		"Schedule": schedule,
+		"Calendar":  calendar,
+		"StartDate": currentWeekStart.Format("January 2, 2006"),
+		"EndDate":   nextWeekEnd.Format("January 2, 2006"),
 	}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}

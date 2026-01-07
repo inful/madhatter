@@ -7,18 +7,158 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }
-        .hero { background: rgba(255, 255, 255, 0.95); border-radius: 12px; margin: 2rem auto; max-width: 900px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+        .hero { background: rgba(255, 255, 255, 0.95); border-radius: 12px; margin: 2rem auto; max-width: 1200px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
         .card { border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin-bottom: 1.5rem; border: none; }
         .card-header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px 8px 0 0; }
         .card-header-title { color: white !important; }
-        .day-card { border-left: 4px solid #667eea; transition: transform 0.2s; }
-        .day-card:hover { transform: translateX(4px); }
-        .cover-badge { background: #ffe08a; color: #664d03; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.85rem; font-weight: bold; }
-        .leave-badge { background: #fecaca; color: #7f1d1d; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.85rem; font-weight: bold; }
         .back-btn { transition: transform 0.2s; }
         .back-btn:hover { transform: translateX(-2px); }
-        .assignment-item { padding: 0.75rem; background: #f8f9fa; margin-bottom: 0.5rem; border-radius: 4px; }
-        .empty-day { padding: 1rem; text-align: center; background: #f8f9fa; border-radius: 4px; color: #7a7a7a; }
+        
+        /* Calendar Grid */
+        .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+        
+        .calendar-day {
+            border: 2px solid #e1e8f0;
+            border-radius: 8px;
+            padding: 1rem;
+            background: white;
+            transition: all 0.2s;
+            position: relative;
+        }
+        
+        .calendar-day:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        
+        .calendar-day.today {
+            border-color: #48c774;
+            background: linear-gradient(135deg, #e8f8ee 0%, #f0fff4 100%);
+            box-shadow: 0 4px 16px rgba(72, 199, 116, 0.3);
+        }
+        
+        .calendar-day.today .date-header {
+            color: #2d8c4f;
+            font-weight: bold;
+        }
+        
+        .calendar-day.weekend {
+            background: #f8f9fa;
+            opacity: 0.7;
+        }
+        
+        .date-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid #e1e8f0;
+        }
+        
+        .date-label {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #363636;
+        }
+        
+        .day-name {
+            font-size: 0.75rem;
+            color: #7a7a7a;
+            text-transform: uppercase;
+        }
+        
+        .today-badge {
+            background: #48c774;
+            color: white;
+            padding: 0.15rem 0.4rem;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: bold;
+        }
+        
+        .assignments {
+            min-height: 60px;
+        }
+        
+        .assignment-card {
+            background: #f8f9fa;
+            border-left: 3px solid #667eea;
+            padding: 0.5rem;
+            margin-bottom: 0.4rem;
+            border-radius: 4px;
+            font-size: 0.85rem;
+        }
+        
+        .assignment-card.cover {
+            border-left-color: #ffcc00;
+            background: #fff9e6;
+        }
+        
+        .assignment-card.leave {
+            border-left-color: #ff6b6b;
+            background: #ffe6e6;
+        }
+        
+        .assignment-name {
+            font-weight: 600;
+            color: #363636;
+        }
+        
+        .assignment-email {
+            font-size: 0.75rem;
+            color: #7a7a7a;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 0.15rem 0.4rem;
+            border-radius: 3px;
+            font-size: 0.7rem;
+            font-weight: bold;
+            margin-left: 0.3rem;
+        }
+        
+        .badge-cover {
+            background: #ffe08a;
+            color: #664d03;
+        }
+        
+        .badge-leave {
+            background: #fecaca;
+            color: #7f1d1d;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 1rem;
+            color: #7a7a7a;
+            font-size: 0.85rem;
+            font-style: italic;
+        }
+        
+        .weekend-indicator {
+            color: #7a7a7a;
+            font-size: 0.75rem;
+            font-style: italic;
+        }
+        
+        .period-info {
+            background: #f8f9fa;
+            padding: 0.75rem;
+            border-radius: 6px;
+            margin-bottom: 1rem;
+            border-left: 4px solid #667eea;
+        }
+        
+        .period-info strong {
+            color: #667eea;
+        }
     </style>
 </head>
 <body>
@@ -30,7 +170,7 @@
                         <div class="level-left">
                             <div class="level-item">
                                 <h1 class="title is-2 has-text-primary">
-                                    <i class="fas fa-calendar-alt"></i> Current Week Schedule
+                                    <i class="fas fa-calendar-alt"></i> Schedule Calendar
                                 </h1>
                             </div>
                         </div>
@@ -41,68 +181,144 @@
                         </div>
                     </div>
 
-                    <div class="card">
-                        <header class="card-header">
-                            <p class="card-header-title">
-                                <i class="fas fa-calendar-week mr-2"></i> Weekly Schedule
-                            </p>
-                        </header>
-                        <div class="card-content">
-                            {{if .Schedule}}
-                                <div class="content">
-                                    {{range .Schedule}}
-                                        <div class="box day-card">
-                                            <div class="columns is-mobile is-vcentered mb-0">
-                                                <div class="column">
-                                                    <h4 class="title is-5 has-text-primary mb-2">
-                                                        <i class="fas fa-calendar-day mr-2"></i>{{.Date}}
-                                                    </h4>
-                                                </div>
-                                            </div>
-                                            
-                                            {{if .Assignments}}
-                                                <div class="mt-2">
-                                                    {{range .Assignments}}
-                                                        <div class="assignment-item">
-                                                            <div class="columns is-mobile is-vcentered">
-                                                                <div class="column">
-                                                                    <strong>{{.MemberName}}</strong><br>
-                                                                    <small>{{.MemberEmail}}</small>
-                                                                </div>
-                                                                <div class="column is-narrow">
-                                                                    {{if .IsCover}}
-                                                                        <span class="cover-badge">
-                                                                            <i class="fas fa-shield-alt"></i> COVER
-                                                                        </span>
-                                                                    {{end}}
-                                                                </div>
-                                                            </div>
-                                                        </div>
+                    {{if .Calendar}}
+                        <div class="period-info">
+                            <i class="fas fa-calendar-week mr-2"></i>
+                            <strong>Period:</strong> {{.StartDate}} to {{.EndDate}}
+                            <span class="ml-3"><i class="fas fa-info-circle"></i> Showing current and next week (Monday-Friday)</span>
+                        </div>
+
+                        <!-- Current Week -->
+                        <div class="card">
+                            <header class="card-header">
+                                <p class="card-header-title">
+                                    <i class="fas fa-calendar-week mr-2"></i> Current Week
+                                </p>
+                            </header>
+                            <div class="card-content">
+                                <div class="calendar-grid">
+                                    {{range .Calendar}}
+                                        {{if eq .WeekLabel "Current Week"}}
+                                            <div class="calendar-day {{if .IsToday}}today{{end}} {{if .IsWeekend}}weekend{{end}}">
+                                                <div class="date-header">
+                                                    <div>
+                                                        <div class="date-label">{{.Date}}</div>
+                                                        {{if .IsWeekend}}
+                                                            <div class="weekend-indicator">Weekend</div>
+                                                        {{end}}
+                                                    </div>
+                                                    {{if .IsToday}}
+                                                        <span class="today-badge">TODAY</span>
                                                     {{end}}
                                                 </div>
-                                            {{else}}
-                                                <div class="empty-day">
-                                                    <i class="fas fa-calendar-times mr-2"></i> No assignment
+                                                 
+                                                <div class="assignments">
+                                                    {{if .Assignments}}
+                                                        {{range .Assignments}}
+                                                            <div class="assignment-card {{if .IsCover}}cover{{end}}">
+                                                                <div class="assignment-name">
+                                                                    {{.MemberName}}
+                                                                    {{if .IsCover}}
+                                                                        <span class="badge badge-cover">COVER</span>
+                                                                    {{end}}
+                                                                </div>
+                                                                <div class="assignment-email">{{.MemberEmail}}</div>
+                                                            </div>
+                                                        {{end}}
+                                                    {{else}}
+                                                        {{if .IsWeekend}}
+                                                            <div class="empty-state">
+                                                                <i class="fas fa-bed"></i> Weekend
+                                                            </div>
+                                                        {{else}}
+                                                            <div class="empty-state">
+                                                                <i class="fas fa-calendar-times"></i> No assignment
+                                                            </div>
+                                                        {{end}}
+                                                    {{end}}
                                                 </div>
-                                            {{end}}
-                                        </div>
+                                            </div>
+                                        {{end}}
                                     {{end}}
                                 </div>
-                            {{else}}
-                                <div class="empty-state" style="text-align: center; padding: 2rem;">
-                                    <p class="has-text-grey mb-3">No schedule available</p>
-                                    <a href="/schedule/generate" class="button is-success">
-                                        <i class="fas fa-calendar-plus mr-2"></i> Generate Schedule
-                                    </a>
-                                </div>
-                            {{end}}
+                            </div>
                         </div>
-                    </div>
 
-                    <div class="notification is-info is-light">
-                        <i class="fas fa-info-circle mr-2"></i>
-                        <strong>Schedule Info:</strong> The system automatically maintains a 14-day rolling schedule. Weekends are automatically skipped.
-                    </div>
+                        <!-- Next Week -->
+                        <div class="card">
+                            <header class="card-header">
+                                <p class="card-header-title">
+                                    <i class="fas fa-calendar-alt mr-2"></i> Next Week
+                                </p>
+                            </header>
+                            <div class="card-content">
+                                <div class="calendar-grid">
+                                    {{range .Calendar}}
+                                        {{if eq .WeekLabel "Next Week"}}
+                                            <div class="calendar-day {{if .IsToday}}today{{end}} {{if .IsWeekend}}weekend{{end}}">
+                                                <div class="date-header">
+                                                    <div>
+                                                        <div class="date-label">{{.Date}}</div>
+                                                        {{if .IsWeekend}}
+                                                            <div class="weekend-indicator">Weekend</div>
+                                                        {{end}}
+                                                    </div>
+                                                    {{if .IsToday}}
+                                                        <span class="today-badge">TODAY</span>
+                                                    {{end}}
+                                                </div>
+                                                 
+                                                <div class="assignments">
+                                                    {{if .Assignments}}
+                                                        {{range .Assignments}}
+                                                            <div class="assignment-card {{if .IsCover}}cover{{end}}">
+                                                                <div class="assignment-name">
+                                                                    {{.MemberName}}
+                                                                    {{if .IsCover}}
+                                                                        <span class="badge badge-cover">COVER</span>
+                                                                    {{end}}
+                                                                </div>
+                                                                <div class="assignment-email">{{.MemberEmail}}</div>
+                                                            </div>
+                                                        {{end}}
+                                                    {{else}}
+                                                        {{if .IsWeekend}}
+                                                            <div class="empty-state">
+                                                                <i class="fas fa-bed"></i> Weekend
+                                                            </div>
+                                                        {{else}}
+                                                            <div class="empty-state">
+                                                                <i class="fas fa-calendar-times"></i> No assignment
+                                                            </div>
+                                                        {{end}}
+                                                    {{end}}
+                                                </div>
+                                            </div>
+                                        {{end}}
+                                    {{end}}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="notification is-info is-light">
+                            <i class="fas fa-info-circle mr-2"></i>
+                            <strong>Calendar Features:</strong>
+                            <ul class="mt-2">
+                                <li><i class="fas fa-star has-text-success"></i> <strong>Green border</strong> = Today's date</li>
+                                <li><i class="fas fa-shield-alt has-text-warning"></i> <strong>Yellow badge</strong> = Cover assignment</li>
+                                <li><i class="fas fa-bed has-text-grey"></i> <strong>Grayed days</strong> = Weekend (no assignments)</li>
+                            </ul>
+                        </div>
+                    {{else}}
+                        <div class="card">
+                            <div class="card-content" style="text-align: center; padding: 3rem;">
+                                <p class="has-text-grey mb-3">No schedule available</p>
+                                <a href="/schedule/generate" class="button is-success">
+                                    <i class="fas fa-calendar-plus mr-2"></i> Generate Schedule
+                                </a>
+                            </div>
+                        </div>
+                    {{end}}
                 </div>
             </div>
         </div>

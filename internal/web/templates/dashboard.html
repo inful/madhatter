@@ -17,6 +17,7 @@
         .action-btn:hover { transform: translateY(-2px); }
         .empty-state { padding: 2rem; text-align: center; background: #f8f9fa; border-radius: 8px; }
         .assignment-item { padding: 0.75rem; border-left: 4px solid #667eea; background: #f8f9fa; margin-bottom: 0.5rem; border-radius: 4px; }
+        .assignment-item.unassigned { border-left-color: #ff3860; background: #fff5f7; opacity: 0.7; }
         .today-highlight { border-left-color: #48c774; background: #e8f8ee; }
     </style>
 </head>
@@ -105,11 +106,11 @@
                         </div>
                     </div>
 
-                    <!-- This Week -->
+                    <!-- Current Week -->
                     <div class="card">
                         <header class="card-header">
                             <p class="card-header-title">
-                                <i class="fas fa-calendar-week mr-2"></i> This Week
+                                <i class="fas fa-calendar-week mr-2"></i> Current Week
                             </p>
                         </header>
                         <div class="card-content">
@@ -118,10 +119,10 @@
                                     <p>Add team members to see schedule</p>
                                 </div>
                             {{else}}
-                                {{if .WeekAssignments}}
+                                {{if .CurrentWeek}}
                                     <div class="content">
-                                        {{range .WeekAssignments}}
-                                            <div class="assignment-item">
+                                        {{range .CurrentWeek}}
+                                            <div class="assignment-item {{if eq .MemberName "Unassigned"}}unassigned{{end}}">
                                                 <div class="columns is-mobile is-vcentered">
                                                     <div class="column">
                                                         <strong>{{.Date}}</strong> - {{.MemberName}}
@@ -131,6 +132,10 @@
                                                             <span class="cover-badge">
                                                                 <i class="fas fa-shield-alt"></i> COVER
                                                             </span>
+                                                        {{else if eq .MemberName "Unassigned"}}
+                                                            <span class="leave-badge">
+                                                                <i class="fas fa-question"></i> UNASSIGNED
+                                                            </span>
                                                         {{end}}
                                                     </div>
                                                 </div>
@@ -139,7 +144,55 @@
                                     </div>
                                 {{else}}
                                     <div class="empty-state">
-                                        <p class="mb-3">No schedule for this week</p>
+                                        <p class="mb-3">No schedule for current week</p>
+                                        <a href="/schedule/generate" class="button is-success">
+                                            <i class="fas fa-calendar-plus mr-2"></i> Generate Schedule
+                                        </a>
+                                    </div>
+                                {{end}}
+                            {{end}}
+                        </div>
+                    </div>
+
+                    <!-- Next Week -->
+                    <div class="card">
+                        <header class="card-header">
+                            <p class="card-header-title">
+                                <i class="fas fa-calendar-alt mr-2"></i> Next Week
+                            </p>
+                        </header>
+                        <div class="card-content">
+                            {{if .NoTeamMessage}}
+                                <div class="empty-state">
+                                    <p>Add team members to see schedule</p>
+                                </div>
+                            {{else}}
+                                {{if .NextWeek}}
+                                    <div class="content">
+                                        {{range .NextWeek}}
+                                            <div class="assignment-item {{if eq .MemberName "Unassigned"}}unassigned{{end}}">
+                                                <div class="columns is-mobile is-vcentered">
+                                                    <div class="column">
+                                                        <strong>{{.Date}}</strong> - {{.MemberName}}
+                                                    </div>
+                                                    <div class="column is-narrow">
+                                                        {{if .IsCover}}
+                                                            <span class="cover-badge">
+                                                                <i class="fas fa-shield-alt"></i> COVER
+                                                            </span>
+                                                        {{else if eq .MemberName "Unassigned"}}
+                                                            <span class="leave-badge">
+                                                                <i class="fas fa-question"></i> UNASSIGNED
+                                                            </span>
+                                                        {{end}}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        {{end}}
+                                    </div>
+                                {{else}}
+                                    <div class="empty-state">
+                                        <p class="mb-3">No schedule for next week</p>
                                         <a href="/schedule/generate" class="button is-success">
                                             <i class="fas fa-calendar-plus mr-2"></i> Generate Schedule
                                         </a>

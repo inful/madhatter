@@ -2,35 +2,120 @@
 <html>
 <head>
     <title>Report Leave</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        body { font-family: system-ui; max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
-        form { display: grid; gap: 1rem; margin: 1rem 0; }
-        input, select { padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; }
-        .btn { background: #007bff; color: white; padding: 0.5rem 1rem; border: none; border-radius: 4px; cursor: pointer; }
+        body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }
+        .hero { background: rgba(255, 255, 255, 0.95); border-radius: 12px; margin: 2rem auto; max-width: 900px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+        .card { border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin-bottom: 1.5rem; border: none; }
+        .card-header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px 8px 0 0; }
+        .card-header-title { color: white !important; }
+        .back-btn { transition: transform 0.2s; }
+        .back-btn:hover { transform: translateX(-2px); }
+        .submit-btn { transition: transform 0.2s; }
+        .submit-btn:hover { transform: translateY(-2px); }
     </style>
 </head>
 <body>
-    <h1>Report Leave</h1>
-    <a href="/">← Back to Dashboard</a>
-    
-    <form method="POST" action="/leave/report">
-        <select name="member_id" required>
-            <option value="">Select Team Member</option>
-            {{range .Members}}
-                <option value="{{.ID}}">{{.Name}} - {{.Email}}</option>
-            {{end}}
-        </select>
-        
-        <select name="type" required>
-            <option value="sick">Sick Leave</option>
-            <option value="vacation">Vacation</option>
-            <option value="other">Other</option>
-        </select>
-        
-        <input type="date" name="start_date" placeholder="Start Date" required>
-        <input type="date" name="end_date" placeholder="End Date" required>
-        
-        <button type="submit" class="btn">Report Leave</button>
-    </form>
+    <section class="section">
+        <div class="hero">
+            <div class="hero-body">
+                <div class="container">
+                    <div class="level is-mobile">
+                        <div class="level-left">
+                            <div class="level-item">
+                                <h1 class="title is-2 has-text-primary">
+                                    <i class="fas fa-user-clock"></i> Report Leave
+                                </h1>
+                            </div>
+                        </div>
+                        <div class="level-right">
+                            <a href="/" class="button is-light back-btn">
+                                <i class="fas fa-arrow-left mr-2"></i> Dashboard
+                            </a>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <header class="card-header">
+                            <p class="card-header-title">
+                                <i class="fas fa-calendar-times mr-2"></i> Leave Details
+                            </p>
+                        </header>
+                        <div class="card-content">
+                            <form method="POST" action="/leave/report">
+                                <div class="field">
+                                    <label class="label">Team Member</label>
+                                    <div class="control has-icons-left">
+                                        <div class="select is-fullwidth">
+                                            <select name="member_id" required>
+                                                <option value="">Select Team Member</option>
+                                                {{range .Members}}
+                                                    <option value="{{.ID}}">{{.Name}} - {{.Email}}</option>
+                                                {{end}}
+                                            </select>
+                                        </div>
+                                        <span class="icon is-small is-left">
+                                            <i class="fas fa-user"></i>
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div class="field">
+                                    <label class="label">Leave Type</label>
+                                    <div class="control has-icons-left">
+                                        <div class="select is-fullwidth">
+                                            <select name="type" required>
+                                                <option value="sick">Sick Leave</option>
+                                                <option value="vacation">Vacation</option>
+                                                <option value="other">Other</option>
+                                            </select>
+                                        </div>
+                                        <span class="icon is-small is-left">
+                                            <i class="fas fa-clipboard-list"></i>
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div class="field">
+                                    <label class="label">Start Date</label>
+                                    <div class="control has-icons-left">
+                                        <input class="input" type="date" name="start_date" required>
+                                        <span class="icon is-small is-left">
+                                            <i class="fas fa-calendar-day"></i>
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div class="field">
+                                    <label class="label">End Date</label>
+                                    <div class="control has-icons-left">
+                                        <input class="input" type="date" name="end_date" required>
+                                        <span class="icon is-small is-left">
+                                            <i class="fas fa-calendar-day"></i>
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div class="field">
+                                    <div class="control">
+                                        <button type="submit" class="button is-primary is-fullwidth submit-btn">
+                                            <i class="fas fa-paper-plane mr-2"></i> Report Leave
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div class="notification is-info is-light mt-4">
+                                    <i class="fas fa-info-circle mr-2"></i>
+                                    <strong>How it works:</strong> When you report leave, the system automatically creates cover assignments to ensure your support days are covered.
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
 </body>
 </html>

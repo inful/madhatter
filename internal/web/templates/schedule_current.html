@@ -2,29 +2,110 @@
 <html>
 <head>
     <title>Current Schedule</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        body { font-family: system-ui; max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
-        .day { border: 1px solid #ddd; padding: 1rem; margin: 0.5rem 0; border-radius: 8px; }
-        .cover { background: #fff3cd; padding: 0.25rem; border-radius: 4px; }
-        .leave { background: #f8d7da; padding: 0.25rem; border-radius: 4px; }
+        body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }
+        .hero { background: rgba(255, 255, 255, 0.95); border-radius: 12px; margin: 2rem auto; max-width: 900px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+        .card { border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin-bottom: 1.5rem; border: none; }
+        .card-header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px 8px 0 0; }
+        .card-header-title { color: white !important; }
+        .day-card { border-left: 4px solid #667eea; transition: transform 0.2s; }
+        .day-card:hover { transform: translateX(4px); }
+        .cover-badge { background: #ffe08a; color: #664d03; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.85rem; font-weight: bold; }
+        .leave-badge { background: #fecaca; color: #7f1d1d; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.85rem; font-weight: bold; }
+        .back-btn { transition: transform 0.2s; }
+        .back-btn:hover { transform: translateX(-2px); }
+        .assignment-item { padding: 0.75rem; background: #f8f9fa; margin-bottom: 0.5rem; border-radius: 4px; }
+        .empty-day { padding: 1rem; text-align: center; background: #f8f9fa; border-radius: 4px; color: #7a7a7a; }
     </style>
 </head>
 <body>
-    <h1>Current Week Schedule</h1>
-    <a href="/">← Back to Dashboard</a>
-    
-    {{range .Schedule}}
-        <div class="day">
-            <h3>{{.Date}}</h3>
-            {{range .Assignments}}
-                <div>
-                    <strong>{{.MemberName}}</strong> - {{.MemberEmail}}
-                    {{if .IsCover}}<span class="cover">COVER</span>{{end}}
+    <section class="section">
+        <div class="hero">
+            <div class="hero-body">
+                <div class="container">
+                    <div class="level is-mobile">
+                        <div class="level-left">
+                            <div class="level-item">
+                                <h1 class="title is-2 has-text-primary">
+                                    <i class="fas fa-calendar-alt"></i> Current Week Schedule
+                                </h1>
+                            </div>
+                        </div>
+                        <div class="level-right">
+                            <a href="/" class="button is-light back-btn">
+                                <i class="fas fa-arrow-left mr-2"></i> Dashboard
+                            </a>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <header class="card-header">
+                            <p class="card-header-title">
+                                <i class="fas fa-calendar-week mr-2"></i> Weekly Schedule
+                            </p>
+                        </header>
+                        <div class="card-content">
+                            {{if .Schedule}}
+                                <div class="content">
+                                    {{range .Schedule}}
+                                        <div class="box day-card">
+                                            <div class="columns is-mobile is-vcentered mb-0">
+                                                <div class="column">
+                                                    <h4 class="title is-5 has-text-primary mb-2">
+                                                        <i class="fas fa-calendar-day mr-2"></i>{{.Date}}
+                                                    </h4>
+                                                </div>
+                                            </div>
+                                            
+                                            {{if .Assignments}}
+                                                <div class="mt-2">
+                                                    {{range .Assignments}}
+                                                        <div class="assignment-item">
+                                                            <div class="columns is-mobile is-vcentered">
+                                                                <div class="column">
+                                                                    <strong>{{.MemberName}}</strong><br>
+                                                                    <small>{{.MemberEmail}}</small>
+                                                                </div>
+                                                                <div class="column is-narrow">
+                                                                    {{if .IsCover}}
+                                                                        <span class="cover-badge">
+                                                                            <i class="fas fa-shield-alt"></i> COVER
+                                                                        </span>
+                                                                    {{end}}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    {{end}}
+                                                </div>
+                                            {{else}}
+                                                <div class="empty-day">
+                                                    <i class="fas fa-calendar-times mr-2"></i> No assignment
+                                                </div>
+                                            {{end}}
+                                        </div>
+                                    {{end}}
+                                </div>
+                            {{else}}
+                                <div class="empty-state" style="text-align: center; padding: 2rem;">
+                                    <p class="has-text-grey mb-3">No schedule available</p>
+                                    <a href="/schedule/generate" class="button is-success">
+                                        <i class="fas fa-calendar-plus mr-2"></i> Generate Schedule
+                                    </a>
+                                </div>
+                            {{end}}
+                        </div>
+                    </div>
+
+                    <div class="notification is-info is-light">
+                        <i class="fas fa-info-circle mr-2"></i>
+                        <strong>Schedule Info:</strong> The system automatically maintains a 14-day rolling schedule. Weekends are automatically skipped.
+                    </div>
                 </div>
-            {{else}}
-                <em>No assignment</em>
-            {{end}}
+            </div>
         </div>
-    {{end}}
+    </section>
 </body>
 </html>

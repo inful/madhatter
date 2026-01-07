@@ -3,72 +3,154 @@
 <head>
     <title>Support Rota - Dashboard</title>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        body { font-family: system-ui; max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
-        .card { border: 1px solid #ddd; padding: 1rem; margin: 1rem 0; border-radius: 8px; }
-        .btn { background: #007bff; color: white; padding: 0.5rem 1rem; text-decoration: none; border-radius: 4px; }
-        .btn-secondary { background: #6c757d; }
-        .cover { background: #fff3cd; padding: 0.25rem; border-radius: 4px; }
-        .leave { background: #f8d7da; padding: 0.25rem; border-radius: 4px; }
+        body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }
+        .hero { background: rgba(255, 255, 255, 0.95); border-radius: 12px; margin: 2rem auto; max-width: 900px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+        .card { border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin-bottom: 1.5rem; border: none; }
+        .card-header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px 8px 0 0; }
+        .card-header-title { color: white !important; }
+        .cover-badge { background: #ffe08a; color: #664d03; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.85rem; font-weight: bold; }
+        .leave-badge { background: #fecaca; color: #7f1d1d; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.85rem; font-weight: bold; }
+        .action-btn { transition: transform 0.2s; }
+        .action-btn:hover { transform: translateY(-2px); }
+        .empty-state { padding: 2rem; text-align: center; background: #f8f9fa; border-radius: 8px; }
+        .assignment-item { padding: 0.75rem; border-left: 4px solid #667eea; background: #f8f9fa; margin-bottom: 0.5rem; border-radius: 4px; }
+        .today-highlight { border-left-color: #48c774; background: #e8f8ee; }
     </style>
 </head>
 <body>
-    <h1>Support Rota Dashboard</h1>
-    
-    <div class="card">
-        <h2>Quick Actions</h2>
-        <a href="/team" class="btn">Add Team Member</a>
-        <a href="/leave/report" class="btn">Report Leave</a>
-        <a href="/schedule/generate" class="btn">Generate Schedule</a>
-        <a href="/schedule/current" class="btn">View Schedule</a>
-        <a href="/calendar" class="btn">Calendar Subscriptions</a>
-    </div>
-    
-    <div class="card">
-        <h2>Today's Assignment</h2>
-        {{if .NoTeamMessage}}
-            <div style="text-align: center; padding: 1rem;">
-                <p style="margin-bottom: 1rem; color: #d9534f; font-weight: bold;">{{.NoTeamMessage}}</p>
-                <a href="/team" class="btn">Add Team Members</a>
-            </div>
-        {{else}}
-            <p><strong>{{.Today}}</strong></p>
-            {{if .TodayAssignment}}
-                <p>{{.TodayAssignment.MemberName}} ({{.TodayAssignment.MemberEmail}})</p>
-                {{if .TodayAssignment.IsCover}}
-                    <span class="cover">COVER for original assignment</span>
-                {{end}}
-            {{else}}
-                <div style="text-align: center; padding: 1rem;">
-                    <p style="margin-bottom: 1rem;">No schedule for today</p>
-                    <a href="/schedule/generate" class="btn">Generate Schedule</a>
-                </div>
-            {{end}}
-        {{end}}
-    </div>
-    
-    <div class="card">
-        <h2>This Week</h2>
-        {{if .NoTeamMessage}}
-            <div style="text-align: center; padding: 1rem;">
-                <p style="margin-bottom: 1rem;">Add team members to see schedule</p>
-            </div>
-        {{else}}
-            {{if .WeekAssignments}}
-                {{range .WeekAssignments}}
-                    <div>
-                        <strong>{{.Date}}:</strong>
-                        {{.MemberName}}
-                        {{if .IsCover}}<span class="cover">COVER</span>{{end}}
+    <section class="section">
+        <div class="hero">
+            <div class="hero-body">
+                <div class="container">
+                    <h1 class="title is-2 has-text-centered has-text-primary">
+                        <i class="fas fa-calendar-check"></i> Support Rota Dashboard
+                    </h1>
+                    <p class="subtitle has-text-centered">Manage your team schedule with ease</p>
+
+                    <!-- Quick Actions -->
+                    <div class="card">
+                        <header class="card-header">
+                            <p class="card-header-title">
+                                <i class="fas fa-bolt mr-2"></i> Quick Actions
+                            </p>
+                        </header>
+                        <div class="card-content">
+                            <div class="buttons is-centered">
+                                <a href="/team" class="button is-primary action-btn">
+                                    <i class="fas fa-users mr-2"></i> Team Members
+                                </a>
+                                <a href="/leave/report" class="button is-info action-btn">
+                                    <i class="fas fa-user-clock mr-2"></i> Report Leave
+                                </a>
+                                <a href="/schedule/generate" class="button is-success action-btn">
+                                    <i class="fas fa-calendar-plus mr-2"></i> Generate Schedule
+                                </a>
+                                <a href="/schedule/current" class="button is-link action-btn">
+                                    <i class="fas fa-calendar-alt mr-2"></i> View Schedule
+                                </a>
+                                <a href="/calendar" class="button is-warning action-btn">
+                                    <i class="fas fa-calendar-star mr-2"></i> Calendar Subs
+                                </a>
+                            </div>
+                        </div>
                     </div>
-                {{end}}
-            {{else}}
-                <div style="text-align: center; padding: 1rem;">
-                    <p style="margin-bottom: 1rem;">No schedule for this week</p>
-                    <a href="/schedule/generate" class="btn">Generate Schedule</a>
+
+                    <!-- Today's Assignment -->
+                    <div class="card">
+                        <header class="card-header">
+                            <p class="card-header-title">
+                                <i class="fas fa-star mr-2"></i> Today's Assignment
+                            </p>
+                        </header>
+                        <div class="card-content">
+                            {{if .NoTeamMessage}}
+                                <div class="empty-state">
+                                    <p class="has-text-danger has-text-weight-bold mb-3">{{.NoTeamMessage}}</p>
+                                    <a href="/team" class="button is-danger">
+                                        <i class="fas fa-user-plus mr-2"></i> Add Team Members
+                                    </a>
+                                </div>
+                            {{else}}
+                                <div class="content">
+                                    <p class="subtitle is-5 has-text-weight-semibold">{{.Today}}</p>
+                                    {{if .TodayAssignment}}
+                                        <div class="assignment-item today-highlight">
+                                            <div class="columns is-mobile is-vcentered">
+                                                <div class="column">
+                                                    <strong>{{.TodayAssignment.MemberName}}</strong><br>
+                                                    <small>{{.TodayAssignment.MemberEmail}}</small>
+                                                </div>
+                                                <div class="column is-narrow">
+                                                    {{if .TodayAssignment.IsCover}}
+                                                        <span class="cover-badge">
+                                                            <i class="fas fa-shield-alt"></i> COVER
+                                                        </span>
+                                                    {{end}}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    {{else}}
+                                        <div class="empty-state">
+                                            <p class="mb-3">No schedule for today</p>
+                                            <a href="/schedule/generate" class="button is-success">
+                                                <i class="fas fa-calendar-plus mr-2"></i> Generate Schedule
+                                            </a>
+                                        </div>
+                                    {{end}}
+                                </div>
+                            {{end}}
+                        </div>
+                    </div>
+
+                    <!-- This Week -->
+                    <div class="card">
+                        <header class="card-header">
+                            <p class="card-header-title">
+                                <i class="fas fa-calendar-week mr-2"></i> This Week
+                            </p>
+                        </header>
+                        <div class="card-content">
+                            {{if .NoTeamMessage}}
+                                <div class="empty-state">
+                                    <p>Add team members to see schedule</p>
+                                </div>
+                            {{else}}
+                                {{if .WeekAssignments}}
+                                    <div class="content">
+                                        {{range .WeekAssignments}}
+                                            <div class="assignment-item">
+                                                <div class="columns is-mobile is-vcentered">
+                                                    <div class="column">
+                                                        <strong>{{.Date}}</strong> - {{.MemberName}}
+                                                    </div>
+                                                    <div class="column is-narrow">
+                                                        {{if .IsCover}}
+                                                            <span class="cover-badge">
+                                                                <i class="fas fa-shield-alt"></i> COVER
+                                                            </span>
+                                                        {{end}}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        {{end}}
+                                    </div>
+                                {{else}}
+                                    <div class="empty-state">
+                                        <p class="mb-3">No schedule for this week</p>
+                                        <a href="/schedule/generate" class="button is-success">
+                                            <i class="fas fa-calendar-plus mr-2"></i> Generate Schedule
+                                        </a>
+                                    </div>
+                                {{end}}
+                            {{end}}
+                        </div>
+                    </div>
                 </div>
-            {{end}}
-        {{end}}
-    </div>
+            </div>
+        </div>
+    </section>
 </body>
 </html>

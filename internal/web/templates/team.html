@@ -3,32 +3,117 @@
 <head>
     <title>Team Management</title>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        body { font-family: system-ui; max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
-        form { display: grid; gap: 1rem; margin: 1rem 0; }
-        input { padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; }
-        .btn { background: #007bff; color: white; padding: 0.5rem 1rem; border: none; border-radius: 4px; cursor: pointer; }
-        .member { padding: 0.5rem; border-bottom: 1px solid #eee; }
+        body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }
+        .hero { background: rgba(255, 255, 255, 0.95); border-radius: 12px; margin: 2rem auto; max-width: 900px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+        .card { border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin-bottom: 1.5rem; border: none; }
+        .card-header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px 8px 0 0; }
+        .card-header-title { color: white !important; }
+        .member-card { border-left: 4px solid #667eea; transition: transform 0.2s; }
+        .member-card:hover { transform: translateX(4px); }
+        .back-btn { transition: transform 0.2s; }
+        .back-btn:hover { transform: translateX(-2px); }
     </style>
 </head>
 <body>
-    <h1>Team Management</h1>
-    <a href="/">← Back to Dashboard</a>
-    
-    <h2>Add Team Member</h2>
-    <form method="POST" action="/team">
-        <input type="text" name="name" placeholder="Name" required>
-        <input type="email" name="email" placeholder="Email" required>
-        <button type="submit" class="btn">Add Member</button>
-    </form>
-    
-    <h2>Current Members</h2>
-    {{range .Members}}
-        <div class="member">
-            <strong>{{.Name}}</strong> - {{.Email}}
+    <section class="section">
+        <div class="hero">
+            <div class="hero-body">
+                <div class="container">
+                    <div class="level is-mobile">
+                        <div class="level-left">
+                            <div class="level-item">
+                                <h1 class="title is-2 has-text-primary">
+                                    <i class="fas fa-users"></i> Team Management
+                                </h1>
+                            </div>
+                        </div>
+                        <div class="level-right">
+                            <a href="/" class="button is-light back-btn">
+                                <i class="fas fa-arrow-left mr-2"></i> Dashboard
+                            </a>
+                        </div>
+                    </div>
+
+                    <!-- Add Team Member -->
+                    <div class="card">
+                        <header class="card-header">
+                            <p class="card-header-title">
+                                <i class="fas fa-user-plus mr-2"></i> Add Team Member
+                            </p>
+                        </header>
+                        <div class="card-content">
+                            <form method="POST" action="/team">
+                                <div class="field">
+                                    <label class="label">Name</label>
+                                    <div class="control has-icons-left">
+                                        <input class="input" type="text" name="name" placeholder="John Doe" required>
+                                        <span class="icon is-small is-left">
+                                            <i class="fas fa-user"></i>
+                                        </span>
+                                    </div>
+                                </div>
+                                
+                                <div class="field">
+                                    <label class="label">Email</label>
+                                    <div class="control has-icons-left">
+                                        <input class="input" type="email" name="email" placeholder="john@example.com" required>
+                                        <span class="icon is-small is-left">
+                                            <i class="fas fa-envelope"></i>
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div class="field">
+                                    <div class="control">
+                                        <button type="submit" class="button is-primary is-fullwidth">
+                                            <i class="fas fa-user-plus mr-2"></i> Add Member
+                                        </button>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- Current Members -->
+                    <div class="card">
+                        <header class="card-header">
+                            <p class="card-header-title">
+                                <i class="fas fa-list mr-2"></i> Current Members
+                            </p>
+                        </header>
+                        <div class="card-content">
+                            {{if .Members}}
+                                <div class="content">
+                                    {{range .Members}}
+                                        <div class="box member-card">
+                                            <div class="columns is-mobile is-vcentered">
+                                                <div class="column">
+                                                    <strong class="is-size-5">{{.Name}}</strong><br>
+                                                    <span class="has-text-grey">{{.Email}}</span>
+                                                </div>
+                                                <div class="column is-narrow">
+                                                    <span class="tag is-success is-light">
+                                                        <i class="fas fa-check-circle mr-1"></i> Active
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    {{end}}
+                                </div>
+                            {{else}}
+                                <div class="empty-state" style="text-align: center; padding: 2rem;">
+                                    <p class="has-text-grey mb-3">No team members yet</p>
+                                    <p class="is-size-7">Add your first team member above to get started!</p>
+                                </div>
+                            {{end}}
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
-    {{else}}
-        <p>No team members yet</p>
-    {{end}}
+    </section>
 </body>
 </html>

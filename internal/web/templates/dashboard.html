@@ -26,35 +26,48 @@
     
     <div class="card">
         <h2>Today's Assignment</h2>
-        <p><strong>{{.Today}}</strong></p>
-        {{if .TodayAssignment}}
-            <p>{{.TodayAssignment.MemberName}} ({{.TodayAssignment.MemberEmail}})</p>
-            {{if .TodayAssignment.IsCover}}
-                <span class="cover">COVER for original assignment</span>
-            {{end}}
-        {{else}}
+        {{if .NoTeamMessage}}
             <div style="text-align: center; padding: 1rem;">
-                <p style="margin-bottom: 1rem;">No schedule for today</p>
-                <a href="/schedule/generate" class="btn">Generate Schedule</a>
+                <p style="margin-bottom: 1rem; color: #d9534f; font-weight: bold;">{{.NoTeamMessage}}</p>
+                <a href="/team" class="btn">Add Team Members</a>
             </div>
+        {{else}}
+            <p><strong>{{.Today}}</strong></p>
+            {{if .TodayAssignment}}
+                <p>{{.TodayAssignment.MemberName}} ({{.TodayAssignment.MemberEmail}})</p>
+                {{if .TodayAssignment.IsCover}}
+                    <span class="cover">COVER for original assignment</span>
+                {{end}}
+            {{else}}
+                <div style="text-align: center; padding: 1rem;">
+                    <p style="margin-bottom: 1rem;">No schedule for today</p>
+                    <a href="/schedule/generate" class="btn">Generate Schedule</a>
+                </div>
+            {{end}}
         {{end}}
     </div>
     
     <div class="card">
         <h2>This Week</h2>
-        {{if .WeekAssignments}}
-            {{range .WeekAssignments}}
-                <div>
-                    <strong>{{.Date}}:</strong>
-                    {{.MemberName}}
-                    {{if .IsCover}}<span class="cover">COVER</span>{{end}}
+        {{if .NoTeamMessage}}
+            <div style="text-align: center; padding: 1rem;">
+                <p style="margin-bottom: 1rem;">Add team members to see schedule</p>
+            </div>
+        {{else}}
+            {{if .WeekAssignments}}
+                {{range .WeekAssignments}}
+                    <div>
+                        <strong>{{.Date}}:</strong>
+                        {{.MemberName}}
+                        {{if .IsCover}}<span class="cover">COVER</span>{{end}}
+                    </div>
+                {{end}}
+            {{else}}
+                <div style="text-align: center; padding: 1rem;">
+                    <p style="margin-bottom: 1rem;">No schedule for this week</p>
+                    <a href="/schedule/generate" class="btn">Generate Schedule</a>
                 </div>
             {{end}}
-        {{else}}
-            <div style="text-align: center; padding: 1rem;">
-                <p style="margin-bottom: 1rem;">No schedule for this week</p>
-                <a href="/schedule/generate" class="btn">Generate Schedule</a>
-            </div>
         {{end}}
     </div>
 </body>

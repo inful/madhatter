@@ -29,3 +29,11 @@ WHERE id = ?;
 SELECT id, date, member_id, is_cover, original_assignment_id
 FROM rota_assignments
 WHERE id = ?;
+
+-- name: GetLatestAssignmentDate :one
+SELECT MAX(date) AS max_date
+FROM rota_assignments;
+
+-- name: DeleteAssignmentsByDateRange :exec
+DELETE FROM rota_assignments
+WHERE date >= ? AND date <= ?;

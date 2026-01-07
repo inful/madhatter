@@ -34,6 +34,21 @@ func (q *Queries) CreateRotaAssignment(ctx context.Context, arg CreateRotaAssign
 	)
 }
 
+const deleteAssignmentsByDateRange = `-- name: DeleteAssignmentsByDateRange :exec
+DELETE FROM rota_assignments
+WHERE date >= ? AND date <= ?
+`
+
+type DeleteAssignmentsByDateRangeParams struct {
+	Date   time.Time `json:"date"`
+	Date_2 time.Time `json:"date_2"`
+}
+
+func (q *Queries) DeleteAssignmentsByDateRange(ctx context.Context, arg DeleteAssignmentsByDateRangeParams) error {
+	_, err := q.db.ExecContext(ctx, deleteAssignmentsByDateRange, arg.Date, arg.Date_2)
+	return err
+}
+
 const deleteRotaAssignment = `-- name: DeleteRotaAssignment :exec
 DELETE FROM rota_assignments
 WHERE id = ?
@@ -171,6 +186,18 @@ func (q *Queries) GetAssignmentsByDateRange(ctx context.Context, arg GetAssignme
 		return nil, err
 	}
 	return items, nil
+}
+
+const getLatestAssignmentDate = `-- name: GetLatestAssignmentDate :one
+SELECT MAX(date) AS max_date
+FROM rota_assignments
+`
+
+func (q *Queries) GetLatestAssignmentDate(ctx context.Context) (interface{}, error) {
+	row := q.db.QueryRowContext(ctx, getLatestAssignmentDate)
+	var max_date interface{}
+	err := row.Scan(&max_date)
+	return max_date, err
 }
 
 const getUpcomingAssignments = `-- name: GetUpcomingAssignments :many

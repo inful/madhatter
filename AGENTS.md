@@ -14,11 +14,19 @@ This file provides guidance to agents when working with code in this repository.
 
 **Round-Robin Scheduling**: The rota engine uses round-robin assignment with weekend skipping and cover assignment logic. Covers reference original assignments via `original_assignment_id` foreign key.
 
+**Automatic Schedule Maintenance**: The system automatically maintains a 14-day rolling schedule using `ScheduleMaintenance` service in `internal/rota/maintenance.go`. Key features:
+- `EnsureSchedule()` - Creates 14-day rolling schedule automatically
+- `GenerateMissingDays()` - Fills gaps while preserving existing assignments ("static as possible" scheduling)
+- `RegenerateSchedule()` - Deletes and recreates schedule from scratch
+- `HandleTeamChange()` - Updates schedule when team members change
+- `HandleLeaveChange()` - Creates cover assignments when members take leave
+- Web handlers automatically trigger schedule maintenance on key events
+
 **Calendar ICS Generation**: ICS files are generated with 0o600 permissions. Calendar subscriptions use UUID tokens stored in `calendar_subscriptions` table.
 
 **Test Structure**: Tests are co-located with source files (e.g., `db_test.go` next to `db.go`) and use testify assertions.
 
-**Linter Configuration**: Uses golangci-lint v2 with extensive rules including shadow variable detection, performance checks, and custom tag alignment rules.
+**Linter Configuration**: Uses golangci-lint v2 with extensive rules including shadow variable detection, performance checks, and custom tag alignment rules. Cyclomatic complexity limit is 10.
 
 **SQLC Migration**: Database layer uses sqlc for type-safe SQL generation. Key files:
 - `sqlc.yaml` - sqlc configuration
@@ -30,6 +38,11 @@ This file provides guidance to agents when working with code in this repository.
 - Generate code: `export PATH=$PATH:$(go env GOPATH)/bin && sqlc generate`
 - Run tests: `go test ./internal/database -v`
 
+**Database Methods**: New methods added for schedule maintenance:
+- `GetAssignmentsByDateRange()` - Get assignments within date range
+- `GetLatestAssignmentDate()` - Find most recent assignment date
+- `DeleteAssignmentsInRange()` - Delete assignments in range for regeneration
+
 **Critical Gotchas**:
 - Foreign keys must be enabled manually with `PRAGMA foreign_keys = ON`
 - Leave assignment creates cover records that reference original assignments
@@ -37,3 +50,6 @@ This file provides guidance to agents when working with code in this repository.
 - Calendar subscriptions require creating a token entry before generating ICS feeds
 - SQLC generates `time.Time` for dates, but your existing code uses string dates - use the wrapper for compatibility
 - SQLC uses `sql.NullInt64` for nullable integers - wrapper converts to/from bool
+- **Static Scheduling**: `GenerateMissingDays()` preserves existing assignments and only fills gaps
+- **Template Compatibility**: Dashboard template handles string dates directly (no `.Format` calls)
+- **No Duplicate Days**: Only one assignment per day (original or cover, not both)

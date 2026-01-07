@@ -19,10 +19,10 @@ const (
 )
 
 type Handler struct {
-	db     *database.DB
-	engine *rota.Engine
-	tmpl   *template.Template
-	router *chi.Mux
+	db          *database.DB
+	maintenance *rota.ScheduleMaintenance
+	tmpl        *template.Template
+	router      *chi.Mux
 }
 
 func NewHandler(db *database.DB) *Handler {
@@ -33,10 +33,10 @@ func NewHandler(db *database.DB) *Handler {
 	router := chi.NewRouter()
 
 	h := &Handler{
-		db:     db,
-		engine: rota.NewEngine(db),
-		tmpl:   tmpl,
-		router: router,
+		db:          db,
+		maintenance: rota.NewScheduleMaintenance(db),
+		tmpl:        tmpl,
+		router:      router,
 	}
 
 	h.registerRoutes()
@@ -86,6 +86,48 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		"Today": time.Now().Format("Monday, Jan 2, 2006"),
 	}
 
+	// Check team members and handle no-team case
+	if !h.checkTeamMembers(w, data) {
+		return
+	}
+
+	// Maintain schedule (ignore return value, just check error)
+	_, err := h.maintenance.EnsureSchedule()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Load dashboard data
+	h.loadDashboardData(data)
+
+	// Render template
+	if err := h.tmpl.ExecuteTemplate(w, "dashboard.html", data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// checkTeamMembers validates team exists and handles no-team case.
+func (h *Handler) checkTeamMembers(w http.ResponseWriter, data map[string]any) bool {
+	members, err := h.db.GetActiveTeamMembers()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return false
+	}
+
+	if len(members) == 0 {
+		data["NoTeamMessage"] = "No team members found. Please add team members to get started."
+		if execErr := h.tmpl.ExecuteTemplate(w, "dashboard.html", data); execErr != nil {
+			http.Error(w, execErr.Error(), http.StatusInternalServerError)
+		}
+		return false
+	}
+
+	return true
+}
+
+// loadDashboardData populates the dashboard with today's and week's assignments.
+func (h *Handler) loadDashboardData(data map[string]any) {
 	// Get today's assignment
 	today := time.Now().Format("2006-01-02")
 	assignments, err := h.db.GetAssignmentsByDate(today)
@@ -94,6 +136,11 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get this week's assignments
+	data["WeekAssignments"] = h.getWeekAssignments()
+}
+
+// getWeekAssignments retrieves assignments for the current week.
+func (h *Handler) getWeekAssignments() []database.RotaAssignment {
 	now := time.Now()
 	weekStart := now.AddDate(0, 0, -int(now.Weekday())+1) // Monday
 	weekEnd := weekStart.AddDate(0, 0, weekDaysOffset)    // Friday
@@ -106,11 +153,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 			weekAssignments = append(weekAssignments, dayAssignments[0])
 		}
 	}
-	data["WeekAssignments"] = weekAssignments
-
-	if err := h.tmpl.ExecuteTemplate(w, "dashboard.html", data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
+	return weekAssignments
 }
 
 func (h *Handler) handleTeam(w http.ResponseWriter, r *http.Request) {
@@ -127,6 +170,13 @@ func (h *Handler) handleTeam(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+
+		// Handle team change - update schedule
+		if err := h.maintenance.HandleTeamChange(); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
 		http.Redirect(w, r, "/team", http.StatusSeeOther)
 		return
 	}
@@ -161,8 +211,8 @@ func (h *Handler) handleLeaveReport(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Assign covers
-		err = h.engine.AssignCoversForLeave(leaveID)
+		// Handle leave change using maintenance service
+		err = h.maintenance.HandleLeaveChange(leaveID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -212,47 +262,92 @@ func (h *Handler) handleScheduleCurrent(w http.ResponseWriter, r *http.Request) 
 
 func (h *Handler) handleScheduleGenerate(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
-		if err := r.ParseForm(); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		startDate := r.FormValue("start_date")
-		endDate := r.FormValue("end_date")
-
-		start, err := time.Parse("2006-01-02", startDate)
-		if err != nil {
-			http.Error(w, "Invalid start date format", http.StatusBadRequest)
-			return
-		}
-
-		end, err := time.Parse("2006-01-02", endDate)
-		if err != nil {
-			http.Error(w, "Invalid end date format", http.StatusBadRequest)
-			return
-		}
-
-		err = h.engine.GenerateSchedule(start, end)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		http.Redirect(w, r, "/schedule/current", http.StatusSeeOther)
+		h.handleScheduleGeneratePost(w, r)
 		return
 	}
 
 	// GET request - show form
-	// Get current date and next month for default values
-	now := time.Now()
-	defaultStart := now.Format("2006-01-02")
-	defaultEnd := now.AddDate(0, 1, 0).Format("2006-01-02")
+	h.handleScheduleGenerateGet(w, r)
+}
 
+func (h *Handler) handleScheduleGeneratePost(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Validate team members
+	if !h.validateTeamMembers(w) {
+		return
+	}
+
+	// Parse and validate dates
+	start, end, ok := h.parseDateRange(w, r)
+	if !ok {
+		return
+	}
+
+	// Generate schedule based on mode
+	regenerate := r.FormValue("regenerate") == "on"
+	var err error
+	if regenerate {
+		_, err = h.maintenance.RegenerateSchedule(start, end)
+	} else {
+		_, err = h.maintenance.GenerateMissingDays(start, end)
+	}
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, "/schedule/current", http.StatusSeeOther)
+}
+
+func (h *Handler) handleScheduleGenerateGet(w http.ResponseWriter, _ *http.Request) {
+	if !h.validateTeamMembers(w) {
+		return
+	}
+
+	now := time.Now()
 	if err := h.tmpl.ExecuteTemplate(w, "schedule_generate.html", map[string]any{
-		"DefaultStart": defaultStart,
-		"DefaultEnd":   defaultEnd,
+		"DefaultStart": now.Format("2006-01-02"),
+		"DefaultEnd":   now.AddDate(0, 1, 0).Format("2006-01-02"),
 	}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+func (h *Handler) validateTeamMembers(w http.ResponseWriter) bool {
+	members, err := h.db.GetActiveTeamMembers()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return false
+	}
+	if len(members) == 0 {
+		http.Error(w, "No team members found. Please add team members first.", http.StatusBadRequest)
+		return false
+	}
+	return true
+}
+
+func (h *Handler) parseDateRange(w http.ResponseWriter, r *http.Request) (time.Time, time.Time, bool) {
+	startDate := r.FormValue("start_date")
+	endDate := r.FormValue("end_date")
+
+	start, err := time.Parse("2006-01-02", startDate)
+	if err != nil {
+		http.Error(w, "Invalid start date format", http.StatusBadRequest)
+		return time.Time{}, time.Time{}, false
+	}
+
+	end, err := time.Parse("2006-01-02", endDate)
+	if err != nil {
+		http.Error(w, "Invalid end date format", http.StatusBadRequest)
+		return time.Time{}, time.Time{}, false
+	}
+
+	return start, end, true
 }
 
 func (h *Handler) handleCalendar(w http.ResponseWriter, r *http.Request) {

@@ -143,3 +143,76 @@ func TestGetMemberByEmail_NotFound(t *testing.T) {
 	require.Error(t, err)
 	require.Equal(t, sql.ErrNoRows, err)
 }
+
+func TestGetLatestAssignmentDate_Empty(t *testing.T) {
+	// Arrange
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	// Act
+	latest, err := db.GetLatestAssignmentDate()
+
+	// Assert
+	require.NoError(t, err)
+	require.Empty(t, latest)
+}
+
+func TestGetLatestAssignmentDate_WithAssignments(t *testing.T) {
+	// Arrange
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	// Add team members
+	id1, _ := db.AddTeamMember("Alice", "alice@example.com")
+	id2, _ := db.AddTeamMember("Bob", "bob@example.com")
+
+	// Add assignments
+	today := "2025-01-15"
+	tomorrow := "2025-01-16"
+	_, err := db.CreateRotaAssignment(today, id1, false, nil)
+	require.NoError(t, err)
+	_, err = db.CreateRotaAssignment(tomorrow, id2, false, nil)
+	require.NoError(t, err)
+
+	// Act
+	latest, err := db.GetLatestAssignmentDate()
+
+	// Assert
+	require.NoError(t, err)
+	require.Equal(t, tomorrow, latest)
+}
+
+func TestGetAssignmentsByDateRange(t *testing.T) {
+	// Arrange
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	// Add team members
+	id1, _ := db.AddTeamMember("Alice", "alice@example.com")
+	id2, _ := db.AddTeamMember("Bob", "bob@example.com")
+
+	// Add assignments
+	startDate := "2025-01-15"
+	midDate := "2025-01-16"
+	endDate := "2025-01-17"
+	_, err := db.CreateRotaAssignment(startDate, id1, false, nil)
+	require.NoError(t, err)
+	_, err = db.CreateRotaAssignment(midDate, id2, false, nil)
+	require.NoError(t, err)
+	_, err = db.CreateRotaAssignment(endDate, id1, false, nil)
+	require.NoError(t, err)
+
+	// Act - get range including all dates
+	assignments, err := db.GetAssignmentsByDateRange(startDate, endDate)
+
+	// Assert
+	require.NoError(t, err)
+	require.Len(t, assignments, 3)
+
+	// Act - get partial range
+	assignments, err = db.GetAssignmentsByDateRange(startDate, midDate)
+
+	// Assert
+	require.NoError(t, err)
+	require.Len(t, assignments, 2)
+}

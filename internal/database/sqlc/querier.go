@@ -16,6 +16,7 @@ type Querier interface {
 	CreateLeaveRecord(ctx context.Context, arg CreateLeaveRecordParams) (sql.Result, error)
 	CreateRotaAssignment(ctx context.Context, arg CreateRotaAssignmentParams) (sql.Result, error)
 	DeactivateTeamMember(ctx context.Context, id string) error
+	DeleteAssignmentsByDateRange(ctx context.Context, arg DeleteAssignmentsByDateRangeParams) error
 	DeleteCalendarSubscription(ctx context.Context, token string) error
 	DeleteMemberSubscriptions(ctx context.Context, memberID string) error
 	DeleteRotaAssignment(ctx context.Context, id string) error
@@ -23,6 +24,7 @@ type Querier interface {
 	GetAssignmentByID(ctx context.Context, id string) (GetAssignmentByIDRow, error)
 	GetAssignmentsByDate(ctx context.Context, date time.Time) ([]GetAssignmentsByDateRow, error)
 	GetAssignmentsByDateRange(ctx context.Context, arg GetAssignmentsByDateRangeParams) ([]GetAssignmentsByDateRangeRow, error)
+	GetLatestAssignmentDate(ctx context.Context) (interface{}, error)
 	GetLeaveByDate(ctx context.Context, arg GetLeaveByDateParams) ([]LeaveRecord, error)
 	GetLeaveByID(ctx context.Context, id string) (LeaveRecord, error)
 	GetLeaveRecords(ctx context.Context, arg GetLeaveRecordsParams) ([]LeaveRecord, error)

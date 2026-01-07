@@ -199,6 +199,11 @@ func (db *DB) GetUpcomingAssignments(memberID string, days int) ([]RotaAssignmen
 	return result, nil
 }
 
+// DeleteRotaAssignment deletes a rota assignment by ID.
+func (db *DB) DeleteRotaAssignment(id string) error {
+	return db.queries.DeleteRotaAssignment(context.Background(), id)
+}
+
 // Helper functions.
 func getNullString(nullStr sql.NullString) *string {
 	if nullStr.Valid {

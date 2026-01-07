@@ -78,27 +78,26 @@ func (e *Engine) determineCoveringMember(originalMember database.TeamMember, lea
 }
 
 // createAssignment creates the rota assignment.
-func (e *Engine) createAssignment(dateStr string, originalMember, coveringMember database.TeamMember, leaves []database.LeaveRecord) error {
+func (e *Engine) createAssignment(dateStr string, originalMember, coveringMember database.TeamMember, _ []database.LeaveRecord) error {
 	isCover := coveringMember.ID != originalMember.ID
-	var originalAssignmentID *string
 
 	if isCover {
-		originalAssignmentID = e.findLeaveIDForMember(leaves, originalMember.ID)
-	}
-
-	_, err := e.db.CreateRotaAssignment(dateStr, coveringMember.ID, isCover, originalAssignmentID)
-	return err
-}
-
-// findLeaveIDForMember finds the leave ID for a specific member.
-func (e *Engine) findLeaveIDForMember(leaves []database.LeaveRecord, memberID string) *string {
-	for i := range leaves {
-		if leaves[i].MemberID == memberID {
-			leaveID := leaves[i].ID
-			return &leaveID
+		// For cover assignments, we need to:
+		// 1. Create the original assignment for the person on leave
+		// 2. Create the cover assignment that references the original
+		originalAssignmentID, err := e.db.CreateRotaAssignment(dateStr, originalMember.ID, false, nil)
+		if err != nil {
+			return err
 		}
+
+		// Create the cover assignment
+		_, err = e.db.CreateRotaAssignment(dateStr, coveringMember.ID, true, &originalAssignmentID)
+		return err
 	}
-	return nil
+
+	// For non-cover assignments, just create normally
+	_, err := e.db.CreateRotaAssignment(dateStr, coveringMember.ID, false, nil)
+	return err
 }
 
 // findCover finds the next available member for cover.

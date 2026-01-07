@@ -18,14 +18,17 @@
     <a href="/">← Back to Dashboard</a>
     
     <div class="card">
-        <h2>Generate Round-Robin Schedule</h2>
+        <h2>Fill Schedule Gaps</h2>
         <div class="info">
+            <strong>Note:</strong> The system automatically maintains a 14-day rolling schedule.
+            This tool is for filling gaps or extending the schedule beyond the automatic window.
+            <br><br>
             <strong>How it works:</strong>
             <ul>
-                <li>Creates weekday assignments (Mon-Fri)</li>
-                <li>Each team member gets one day per cycle</li>
+                <li>Only generates assignments for dates without them (preserves existing)</li>
+                <li>Continues round-robin from the last assignment</li>
+                <li>Creates weekday assignments (Mon-Fri) only</li>
                 <li>Automatically skips weekends</li>
-                <li>Handles existing leave assignments</li>
             </ul>
         </div>
         
@@ -40,7 +43,14 @@
                 <input type="date" id="end_date" name="end_date" value="{{.DefaultEnd}}" required>
             </div>
             
-            <div style="display: flex; gap: 1rem;">
+            <div>
+                <label style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem;">
+                    <input type="checkbox" id="regenerate" name="regenerate">
+                    <span><strong>Regenerate from scratch</strong> (deletes existing assignments in range)</span>
+                </label>
+            </div>
+            
+            <div style="display: flex; gap: 1rem; margin-top: 1rem;">
                 <button type="submit" class="btn">Generate Schedule</button>
                 <a href="/schedule/current" class="btn btn-secondary">View Schedule</a>
             </div>

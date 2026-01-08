@@ -74,12 +74,16 @@ func (am *AuthManager) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Determine if the current request is using HTTPS (directly or via proxy)
+	secure := r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+
 	// Store state in cookie (short-lived)
 	http.SetCookie(w, &http.Cookie{
 		Name:     "oauth_state",
 		Value:    state,
 		Path:     "/auth/callback",
 		HttpOnly: true,
+		Secure:   secure,
 		MaxAge:   oAuthStateCookieMaxAge,
 	})
 

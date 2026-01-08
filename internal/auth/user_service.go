@@ -149,11 +149,3 @@ func (us *UserService) IsAdmin(ctx context.Context, userID string) (bool, error)
 	}
 	return user.IsAdmin.Valid && user.IsAdmin.Int64 == 1, nil
 }
-
-// boolToInt converts bool to int for SQL storage.
-func boolToInt(b bool) int64 {
-	if b {
-		return 1
-	}
-	return 0
-}

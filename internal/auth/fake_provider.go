@@ -59,16 +59,18 @@ func (f *FakeProvider) ExchangeCode(ctx context.Context, code string) (*oauth2.T
 	}, nil
 }
 
+var fakeUser = &UserInfo{
+	ID:        "dev-user-1",
+	Email:     "dev@example.com",
+	Name:      "Development User",
+	Username:  "devuser",
+	AvatarURL: "",
+}
+
 // GetUserInfo returns fake user information.
 func (f *FakeProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) (*UserInfo, error) {
 	// Return fake user info - in development mode, we'll use a default user
-	return &UserInfo{
-		ID:        "dev-user-1",
-		Email:     "dev@example.com",
-		Name:      "Development User",
-		Username:  "devuser",
-		AvatarURL: "",
-	}, nil
+	return fakeUser, nil
 }
 
 // GetOAuthConfig returns the OAuth2 configuration.
@@ -143,17 +145,8 @@ func (h *FakeCallbackHandler) HandleCallback(w http.ResponseWriter, r *http.Requ
 	// In development mode, create fake user directly
 	ctx := r.Context()
 
-	// Create fake user info
-	userInfo := &UserInfo{
-		ID:        "dev-user-1",
-		Email:     "dev@example.com",
-		Name:      "Development User",
-		Username:  "devuser",
-		AvatarURL: "",
-	}
-
 	// Get or create user
-	user, err := h.authManager.userService.GetOrCreateUser(ctx, userInfo, "fake")
+	user, err := h.authManager.userService.GetOrCreateUser(ctx, fakeUser, "fake")
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to create user: %v", err), http.StatusInternalServerError)
 		return

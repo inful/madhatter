@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -38,7 +39,7 @@ type ProviderConfig struct {
 }
 
 // LoadConfig loads authentication configuration from a YAML file.
-// The path must resolve to a location within the working directory or a config subdirectory
+// The path must resolve to a location within the working directory
 // to prevent directory traversal attacks.
 func LoadConfig(path string) (*AuthConfig, error) {
 	// Validate the path is within allowed directories
@@ -84,7 +85,8 @@ func validateConfigPath(path string) error {
 	}
 
 	// filepath.Rel returns a path starting with ".." if the target is outside the base
-	if len(relPath) >= 2 && relPath[0] == '.' && relPath[1] == '.' {
+	// Check for ".." at the start followed by a separator or as the entire path
+	if relPath == ".." || strings.HasPrefix(relPath, ".."+string(filepath.Separator)) {
 		return fmt.Errorf("config path %q is outside the allowed directory", path)
 	}
 

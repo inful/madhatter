@@ -36,6 +36,11 @@ func TestValidateConfigPath(t *testing.T) {
 			expectError: false,
 		},
 		{
+			name:        "valid path with file starting with ..",
+			path:        "..hidden-config.yaml",
+			expectError: false,
+		},
+		{
 			name:        "valid absolute path within workdir",
 			path:        filepath.Join(workDir, "config", "auth.yaml"),
 			expectError: false,

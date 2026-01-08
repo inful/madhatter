@@ -134,17 +134,17 @@ func TestGetUpcomingAssignments(t *testing.T) {
 	ctx := context.Background()
 	memberID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com")
 
-	// Create assignments relative to current date
-	_, _ = db.CreateRotaAssignment(ctx, "2026-01-07", memberID, false, nil) // Tomorrow
-	_, _ = db.CreateRotaAssignment(ctx, "2026-01-10", memberID, false, nil) // 4 days away
-	_, _ = db.CreateRotaAssignment(ctx, "2026-01-20", memberID, false, nil) // 14 days away (beyond 10 days)
+	// Create assignments relative to current date (2026-01-08)
+	_, _ = db.CreateRotaAssignment(ctx, "2026-01-09", memberID, false, nil) // Tomorrow (1 day away)
+	_, _ = db.CreateRotaAssignment(ctx, "2026-01-12", memberID, false, nil) // 4 days away
+	_, _ = db.CreateRotaAssignment(ctx, "2026-01-22", memberID, false, nil) // 14 days away (beyond 10 days)
 
 	// Act - Get assignments for next 10 days
 	assignments, err := db.GetUpcomingAssignments(ctx, memberID, 10)
 
 	// Assert
 	require.NoError(t, err)
-	require.Len(t, assignments, 2) // Only 7th and 10th, not 20th (14 days away)
+	require.Len(t, assignments, 2) // Only 9th and 12th, not 22nd (14 days away)
 }
 
 func TestGetUpcomingAssignments_Empty(t *testing.T) {

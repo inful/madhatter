@@ -133,11 +133,11 @@ func TestGetUpcomingAssignments_WithCovers(t *testing.T) {
 	memberID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com")
 	coverMemberID, _ := db.AddTeamMember(ctx, "Bob", "bob@example.com")
 
-	// Create original assignment
-	originalID, _ := db.CreateRotaAssignment(ctx, "2026-01-07", memberID, false, nil)
+	// Create original assignment (tomorrow)
+	originalID, _ := db.CreateRotaAssignment(ctx, "2026-01-09", memberID, false, nil)
 
-	// Create cover assignment
-	_, _ = db.CreateRotaAssignment(ctx, "2026-01-07", coverMemberID, true, &originalID)
+	// Create cover assignment (same day)
+	_, _ = db.CreateRotaAssignment(ctx, "2026-01-09", coverMemberID, true, &originalID)
 
 	// Act
 	assignments, err := db.GetUpcomingAssignments(ctx, memberID, 10)

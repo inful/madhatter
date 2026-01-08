@@ -26,7 +26,7 @@ This file provides guidance to agents when working with code in this repository.
 
 **Test Structure**: Tests are co-located with source files (e.g., `db_test.go` next to `db.go`) and use testify assertions.
 
-**Linter Configuration**: Uses golangci-lint v2 with extensive rules including shadow variable detection, performance checks, and custom tag alignment rules. Cyclomatic complexity limit is 10.
+**Linter Configuration**: Uses golangci-lint v2 with extensive rules including shadow variable detection, performance checks, and custom tag alignment rules. Cyclomatic complexity limit is 10. Always run with --fix flag to automatically fix formatting issues
 
 **SQLC Migration**: Database layer uses sqlc for type-safe SQL generation. Key files:
 - `sqlc.yaml` - sqlc configuration

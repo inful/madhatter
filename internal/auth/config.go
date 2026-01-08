@@ -87,7 +87,8 @@ func validateConfigPath(path string) (string, error) {
 
 	// filepath.Rel returns a path starting with ".." if the target is outside the base
 	// Check for ".." at the start followed by a separator or as the entire path
-	if relPath == ".." || strings.HasPrefix(relPath, ".."+string(filepath.Separator)) {
+	// Handle both OS-specific separator and forward slash (which can work on Windows)
+	if relPath == ".." || strings.HasPrefix(relPath, ".."+string(filepath.Separator)) || strings.HasPrefix(relPath, "../") {
 		return "", fmt.Errorf("config path %q is outside the allowed directory", path)
 	}
 

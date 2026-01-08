@@ -183,11 +183,11 @@ sessions:
 	})
 
 	t.Run("invalid yaml", func(t *testing.T) {
+		// Missing closing quote for client_secret value
 		invalidContent := `providers:
   forgejo:
     client_id: "id"
     client_secret: "secret
-    # Missing closing quote for client_secret
 `
 		err := os.WriteFile(configPath, []byte(invalidContent), 0600)
 		require.NoError(t, err)

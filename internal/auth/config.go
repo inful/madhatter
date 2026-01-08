@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -38,9 +39,15 @@ type ProviderConfig struct {
 }
 
 // LoadConfig loads authentication configuration from a YAML file.
+// The path must resolve to a location within the working directory
+// to prevent directory traversal attacks.
 func LoadConfig(path string) (*AuthConfig, error) {
-	// Clean the path to prevent directory traversal
-	cleanPath := filepath.Clean(path)
+	// Validate the path and get the cleaned version
+	cleanPath, err := validateConfigPath(path)
+	if err != nil {
+		return nil, err
+	}
+
 	data, err := os.ReadFile(cleanPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
@@ -52,6 +59,40 @@ func LoadConfig(path string) (*AuthConfig, error) {
 	}
 
 	return &config, nil
+}
+
+// validateConfigPath ensures the config file path is within allowed directories
+// and doesn't escape via directory traversal. Returns the cleaned path if valid.
+func validateConfigPath(path string) (string, error) {
+	// Clean the path first
+	cleanPath := filepath.Clean(path)
+
+	// Get absolute paths for comparison
+	absPath, err := filepath.Abs(cleanPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve config path: %w", err)
+	}
+
+	// Get current working directory as the base allowed directory
+	workDir, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("failed to get working directory: %w", err)
+	}
+
+	// Check if the absolute path is within the working directory
+	relPath, err := filepath.Rel(workDir, absPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to determine relative path: %w", err)
+	}
+
+	// filepath.Rel returns a path starting with ".." if the target is outside the base
+	// Check for ".." at the start followed by a separator or as the entire path
+	// Handle both OS-specific separator and forward slash (which can work on Windows)
+	if relPath == ".." || strings.HasPrefix(relPath, ".."+string(filepath.Separator)) || strings.HasPrefix(relPath, "../") {
+		return "", fmt.Errorf("config path %q is outside the allowed directory", path)
+	}
+
+	return cleanPath, nil
 }
 
 // LoadConfigFromEnv loads configuration from environment variables.

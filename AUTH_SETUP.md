@@ -180,7 +180,7 @@ The system implements several security measures to protect sensitive data:
    - Store this key securely (e.g., secret manager, vault)
    - Never commit the key to version control
    - If the key is lost, all encrypted OAuth tokens become unrecoverable
-   - Rotate the key periodically and re-encrypt tokens
+   - Key rotation requires re-encrypting all tokens (use migration tooling)
    - Without this key, a random key is generated on startup (tokens won't survive restarts)
 
 4. **Database Security**:
@@ -224,8 +224,8 @@ The system implements several security measures to protect sensitive data:
   - Ensure the same key is used across application restarts
   - If key is lost, OAuth tokens in database cannot be decrypted
   - Users will need to log in again to re-authorize
-- **"Encryption key must be 32 bytes"**: The `TOKEN_ENCRYPTION_KEY` must be exactly 32 bytes (base64 encoded)
-  - Generate a proper key: `openssl rand -base64 32`
+- **"Encryption key must be 32 bytes"**: The `TOKEN_ENCRYPTION_KEY` must decode to exactly 32 bytes when base64 decoded
+  - Generate a proper key: `openssl rand -base64 32` (produces 44 characters that decode to 32 bytes)
 - **Warning about random encryption key**: `TOKEN_ENCRYPTION_KEY` not set
   - Set the environment variable for production deployments
   - Without it, tokens won't survive application restarts

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 )
 
@@ -41,7 +42,7 @@ func NewTokenEncryptor() (*TokenEncryptor, error) {
 		}
 	} else {
 		// Generate a random key (WARNING: tokens won't survive restarts)
-		fmt.Println("WARNING: TOKEN_ENCRYPTION_KEY not set, using randomly generated key (tokens won't survive restarts)")
+		log.Printf("WARNING: TOKEN_ENCRYPTION_KEY not set, using randomly generated key (tokens won't survive restarts)")
 		key = make([]byte, 32)
 		if _, err := rand.Read(key); err != nil {
 			return nil, fmt.Errorf("failed to generate encryption key: %w", err)

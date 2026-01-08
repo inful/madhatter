@@ -108,10 +108,6 @@ func (c *AuthConfig) Validate() error {
 		return errors.New("no OAuth providers configured")
 	}
 
-	if c.Sessions.SecretKey == "" {
-		return errors.New("session secret key is required")
-	}
-
 	for name, provider := range c.Providers {
 		if provider.ClientID == "" {
 			return fmt.Errorf("provider %s: client_id is required", name)

@@ -36,8 +36,6 @@ oauth:
     client_secret: "your-forgejo-client-secret"
     # Base URL of your Forgejo instance
     base_url: "https://git.example.com"
-    # Optional: restrict to specific organizations
-    allowed_organizations: []
   
   # GitLab Configuration
   gitlab:
@@ -46,8 +44,6 @@ oauth:
     client_secret: "your-gitlab-client-secret"
     # Base URL of your GitLab instance (https://gitlab.com for SaaS)
     base_url: "https://gitlab.com"
-    # Optional: restrict to specific groups
-    allowed_groups: []
 ```
 
 ## Setting Up OAuth2 Applications

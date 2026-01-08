@@ -100,7 +100,10 @@ func Execute() {
 }
 
 func serveCommand(db *database.DB) {
-	server := api.NewServer(db)
+	server, err := api.NewServer(db)
+	if err != nil {
+		log.Fatalf("Failed to create server: %v\n", err)
+	}
 	log.Printf("Starting server on port %s\n", CLI.Serve.Port)
 	if err := server.Start(CLI.Serve.Port); err != nil {
 		log.Printf("Server error: %v\n", err)

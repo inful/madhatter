@@ -19,6 +19,8 @@ type Querier interface {
 	CreateRotaAssignment(ctx context.Context, arg CreateRotaAssignmentParams) (sql.Result, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	// Atomically creates a user and makes them admin only if no admins exist
+	CreateUserAsFirstAdmin(ctx context.Context, arg CreateUserAsFirstAdminParams) (User, error)
 	DeactivateTeamMember(ctx context.Context, id string) error
 	DeleteAssignmentsByDateRange(ctx context.Context, arg DeleteAssignmentsByDateRangeParams) error
 	DeleteCalendarSubscription(ctx context.Context, token string) error

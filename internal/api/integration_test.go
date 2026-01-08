@@ -31,7 +31,8 @@ func setupTestServer(t *testing.T) (*Server, func()) {
 	}
 
 	// Create server
-	server := NewServer(db)
+	server, err := NewServer(db)
+	require.NoError(t, err, "Failed to create server")
 
 	return server, cleanup
 }

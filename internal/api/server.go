@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -39,7 +40,7 @@ type Server struct {
 	cleanupCancel  context.CancelFunc
 }
 
-func NewServer(db *database.DB) *Server {
+func NewServer(db *database.DB) (*Server, error) {
 	router := chi.NewRouter()
 
 	// Create HUMA API with Chi adapter
@@ -51,14 +52,13 @@ func NewServer(db *database.DB) *Server {
 
 	// Validate configuration
 	if err := authConfig.Validate(); err != nil {
-		// Fail fast if auth configuration is invalid to avoid confusing runtime errors
-		log.Fatalf("Auth configuration invalid, aborting startup: %v\n", err)
+		return nil, fmt.Errorf("auth configuration invalid: %w", err)
 	}
 
 	// Create token encryptor for OAuth tokens
 	encryptor, err := auth.NewTokenEncryptor()
 	if err != nil {
-		log.Fatalf("Failed to create token encryptor: %v\n", err)
+		return nil, fmt.Errorf("failed to create token encryptor: %w", err)
 	}
 
 	// Create auth components
@@ -91,7 +91,7 @@ func NewServer(db *database.DB) *Server {
 
 	s.registerOperations()
 	s.registerWebRoutes()
-	return s
+	return s, nil
 }
 
 func (s *Server) registerOperations() {

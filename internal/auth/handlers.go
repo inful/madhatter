@@ -94,6 +94,8 @@ func (am *AuthManager) HandleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleCallback handles the OAuth2 callback.
+//
+//nolint:cyclop // Complex but necessary for OAuth2 flow
 func (am *AuthManager) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	// Get state from cookie and query
 	stateCookie, err := r.Cookie("oauth_state")

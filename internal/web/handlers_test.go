@@ -84,7 +84,7 @@ func TestRegisterRoutes(t *testing.T) {
 	require.NotNil(t, router)
 }
 
-// TestAllTemplatesParse verifies all templates can be parsed without errors
+// TestAllTemplatesParse verifies all templates can be parsed without errors.
 func TestAllTemplatesParse(t *testing.T) {
 	mockDB := &database.DB{}
 	mockAuthManager := &auth.AuthManager{}
@@ -118,7 +118,7 @@ func TestAllTemplatesParse(t *testing.T) {
 	}
 }
 
-// TestAllTemplatesWithData verifies all templates work with common data structures
+// TestAllTemplatesWithData verifies all templates work with common data structures.
 func TestAllTemplatesWithData(t *testing.T) {
 	mockDB := &database.DB{}
 	mockAuthManager := &auth.AuthManager{}
@@ -127,12 +127,12 @@ func TestAllTemplatesWithData(t *testing.T) {
 	// Create handler
 	handler := NewHandler(mockDB, mockAuthManager, mockMiddleware)
 
-	// Create test data that templates expect
+	// Create test data that templates expect.
 	dashboardData := map[string]any{
 		"Assignments": []map[string]any{
 			{"Date": "2026-01-10", "Member": "Test User", "IsCover": false, "IsLeave": false},
 		},
-		"User": map[string]any{"Email": "test@example.com", "IsAdmin": true},
+		"User":    map[string]any{"Email": "test@example.com", "IsAdmin": true},
 		"IsAdmin": true,
 	}
 
@@ -140,7 +140,7 @@ func TestAllTemplatesWithData(t *testing.T) {
 		"Members": []map[string]any{
 			{"ID": 1, "Name": "Test User", "Email": "test@example.com", "Active": true},
 		},
-		"User": map[string]any{"Email": "test@example.com", "IsAdmin": true},
+		"User":    map[string]any{"Email": "test@example.com", "IsAdmin": true},
 		"IsAdmin": true,
 	}
 
@@ -148,8 +148,8 @@ func TestAllTemplatesWithData(t *testing.T) {
 		"Members": []map[string]any{
 			{"ID": 1, "Name": "Test User", "Email": "test@example.com"},
 		},
-		"Leave": []map[string]any{},
-		"User": map[string]any{"Email": "test@example.com", "IsAdmin": true},
+		"Leave":   []map[string]any{},
+		"User":    map[string]any{"Email": "test@example.com", "IsAdmin": true},
 		"IsAdmin": true,
 	}
 
@@ -157,7 +157,7 @@ func TestAllTemplatesWithData(t *testing.T) {
 		"Assignments": []map[string]any{
 			{"Date": "2026-01-10", "Member": "Test User", "IsCover": false, "IsLeave": false},
 		},
-		"User": map[string]any{"Email": "test@example.com", "IsAdmin": true},
+		"User":    map[string]any{"Email": "test@example.com", "IsAdmin": true},
 		"IsAdmin": true,
 	}
 
@@ -165,7 +165,7 @@ func TestAllTemplatesWithData(t *testing.T) {
 		"Members": []map[string]any{
 			{"ID": 1, "Name": "Test User", "Email": "test@example.com"},
 		},
-		"User": map[string]any{"Email": "test@example.com", "IsAdmin": true},
+		"User":    map[string]any{"Email": "test@example.com", "IsAdmin": true},
 		"IsAdmin": true,
 	}
 
@@ -173,7 +173,7 @@ func TestAllTemplatesWithData(t *testing.T) {
 		"Subscriptions": []map[string]any{
 			{"Token": "test-token", "Name": "Test Calendar", "CreatedAt": "2026-01-08"},
 		},
-		"User": map[string]any{"Email": "test@example.com", "IsAdmin": true},
+		"User":    map[string]any{"Email": "test@example.com", "IsAdmin": true},
 		"IsAdmin": true,
 	}
 

@@ -54,11 +54,11 @@ func TestTokenEncryptor(t *testing.T) {
 
 		// Try to decrypt invalid data
 		_, err = encryptor.Decrypt("invalid-base64-data")
-		assert.Error(t, err)
+		require.Error(t, err)
 
 		// Try to decrypt too short data
 		_, err = encryptor.Decrypt("YWJj") // base64 of "abc"
-		assert.Error(t, err)
+		require.Error(t, err)
 	})
 
 	t.Run("Multiple Encryptions Produce Different Ciphertexts", func(t *testing.T) {
@@ -92,7 +92,7 @@ func TestTokenEncryptor(t *testing.T) {
 		t.Setenv("TOKEN_ENCRYPTION_KEY", "dG9vLXNob3J0") // base64 of "too-short"
 
 		_, err := NewTokenEncryptor()
-		assert.Error(t, err)
+		require.Error(t, err)
 		assert.Contains(t, err.Error(), "encryption key must be 32 bytes")
 	})
 

@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"html/template"
 	"net/http"
 	"time"
@@ -49,6 +50,45 @@ func NewHandler(db *database.DB, authManager *auth.AuthManager, authMiddleware *
 	return h
 }
 
+// safeAuthMiddleware wraps middleware to handle nil auth components gracefully.
+func (h *Handler) safeAuthMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if h.authMiddleware == nil {
+			// No authentication configured, proceed without auth
+			next.ServeHTTP(w, r)
+			return
+		}
+		// Use the actual middleware
+		h.authMiddleware.OptionalAuth(next).ServeHTTP(w, r)
+	})
+}
+
+// safeRequireAuth wraps middleware to handle nil auth components gracefully.
+func (h *Handler) safeRequireAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if h.authMiddleware == nil {
+			// No authentication configured - show error
+			http.Error(w, "Authentication required but not configured. Please set up OAuth provider environment variables.", http.StatusUnauthorized)
+			return
+		}
+		// Use the actual middleware
+		h.authMiddleware.RequireAuth(next).ServeHTTP(w, r)
+	})
+}
+
+// safeRequireAdmin wraps middleware to handle nil auth components gracefully.
+func (h *Handler) safeRequireAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if h.authMiddleware == nil {
+			// No authentication configured - show error
+			http.Error(w, "Admin access required but authentication not configured. Please set up OAuth provider environment variables.", http.StatusUnauthorized)
+			return
+		}
+		// Use the actual middleware
+		h.authMiddleware.RequireAdmin(next).ServeHTTP(w, r)
+	})
+}
+
 func parseTemplates() *template.Template {
 	// Try different possible template locations
 	possiblePaths := []string{
@@ -73,15 +113,17 @@ func parseTemplates() *template.Template {
 }
 
 func (h *Handler) registerRoutes() {
-	// Auth routes (no authentication required)
-	h.router.HandleFunc("/login", h.authManager.HandleLoginView)
-	h.router.HandleFunc("/auth/login/{provider}", h.authManager.HandleLogin)
-	h.router.HandleFunc("/auth/callback", h.authManager.HandleCallback)
-	h.router.HandleFunc("/auth/logout", h.authManager.HandleLogout)
+	// Auth routes (no authentication required) - only if auth is configured
+	if h.authManager != nil {
+		h.router.HandleFunc("/login", h.authManager.HandleLoginView)
+		h.router.HandleFunc("/auth/login/{provider}", h.authManager.HandleLogin)
+		h.router.HandleFunc("/auth/callback", h.authManager.HandleCallback)
+		h.router.HandleFunc("/auth/logout", h.authManager.HandleLogout)
+	}
 
 	// Public routes (no authentication required, but user info loaded if available)
 	h.router.Group(func(r chi.Router) {
-		r.Use(h.authMiddleware.OptionalAuth)
+		r.Use(h.safeAuthMiddleware)
 		r.HandleFunc("/", h.handleDashboard)
 		r.HandleFunc("/schedule/current", h.handleScheduleCurrent)
 	})
@@ -89,7 +131,7 @@ func (h *Handler) registerRoutes() {
 
 	// Protected routes (require authentication)
 	h.router.Group(func(r chi.Router) {
-		r.Use(h.authMiddleware.RequireAuth)
+		r.Use(h.safeRequireAuth)
 
 		r.HandleFunc("/leave/report", h.handleLeaveReport)
 		r.HandleFunc("/calendar", h.handleCalendar)
@@ -97,8 +139,8 @@ func (h *Handler) registerRoutes() {
 
 	// Admin routes (require authentication and admin privileges)
 	h.router.Group(func(r chi.Router) {
-		r.Use(h.authMiddleware.RequireAuth)
-		r.Use(h.authMiddleware.RequireAdmin)
+		r.Use(h.safeRequireAuth)
+		r.Use(h.safeRequireAdmin)
 
 		r.HandleFunc("/team", h.handleTeam)
 		r.HandleFunc("/schedule/generate", h.handleScheduleGenerate)
@@ -111,30 +153,31 @@ func (h *Handler) Router() *chi.Mux {
 }
 
 func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	data := map[string]any{
 		"Today": time.Now().Format("Monday, Jan 2, 2006"),
 	}
 
 	// Add user info to data
-	if user, ok := auth.GetUserFromContext(r.Context()); ok {
+	if user, ok := auth.GetUserFromContext(ctx); ok {
 		data["User"] = user
 		data["IsAdmin"] = user.IsAdmin.Valid && user.IsAdmin.Int64 == 1
 	}
 
 	// Check team members and handle no-team case
-	if !h.checkTeamMembers(w, data) {
+	if !h.checkTeamMembers(ctx, w, data) {
 		return
 	}
 
 	// Maintain schedule (ignore return value, just check error)
-	_, err := h.maintenance.EnsureSchedule()
+	_, err := h.maintenance.EnsureSchedule(ctx)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	// Load dashboard data
-	h.loadDashboardData(data)
+	h.loadDashboardData(ctx, data)
 
 	// Render template
 	if err := h.tmpl.ExecuteTemplate(w, "dashboard.html", data); err != nil {
@@ -143,8 +186,8 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 }
 
 // checkTeamMembers validates team exists and handles no-team case.
-func (h *Handler) checkTeamMembers(w http.ResponseWriter, data map[string]any) bool {
-	members, err := h.db.GetActiveTeamMembers()
+func (h *Handler) checkTeamMembers(ctx context.Context, w http.ResponseWriter, data map[string]any) bool {
+	members, err := h.db.GetActiveTeamMembers(ctx)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return false
@@ -162,16 +205,16 @@ func (h *Handler) checkTeamMembers(w http.ResponseWriter, data map[string]any) b
 }
 
 // loadDashboardData populates the dashboard with today's and week's assignments.
-func (h *Handler) loadDashboardData(data map[string]any) {
+func (h *Handler) loadDashboardData(ctx context.Context, data map[string]any) {
 	// Get today's assignment
 	today := time.Now().Format("2006-01-02")
-	assignments, err := h.db.GetAssignmentsByDate(today)
+	assignments, err := h.db.GetAssignmentsByDate(ctx, today)
 	if err == nil && len(assignments) > 0 {
 		data["TodayAssignment"] = assignments[0]
 	}
 
 	// Get current and next week assignments
-	weeksData, err := h.getFullWeeks()
+	weeksData, err := h.getFullWeeks(ctx)
 	if err == nil {
 		// Separate into current week and next week
 		now := time.Now()
@@ -217,7 +260,7 @@ func (h *Handler) loadDashboardData(data map[string]any) {
 }
 
 // getFullWeeks retrieves assignments for current and next week.
-func (h *Handler) getFullWeeks() (map[string][]database.RotaAssignment, error) {
+func (h *Handler) getFullWeeks(ctx context.Context) (map[string][]database.RotaAssignment, error) {
 	now := time.Now()
 
 	// Current week (Monday to Friday)
@@ -231,7 +274,7 @@ func (h *Handler) getFullWeeks() (map[string][]database.RotaAssignment, error) {
 	startDate := currentWeekStart.Format("2006-01-02")
 	endDate := nextWeekEnd.Format("2006-01-02")
 
-	assignments, err := h.db.GetAssignmentsByDateRange(startDate, endDate)
+	assignments, err := h.db.GetAssignmentsByDateRange(ctx, startDate, endDate)
 	if err != nil {
 		return nil, err
 	}
@@ -246,10 +289,11 @@ func (h *Handler) getFullWeeks() (map[string][]database.RotaAssignment, error) {
 }
 
 func (h *Handler) handleTeam(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	data := make(map[string]any)
 
 	// Add user info to data
-	if user, ok := auth.GetUserFromContext(r.Context()); ok {
+	if user, ok := auth.GetUserFromContext(ctx); ok {
 		data["User"] = user
 		data["IsAdmin"] = user.IsAdmin.Valid && user.IsAdmin.Int64 == 1
 	}
@@ -262,14 +306,14 @@ func (h *Handler) handleTeam(w http.ResponseWriter, r *http.Request) {
 		name := r.FormValue("name")
 		email := r.FormValue("email")
 
-		_, err := h.db.AddTeamMember(name, email)
+		_, err := h.db.AddTeamMember(ctx, name, email)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		// Handle team change - update schedule
-		if err := h.maintenance.HandleTeamChange(); err != nil {
+		if err := h.maintenance.HandleTeamChange(ctx); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -278,7 +322,7 @@ func (h *Handler) handleTeam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	members, err := h.db.GetActiveTeamMembers()
+	members, err := h.db.GetActiveTeamMembers(ctx)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -292,10 +336,11 @@ func (h *Handler) handleTeam(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleLeaveReport(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	data := make(map[string]any)
 
 	// Add user info to data
-	if user, ok := auth.GetUserFromContext(r.Context()); ok {
+	if user, ok := auth.GetUserFromContext(ctx); ok {
 		data["User"] = user
 		data["IsAdmin"] = user.IsAdmin.Valid && user.IsAdmin.Int64 == 1
 	}
@@ -310,14 +355,14 @@ func (h *Handler) handleLeaveReport(w http.ResponseWriter, r *http.Request) {
 		startDate := r.FormValue("start_date")
 		endDate := r.FormValue("end_date")
 
-		leaveID, err := h.db.CreateLeaveRecord(memberID, leaveType, startDate, endDate)
+		leaveID, err := h.db.CreateLeaveRecord(ctx, memberID, leaveType, startDate, endDate)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
 		// Handle leave change using maintenance service
-		err = h.maintenance.HandleLeaveChange(leaveID)
+		err = h.maintenance.HandleLeaveChange(ctx, leaveID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -327,7 +372,7 @@ func (h *Handler) handleLeaveReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	members, err := h.db.GetActiveTeamMembers()
+	members, err := h.db.GetActiveTeamMembers(ctx)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -341,10 +386,11 @@ func (h *Handler) handleLeaveReport(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleScheduleCurrent(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	data := make(map[string]any)
 
 	// Add user info to data
-	if user, ok := auth.GetUserFromContext(r.Context()); ok {
+	if user, ok := auth.GetUserFromContext(ctx); ok {
 		data["User"] = user
 		data["IsAdmin"] = user.IsAdmin.Valid && user.IsAdmin.Int64 == 1
 	}
@@ -363,7 +409,7 @@ func (h *Handler) handleScheduleCurrent(w http.ResponseWriter, r *http.Request) 
 	startDate := currentWeekStart.Format("2006-01-02")
 	endDate := nextWeekEnd.Format("2006-01-02")
 
-	assignments, err := h.db.GetAssignmentsByDateRange(startDate, endDate)
+	assignments, err := h.db.GetAssignmentsByDateRange(ctx, startDate, endDate)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -432,13 +478,14 @@ func (h *Handler) handleScheduleGenerate(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *Handler) handleScheduleGeneratePost(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	// Validate team members
-	if !h.validateTeamMembers(w) {
+	if !h.validateTeamMembers(ctx, w) {
 		return
 	}
 
@@ -452,9 +499,9 @@ func (h *Handler) handleScheduleGeneratePost(w http.ResponseWriter, r *http.Requ
 	regenerate := r.FormValue("regenerate") == "on"
 	var err error
 	if regenerate {
-		_, err = h.maintenance.RegenerateSchedule(start, end)
+		_, err = h.maintenance.RegenerateSchedule(ctx, start, end)
 	} else {
-		_, err = h.maintenance.GenerateMissingDays(start, end)
+		_, err = h.maintenance.GenerateMissingDays(ctx, start, end)
 	}
 
 	if err != nil {
@@ -466,14 +513,15 @@ func (h *Handler) handleScheduleGeneratePost(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *Handler) handleScheduleGenerateGet(w http.ResponseWriter, r *http.Request) {
-	if !h.validateTeamMembers(w) {
+	ctx := r.Context()
+	if !h.validateTeamMembers(ctx, w) {
 		return
 	}
 
 	data := make(map[string]any)
 
 	// Add user info to data
-	if user, ok := auth.GetUserFromContext(r.Context()); ok {
+	if user, ok := auth.GetUserFromContext(ctx); ok {
 		data["User"] = user
 		data["IsAdmin"] = user.IsAdmin.Valid && user.IsAdmin.Int64 == 1
 	}
@@ -487,8 +535,8 @@ func (h *Handler) handleScheduleGenerateGet(w http.ResponseWriter, r *http.Reque
 	}
 }
 
-func (h *Handler) validateTeamMembers(w http.ResponseWriter) bool {
-	members, err := h.db.GetActiveTeamMembers()
+func (h *Handler) validateTeamMembers(ctx context.Context, w http.ResponseWriter) bool {
+	members, err := h.db.GetActiveTeamMembers(ctx)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return false
@@ -520,10 +568,11 @@ func (h *Handler) parseDateRange(w http.ResponseWriter, r *http.Request) (time.T
 }
 
 func (h *Handler) handleCalendar(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	data := make(map[string]any)
 
 	// Add user info to data
-	if user, ok := auth.GetUserFromContext(r.Context()); ok {
+	if user, ok := auth.GetUserFromContext(ctx); ok {
 		data["User"] = user
 		data["IsAdmin"] = user.IsAdmin.Valid && user.IsAdmin.Int64 == 1
 	}
@@ -535,7 +584,7 @@ func (h *Handler) handleCalendar(w http.ResponseWriter, r *http.Request) {
 		}
 		memberID := r.FormValue("member_id")
 
-		token, err := h.db.CreateCalendarSubscription(memberID)
+		token, err := h.db.CreateCalendarSubscription(ctx, memberID)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -552,7 +601,7 @@ func (h *Handler) handleCalendar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	members, err := h.db.GetActiveTeamMembers()
+	members, err := h.db.GetActiveTeamMembers(ctx)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -573,8 +622,8 @@ func (h *Handler) handleCalendarICS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate ICS content
-	icsContent, err := calendar.GenerateICSForToken(h.db, token, defaultCalendarLookaheadDays)
+	// Generate ICS content using new calendar library
+	icsContent, err := calendar.GenerateICalForToken(r.Context(), h.db, token, defaultCalendarLookaheadDays)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return

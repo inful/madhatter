@@ -1,3 +1,4 @@
+//nolint:dupl // Forgejo and GitLab providers share similar OAuth2 structure but are intentionally separate for extensibility
 package auth
 
 import (
@@ -34,9 +35,14 @@ func NewForgejoProvider(config ProviderConfig) *ForgejoProvider {
 	}
 }
 
+const (
+	// ProviderNameForgejo is the name of the Forgejo provider.
+	ProviderNameForgejo = "forgejo"
+)
+
 // Name returns the provider name.
 func (p *ForgejoProvider) Name() string {
-	return "forgejo"
+	return ProviderNameForgejo
 }
 
 // GetAuthURL returns the authorization URL.

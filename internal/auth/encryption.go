@@ -12,10 +12,13 @@ import (
 	"os"
 )
 
-var (
-	// ErrInvalidCiphertext is returned when decryption fails.
-	ErrInvalidCiphertext = errors.New("invalid ciphertext")
+const (
+	// KeySize is the size of the encryption key in bytes.
+	KeySize = 32
 )
+
+// ErrInvalidCiphertext is returned when decryption fails.
+var ErrInvalidCiphertext = errors.New("invalid ciphertext")
 
 // TokenEncryptor handles encryption and decryption of OAuth tokens.
 type TokenEncryptor struct {
@@ -37,13 +40,13 @@ func NewTokenEncryptor() (*TokenEncryptor, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode encryption key: %w", err)
 		}
-		if len(key) != 32 {
-			return nil, fmt.Errorf("encryption key must be 32 bytes, got %d", len(key))
+		if len(key) != KeySize {
+			return nil, fmt.Errorf("encryption key must be %d bytes, got %d", KeySize, len(key))
 		}
 	} else {
 		// Generate a random key (WARNING: tokens won't survive restarts)
 		log.Printf("WARNING: TOKEN_ENCRYPTION_KEY not set, using randomly generated key (tokens won't survive restarts)")
-		key = make([]byte, 32)
+		key = make([]byte, KeySize)
 		if _, err := rand.Read(key); err != nil {
 			return nil, fmt.Errorf("failed to generate encryption key: %w", err)
 		}

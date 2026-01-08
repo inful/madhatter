@@ -1,6 +1,7 @@
 package rota
 
 import (
+	"context"
 	"testing"
 
 	"github.com/inful/madhatter/internal/database"
@@ -25,15 +26,16 @@ func TestDebugLeaveDates(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
-	aliceID, _ := db.AddTeamMember("Alice", "alice@example.com")
+	ctx := context.Background()
+	aliceID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com")
 
 	// Create leave
-	leaveID, err := db.CreateLeaveRecord(aliceID, "sick", "2024-01-15", "2024-01-15")
+	leaveID, err := db.CreateLeaveRecord(ctx, aliceID, "sick", "2024-01-15", "2024-01-15")
 	require.NoError(t, err)
 	t.Logf("Created leave ID: %s", leaveID)
 
 	// Get it back
-	leave, err := db.GetLeaveByID(leaveID)
+	leave, err := db.GetLeaveByID(ctx, leaveID)
 	require.NoError(t, err)
 	t.Logf("Retrieved leave: %+v", leave)
 	t.Logf("StartDate: %v", leave.StartDate)
@@ -43,7 +45,7 @@ func TestDebugLeaveDates(t *testing.T) {
 	t.Logf("StartDate is already time.Time: %v", leave.StartDate)
 
 	// Check what GetLeaveByDate returns
-	leaves, err := db.GetLeaveByDate("2024-01-15")
+	leaves, err := db.GetLeaveByDate(ctx, "2024-01-15")
 	require.NoError(t, err)
 	t.Logf("GetLeaveByDate result: %+v", leaves)
 	if len(leaves) > 0 {

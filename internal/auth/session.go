@@ -19,6 +19,8 @@ import (
 const (
 	// SessionTokenLength is the length in bytes for generated session tokens.
 	sessionTokenLength = 32
+	// CleanupInterval is the interval between session cleanup runs.
+	cleanupInterval = 15 * time.Minute
 )
 
 // SessionManager handles session creation, validation, and destruction.
@@ -37,7 +39,7 @@ func NewSessionManager(db *sqlc.Queries, duration time.Duration) *SessionManager
 		db:              db,
 		sessionDuration: duration,
 		cookieName:      "session_token",
-		cleanupInterval: 15 * time.Minute, // Run cleanup every 15 minutes
+		cleanupInterval: cleanupInterval,
 		stopCleanup:     make(chan struct{}),
 	}
 }
@@ -45,7 +47,7 @@ func NewSessionManager(db *sqlc.Queries, duration time.Duration) *SessionManager
 // CreateSession creates a new session for a user.
 func (sm *SessionManager) CreateSession(ctx context.Context, userID string) (string, error) {
 	// Generate secure session token
-	token, err := generateSecureToken(sessionTokenLength)
+	token, err := generateSecureToken()
 	if err != nil {
 		return "", err
 	}
@@ -81,7 +83,6 @@ func (sm *SessionManager) ValidateSession(ctx context.Context, token string) (*s
 
 	// Get session using hashed token
 	session, err := sm.db.GetSessionByToken(ctx, tokenHash)
-
 	if err != nil {
 		return nil, ErrInvalidSession
 	}
@@ -144,10 +145,8 @@ func (sm *SessionManager) StartCleanup(ctx context.Context) {
 		for {
 			select {
 			case <-ticker.C:
-				// Clean up expired sessions using a background context
-				// to avoid issues if the original context is canceled
-				cleanupCtx := context.Background()
-				if err := sm.db.DeleteExpiredSessions(cleanupCtx); err != nil {
+				// Clean up expired sessions using the parent context
+				if err := sm.db.DeleteExpiredSessions(ctx); err != nil {
 					log.Printf("Session cleanup error: %v\n", err)
 				}
 			case <-sm.stopCleanup:
@@ -167,8 +166,8 @@ func (sm *SessionManager) StopCleanup() {
 }
 
 // generateSecureToken generates a cryptographically secure random token.
-func generateSecureToken(length int) (string, error) {
-	bytes := make([]byte, length)
+func generateSecureToken() (string, error) {
+	bytes := make([]byte, sessionTokenLength)
 	if _, err := rand.Read(bytes); err != nil {
 		return "", err
 	}

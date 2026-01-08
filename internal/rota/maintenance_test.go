@@ -1,6 +1,7 @@
 package rota
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -12,22 +13,24 @@ func TestScheduleMaintenance_EnsureSchedule(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
+	ctx := context.Background()
+
 	// Add team members first
-	_, err := db.AddTeamMember("Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
 	require.NoError(t, err)
-	_, err = db.AddTeamMember("Bob", "bob@example.com")
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
 	require.NoError(t, err)
 
 	maintenance := NewScheduleMaintenance(db)
 
 	// Test 1: No existing assignments - should create 14 days from today
 	t.Run("NoExistingAssignments", func(t *testing.T) {
-		created, err := maintenance.EnsureSchedule()
+		created, err := maintenance.EnsureSchedule(ctx)
 		require.NoError(t, err)
 		assert.True(t, created, "Should create new assignments")
 
 		// Verify assignments exist for the next 14 days
-		latestDate, err := db.GetLatestAssignmentDate()
+		latestDate, err := db.GetLatestAssignmentDate(ctx)
 		require.NoError(t, err)
 		assert.NotEmpty(t, latestDate)
 
@@ -45,7 +48,7 @@ func TestScheduleMaintenance_EnsureSchedule(t *testing.T) {
 
 	// Test 2: Existing complete schedule - should not create new assignments
 	t.Run("CompleteSchedule", func(t *testing.T) {
-		created, err := maintenance.EnsureSchedule()
+		created, err := maintenance.EnsureSchedule(ctx)
 		require.NoError(t, err)
 		assert.False(t, created, "Should not create new assignments when schedule is complete")
 	})
@@ -55,16 +58,18 @@ func TestScheduleMaintenance_GetScheduleGap(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
+	ctx := context.Background()
+
 	// Add team members first
-	_, err := db.AddTeamMember("Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
 	require.NoError(t, err)
-	_, err = db.AddTeamMember("Bob", "bob@example.com")
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
 	require.NoError(t, err)
 
 	maintenance := NewScheduleMaintenance(db)
 
 	t.Run("NoAssignments", func(t *testing.T) {
-		start, end, err := maintenance.GetScheduleGap()
+		start, end, err := maintenance.GetScheduleGap(ctx)
 		require.NoError(t, err)
 
 		today := time.Now().Format("2006-01-02")
@@ -76,10 +81,10 @@ func TestScheduleMaintenance_GetScheduleGap(t *testing.T) {
 
 	t.Run("CompleteSchedule", func(t *testing.T) {
 		// Create full schedule
-		_, err := maintenance.EnsureSchedule()
+		_, err := maintenance.EnsureSchedule(ctx)
 		require.NoError(t, err)
 
-		start, end, err := maintenance.GetScheduleGap()
+		start, end, err := maintenance.GetScheduleGap(ctx)
 		require.NoError(t, err)
 
 		// No gap should exist
@@ -92,10 +97,12 @@ func TestScheduleMaintenance_GenerateMissingDays(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
+	ctx := context.Background()
+
 	// Add team members first
-	_, err := db.AddTeamMember("Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
 	require.NoError(t, err)
-	_, err = db.AddTeamMember("Bob", "bob@example.com")
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
 	require.NoError(t, err)
 
 	maintenance := NewScheduleMaintenance(db)
@@ -104,7 +111,7 @@ func TestScheduleMaintenance_GenerateMissingDays(t *testing.T) {
 		startDate := time.Now().AddDate(0, 0, 1) // Tomorrow
 		endDate := time.Now().AddDate(0, 0, 7)   // 7 days from now
 
-		created, err := maintenance.GenerateMissingDays(startDate, endDate)
+		created, err := maintenance.GenerateMissingDays(ctx, startDate, endDate)
 		require.NoError(t, err)
 		assert.True(t, created, "Should create assignments")
 
@@ -116,7 +123,7 @@ func TestScheduleMaintenance_GenerateMissingDays(t *testing.T) {
 			}
 
 			dateStr := date.Format("2006-01-02")
-			assignments, err := db.GetAssignmentsByDate(dateStr)
+			assignments, err := db.GetAssignmentsByDate(ctx, dateStr)
 			require.NoError(t, err)
 			assert.NotEmpty(t, assignments, "Should have assignments for %s", dateStr)
 		}
@@ -124,7 +131,7 @@ func TestScheduleMaintenance_GenerateMissingDays(t *testing.T) {
 
 	t.Run("PreserveExistingAssignments", func(t *testing.T) {
 		// Get the latest assignment date from the first test
-		latestDate, err := db.GetLatestAssignmentDate()
+		latestDate, err := db.GetLatestAssignmentDate(ctx)
 		require.NoError(t, err)
 
 		// Generate assignments for the next 7 days after the latest
@@ -133,12 +140,13 @@ func TestScheduleMaintenance_GenerateMissingDays(t *testing.T) {
 		endDate := latestTime.AddDate(0, 0, 8)
 
 		// This should create new assignments (7 days after the current schedule)
-		created, err := maintenance.GenerateMissingDays(startDate, endDate)
+		created, err := maintenance.GenerateMissingDays(ctx, startDate, endDate)
 		require.NoError(t, err)
 		assert.True(t, created, "Should create new assignments for dates after current schedule")
 
 		// Verify new assignments were created
 		newAssignments, err := db.GetAssignmentsByDateRange(
+			ctx,
 			startDate.Format("2006-01-02"),
 			endDate.Format("2006-01-02"),
 		)
@@ -146,12 +154,13 @@ func TestScheduleMaintenance_GenerateMissingDays(t *testing.T) {
 		assert.NotEmpty(t, newAssignments, "Should have new assignments")
 
 		// Now generate again for the same range - should not create duplicates
-		created2, err := maintenance.GenerateMissingDays(startDate, endDate)
+		created2, err := maintenance.GenerateMissingDays(ctx, startDate, endDate)
 		require.NoError(t, err)
 		assert.False(t, created2, "Should not create new assignments when range is complete")
 
 		// Verify no duplicates
 		assignmentsAfter, err := db.GetAssignmentsByDateRange(
+			ctx,
 			startDate.Format("2006-01-02"),
 			endDate.Format("2006-01-02"),
 		)
@@ -164,29 +173,31 @@ func TestScheduleMaintenance_HandleTeamChange(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
+	ctx := context.Background()
+
 	// Add team members first
-	_, err := db.AddTeamMember("Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
 	require.NoError(t, err)
-	_, err = db.AddTeamMember("Bob", "bob@example.com")
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
 	require.NoError(t, err)
 
 	maintenance := NewScheduleMaintenance(db)
 
 	// Create initial schedule
-	_, err = maintenance.EnsureSchedule()
+	_, err = maintenance.EnsureSchedule(ctx)
 	require.NoError(t, err)
 
 	t.Run("TeamChangeTriggersScheduleUpdate", func(t *testing.T) {
 		// Add a new team member
-		_, err := db.AddTeamMember("New Member", "new@example.com")
+		_, err := db.AddTeamMember(ctx, "New Member", "new@example.com")
 		require.NoError(t, err)
 
 		// Handle team change
-		err = maintenance.HandleTeamChange()
+		err = maintenance.HandleTeamChange(ctx)
 		require.NoError(t, err)
 
 		// Verify schedule is still complete
-		start, end, err := maintenance.GetScheduleGap()
+		start, end, err := maintenance.GetScheduleGap(ctx)
 		require.NoError(t, err)
 		assert.Empty(t, start, "Schedule should be complete after team change")
 		assert.Empty(t, end, "Schedule should be complete after team change")
@@ -197,35 +208,37 @@ func TestScheduleMaintenance_HandleLeaveChange(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
+	ctx := context.Background()
+
 	// Add team members first
-	_, err := db.AddTeamMember("Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
 	require.NoError(t, err)
-	_, err = db.AddTeamMember("Bob", "bob@example.com")
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
 	require.NoError(t, err)
 
 	maintenance := NewScheduleMaintenance(db)
 
 	// Create initial schedule
-	_, err = maintenance.EnsureSchedule()
+	_, err = maintenance.EnsureSchedule(ctx)
 	require.NoError(t, err)
 
 	// Get a team member
-	members, err := db.GetActiveTeamMembers()
+	members, err := db.GetActiveTeamMembers(ctx)
 	require.NoError(t, err)
 	require.NotEmpty(t, members)
 
 	t.Run("LeaveCreatesCover", func(t *testing.T) {
 		// Create leave for tomorrow
 		tomorrow := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
-		leaveID, err := db.CreateLeaveRecord(members[0].ID, "vacation", tomorrow, tomorrow)
+		leaveID, err := db.CreateLeaveRecord(ctx, members[0].ID, "vacation", tomorrow, tomorrow)
 		require.NoError(t, err)
 
 		// Handle leave change
-		err = maintenance.HandleLeaveChange(leaveID)
+		err = maintenance.HandleLeaveChange(ctx, leaveID)
 		require.NoError(t, err)
 
 		// Verify cover assignment exists
-		assignments, err := db.GetAssignmentsByDate(tomorrow)
+		assignments, err := db.GetAssignmentsByDate(ctx, tomorrow)
 		require.NoError(t, err)
 
 		// Should have at least one assignment
@@ -247,24 +260,26 @@ func TestScheduleMaintenance_RotationPreservation(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
+	ctx := context.Background()
+
 	// Add team members first
-	_, err := db.AddTeamMember("Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
 	require.NoError(t, err)
-	_, err = db.AddTeamMember("Bob", "bob@example.com")
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
 	require.NoError(t, err)
 
 	maintenance := NewScheduleMaintenance(db)
 
 	// Create initial schedule
-	_, err = maintenance.EnsureSchedule()
+	_, err = maintenance.EnsureSchedule(ctx)
 	require.NoError(t, err)
 
 	t.Run("RotationContinuesFromLastAssignment", func(t *testing.T) {
 		// Get the last assignment
-		latestDate, err := db.GetLatestAssignmentDate()
+		latestDate, err := db.GetLatestAssignmentDate(ctx)
 		require.NoError(t, err)
 
-		lastAssignments, err := db.GetAssignmentsByDate(latestDate)
+		lastAssignments, err := db.GetAssignmentsByDate(ctx, latestDate)
 		require.NoError(t, err)
 		require.NotEmpty(t, lastAssignments)
 
@@ -275,7 +290,7 @@ func TestScheduleMaintenance_RotationPreservation(t *testing.T) {
 		startDate = startDate.AddDate(0, 0, 1)
 		endDate := startDate.AddDate(0, 0, 7)
 
-		created, err := maintenance.GenerateMissingDays(startDate, endDate)
+		created, err := maintenance.GenerateMissingDays(ctx, startDate, endDate)
 		require.NoError(t, err)
 		assert.True(t, created)
 
@@ -287,7 +302,7 @@ func TestScheduleMaintenance_RotationPreservation(t *testing.T) {
 			newDateStr = startDate.Format("2006-01-02")
 		}
 
-		newAssignments, err := db.GetAssignmentsByDate(newDateStr)
+		newAssignments, err := db.GetAssignmentsByDate(ctx, newDateStr)
 		require.NoError(t, err)
 		require.NotEmpty(t, newAssignments)
 
@@ -295,7 +310,7 @@ func TestScheduleMaintenance_RotationPreservation(t *testing.T) {
 		newMemberID := newAssignments[0].MemberID
 
 		// Get all team members to understand the rotation
-		members, _ := db.GetActiveTeamMembers()
+		members, _ := db.GetActiveTeamMembers(ctx)
 
 		// Find indices
 		lastIndex := -1

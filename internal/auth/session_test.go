@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestHashToken(t *testing.T) {
@@ -36,8 +37,8 @@ func TestHashToken(t *testing.T) {
 
 func TestGenerateSecureToken(t *testing.T) {
 	t.Run("Generate Token", func(t *testing.T) {
-		token, err := generateSecureToken(32)
-		assert.NoError(t, err)
+		token, err := generateSecureToken()
+		require.NoError(t, err)
 		assert.NotEmpty(t, token)
 
 		// Token should be base64 encoded, so longer than 32 bytes
@@ -45,11 +46,11 @@ func TestGenerateSecureToken(t *testing.T) {
 	})
 
 	t.Run("Tokens Are Unique", func(t *testing.T) {
-		token1, err := generateSecureToken(32)
-		assert.NoError(t, err)
+		token1, err := generateSecureToken()
+		require.NoError(t, err)
 
-		token2, err := generateSecureToken(32)
-		assert.NoError(t, err)
+		token2, err := generateSecureToken()
+		require.NoError(t, err)
 
 		assert.NotEqual(t, token1, token2)
 	})
@@ -58,16 +59,16 @@ func TestGenerateSecureToken(t *testing.T) {
 func TestGenerateStateToken(t *testing.T) {
 	t.Run("Generate State Token", func(t *testing.T) {
 		state, err := generateStateToken()
-		assert.NoError(t, err)
+		require.NoError(t, err)
 		assert.NotEmpty(t, state)
 	})
 
 	t.Run("State Tokens Are Unique", func(t *testing.T) {
 		state1, err := generateStateToken()
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		state2, err := generateStateToken()
-		assert.NoError(t, err)
+		require.NoError(t, err)
 
 		assert.NotEqual(t, state1, state2)
 	})

@@ -48,6 +48,7 @@ func LoadConfig(path string) (*AuthConfig, error) {
 		return nil, err
 	}
 
+	// #nosec G304 - The path is validated by validateConfigPath to prevent directory traversal
 	data, err := os.ReadFile(cleanPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
@@ -146,7 +147,27 @@ func getEnvOrDefault(key, defaultValue string) string {
 // Validate checks if the configuration is valid.
 func (c *AuthConfig) Validate() error {
 	if len(c.Providers) == 0 {
-		return errors.New("no OAuth providers configured")
+		return errors.New(
+			"no OAuth providers configured. Please set at least one of the following environment variables:\n\n" +
+				"For Forgejo:\n" +
+				"  - FORGEJO_CLIENT_ID\n" +
+				"  - FORGEJO_CLIENT_SECRET\n" +
+				"  - FORGEJO_REDIRECT_URL\n\n" +
+				"For GitLab:\n" +
+				"  - GITLAB_CLIENT_ID\n" +
+				"  - GITLAB_CLIENT_SECRET\n" +
+				"  - GITLAB_REDIRECT_URL\n\n" +
+				"Optional environment variables:\n" +
+				"  - FORGEJO_AUTH_URL (default: /login/oauth/authorize)\n" +
+				"  - FORGEJO_TOKEN_URL (default: /login/oauth/access_token)\n" +
+				"  - FORGEJO_USERINFO_URL (default: /api/v1/user)\n" +
+				"  - FORGEJO_SCOPE (default: read:user)\n" +
+				"  - GITLAB_AUTH_URL (default: https://gitlab.com/oauth/authorize)\n" +
+				"  - GITLAB_TOKEN_URL (default: https://gitlab.com/oauth/token)\n" +
+				"  - GITLAB_USERINFO_URL (default: https://gitlab.com/api/v4/user)\n" +
+				"  - GITLAB_SCOPE (default: read_user)\n\n" +
+				"See AUTH_SETUP.md for detailed configuration instructions",
+		)
 	}
 
 	for name, provider := range c.Providers {

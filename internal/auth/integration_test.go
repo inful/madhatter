@@ -192,7 +192,7 @@ func TestSessionManager_Integration(t *testing.T) {
 
 	t.Run("Invalid Session Token", func(t *testing.T) {
 		_, err := sessionManager.ValidateSession(ctx, "invalid-token")
-		assert.Error(t, err)
+		require.Error(t, err)
 		assert.Equal(t, ErrInvalidSession, err)
 	})
 

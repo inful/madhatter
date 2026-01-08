@@ -75,12 +75,12 @@ func TestValidateConfigPath(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := validateConfigPath(tt.path)
 			if tt.expectError {
-				assert.Error(t, err)
+				require.Error(t, err)
 				if tt.errorMsg != "" {
 					assert.Contains(t, err.Error(), tt.errorMsg)
 				}
 			} else {
-				assert.NoError(t, err)
+				require.NoError(t, err)
 			}
 		})
 	}
@@ -104,19 +104,11 @@ sessions:
   cookie_name: "test_session"
   secret_key: "test-secret-key"
 `
-	err := os.WriteFile(configPath, []byte(configContent), 0600)
+	err := os.WriteFile(configPath, []byte(configContent), 0o600)
 	require.NoError(t, err)
 
 	// Change to temp directory for the test
-	originalDir, err := os.Getwd()
-	require.NoError(t, err)
-	defer func() {
-		err := os.Chdir(originalDir)
-		require.NoError(t, err)
-	}()
-
-	err = os.Chdir(tmpDir)
-	require.NoError(t, err)
+	t.Chdir(tmpDir)
 
 	t.Run("loads valid config within working directory", func(t *testing.T) {
 		config, err := LoadConfig("test-auth.yaml")
@@ -127,14 +119,14 @@ sessions:
 
 	t.Run("rejects config outside working directory", func(t *testing.T) {
 		config, err := LoadConfig("../test-auth.yaml")
-		assert.Error(t, err)
+		require.Error(t, err)
 		assert.Nil(t, config)
 		assert.Contains(t, err.Error(), "outside the allowed directory")
 	})
 
 	t.Run("rejects absolute path outside working directory", func(t *testing.T) {
 		config, err := LoadConfig("/etc/passwd")
-		assert.Error(t, err)
+		require.Error(t, err)
 		assert.Nil(t, config)
 		assert.Contains(t, err.Error(), "outside the allowed directory")
 	})
@@ -146,15 +138,7 @@ func TestLoadConfig_Validation(t *testing.T) {
 	configPath := filepath.Join(tmpDir, "auth.yaml")
 
 	// Change to temp directory for the test
-	originalDir, err := os.Getwd()
-	require.NoError(t, err)
-	defer func() {
-		err := os.Chdir(originalDir)
-		require.NoError(t, err)
-	}()
-
-	err = os.Chdir(tmpDir)
-	require.NoError(t, err)
+	t.Chdir(tmpDir)
 
 	t.Run("valid config", func(t *testing.T) {
 		configContent := `providers:
@@ -171,7 +155,7 @@ sessions:
   cookie_name: "session"
   secret_key: "secret-key"
 `
-		err := os.WriteFile(configPath, []byte(configContent), 0600)
+		err := os.WriteFile(configPath, []byte(configContent), 0o600)
 		require.NoError(t, err)
 
 		config, err := LoadConfig("auth.yaml")
@@ -185,22 +169,22 @@ sessions:
 	t.Run("invalid yaml", func(t *testing.T) {
 		// Missing closing quote for client_secret value
 		invalidContent := `providers:
-  forgejo:
-    client_id: "id"
-    client_secret: "secret
+	 forgejo:
+	   client_id: "id"
+	   client_secret: "secret
 `
-		err := os.WriteFile(configPath, []byte(invalidContent), 0600)
+		err := os.WriteFile(configPath, []byte(invalidContent), 0o600)
 		require.NoError(t, err)
 
 		config, err := LoadConfig("auth.yaml")
-		assert.Error(t, err)
+		require.Error(t, err)
 		assert.Nil(t, config)
 		assert.Contains(t, err.Error(), "failed to parse config")
 	})
 
 	t.Run("nonexistent file", func(t *testing.T) {
 		config, err := LoadConfig("nonexistent.yaml")
-		assert.Error(t, err)
+		require.Error(t, err)
 		assert.Nil(t, config)
 		assert.Contains(t, err.Error(), "failed to read config file")
 	})

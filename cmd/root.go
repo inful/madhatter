@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -76,9 +77,10 @@ func Execute() {
 
 	ctx := kong.Parse(&CLI)
 	command := ctx.Command()
+	ctxBg := context.Background()
 
 	// Map command to handler
-	handlers := map[string]func(*database.DB){
+	handlers := map[string]func(context.Context, *database.DB){
 		"serve":                   serveCommand,
 		"serve <port>":            serveCommand,
 		"team add <name> <email>": teamAddCommand,
@@ -92,27 +94,27 @@ func Execute() {
 	}
 
 	if handler, exists := handlers[command]; exists {
-		handler(db)
+		handler(ctxBg, db)
 	} else {
 		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", command)
 		os.Exit(1)
 	}
 }
 
-func serveCommand(db *database.DB) {
+func serveCommand(ctx context.Context, db *database.DB) {
 	server, err := api.NewServer(db)
 	if err != nil {
 		log.Fatalf("Failed to create server: %v\n", err)
 	}
 	log.Printf("Starting server on port %s\n", CLI.Serve.Port)
-	if err := server.Start(CLI.Serve.Port); err != nil {
+	if err := server.Start(ctx, CLI.Serve.Port); err != nil {
 		log.Printf("Server error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func teamAddCommand(db *database.DB) {
-	id, err := db.AddTeamMember(CLI.Team.Add.Name, CLI.Team.Add.Email)
+func teamAddCommand(ctx context.Context, db *database.DB) {
+	id, err := db.AddTeamMember(ctx, CLI.Team.Add.Name, CLI.Team.Add.Email)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -120,8 +122,8 @@ func teamAddCommand(db *database.DB) {
 	log.Printf("Added team member: %s (%s) - ID: %s\n", CLI.Team.Add.Name, CLI.Team.Add.Email, id)
 }
 
-func teamListCommand(db *database.DB) {
-	members, err := db.GetActiveTeamMembers()
+func teamListCommand(ctx context.Context, db *database.DB) {
+	members, err := db.GetActiveTeamMembers(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -132,15 +134,15 @@ func teamListCommand(db *database.DB) {
 	}
 }
 
-func leaveReportCommand(db *database.DB) {
+func leaveReportCommand(ctx context.Context, db *database.DB) {
 	// Get member by email or ID
-	member, err := db.GetMemberByEmail(CLI.Leave.Report.MemberID)
+	member, err := db.GetMemberByEmail(ctx, CLI.Leave.Report.MemberID)
 	if err != nil {
 		// Try as UUID
 		member = &database.TeamMember{ID: CLI.Leave.Report.MemberID}
 	}
 
-	leaveID, err := db.CreateLeaveRecord(member.ID, CLI.Leave.Report.Type, CLI.Leave.Report.Start, CLI.Leave.Report.End)
+	leaveID, err := db.CreateLeaveRecord(ctx, member.ID, CLI.Leave.Report.Type, CLI.Leave.Report.Start, CLI.Leave.Report.End)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -148,7 +150,7 @@ func leaveReportCommand(db *database.DB) {
 
 	// Assign covers
 	engine := rota.NewEngine(db)
-	err = engine.AssignCoversForLeave(leaveID)
+	err = engine.AssignCoversForLeave(ctx, leaveID)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: Covers not assigned: %v\n", err)
 	}
@@ -157,8 +159,8 @@ func leaveReportCommand(db *database.DB) {
 		CLI.Leave.Report.MemberID, CLI.Leave.Report.Start, CLI.Leave.Report.End, leaveID)
 }
 
-func leaveListCommand(db *database.DB) {
-	leaves, err := db.GetLeaveRecords()
+func leaveListCommand(ctx context.Context, db *database.DB) {
+	leaves, err := db.GetLeaveRecords(ctx)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -175,12 +177,12 @@ func leaveListCommand(db *database.DB) {
 	}
 }
 
-func scheduleGenerateCommand(db *database.DB) {
+func scheduleGenerateCommand(ctx context.Context, db *database.DB) {
 	startDate, _ := time.Parse("2006-01-02", CLI.Schedule.Generate.Start)
 	endDate, _ := time.Parse("2006-01-02", CLI.Schedule.Generate.End)
 
 	engine := rota.NewEngine(db)
-	err := engine.GenerateSchedule(startDate, endDate)
+	err := engine.GenerateSchedule(ctx, startDate, endDate)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -188,10 +190,10 @@ func scheduleGenerateCommand(db *database.DB) {
 	log.Printf("Schedule generated from %s to %s\n", CLI.Schedule.Generate.Start, CLI.Schedule.Generate.End)
 }
 
-func scheduleViewCommand(db *database.DB) {
+func scheduleViewCommand(ctx context.Context, db *database.DB) {
 	// Get schedule for specific date
 	dateStr := CLI.Schedule.View.Date
-	assignments, err := db.GetAssignmentsByDate(dateStr)
+	assignments, err := db.GetAssignmentsByDate(ctx, dateStr)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -211,15 +213,15 @@ func scheduleViewCommand(db *database.DB) {
 	}
 }
 
-func calendarSubscribeCommand(db *database.DB) {
+func calendarSubscribeCommand(ctx context.Context, db *database.DB) {
 	// Get member by email
-	member, err := db.GetMemberByEmail(CLI.Calendar.Subscribe.Email)
+	member, err := db.GetMemberByEmail(ctx, CLI.Calendar.Subscribe.Email)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
-	token, err := db.CreateCalendarSubscription(member.ID)
+	token, err := db.CreateCalendarSubscription(ctx, member.ID)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -230,16 +232,16 @@ func calendarSubscribeCommand(db *database.DB) {
 	log.Printf("Subscribe in your calendar app using this URL\n")
 }
 
-func calendarExportCommand(db *database.DB) {
+func calendarExportCommand(ctx context.Context, db *database.DB) {
 	// Get member by email
-	member, err := db.GetMemberByEmail(CLI.Calendar.Export.Email)
+	member, err := db.GetMemberByEmail(ctx, CLI.Calendar.Export.Email)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
 	// Get subscription token (needed for ICS generation)
-	_, err = db.CreateCalendarSubscription(member.ID)
+	_, err = db.CreateCalendarSubscription(ctx, member.ID)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -247,14 +249,18 @@ func calendarExportCommand(db *database.DB) {
 
 	// Generate ICS content
 	const defaultLookaheadDays = 90
-	assignments, err := db.GetUpcomingAssignments(member.ID, defaultLookaheadDays)
+	assignments, err := db.GetUpcomingAssignments(ctx, member.ID, defaultLookaheadDays)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error getting assignments: %v\n", err)
 		os.Exit(1)
 	}
 
-	// Generate ICS content using calendar package
-	icsContent := calendar.GenerateICS(assignments, member.Name)
+	// Generate ICS content using new calendar library
+	icsContent, err := calendar.GenerateICalFromAssignments(assignments, member.Name)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error generating calendar: %v\n", err)
+		os.Exit(1)
+	}
 
 	// Write to file
 	filePath := CLI.Calendar.Export.Output

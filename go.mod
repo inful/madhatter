@@ -14,6 +14,7 @@ require (
 )
 
 require (
+	github.com/arran4/golang-ical v0.3.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect

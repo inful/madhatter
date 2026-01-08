@@ -71,11 +71,11 @@ func (us *UserService) StoreOAuthToken(ctx context.Context, userID, provider str
 
 	var encryptedRefreshToken sql.NullString
 	if token.RefreshToken.Valid && token.RefreshToken.String != "" {
-		encrypted, err := us.encryptor.Encrypt(token.RefreshToken.String)
-		if err != nil {
-			return fmt.Errorf("failed to encrypt refresh token: %w", err)
+		encryptedRefresh, encryptErr := us.encryptor.Encrypt(token.RefreshToken.String)
+		if encryptErr != nil {
+			return fmt.Errorf("failed to encrypt refresh token: %w", encryptErr)
 		}
-		encryptedRefreshToken = sql.NullString{String: encrypted, Valid: true}
+		encryptedRefreshToken = sql.NullString{String: encryptedRefresh, Valid: true}
 	}
 
 	// Check if token exists
@@ -127,11 +127,11 @@ func (us *UserService) GetOAuthToken(ctx context.Context, userID, provider strin
 
 	var decryptedRefreshToken sql.NullString
 	if token.RefreshToken.Valid && token.RefreshToken.String != "" {
-		decrypted, err := us.encryptor.Decrypt(token.RefreshToken.String)
-		if err != nil {
-			return nil, fmt.Errorf("failed to decrypt refresh token: %w", err)
+		decryptedRefresh, decryptErr := us.encryptor.Decrypt(token.RefreshToken.String)
+		if decryptErr != nil {
+			return nil, fmt.Errorf("failed to decrypt refresh token: %w", decryptErr)
 		}
-		decryptedRefreshToken = sql.NullString{String: decrypted, Valid: true}
+		decryptedRefreshToken = sql.NullString{String: decryptedRefresh, Valid: true}
 	}
 
 	// Return token with decrypted values

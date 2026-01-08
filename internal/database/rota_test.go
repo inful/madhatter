@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -11,18 +12,19 @@ func TestCreateRotaAssignment_Success(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
-	memberID, err := db.AddTeamMember("Alice", "alice@example.com")
+	ctx := context.Background()
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
 	require.NoError(t, err)
 
 	// Act
-	assignmentID, err := db.CreateRotaAssignment("2024-01-15", memberID, false, nil)
+	assignmentID, err := db.CreateRotaAssignment(ctx, "2024-01-15", memberID, false, nil)
 
 	// Assert
 	require.NoError(t, err)
 	require.NotEmpty(t, assignmentID)
 
 	// Verify in database
-	assignments, err := db.GetAssignmentsByDate("2024-01-15")
+	assignments, err := db.GetAssignmentsByDate(ctx, "2024-01-15")
 	require.NoError(t, err)
 	require.Len(t, assignments, 1)
 	require.Equal(t, memberID, assignments[0].MemberID)
@@ -35,20 +37,21 @@ func TestCreateRotaAssignment_CoverAssignment(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
-	memberID, _ := db.AddTeamMember("Alice", "alice@example.com")
+	ctx := context.Background()
+	memberID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com")
 
 	// First create original assignment
-	originalAssignmentID, _ := db.CreateRotaAssignment("2024-01-15", memberID, false, nil)
+	originalAssignmentID, _ := db.CreateRotaAssignment(ctx, "2024-01-15", memberID, false, nil)
 
 	// Act - Create cover assignment
-	coverMemberID, _ := db.AddTeamMember("Bob", "bob@example.com")
-	assignmentID, err := db.CreateRotaAssignment("2024-01-15", coverMemberID, true, &originalAssignmentID)
+	coverMemberID, _ := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	assignmentID, err := db.CreateRotaAssignment(ctx, "2024-01-15", coverMemberID, true, &originalAssignmentID)
 
 	// Assert
 	require.NoError(t, err)
 	require.NotEmpty(t, assignmentID)
 
-	assignments, err := db.GetAssignmentsByDate("2024-01-15")
+	assignments, err := db.GetAssignmentsByDate(ctx, "2024-01-15")
 	require.NoError(t, err)
 	require.Len(t, assignments, 2) // Both original and cover
 	require.True(t, assignments[1].IsCover)
@@ -61,8 +64,10 @@ func TestCreateRotaAssignment_InvalidMember(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
+	ctx := context.Background()
+
 	// Act
-	_, err := db.CreateRotaAssignment("2024-01-15", "nonexistent", false, nil)
+	_, err := db.CreateRotaAssignment(ctx, "2024-01-15", "nonexistent", false, nil)
 
 	// Assert
 	require.Error(t, err)
@@ -73,14 +78,15 @@ func TestGetAssignmentsByDate_MultipleAssignments(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
-	member1, _ := db.AddTeamMember("Alice", "alice@example.com")
-	member2, _ := db.AddTeamMember("Bob", "bob@example.com")
+	ctx := context.Background()
+	member1, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	member2, _ := db.AddTeamMember(ctx, "Bob", "bob@example.com")
 
-	_, _ = db.CreateRotaAssignment("2024-01-15", member1, false, nil)
-	_, _ = db.CreateRotaAssignment("2024-01-15", member2, false, nil)
+	_, _ = db.CreateRotaAssignment(ctx, "2024-01-15", member1, false, nil)
+	_, _ = db.CreateRotaAssignment(ctx, "2024-01-15", member2, false, nil)
 
 	// Act
-	assignments, err := db.GetAssignmentsByDate("2024-01-15")
+	assignments, err := db.GetAssignmentsByDate(ctx, "2024-01-15")
 
 	// Assert
 	require.NoError(t, err)
@@ -92,8 +98,10 @@ func TestGetAssignmentsByDate_Empty(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
+	ctx := context.Background()
+
 	// Act
-	assignments, err := db.GetAssignmentsByDate("2024-01-15")
+	assignments, err := db.GetAssignmentsByDate(ctx, "2024-01-15")
 
 	// Assert
 	require.NoError(t, err)
@@ -105,12 +113,13 @@ func TestGetAssignmentsByDate_DifferentDates(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
-	memberID, _ := db.AddTeamMember("Alice", "alice@example.com")
-	_, _ = db.CreateRotaAssignment("2024-01-15", memberID, false, nil)
+	ctx := context.Background()
+	memberID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, _ = db.CreateRotaAssignment(ctx, "2024-01-15", memberID, false, nil)
 
 	// Act
-	assignments1, _ := db.GetAssignmentsByDate("2024-01-15")
-	assignments2, _ := db.GetAssignmentsByDate("2024-01-16")
+	assignments1, _ := db.GetAssignmentsByDate(ctx, "2024-01-15")
+	assignments2, _ := db.GetAssignmentsByDate(ctx, "2024-01-16")
 
 	// Assert
 	require.Len(t, assignments1, 1)
@@ -122,15 +131,16 @@ func TestGetUpcomingAssignments(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
-	memberID, _ := db.AddTeamMember("Alice", "alice@example.com")
+	ctx := context.Background()
+	memberID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com")
 
 	// Create assignments relative to current date
-	_, _ = db.CreateRotaAssignment("2026-01-07", memberID, false, nil) // Tomorrow
-	_, _ = db.CreateRotaAssignment("2026-01-10", memberID, false, nil) // 4 days away
-	_, _ = db.CreateRotaAssignment("2026-01-20", memberID, false, nil) // 14 days away (beyond 10 days)
+	_, _ = db.CreateRotaAssignment(ctx, "2026-01-07", memberID, false, nil) // Tomorrow
+	_, _ = db.CreateRotaAssignment(ctx, "2026-01-10", memberID, false, nil) // 4 days away
+	_, _ = db.CreateRotaAssignment(ctx, "2026-01-20", memberID, false, nil) // 14 days away (beyond 10 days)
 
 	// Act - Get assignments for next 10 days
-	assignments, err := db.GetUpcomingAssignments(memberID, 10)
+	assignments, err := db.GetUpcomingAssignments(ctx, memberID, 10)
 
 	// Assert
 	require.NoError(t, err)
@@ -142,10 +152,11 @@ func TestGetUpcomingAssignments_Empty(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
-	memberID, _ := db.AddTeamMember("Alice", "alice@example.com")
+	ctx := context.Background()
+	memberID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com")
 
 	// Act
-	assignments, err := db.GetUpcomingAssignments(memberID, 10)
+	assignments, err := db.GetUpcomingAssignments(ctx, memberID, 10)
 
 	// Assert
 	require.NoError(t, err)

@@ -67,11 +67,12 @@ func TestScheduleEndpoints(t *testing.T) {
 	defer cleanup()
 
 	// Setup: Add team members
-	_, err := server.db.AddTeamMember("Alice", "alice@example.com")
+	ctx := context.Background()
+	_, err := server.db.AddTeamMember(ctx, "Alice", "alice@example.com")
 	require.NoError(t, err)
-	_, err = server.db.AddTeamMember("Bob", "bob@example.com")
+	_, err = server.db.AddTeamMember(ctx, "Bob", "bob@example.com")
 	require.NoError(t, err)
-	_, err = server.db.AddTeamMember("Charlie", "charlie@example.com")
+	_, err = server.db.AddTeamMember(ctx, "Charlie", "charlie@example.com")
 	require.NoError(t, err)
 
 	t.Run("GenerateSchedule", func(t *testing.T) {
@@ -79,12 +80,12 @@ func TestScheduleEndpoints(t *testing.T) {
 		input.Body.StartDate = "2024-01-01"
 		input.Body.EndDate = "2024-01-31"
 
-		resp, err := server.handleGenerateSchedule(context.Background(), input)
+		resp, err := server.handleGenerateSchedule(ctx, input)
 		require.NoError(t, err)
 		assert.Equal(t, "Schedule generated successfully", resp.Body.Message)
 
 		// Verify assignments were created
-		assignments, err := server.db.GetAssignmentsByDate("2024-01-01")
+		assignments, err := server.db.GetAssignmentsByDate(ctx, "2024-01-01")
 		require.NoError(t, err)
 		assert.Len(t, assignments, 1)
 	})
@@ -94,13 +95,16 @@ func TestLeaveEndpoints(t *testing.T) {
 	server, cleanup := setupTestServer(t)
 	defer cleanup()
 
+	ctx := context.Background()
+
 	// Setup: Add team members and generate schedule
-	aliceID, _ := server.db.AddTeamMember("Alice", "alice@example.com")
-	_, _ = server.db.AddTeamMember("Bob", "bob@example.com")
-	_, _ = server.db.AddTeamMember("Charlie", "charlie@example.com")
+	aliceID, _ := server.db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, _ = server.db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	_, _ = server.db.AddTeamMember(ctx, "Charlie", "charlie@example.com")
 
 	engine := server.engine
 	err := engine.GenerateSchedule(
+		ctx,
 		time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 		time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC),
 	)
@@ -113,13 +117,13 @@ func TestLeaveEndpoints(t *testing.T) {
 		input.Body.StartDate = "2024-01-15"
 		input.Body.EndDate = "2024-01-17"
 
-		resp, err := server.handleReportLeave(context.Background(), input)
+		resp, err := server.handleReportLeave(ctx, input)
 		require.NoError(t, err)
 		assert.NotEmpty(t, resp.Body.LeaveID)
 
 		// Verify covers were assigned
 		// Jan 15 is a Monday, Alice was assigned, now should be covered
-		assignments, err := server.db.GetAssignmentsByDate("2024-01-15")
+		assignments, err := server.db.GetAssignmentsByDate(ctx, "2024-01-15")
 		require.NoError(t, err)
 
 		// Find the cover assignment
@@ -139,12 +143,15 @@ func TestCalendarEndpoints(t *testing.T) {
 	server, cleanup := setupTestServer(t)
 	defer cleanup()
 
+	ctx := context.Background()
+
 	// Setup: Add team member and generate schedule
-	aliceID, _ := server.db.AddTeamMember("Alice", "alice@example.com")
-	_, _ = server.db.AddTeamMember("Bob", "bob@example.com")
+	aliceID, _ := server.db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, _ = server.db.AddTeamMember(ctx, "Bob", "bob@example.com")
 
 	engine := server.engine
 	err := engine.GenerateSchedule(
+		ctx,
 		time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 		time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC),
 	)
@@ -154,7 +161,7 @@ func TestCalendarEndpoints(t *testing.T) {
 		input := &SubscribeCalendarInput{}
 		input.Body.MemberID = aliceID
 
-		resp, err := server.handleSubscribeCalendar(context.Background(), input)
+		resp, err := server.handleSubscribeCalendar(ctx, input)
 		require.NoError(t, err)
 		assert.NotEmpty(t, resp.Body.Token)
 		assert.Contains(t, resp.Body.CalendarURL, "/api/v1/calendar/")
@@ -166,11 +173,11 @@ func TestCalendarEndpoints(t *testing.T) {
 		now := time.Now().UTC()
 		startDate := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 		endDate := time.Date(now.Year(), now.Month()+1, 0, 0, 0, 0, 0, time.UTC)
-		err := server.engine.GenerateSchedule(startDate, endDate)
+		err := server.engine.GenerateSchedule(ctx, startDate, endDate)
 		require.NoError(t, err)
 
 		// Then create subscription
-		token, err := server.db.CreateCalendarSubscription(aliceID)
+		token, err := server.db.CreateCalendarSubscription(ctx, aliceID)
 		require.NoError(t, err)
 
 		// Use the full router to properly handle URL parameters

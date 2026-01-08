@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"log"
 	"net/http"
 	"sync"
 	"time"
@@ -134,7 +135,9 @@ func (sm *SessionManager) StartCleanup(ctx context.Context) {
 				// Clean up expired sessions using a background context
 				// to avoid issues if the original context is canceled
 				cleanupCtx := context.Background()
-				_ = sm.db.DeleteExpiredSessions(cleanupCtx)
+				if err := sm.db.DeleteExpiredSessions(cleanupCtx); err != nil {
+					log.Printf("Session cleanup error: %v\n", err)
+				}
 			case <-sm.stopCleanup:
 				return
 			case <-ctx.Done():

@@ -76,8 +76,14 @@ oauth:
 
 The system automatically creates the required tables on first run. The schema includes:
 - `users` - User accounts with OAuth2 metadata
-- `sessions` - Active user sessions
-- `oauth_tokens` - Stored OAuth2 tokens for each provider
+- `sessions` - Active user sessions (tokens are hashed using SHA-256)
+- `oauth_tokens` - Stored OAuth2 tokens (encrypted at rest using AES-256-GCM)
+
+**Security Notes**:
+- Session tokens are never stored in plaintext; only SHA-256 hashes are stored
+- OAuth access/refresh tokens are encrypted before storage and decrypted on retrieval
+- Database backups are safe from session hijacking (hashed tokens can't be used directly)
+- OAuth tokens require the `TOKEN_ENCRYPTION_KEY` to decrypt from backups
 
 ## Running the Application
 
@@ -91,12 +97,21 @@ The system automatically creates the required tables on first run. The schema in
    go build -o madhatter
    ```
 
-3. **Run with config**:
+3. **Set environment variables** (production only):
+   ```bash
+   # Required for production: encryption key for OAuth tokens
+   export TOKEN_ENCRYPTION_KEY=$(openssl rand -base64 32)
+   
+   # Note: Without this key, a random key is generated at startup.
+   # This means OAuth tokens won't survive application restarts.
+   ```
+
+4. **Run with config**:
    ```bash
    ./madhatter --config config.yaml
    ```
 
-4. **Access the application**:
+5. **Access the application**:
    - Navigate to `http://localhost:8080`
    - Click **Login** to see available providers
    - Choose your provider and authorize the application
@@ -123,6 +138,22 @@ Regular users can:
 
 ## Security Considerations
 
+### Built-in Security Features
+
+The system implements several security measures to protect sensitive data:
+
+1. **Session Token Hashing**:
+   - Session tokens are hashed using SHA-256 before storage
+   - Only token hashes are stored in the database
+   - Database compromise does not expose live session tokens
+   - Tokens are validated by comparing hashes
+
+2. **OAuth Token Encryption**:
+   - OAuth access and refresh tokens are encrypted at rest using AES-256-GCM
+   - Encryption key is loaded from `TOKEN_ENCRYPTION_KEY` environment variable
+   - Tokens are encrypted before storage and decrypted on retrieval
+   - Random nonce for each encryption ensures semantic security
+
 ### Production Deployment
 
 1. **Use HTTPS**:
@@ -139,17 +170,32 @@ Regular users can:
    openssl rand -base64 32
    ```
 
-3. **Database Security**:
+3. **Token Encryption Key** (Required for Production):
+   ```bash
+   # Generate a 32-byte encryption key (base64 encoded)
+   export TOKEN_ENCRYPTION_KEY=$(openssl rand -base64 32)
+   ```
+   
+   **Important**: 
+   - Store this key securely (e.g., secret manager, vault)
+   - Never commit the key to version control
+   - If the key is lost, all encrypted OAuth tokens become unrecoverable
+   - Rotate the key periodically and re-encrypt tokens
+   - Without this key, a random key is generated on startup (tokens won't survive restarts)
+
+4. **Database Security**:
    - Keep `support_rota.db` in a secure location
    - Set appropriate file permissions (600)
    - Regular backups
+   - Session tokens are hashed (database compromise doesn't expose live sessions)
+   - OAuth tokens are encrypted (requires `TOKEN_ENCRYPTION_KEY` to decrypt)
 
-4. **OAuth2 Secrets**:
+5. **OAuth2 Secrets**:
    - Never commit secrets to version control
    - Use environment variables or secure secret management
    - Rotate secrets regularly
 
-5. **Allowed Organizations/Groups**:
+6. **Allowed Organizations/Groups**:
    - Restrict access to specific teams
    - Prevent unauthorized access
 
@@ -172,6 +218,17 @@ Regular users can:
 - Ensure SQLite3 is available
 - Check file permissions on the database file
 - Verify foreign keys are enabled (system does this automatically)
+
+### Encryption Errors
+- **"Failed to decrypt access token"**: The `TOKEN_ENCRYPTION_KEY` environment variable has changed or is missing
+  - Ensure the same key is used across application restarts
+  - If key is lost, OAuth tokens in database cannot be decrypted
+  - Users will need to log in again to re-authorize
+- **"Encryption key must be 32 bytes"**: The `TOKEN_ENCRYPTION_KEY` must be exactly 32 bytes (base64 encoded)
+  - Generate a proper key: `openssl rand -base64 32`
+- **Warning about random encryption key**: `TOKEN_ENCRYPTION_KEY` not set
+  - Set the environment variable for production deployments
+  - Without it, tokens won't survive application restarts
 
 ## Development
 

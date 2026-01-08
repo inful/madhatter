@@ -164,7 +164,15 @@ func (am *AuthManager) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Set session cookie
-	isSecure := r.URL.Scheme == "https"
+	scheme := r.Header.Get("X-Forwarded-Proto")
+	if scheme == "" {
+		if r.TLS != nil {
+			scheme = "https"
+		} else {
+			scheme = "http"
+		}
+	}
+	isSecure := scheme == "https"
 	am.sessionManager.SetSessionCookie(w, sessionToken, isSecure)
 
 	// Clear state cookie

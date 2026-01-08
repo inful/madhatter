@@ -84,6 +84,7 @@ func (am *AuthManager) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		Path:     "/auth/callback",
 		HttpOnly: true,
 		Secure:   secure,
+		SameSite: http.SameSiteLaxMode,
 		MaxAge:   oAuthStateCookieMaxAge,
 	})
 
@@ -108,6 +109,10 @@ func (am *AuthManager) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	providerName := r.URL.Query().Get("provider")
+	if providerName == "" {
+		// Fallback to URL path parameter (e.g., /auth/callback/{provider})
+		providerName = chi.URLParam(r, "provider")
+	}
 	if providerName == "" {
 		http.Error(w, "Provider required", http.StatusBadRequest)
 		return

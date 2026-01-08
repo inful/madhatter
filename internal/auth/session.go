@@ -63,9 +63,6 @@ func (sm *SessionManager) CreateSession(ctx context.Context, userID string) (str
 
 // ValidateSession validates a session token and returns user info.
 func (sm *SessionManager) ValidateSession(ctx context.Context, token string) (*sqlc.GetSessionByTokenRow, error) {
-	// Clean up expired sessions first
-	_ = sm.db.DeleteExpiredSessions(ctx)
-
 	// Get session
 	session, err := sm.db.GetSessionByToken(ctx, token)
 	if err != nil {
@@ -109,6 +106,22 @@ func (sm *SessionManager) ClearSessionCookie(w http.ResponseWriter) {
 		MaxAge:   -1,
 	}
 	http.SetCookie(w, cookie)
+}
+
+// StartCleanupTask starts a background goroutine that periodically cleans up expired sessions.
+func (sm *SessionManager) StartCleanupTask(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	go func() {
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				_ = sm.db.DeleteExpiredSessions(ctx)
+			}
+		}
+	}()
 }
 
 // GetSessionCookie retrieves the session token from cookies.

@@ -17,10 +17,11 @@ import (
 )
 
 const (
-	calendarDaysLookahead = 30
-	serverReadTimeout     = 15 * time.Second
-	serverWriteTimeout    = 15 * time.Second
-	serverIdleTimeout     = 60 * time.Second
+	calendarDaysLookahead    = 30
+	serverReadTimeout        = 15 * time.Second
+	serverWriteTimeout       = 15 * time.Second
+	serverIdleTimeout        = 60 * time.Second
+	sessionCleanupInterval   = 1 * time.Hour // Clean up expired sessions every hour
 )
 
 type Server struct {
@@ -30,6 +31,7 @@ type Server struct {
 	engine         *rota.Engine
 	authManager    *auth.AuthManager
 	authMiddleware *auth.Middleware
+	sessionManager *auth.SessionManager
 }
 
 func NewServer(db *database.DB) *Server {
@@ -44,8 +46,8 @@ func NewServer(db *database.DB) *Server {
 
 	// Validate configuration
 	if err := authConfig.Validate(); err != nil {
-		// Log warning but continue - config may be set up later
-		log.Printf("Warning: Auth configuration invalid: %v\n", err)
+		// Fail fast if auth configuration is invalid to avoid confusing runtime errors
+		log.Fatalf("Auth configuration invalid, aborting startup: %v\n", err)
 	}
 
 	// Create auth components
@@ -71,6 +73,7 @@ func NewServer(db *database.DB) *Server {
 		engine:         rota.NewEngine(db),
 		authManager:    authManager,
 		authMiddleware: authMiddleware,
+		sessionManager: sessionManager,
 	}
 
 	s.registerOperations()
@@ -369,6 +372,10 @@ func (s *Server) handleCalendarICS(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) Start(port string) error {
+	// Start session cleanup background task
+	ctx := context.Background()
+	s.sessionManager.StartCleanupTask(ctx, sessionCleanupInterval)
+
 	// Use http.Server with timeouts for production
 	srv := &http.Server{
 		Addr:         ":" + port,

@@ -72,9 +72,11 @@ func NewServer(db *database.DB) *Server {
 	// Register configured providers
 	for providerName := range authConfig.Providers {
 		provider, err := providerFactory.Create(providerName)
-		if err == nil {
-			authManager.RegisterProvider(provider)
+		if err != nil {
+			log.Printf("Failed to create auth provider %q: %v\n", providerName, err)
+			continue
 		}
+		authManager.RegisterProvider(provider)
 	}
 
 	s := &Server{

@@ -46,35 +46,16 @@ func (us *UserService) GetOrCreateUser(ctx context.Context, userInfo *UserInfo, 
 	// Create new user
 	userID := uuid.New().String()
 
-	// Check if this is the first user - make them admin
-	// To prevent race condition, we check after user creation
-	adminCount, _ := us.db.CountAdmins(ctx)
-	isAdmin := adminCount == 0
-
-	newUser, err := us.db.CreateUser(ctx, sqlc.CreateUserParams{
+	// Use atomic query that checks admin count and creates user in one operation
+	newUser, err := us.db.CreateUserAsFirstAdmin(ctx, sqlc.CreateUserAsFirstAdminParams{
 		ID:         userID,
 		Email:      userInfo.Email,
 		Name:       userInfo.Name,
 		Provider:   providerName,
 		ProviderID: userInfo.ID,
-		IsAdmin:    sql.NullInt64{Int64: boolToInt(isAdmin), Valid: true},
-		IsActive:   sql.NullInt64{Int64: 1, Valid: true},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create user: %w", err)
-	}
-
-	// If this was the first user and they should be admin, verify admin status was set
-	// This helps catch any race conditions where multiple users were created simultaneously
-	if isAdmin {
-		// Re-check admin count after creation
-		finalAdminCount, _ := us.db.CountAdmins(ctx)
-		if finalAdminCount > 1 {
-			// Multiple admins were created simultaneously (race condition)
-			// Keep this user as admin (first-come-first-served)
-			// Log warning but continue
-			fmt.Printf("Warning: Multiple first users detected, admin count: %d\n", finalAdminCount)
-		}
 	}
 
 	return &newUser, nil

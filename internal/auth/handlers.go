@@ -86,7 +86,6 @@ func (am *AuthManager) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   oAuthStateCookieMaxAge,
-		SameSite: http.SameSiteLaxMode,
 	})
 
 	// Redirect to provider
@@ -249,10 +248,11 @@ func (am *AuthManager) HandleLoginView(w http.ResponseWriter, r *http.Request) {
 	   <ul class="provider-list">
 `)
 	for _, provider := range providers {
+		displayName := capitalizeProviderName(provider)
 		html.WriteString(fmt.Sprintf(`        <li class="provider-item">
 	           <a href="/auth/login/%s" class="provider-btn">Login with %s</a>
 	       </li>
-`, provider, provider))
+`, provider, displayName))
 	}
 	html.WriteString(`    </ul>
 </body>
@@ -268,4 +268,20 @@ func generateStateToken() (string, error) {
 		return "", err
 	}
 	return base64.URLEncoding.EncodeToString(bytes), nil
+}
+
+// capitalizeProviderName returns a properly capitalized display name for a provider.
+func capitalizeProviderName(provider string) string {
+	switch strings.ToLower(provider) {
+	case "forgejo":
+		return "Forgejo"
+	case "gitlab":
+		return "GitLab"
+	default:
+		// Default: capitalize first letter
+		if len(provider) == 0 {
+			return provider
+		}
+		return strings.ToUpper(provider[:1]) + provider[1:]
+	}
 }

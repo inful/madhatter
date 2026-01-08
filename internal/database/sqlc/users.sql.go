@@ -66,6 +66,48 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 	return i, err
 }
 
+const createUserAsFirstAdmin = `-- name: CreateUserAsFirstAdmin :one
+INSERT INTO users (
+    id, email, name, provider, provider_id, is_admin, is_active
+)
+SELECT ?, ?, ?, ?, ?, 
+    CASE WHEN (SELECT COUNT(*) FROM users WHERE is_admin = 1 AND is_active = 1) = 0 THEN 1 ELSE 0 END,
+    1
+RETURNING id, email, name, provider, provider_id, is_admin, is_active, created_at, updated_at
+`
+
+type CreateUserAsFirstAdminParams struct {
+	ID         string `json:"id"`
+	Email      string `json:"email"`
+	Name       string `json:"name"`
+	Provider   string `json:"provider"`
+	ProviderID string `json:"provider_id"`
+}
+
+// Atomically creates a user and makes them admin only if no admins exist
+func (q *Queries) CreateUserAsFirstAdmin(ctx context.Context, arg CreateUserAsFirstAdminParams) (User, error) {
+	row := q.db.QueryRowContext(ctx, createUserAsFirstAdmin,
+		arg.ID,
+		arg.Email,
+		arg.Name,
+		arg.Provider,
+		arg.ProviderID,
+	)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.Name,
+		&i.Provider,
+		&i.ProviderID,
+		&i.IsAdmin,
+		&i.IsActive,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getUserByEmail = `-- name: GetUserByEmail :one
 SELECT id, email, name, provider, provider_id, is_admin, is_active, created_at, updated_at FROM users 
 WHERE email = ? 

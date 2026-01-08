@@ -21,6 +21,16 @@ INSERT INTO users (
 )
 RETURNING *;
 
+-- name: CreateUserAsFirstAdmin :one
+-- Atomically creates a user and makes them admin only if no admins exist
+INSERT INTO users (
+    id, email, name, provider, provider_id, is_admin, is_active
+)
+SELECT ?, ?, ?, ?, ?, 
+    CASE WHEN (SELECT COUNT(*) FROM users WHERE is_admin = 1 AND is_active = 1) = 0 THEN 1 ELSE 0 END,
+    1
+RETURNING *;
+
 -- name: UpdateUser :exec
 UPDATE users 
 SET 

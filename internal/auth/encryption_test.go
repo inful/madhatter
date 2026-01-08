@@ -16,7 +16,7 @@ func TestTokenEncryptor(t *testing.T) {
 		require.NoError(t, err)
 
 		plaintext := "my-secret-token-12345"
-		
+
 		// Encrypt
 		ciphertext, err := encryptor.Encrypt(plaintext)
 		require.NoError(t, err)
@@ -68,7 +68,7 @@ func TestTokenEncryptor(t *testing.T) {
 		require.NoError(t, err)
 
 		plaintext := "same-plaintext"
-		
+
 		ciphertext1, err := encryptor.Encrypt(plaintext)
 		require.NoError(t, err)
 

@@ -27,7 +27,7 @@ type TokenEncryptor struct {
 func NewTokenEncryptor() (*TokenEncryptor, error) {
 	// Try to get encryption key from environment
 	keyStr := os.Getenv("TOKEN_ENCRYPTION_KEY")
-	
+
 	var key []byte
 	if keyStr != "" {
 		// Decode base64-encoded key

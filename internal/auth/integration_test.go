@@ -15,24 +15,24 @@ import (
 
 func setupTestDB(t *testing.T) *database.DB {
 	t.Helper()
-	
+
 	// Create temp directory for test database
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.db")
-	
+
 	db, err := database.New(dbPath)
 	require.NoError(t, err)
-	
+
 	return db
 }
 
 func TestUserService_GetOrCreateUser(t *testing.T) {
 	db := setupTestDB(t)
 	t.Setenv("TOKEN_ENCRYPTION_KEY", "MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTI=")
-	
+
 	encryptor, err := NewTokenEncryptor()
 	require.NoError(t, err)
-	
+
 	userService := NewUserService(db.GetQueries(), encryptor)
 	ctx := context.Background()
 
@@ -96,10 +96,10 @@ func TestUserService_GetOrCreateUser(t *testing.T) {
 func TestUserService_OAuthTokens(t *testing.T) {
 	db := setupTestDB(t)
 	t.Setenv("TOKEN_ENCRYPTION_KEY", "MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTI=")
-	
+
 	encryptor, err := NewTokenEncryptor()
 	require.NoError(t, err)
-	
+
 	userService := NewUserService(db.GetQueries(), encryptor)
 	ctx := context.Background()
 
@@ -160,10 +160,10 @@ func TestUserService_OAuthTokens(t *testing.T) {
 func TestSessionManager_Integration(t *testing.T) {
 	db := setupTestDB(t)
 	t.Setenv("TOKEN_ENCRYPTION_KEY", "MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTI=")
-	
+
 	encryptor, err := NewTokenEncryptor()
 	require.NoError(t, err)
-	
+
 	userService := NewUserService(db.GetQueries(), encryptor)
 	sessionManager := NewSessionManager(db.GetQueries(), 24*time.Hour)
 	ctx := context.Background()
@@ -232,10 +232,10 @@ func TestSessionManager_Integration(t *testing.T) {
 func TestUserService_IsAdmin(t *testing.T) {
 	db := setupTestDB(t)
 	t.Setenv("TOKEN_ENCRYPTION_KEY", "MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTI=")
-	
+
 	encryptor, err := NewTokenEncryptor()
 	require.NoError(t, err)
-	
+
 	userService := NewUserService(db.GetQueries(), encryptor)
 	ctx := context.Background()
 

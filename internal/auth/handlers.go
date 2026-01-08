@@ -86,6 +86,7 @@ func (am *AuthManager) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   oAuthStateCookieMaxAge,
+		SameSite: http.SameSiteLaxMode,
 	})
 
 	// Redirect to provider

@@ -101,10 +101,9 @@ The system automatically creates the required tables on first run. The schema in
    ```bash
    # Required for production: encryption key for OAuth tokens
    export TOKEN_ENCRYPTION_KEY=$(openssl rand -base64 32)
-   
-   # Note: Without this key, a random key is generated at startup.
-   # This means OAuth tokens won't survive application restarts.
    ```
+   
+   > **Note**: Without this key, a random key is generated at startup, which means OAuth tokens won't survive application restarts.
 
 4. **Run with config**:
    ```bash
@@ -180,7 +179,7 @@ The system implements several security measures to protect sensitive data:
    - Store this key securely (e.g., secret manager, vault)
    - Never commit the key to version control
    - If the key is lost, all encrypted OAuth tokens become unrecoverable
-   - Key rotation requires re-encrypting all tokens (use migration tooling)
+   - Key rotation is not currently automated; users must re-authenticate after key changes
    - Without this key, a random key is generated on startup (tokens won't survive restarts)
 
 4. **Database Security**:
@@ -223,12 +222,14 @@ The system implements several security measures to protect sensitive data:
 - **"Failed to decrypt access token"**: The `TOKEN_ENCRYPTION_KEY` environment variable has changed or is missing
   - Ensure the same key is used across application restarts
   - If key is lost, OAuth tokens in database cannot be decrypted
-  - Users will need to log in again to re-authorize
+  - **User Impact**: Affected users will be automatically logged out and must re-authenticate
+  - To recover: Set the correct key or clear OAuth tokens from the database
 - **"Encryption key must be 32 bytes"**: The `TOKEN_ENCRYPTION_KEY` must decode to exactly 32 bytes when base64 decoded
   - Generate a proper key: `openssl rand -base64 32` (produces 44 characters that decode to 32 bytes)
 - **Warning about random encryption key**: `TOKEN_ENCRYPTION_KEY` not set
   - Set the environment variable for production deployments
   - Without it, tokens won't survive application restarts
+  - **User Impact**: Users will need to re-authenticate after each application restart
 
 ## Development
 

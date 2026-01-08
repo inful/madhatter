@@ -218,14 +218,14 @@ func (p *Provider) GetUserEmail(token string) (string, error) {
 
 ## API Authentication
 
-The system also supports API authentication using sessions. API endpoints require:
+**Important:** In the current version, the `/api/v1/*` HTTP API endpoints do **not** enforce authentication by themselves. Requests without any `Authorization` header or session cookie are accepted by the server.
 
-```
-Authorization: Bearer <session_token>
-```
+If you expose these endpoints, you **must** protect them using external mechanisms such as:
 
-Or session cookies automatically sent by the browser.
+- An authenticated reverse proxy (e.g. OAuth2/OIDC proxy, SSO gateway)
+- Network-level controls (firewall rules, VPN, private network)
 
+Future versions may add first-class API authentication (e.g. validating `Authorization: Bearer <session_token>` headers or session cookies on `/api/v1/*` routes). Until that is implemented in the server code, treat the HTTP API as unauthenticated and rely on external protection.
 ## Calendar Subscriptions
 
 Authenticated users can create calendar subscriptions:

@@ -22,6 +22,8 @@ type SessionManager struct {
 	db              *sqlc.Queries
 	sessionDuration time.Duration
 	cookieName      string
+	cleanupInterval time.Duration
+	stopCleanup     chan struct{}
 }
 
 // NewSessionManager creates a new session manager.
@@ -30,6 +32,8 @@ func NewSessionManager(db *sqlc.Queries, duration time.Duration) *SessionManager
 		db:              db,
 		sessionDuration: duration,
 		cookieName:      "session_token",
+		cleanupInterval: 15 * time.Minute, // Run cleanup every 15 minutes
+		stopCleanup:     make(chan struct{}),
 	}
 }
 
@@ -63,10 +67,7 @@ func (sm *SessionManager) CreateSession(ctx context.Context, userID string) (str
 
 // ValidateSession validates a session token and returns user info.
 func (sm *SessionManager) ValidateSession(ctx context.Context, token string) (*sqlc.GetSessionByTokenRow, error) {
-	// Clean up expired sessions first
-	_ = sm.db.DeleteExpiredSessions(ctx)
-
-	// Get session
+	// Get session (expired sessions are filtered by the query itself)
 	session, err := sm.db.GetSessionByToken(ctx, token)
 	if err != nil {
 		return nil, ErrInvalidSession
@@ -118,6 +119,30 @@ func (sm *SessionManager) GetSessionCookie(r *http.Request) (string, error) {
 		return "", err
 	}
 	return cookie.Value, nil
+}
+
+// StartCleanup starts a background goroutine that periodically cleans up expired sessions.
+func (sm *SessionManager) StartCleanup(ctx context.Context) {
+	ticker := time.NewTicker(sm.cleanupInterval)
+	go func() {
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				// Clean up expired sessions
+				_ = sm.db.DeleteExpiredSessions(ctx)
+			case <-sm.stopCleanup:
+				return
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+}
+
+// StopCleanup stops the background cleanup goroutine.
+func (sm *SessionManager) StopCleanup() {
+	close(sm.stopCleanup)
 }
 
 // generateSecureToken generates a cryptographically secure random token.

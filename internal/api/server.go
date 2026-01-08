@@ -30,6 +30,7 @@ type Server struct {
 	engine         *rota.Engine
 	authManager    *auth.AuthManager
 	authMiddleware *auth.Middleware
+	sessionManager *auth.SessionManager
 }
 
 func NewServer(db *database.DB) *Server {
@@ -71,6 +72,7 @@ func NewServer(db *database.DB) *Server {
 		engine:         rota.NewEngine(db),
 		authManager:    authManager,
 		authMiddleware: authMiddleware,
+		sessionManager: sessionManager,
 	}
 
 	s.registerOperations()
@@ -369,6 +371,10 @@ func (s *Server) handleCalendarICS(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) Start(port string) error {
+	// Start session cleanup background task
+	ctx := context.Background()
+	s.sessionManager.StartCleanup(ctx)
+
 	// Use http.Server with timeouts for production
 	srv := &http.Server{
 		Addr:         ":" + port,

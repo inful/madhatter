@@ -38,10 +38,15 @@ type ProviderConfig struct {
 }
 
 // LoadConfig loads authentication configuration from a YAML file.
+// The path must resolve to a location within the working directory or a config subdirectory
+// to prevent directory traversal attacks.
 func LoadConfig(path string) (*AuthConfig, error) {
-	// Clean the path to prevent directory traversal
-	cleanPath := filepath.Clean(path)
-	data, err := os.ReadFile(cleanPath)
+	// Validate the path is within allowed directories
+	if err := validateConfigPath(path); err != nil {
+		return nil, err
+	}
+
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
@@ -52,6 +57,38 @@ func LoadConfig(path string) (*AuthConfig, error) {
 	}
 
 	return &config, nil
+}
+
+// validateConfigPath ensures the config file path is within allowed directories
+// and doesn't escape via directory traversal.
+func validateConfigPath(path string) error {
+	// Clean the path first
+	cleanPath := filepath.Clean(path)
+
+	// Get absolute paths for comparison
+	absPath, err := filepath.Abs(cleanPath)
+	if err != nil {
+		return fmt.Errorf("failed to resolve config path: %w", err)
+	}
+
+	// Get current working directory as the base allowed directory
+	workDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("failed to get working directory: %w", err)
+	}
+
+	// Check if the absolute path is within the working directory
+	relPath, err := filepath.Rel(workDir, absPath)
+	if err != nil {
+		return fmt.Errorf("failed to determine relative path: %w", err)
+	}
+
+	// filepath.Rel returns a path starting with ".." if the target is outside the base
+	if len(relPath) >= 2 && relPath[0] == '.' && relPath[1] == '.' {
+		return fmt.Errorf("config path %q is outside the allowed directory", path)
+	}
+
+	return nil
 }
 
 // LoadConfigFromEnv loads configuration from environment variables.

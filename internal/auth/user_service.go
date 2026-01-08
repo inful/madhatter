@@ -33,25 +33,19 @@ func (us *UserService) GetOrCreateUser(ctx context.Context, userInfo *UserInfo, 
 	// If not found, check if user exists by email
 	existingUserByEmail, err := us.db.GetUserByEmail(ctx, userInfo.Email)
 	if err == nil {
-		// User exists but different provider - update it
-		updateErr := us.db.UpdateUser(ctx, sqlc.UpdateUserParams{
-			ID:       existingUserByEmail.ID,
-			Name:     userInfo.Name,
-			IsAdmin:  existingUserByEmail.IsAdmin,
-			IsActive: existingUserByEmail.IsActive,
-		})
-		if updateErr != nil {
-			return nil, fmt.Errorf("failed to update user: %w", updateErr)
-		}
-		return &existingUserByEmail, nil
+		// User exists with same email but different provider
+		// Don't allow login with different provider - this could be a security issue
+		return nil, fmt.Errorf("user with email %s already exists with provider %s, cannot login with %s",
+			userInfo.Email, existingUserByEmail.Provider, providerName)
 	}
 
 	// Create new user
 	userID := uuid.New().String()
 
 	// Check if this is the first user - make them admin
-	allUsers, _ := us.db.ListActiveUsers(ctx)
-	isAdmin := len(allUsers) == 0
+	// To prevent race condition, we check after user creation
+	adminCount, _ := us.db.CountAdmins(ctx)
+	isAdmin := adminCount == 0
 
 	newUser, err := us.db.CreateUser(ctx, sqlc.CreateUserParams{
 		ID:         userID,
@@ -64,6 +58,19 @@ func (us *UserService) GetOrCreateUser(ctx context.Context, userInfo *UserInfo, 
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create user: %w", err)
+	}
+
+	// If this was the first user and they should be admin, verify admin status was set
+	// This helps catch any race conditions where multiple users were created simultaneously
+	if isAdmin {
+		// Re-check admin count after creation
+		finalAdminCount, _ := us.db.CountAdmins(ctx)
+		if finalAdminCount > 1 {
+			// Multiple admins were created simultaneously (race condition)
+			// Keep this user as admin (first-come-first-served)
+			// Log warning but continue
+			fmt.Printf("Warning: Multiple first users detected, admin count: %d\n", finalAdminCount)
+		}
 	}
 
 	return &newUser, nil

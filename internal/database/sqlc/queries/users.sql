@@ -30,6 +30,15 @@ SET
     updated_at = CURRENT_TIMESTAMP
 WHERE id = ?;
 
+-- name: UpdateUserProvider :exec
+UPDATE users 
+SET 
+    name = ?,
+    provider = ?,
+    provider_id = ?,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = ?;
+
 -- name: ListActiveUsers :many
 SELECT * FROM users 
 WHERE is_active = 1 
@@ -39,3 +48,7 @@ ORDER BY name;
 SELECT * FROM users 
 WHERE is_admin = 1 AND is_active = 1 
 ORDER BY name;
+
+-- name: CountAdmins :one
+SELECT COUNT(*) FROM users 
+WHERE is_admin = 1 AND is_active = 1;

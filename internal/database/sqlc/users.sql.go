@@ -10,6 +10,18 @@ import (
 	"database/sql"
 )
 
+const countAdmins = `-- name: CountAdmins :one
+SELECT COUNT(*) FROM users 
+WHERE is_admin = 1 AND is_active = 1
+`
+
+func (q *Queries) CountAdmins(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countAdmins)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (
     id, email, name, provider, provider_id, is_admin, is_active
@@ -228,6 +240,33 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) error {
 		arg.Name,
 		arg.IsAdmin,
 		arg.IsActive,
+		arg.ID,
+	)
+	return err
+}
+
+const updateUserProvider = `-- name: UpdateUserProvider :exec
+UPDATE users 
+SET 
+    name = ?,
+    provider = ?,
+    provider_id = ?,
+    updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+`
+
+type UpdateUserProviderParams struct {
+	Name       string `json:"name"`
+	Provider   string `json:"provider"`
+	ProviderID string `json:"provider_id"`
+	ID         string `json:"id"`
+}
+
+func (q *Queries) UpdateUserProvider(ctx context.Context, arg UpdateUserProviderParams) error {
+	_, err := q.db.ExecContext(ctx, updateUserProvider,
+		arg.Name,
+		arg.Provider,
+		arg.ProviderID,
 		arg.ID,
 	)
 	return err

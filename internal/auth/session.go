@@ -7,7 +7,9 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -24,6 +26,9 @@ type SessionManager struct {
 	db              *sqlc.Queries
 	sessionDuration time.Duration
 	cookieName      string
+	cleanupInterval time.Duration
+	stopCleanup     chan struct{}
+	stopOnce        sync.Once
 }
 
 // NewSessionManager creates a new session manager.
@@ -32,6 +37,8 @@ func NewSessionManager(db *sqlc.Queries, duration time.Duration) *SessionManager
 		db:              db,
 		sessionDuration: duration,
 		cookieName:      "session_token",
+		cleanupInterval: 15 * time.Minute, // Run cleanup every 15 minutes
+		stopCleanup:     make(chan struct{}),
 	}
 }
 
@@ -74,6 +81,7 @@ func (sm *SessionManager) ValidateSession(ctx context.Context, token string) (*s
 
 	// Get session using hashed token
 	session, err := sm.db.GetSessionByToken(ctx, tokenHash)
+
 	if err != nil {
 		return nil, ErrInvalidSession
 	}
@@ -142,6 +150,36 @@ func (sm *SessionManager) GetSessionCookie(r *http.Request) (string, error) {
 		return "", err
 	}
 	return cookie.Value, nil
+}
+
+// StartCleanup starts a background goroutine that periodically cleans up expired sessions.
+func (sm *SessionManager) StartCleanup(ctx context.Context) {
+	ticker := time.NewTicker(sm.cleanupInterval)
+	go func() {
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				// Clean up expired sessions using a background context
+				// to avoid issues if the original context is canceled
+				cleanupCtx := context.Background()
+				if err := sm.db.DeleteExpiredSessions(cleanupCtx); err != nil {
+					log.Printf("Session cleanup error: %v\n", err)
+				}
+			case <-sm.stopCleanup:
+				return
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+}
+
+// StopCleanup stops the background cleanup goroutine.
+func (sm *SessionManager) StopCleanup() {
+	sm.stopOnce.Do(func() {
+		close(sm.stopCleanup)
+	})
 }
 
 // generateSecureToken generates a cryptographically secure random token.

@@ -4,7 +4,10 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -32,6 +35,8 @@ type Server struct {
 	authManager    *auth.AuthManager
 	authMiddleware *auth.Middleware
 	sessionManager *auth.SessionManager
+	cleanupCtx     context.Context
+	cleanupCancel  context.CancelFunc
 }
 
 func NewServer(db *database.DB) *Server {
@@ -379,8 +384,8 @@ func (s *Server) handleCalendarICS(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) Start(port string) error {
 	// Start session cleanup background task
-	ctx := context.Background()
-	s.sessionManager.StartCleanupTask(ctx, sessionCleanupInterval)
+	s.cleanupCtx, s.cleanupCancel = context.WithCancel(context.Background())
+	s.sessionManager.StartCleanup(s.cleanupCtx)
 
 	// Use http.Server with timeouts for production
 	srv := &http.Server{
@@ -390,5 +395,29 @@ func (s *Server) Start(port string) error {
 		WriteTimeout: serverWriteTimeout,
 		IdleTimeout:  serverIdleTimeout,
 	}
-	return srv.ListenAndServe()
+
+	// Handle graceful shutdown
+	go func() {
+		sigint := make(chan os.Signal, 1)
+		signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
+		<-sigint
+
+		log.Println("Shutting down server...")
+		s.cleanupCancel() // Cancel the cleanup context
+		s.sessionManager.StopCleanup()
+
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer shutdownCancel()
+
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			log.Printf("Server shutdown error: %v\n", err)
+		}
+	}()
+
+	log.Printf("Server starting on port %s\n", port)
+	err := srv.ListenAndServe()
+	if err != nil && err != http.ErrServerClosed {
+		return err
+	}
+	return nil
 }

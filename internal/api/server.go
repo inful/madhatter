@@ -2,49 +2,105 @@ package api
 
 import (
 	"context"
+	"fmt"
+	"log"
 	"net/http"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
+	"github.com/inful/madhatter/internal/auth"
 	"github.com/inful/madhatter/internal/database"
 	"github.com/inful/madhatter/internal/rota"
 	"github.com/inful/madhatter/internal/web"
 )
 
 const (
-	calendarDaysLookahead = 30
-	serverReadTimeout     = 15 * time.Second
-	serverWriteTimeout    = 15 * time.Second
-	serverIdleTimeout     = 60 * time.Second
+	calendarDaysLookahead  = 30
+	serverReadTimeout      = 15 * time.Second
+	serverWriteTimeout     = 15 * time.Second
+	serverIdleTimeout      = 60 * time.Second
+	sessionCleanupInterval = 1 * time.Hour // Clean up expired sessions every hour
+	shutdownTimeout        = 30 * time.Second
 )
 
 type Server struct {
-	router *chi.Mux
-	api    huma.API
-	db     *database.DB
-	engine *rota.Engine
+	router         *chi.Mux
+	api            huma.API
+	db             *database.DB
+	engine         *rota.Engine
+	authManager    *auth.AuthManager
+	authMiddleware *auth.Middleware
+	sessionManager *auth.SessionManager
+	//nolint:containedctx // Context is used for graceful shutdown
+	cleanupCtx    context.Context
+	cleanupCancel context.CancelFunc
 }
 
-func NewServer(db *database.DB) *Server {
+func NewServer(db *database.DB) (*Server, error) {
 	router := chi.NewRouter()
 
 	// Create HUMA API with Chi adapter
 	config := huma.DefaultConfig("Support Rota API", "1.0.0")
 	api := humachi.New(router, config)
 
+	// Load OAuth configuration from environment
+	authConfig := auth.LoadConfigFromEnv()
+
+	// Validate configuration
+	var authManager *auth.AuthManager
+	var authMiddleware *auth.Middleware
+	var sessionManager *auth.SessionManager
+
+	if err := authConfig.Validate(); err != nil {
+		// Log warning but continue without authentication
+		log.Printf("WARNING: Authentication disabled - %v\n", err)
+		log.Printf("The server will start without authentication. Features requiring login will be unavailable.\n")
+		log.Printf("To enable authentication, configure OAuth provider environment variables.\n")
+	} else {
+		// Create token encryptor for OAuth tokens
+		encryptor, err := auth.NewTokenEncryptor()
+		if err != nil {
+			return nil, fmt.Errorf("failed to create token encryptor: %w", err)
+		}
+
+		// Create auth components
+		providerFactory := auth.NewProviderFactory(authConfig.Providers)
+		userService := auth.NewUserService(db.GetQueries(), encryptor)
+		sessionManager = auth.NewSessionManager(db.GetQueries(), time.Duration(authConfig.Sessions.DurationHours)*time.Hour)
+
+		authManager = auth.NewAuthManager(providerFactory, userService, sessionManager)
+		authMiddleware = auth.NewMiddleware(sessionManager)
+
+		// Register configured providers
+		for providerName := range authConfig.Providers {
+			provider, err := providerFactory.Create(providerName)
+			if err != nil {
+				log.Printf("Failed to create auth provider %q: %v\n", providerName, err)
+				continue
+			}
+			authManager.RegisterProvider(provider)
+		}
+	}
+
 	s := &Server{
-		router: router,
-		api:    api,
-		db:     db,
-		engine: rota.NewEngine(db),
+		router:         router,
+		api:            api,
+		db:             db,
+		engine:         rota.NewEngine(db),
+		authManager:    authManager,
+		authMiddleware: authMiddleware,
+		sessionManager: sessionManager,
 	}
 
 	s.registerOperations()
 	s.registerWebRoutes()
-	return s
+	return s, nil
 }
 
 func (s *Server) registerOperations() {
@@ -97,8 +153,8 @@ func (s *Server) registerOperations() {
 }
 
 func (s *Server) registerWebRoutes() {
-	// Create web handler
-	webHandler := web.NewHandler(s.db)
+	// Create web handler with auth components
+	webHandler := web.NewHandler(s.db, s.authManager, s.authMiddleware)
 
 	// Mount web routes
 	s.router.Mount("/", webHandler.Router())
@@ -119,8 +175,7 @@ type AddTeamOutput struct {
 }
 
 func (s *Server) handleAddTeam(ctx context.Context, input *AddTeamInput) (*AddTeamOutput, error) {
-	//nolint:contextcheck
-	id, err := s.db.AddTeamMember(input.Body.Name, input.Body.Email)
+	id, err := s.db.AddTeamMember(ctx, input.Body.Name, input.Body.Email)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to add team member", err)
 	}
@@ -138,8 +193,7 @@ type ListTeamOutput struct {
 }
 
 func (s *Server) handleListTeam(ctx context.Context, input *struct{}) (*ListTeamOutput, error) {
-	//nolint:contextcheck
-	members, err := s.db.GetActiveTeamMembers()
+	members, err := s.db.GetActiveTeamMembers(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to get team members", err)
 	}
@@ -171,14 +225,13 @@ type ReportLeaveOutput struct {
 
 func (s *Server) handleReportLeave(ctx context.Context, input *ReportLeaveInput) (*ReportLeaveOutput, error) {
 	// Create leave record
-	//nolint:contextcheck
-	leaveID, err := s.db.CreateLeaveRecord(input.Body.MemberID, input.Body.Type, input.Body.StartDate, input.Body.EndDate)
+	leaveID, err := s.db.CreateLeaveRecord(ctx, input.Body.MemberID, input.Body.Type, input.Body.StartDate, input.Body.EndDate)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to create leave record", err)
 	}
 
 	// Assign covers
-	err = s.engine.AssignCoversForLeave(leaveID)
+	err = s.engine.AssignCoversForLeave(ctx, leaveID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to assign covers", err)
 	}
@@ -198,8 +251,7 @@ func (s *Server) handleReportLeave(ctx context.Context, input *ReportLeaveInput)
 			continue
 		}
 		dateStr := d.Format("2006-01-02")
-		//nolint:contextcheck
-		assignments, err := s.db.GetAssignmentsByDate(dateStr)
+		assignments, err := s.db.GetAssignmentsByDate(ctx, dateStr)
 		if err == nil {
 			for _, a := range assignments {
 				if a.OriginalAssignmentID != nil && *a.OriginalAssignmentID == leaveID {
@@ -246,7 +298,7 @@ func (s *Server) handleGenerateSchedule(ctx context.Context, input *GenerateSche
 		return nil, huma.Error400BadRequest("Invalid end date format")
 	}
 
-	err = s.engine.GenerateSchedule(startDate, endDate)
+	err = s.engine.GenerateSchedule(ctx, startDate, endDate)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to generate schedule", err)
 	}
@@ -271,8 +323,7 @@ type SubscribeCalendarOutput struct {
 }
 
 func (s *Server) handleSubscribeCalendar(ctx context.Context, input *SubscribeCalendarInput) (*SubscribeCalendarOutput, error) {
-	//nolint:contextcheck
-	token, err := s.db.CreateCalendarSubscription(input.Body.MemberID)
+	token, err := s.db.CreateCalendarSubscription(ctx, input.Body.MemberID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to create calendar subscription", err)
 	}
@@ -291,16 +342,14 @@ func (s *Server) handleSubscribeCalendar(ctx context.Context, input *SubscribeCa
 func (s *Server) handleCalendarICS(w http.ResponseWriter, r *http.Request) {
 	token := chi.URLParam(r, "token")
 
-	//nolint:contextcheck
-	member, err := s.db.GetMemberByToken(token)
+	member, err := s.db.GetMemberByToken(r.Context(), token)
 	if err != nil {
 		http.Error(w, "Invalid token", http.StatusNotFound)
 		return
 	}
 
 	// Get upcoming assignments
-	//nolint:contextcheck
-	assignments, err := s.db.GetUpcomingAssignments(member.ID, calendarDaysLookahead)
+	assignments, err := s.db.GetUpcomingAssignments(r.Context(), member.ID, calendarDaysLookahead)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -337,7 +386,52 @@ func (s *Server) handleCalendarICS(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) Start(port string) error {
+func (s *Server) setupSessionCleanup(ctx context.Context) {
+	// Start session cleanup background task (only if auth is enabled)
+	if s.sessionManager != nil {
+		log.Println("Starting session cleanup task...")
+		cleanupCtx, cleanupCancel := context.WithCancel(ctx)
+		s.cleanupCtx = cleanupCtx
+		s.cleanupCancel = cleanupCancel
+		//nolint:contextcheck // Cleanup context is properly managed and canceled in StopCleanup
+		s.sessionManager.StartCleanup(s.cleanupCtx)
+	} else {
+		log.Println("Authentication disabled - skipping session cleanup")
+	}
+}
+
+func (s *Server) handleShutdownSignals(parentCtx context.Context, srv *http.Server) {
+	sigint := make(chan os.Signal, 1)
+	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
+	select {
+	case <-sigint:
+		log.Println("Shutting down server...")
+		s.stopCleanup()
+		shutdownCtx, shutdownCancel := context.WithTimeout(parentCtx, shutdownTimeout)
+		defer shutdownCancel()
+
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			log.Printf("Server shutdown error: %v\n", err)
+		}
+	case <-parentCtx.Done():
+		// Parent context canceled
+		log.Println("Parent context canceled, shutting down server...")
+		s.stopCleanup()
+	}
+}
+
+func (s *Server) stopCleanup() {
+	if s.cleanupCancel != nil {
+		s.cleanupCancel()
+	}
+	if s.sessionManager != nil {
+		s.sessionManager.StopCleanup()
+	}
+}
+
+func (s *Server) Start(ctx context.Context, port string) error {
+	s.setupSessionCleanup(ctx)
+
 	// Use http.Server with timeouts for production
 	srv := &http.Server{
 		Addr:         ":" + port,
@@ -346,5 +440,14 @@ func (s *Server) Start(port string) error {
 		WriteTimeout: serverWriteTimeout,
 		IdleTimeout:  serverIdleTimeout,
 	}
-	return srv.ListenAndServe()
+
+	// Handle graceful shutdown
+	go s.handleShutdownSignals(ctx, srv)
+
+	log.Printf("Server starting on port %s\n", port)
+	err := srv.ListenAndServe()
+	if err != nil && err != http.ErrServerClosed {
+		return err
+	}
+	return nil
 }

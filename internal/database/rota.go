@@ -12,13 +12,13 @@ import (
 
 const maxDateLength = 10
 
-func (db *DB) CreateRotaAssignment(date, memberID string, isCover bool, originalAssignmentID *string) (string, error) {
+func (db *DB) CreateRotaAssignment(ctx context.Context, date, memberID string, isCover bool, originalAssignmentID *string) (string, error) {
 	if date == "" || memberID == "" {
 		return "", errors.New("date and member_id are required")
 	}
 
 	// Verify member exists
-	_, err := db.queries.GetMemberByID(context.Background(), memberID)
+	_, err := db.queries.GetMemberByID(ctx, memberID)
 	if err != nil {
 		return "", errors.New("member not found")
 	}
@@ -40,17 +40,17 @@ func (db *DB) CreateRotaAssignment(date, memberID string, isCover bool, original
 		params.OriginalAssignmentID = sql.NullString{String: *originalAssignmentID, Valid: true}
 	}
 
-	_, err = db.queries.CreateRotaAssignment(context.Background(), params)
+	_, err = db.queries.CreateRotaAssignment(ctx, params)
 	return id, err
 }
 
-func (db *DB) GetAssignmentsByDate(date string) ([]RotaAssignment, error) {
+func (db *DB) GetAssignmentsByDate(ctx context.Context, date string) ([]RotaAssignment, error) {
 	dateTime, err := time.Parse("2006-01-02", date)
 	if err != nil {
 		return nil, err
 	}
 
-	assignments, err := db.queries.GetAssignmentsByDate(context.Background(), dateTime)
+	assignments, err := db.queries.GetAssignmentsByDate(ctx, dateTime)
 	if err != nil {
 		return nil, err
 	}
@@ -73,7 +73,7 @@ func (db *DB) GetAssignmentsByDate(date string) ([]RotaAssignment, error) {
 }
 
 // GetAssignmentsByDateRange returns all assignments between start and end dates (inclusive).
-func (db *DB) GetAssignmentsByDateRange(startDate, endDate string) ([]RotaAssignment, error) {
+func (db *DB) GetAssignmentsByDateRange(ctx context.Context, startDate, endDate string) ([]RotaAssignment, error) {
 	startDateTime, err := time.Parse("2006-01-02", startDate)
 	if err != nil {
 		return nil, err
@@ -89,7 +89,7 @@ func (db *DB) GetAssignmentsByDateRange(startDate, endDate string) ([]RotaAssign
 		Date_2: endDateTime,
 	}
 
-	assignments, err := db.queries.GetAssignmentsByDateRange(context.Background(), params)
+	assignments, err := db.queries.GetAssignmentsByDateRange(ctx, params)
 	if err != nil {
 		return nil, err
 	}
@@ -113,9 +113,7 @@ func (db *DB) GetAssignmentsByDateRange(startDate, endDate string) ([]RotaAssign
 
 // GetLatestAssignmentDate returns the latest date that has any assignments.
 // Returns empty string if no assignments exist.
-func (db *DB) GetLatestAssignmentDate() (string, error) {
-	ctx := context.Background()
-
+func (db *DB) GetLatestAssignmentDate(ctx context.Context) (string, error) {
 	// Query for the maximum date in rota_assignments
 	var maxDateStr sql.NullString
 
@@ -149,7 +147,7 @@ func (db *DB) GetLatestAssignmentDate() (string, error) {
 }
 
 // DeleteAssignmentsInRange deletes all assignments within the specified date range (inclusive).
-func (db *DB) DeleteAssignmentsInRange(startDate, endDate string) error {
+func (db *DB) DeleteAssignmentsInRange(ctx context.Context, startDate, endDate string) error {
 	startDateTime, err := time.Parse("2006-01-02", startDate)
 	if err != nil {
 		return err
@@ -165,5 +163,5 @@ func (db *DB) DeleteAssignmentsInRange(startDate, endDate string) error {
 		Date_2: endDateTime,
 	}
 
-	return db.queries.DeleteAssignmentsByDateRange(context.Background(), params)
+	return db.queries.DeleteAssignmentsByDateRange(ctx, params)
 }

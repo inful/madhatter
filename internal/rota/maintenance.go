@@ -1,6 +1,7 @@
 package rota
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -27,11 +28,11 @@ func NewScheduleMaintenance(db *database.DB) *ScheduleMaintenance {
 // EnsureSchedule guarantees that a schedule exists for the next 14 days from today.
 // It only generates assignments for dates beyond the latest existing assignment.
 // Returns true if new assignments were created, false if schedule was already complete.
-func (sm *ScheduleMaintenance) EnsureSchedule() (bool, error) {
+func (sm *ScheduleMaintenance) EnsureSchedule(ctx context.Context) (bool, error) {
 	today := time.Now().Format("2006-01-02")
 
 	// Get the latest date that has any assignments
-	latestAssignmentDate, err := sm.db.GetLatestAssignmentDate()
+	latestAssignmentDate, err := sm.db.GetLatestAssignmentDate(ctx)
 	if err != nil {
 		return false, fmt.Errorf("failed to get latest assignment date: %w", err)
 	}
@@ -57,15 +58,15 @@ func (sm *ScheduleMaintenance) EnsureSchedule() (bool, error) {
 	}
 
 	// Generate assignments for the gap
-	return sm.GenerateMissingDays(startDate, endDate)
+	return sm.GenerateMissingDays(ctx, startDate, endDate)
 }
 
 // GetScheduleGap calculates the date range that needs assignments.
 // Returns start and end dates for the gap, or empty strings if no gap exists.
-func (sm *ScheduleMaintenance) GetScheduleGap() (string, string, error) {
+func (sm *ScheduleMaintenance) GetScheduleGap(ctx context.Context) (string, string, error) {
 	today := time.Now().Format("2006-01-02")
 
-	latestAssignmentDate, err := sm.db.GetLatestAssignmentDate()
+	latestAssignmentDate, err := sm.db.GetLatestAssignmentDate(ctx)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to get latest assignment date: %w", err)
 	}
@@ -93,15 +94,15 @@ func (sm *ScheduleMaintenance) GetScheduleGap() (string, string, error) {
 // This is the core method that implements "static as possible" scheduling.
 // It only creates assignments for dates that don't have any assignments yet.
 // Returns true if assignments were created, false otherwise.
-func (sm *ScheduleMaintenance) GenerateMissingDays(startDate, endDate time.Time) (bool, error) {
+func (sm *ScheduleMaintenance) GenerateMissingDays(ctx context.Context, startDate, endDate time.Time) (bool, error) {
 	// Get existing assignments and validate
-	datesWithAssignments, err := sm.getDatesWithAssignments(startDate, endDate)
+	datesWithAssignments, err := sm.getDatesWithAssignments(ctx, startDate, endDate)
 	if err != nil {
 		return false, err
 	}
 
 	// Get active team members
-	members, err := sm.db.GetActiveTeamMembers()
+	members, err := sm.db.GetActiveTeamMembers(ctx)
 	if err != nil {
 		return false, fmt.Errorf("failed to get active team members: %w", err)
 	}
@@ -111,18 +112,19 @@ func (sm *ScheduleMaintenance) GenerateMissingDays(startDate, endDate time.Time)
 	}
 
 	// Determine starting position in rotation
-	memberIndex, err := sm.getStartingMemberIndex(startDate, members)
+	memberIndex, err := sm.getStartingMemberIndex(ctx, startDate, members)
 	if err != nil {
 		return false, err
 	}
 
 	// Generate assignments for missing dates
-	return sm.generateAssignmentsForMissingDates(startDate, endDate, datesWithAssignments, members, memberIndex)
+	return sm.generateAssignmentsForMissingDates(ctx, startDate, endDate, datesWithAssignments, members, memberIndex)
 }
 
 // getDatesWithAssignments retrieves all dates that already have assignments in the given range.
-func (sm *ScheduleMaintenance) getDatesWithAssignments(startDate, endDate time.Time) (map[string]bool, error) {
+func (sm *ScheduleMaintenance) getDatesWithAssignments(ctx context.Context, startDate, endDate time.Time) (map[string]bool, error) {
 	existingAssignments, err := sm.db.GetAssignmentsByDateRange(
+		ctx,
 		startDate.Format("2006-01-02"),
 		endDate.Format("2006-01-02"),
 	)
@@ -139,10 +141,11 @@ func (sm *ScheduleMaintenance) getDatesWithAssignments(startDate, endDate time.T
 }
 
 // getStartingMemberIndex determines where to start in the rotation.
-func (sm *ScheduleMaintenance) getStartingMemberIndex(startDate time.Time, members []database.TeamMember) (int, error) {
+func (sm *ScheduleMaintenance) getStartingMemberIndex(ctx context.Context, startDate time.Time, members []database.TeamMember) (int, error) {
 	// Find the last assigned member BEFORE the start date to continue the rotation
 	dayBeforeStart := startDate.AddDate(0, 0, -1)
 	assignmentsBefore, err := sm.db.GetAssignmentsByDateRange(
+		ctx,
 		dayBeforeStart.Format("2006-01-02"),
 		dayBeforeStart.Format("2006-01-02"),
 	)
@@ -163,6 +166,7 @@ func (sm *ScheduleMaintenance) getStartingMemberIndex(startDate time.Time, membe
 
 // generateAssignmentsForMissingDates creates assignments only for dates without them.
 func (sm *ScheduleMaintenance) generateAssignmentsForMissingDates(
+	ctx context.Context,
 	startDate, endDate time.Time,
 	datesWithAssignments map[string]bool,
 	members []database.TeamMember,
@@ -177,7 +181,7 @@ func (sm *ScheduleMaintenance) generateAssignmentsForMissingDates(
 			continue
 		}
 
-		if err := sm.engine.processDate(currentDate, members, &memberIndex); err != nil {
+		if err := sm.engine.processDate(ctx, currentDate, members, &memberIndex); err != nil {
 			return createdAny, fmt.Errorf("failed to create assignment for %s: %w",
 				currentDate.Format("2006-01-02"), err)
 		}
@@ -208,30 +212,31 @@ func (sm *ScheduleMaintenance) shouldSkipDate(date time.Time, datesWithAssignmen
 
 // HandleTeamChange processes team member changes and updates the schedule accordingly.
 // When a member is added or removed, the rotation may need adjustment.
-func (sm *ScheduleMaintenance) HandleTeamChange() error {
+func (sm *ScheduleMaintenance) HandleTeamChange(ctx context.Context) error {
 	// Simply ensure the schedule is complete
 	// The rotation will naturally adjust based on current team members
-	_, err := sm.EnsureSchedule()
+	_, err := sm.EnsureSchedule(ctx)
 	return err
 }
 
 // RegenerateSchedule creates a fresh schedule from scratch, replacing all existing assignments
 // in the specified date range. This is useful for initial team setup or schedule resets.
-func (sm *ScheduleMaintenance) RegenerateSchedule(start, end time.Time) (int, error) {
+func (sm *ScheduleMaintenance) RegenerateSchedule(ctx context.Context, start, end time.Time) (int, error) {
 	// Delete existing assignments in the date range
-	err := sm.db.DeleteAssignmentsInRange(start.Format("2006-01-02"), end.Format("2006-01-02"))
+	err := sm.db.DeleteAssignmentsInRange(ctx, start.Format("2006-01-02"), end.Format("2006-01-02"))
 	if err != nil {
 		return 0, fmt.Errorf("failed to delete existing assignments: %w", err)
 	}
 
 	// Use the engine's GenerateSchedule which handles all the logic correctly
-	err = sm.engine.GenerateSchedule(start, end)
+	err = sm.engine.GenerateSchedule(ctx, start, end)
 	if err != nil {
 		return 0, err
 	}
 
 	// Count how many assignments were created
 	assignments, err := sm.db.GetAssignmentsByDateRange(
+		ctx,
 		start.Format("2006-01-02"),
 		end.Format("2006-01-02"),
 	)
@@ -244,8 +249,8 @@ func (sm *ScheduleMaintenance) RegenerateSchedule(start, end time.Time) (int, er
 
 // HandleLeaveChange processes leave changes and updates cover assignments.
 // This is a wrapper around the engine's AssignCoversForLeave method.
-func (sm *ScheduleMaintenance) HandleLeaveChange(leaveID string) error {
-	return sm.engine.AssignCoversForLeave(leaveID)
+func (sm *ScheduleMaintenance) HandleLeaveChange(ctx context.Context, leaveID string) error {
+	return sm.engine.AssignCoversForLeave(ctx, leaveID)
 }
 
 // findLastAssignedMember finds the last member who was assigned in the existing schedule.

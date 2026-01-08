@@ -9,13 +9,13 @@ import (
 	"github.com/inful/madhatter/internal/database/sqlc"
 )
 
-func (db *DB) CreateLeaveRecord(memberID, leaveType, startDate, endDate string) (string, error) {
+func (db *DB) CreateLeaveRecord(ctx context.Context, memberID, leaveType, startDate, endDate string) (string, error) {
 	if memberID == "" || leaveType == "" || startDate == "" || endDate == "" {
 		return "", errors.New("all fields are required")
 	}
 
 	// Verify member exists
-	_, err := db.queries.GetMemberByID(context.Background(), memberID)
+	_, err := db.queries.GetMemberByID(ctx, memberID)
 	if err != nil {
 		return "", errors.New("member not found")
 	}
@@ -39,11 +39,11 @@ func (db *DB) CreateLeaveRecord(memberID, leaveType, startDate, endDate string) 
 		EndDate:   endTime,
 	}
 
-	_, err = db.queries.CreateLeaveRecord(context.Background(), params)
+	_, err = db.queries.CreateLeaveRecord(ctx, params)
 	return id, err
 }
 
-func (db *DB) GetLeaveByDate(date string) ([]LeaveRecord, error) {
+func (db *DB) GetLeaveByDate(ctx context.Context, date string) ([]LeaveRecord, error) {
 	// Parse date to time.Time for sqlc
 	dateTime, err := time.Parse("2006-01-02", date)
 	if err != nil {
@@ -55,7 +55,7 @@ func (db *DB) GetLeaveByDate(date string) ([]LeaveRecord, error) {
 		EndDate:   dateTime,
 	}
 
-	leaveRecords, err := db.queries.GetLeaveByDate(context.Background(), params)
+	leaveRecords, err := db.queries.GetLeaveByDate(ctx, params)
 	if err != nil {
 		return nil, err
 	}
@@ -81,16 +81,16 @@ func (db *DB) GetLeaveByDate(date string) ([]LeaveRecord, error) {
 	return result, nil
 }
 
-func (db *DB) UpdateLeaveStatus(leaveID, status string) error {
+func (db *DB) UpdateLeaveStatus(ctx context.Context, leaveID, status string) error {
 	params := sqlc.UpdateLeaveStatusParams{
 		Status: status,
 		ID:     leaveID,
 	}
-	return db.queries.UpdateLeaveStatus(context.Background(), params)
+	return db.queries.UpdateLeaveStatus(ctx, params)
 }
 
-func (db *DB) GetLeaveByID(leaveID string) (*LeaveRecord, error) {
-	leave, err := db.queries.GetLeaveByID(context.Background(), leaveID)
+func (db *DB) GetLeaveByID(ctx context.Context, leaveID string) (*LeaveRecord, error) {
+	leave, err := db.queries.GetLeaveByID(ctx, leaveID)
 	if err != nil {
 		return nil, err
 	}
@@ -112,7 +112,7 @@ func (db *DB) GetLeaveByID(leaveID string) (*LeaveRecord, error) {
 }
 
 // GetLeaveRecords retrieves all leave records (optionally filtered by status).
-func (db *DB) GetLeaveRecords(statusFilter ...string) ([]LeaveRecord, error) {
+func (db *DB) GetLeaveRecords(ctx context.Context, statusFilter ...string) ([]LeaveRecord, error) {
 	params := sqlc.GetLeaveRecordsParams{
 		Status:  "",
 		Column2: "",
@@ -122,7 +122,7 @@ func (db *DB) GetLeaveRecords(statusFilter ...string) ([]LeaveRecord, error) {
 		params.Column2 = statusFilter[0]
 	}
 
-	leaveRecords, err := db.queries.GetLeaveRecords(context.Background(), params)
+	leaveRecords, err := db.queries.GetLeaveRecords(ctx, params)
 	if err != nil {
 		return nil, err
 	}

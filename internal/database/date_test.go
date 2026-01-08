@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"testing"
 )
 
@@ -8,14 +9,15 @@ func TestDateDebug(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
-	memberID, _ := db.AddTeamMember("Alice", "alice@example.com")
-	leaveID, err := db.CreateLeaveRecord(memberID, "sick", "2024-01-15", "2024-01-15")
+	ctx := context.Background()
+	memberID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	leaveID, err := db.CreateLeaveRecord(ctx, memberID, "sick", "2024-01-15", "2024-01-15")
 	if err != nil {
 		t.Fatalf("CreateLeaveRecord failed: %v", err)
 	}
 	t.Logf("Created leave ID: %s", leaveID)
 
-	leave, err := db.GetLeaveByID(leaveID)
+	leave, err := db.GetLeaveByID(ctx, leaveID)
 	if err != nil {
 		t.Fatalf("GetLeaveByID failed: %v", err)
 	}

@@ -42,3 +42,8 @@ build/
 # Temporary files
 tmp/
 temp/
+
+# local config test files
+config.yaml
+config_test.yaml
+config.yml

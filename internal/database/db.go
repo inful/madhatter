@@ -71,6 +71,42 @@ func New(path string) (*DB, error) {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (member_id) REFERENCES team_members(id)
     );
+
+    CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        email TEXT UNIQUE NOT NULL,
+        name TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        provider_id TEXT NOT NULL,
+        is_admin INTEGER DEFAULT 0,
+        is_active INTEGER DEFAULT 1,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(provider, provider_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS sessions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        token TEXT UNIQUE NOT NULL,
+        expires_at DATETIME NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS oauth_tokens (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        access_token TEXT NOT NULL,
+        refresh_token TEXT,
+        token_type TEXT,
+        expires_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        UNIQUE(user_id, provider)
+    );
     `
 
 	if _, err := db.ExecContext(ctx, schema); err != nil {
@@ -85,11 +121,17 @@ func (db *DB) Close() error {
 	return db.db.Close()
 }
 
+// GetQueries returns the underlying sqlc.Queries instance.
+// This is needed for auth components that require direct SQLC access.
+func (db *DB) GetQueries() *sqlc.Queries {
+	return db.queries
+}
+
 func (db *DB) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	return db.db.ExecContext(ctx, query, args...)
 }
 
-func (db *DB) AddTeamMember(name, email string) (string, error) {
+func (db *DB) AddTeamMember(ctx context.Context, name, email string) (string, error) {
 	if name == "" || email == "" {
 		return "", errors.New("name and email cannot be empty")
 	}
@@ -101,12 +143,12 @@ func (db *DB) AddTeamMember(name, email string) (string, error) {
 		Email: email,
 	}
 
-	_, err := db.queries.AddTeamMember(context.Background(), params)
+	_, err := db.queries.AddTeamMember(ctx, params)
 	return id, err
 }
 
-func (db *DB) GetActiveTeamMembers() ([]TeamMember, error) {
-	members, err := db.queries.GetActiveTeamMembers(context.Background())
+func (db *DB) GetActiveTeamMembers(ctx context.Context) ([]TeamMember, error) {
+	members, err := db.queries.GetActiveTeamMembers(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -124,8 +166,8 @@ func (db *DB) GetActiveTeamMembers() ([]TeamMember, error) {
 	return result, nil
 }
 
-func (db *DB) GetMemberByEmail(email string) (*TeamMember, error) {
-	member, err := db.queries.GetMemberByEmail(context.Background(), email)
+func (db *DB) GetMemberByEmail(ctx context.Context, email string) (*TeamMember, error) {
+	member, err := db.queries.GetMemberByEmail(ctx, email)
 	if err != nil {
 		return nil, err
 	}
@@ -139,9 +181,9 @@ func (db *DB) GetMemberByEmail(email string) (*TeamMember, error) {
 	}, nil
 }
 
-func (db *DB) CreateCalendarSubscription(memberID string) (string, error) {
+func (db *DB) CreateCalendarSubscription(ctx context.Context, memberID string) (string, error) {
 	// Verify member exists
-	_, err := db.queries.GetMemberByID(context.Background(), memberID)
+	_, err := db.queries.GetMemberByID(ctx, memberID)
 	if err != nil {
 		return "", errors.New("member not found")
 	}
@@ -155,12 +197,12 @@ func (db *DB) CreateCalendarSubscription(memberID string) (string, error) {
 		Token:    token,
 	}
 
-	_, err = db.queries.CreateCalendarSubscription(context.Background(), params)
+	_, err = db.queries.CreateCalendarSubscription(ctx, params)
 	return token, err
 }
 
-func (db *DB) GetMemberByToken(token string) (*TeamMember, error) {
-	member, err := db.queries.GetMemberByToken(context.Background(), token)
+func (db *DB) GetMemberByToken(ctx context.Context, token string) (*TeamMember, error) {
+	member, err := db.queries.GetMemberByToken(ctx, token)
 	if err != nil {
 		return nil, err
 	}
@@ -174,13 +216,13 @@ func (db *DB) GetMemberByToken(token string) (*TeamMember, error) {
 	}, nil
 }
 
-func (db *DB) GetUpcomingAssignments(memberID string, days int) ([]RotaAssignment, error) {
+func (db *DB) GetUpcomingAssignments(ctx context.Context, memberID string, days int) ([]RotaAssignment, error) {
 	params := sqlc.GetUpcomingAssignmentsParams{
 		MemberID: memberID,
 		Column2:  sql.NullString{String: strconv.Itoa(days), Valid: true},
 	}
 
-	assignments, err := db.queries.GetUpcomingAssignments(context.Background(), params)
+	assignments, err := db.queries.GetUpcomingAssignments(ctx, params)
 	if err != nil {
 		return nil, err
 	}
@@ -200,8 +242,8 @@ func (db *DB) GetUpcomingAssignments(memberID string, days int) ([]RotaAssignmen
 }
 
 // DeleteRotaAssignment deletes a rota assignment by ID.
-func (db *DB) DeleteRotaAssignment(id string) error {
-	return db.queries.DeleteRotaAssignment(context.Background(), id)
+func (db *DB) DeleteRotaAssignment(ctx context.Context, id string) error {
+	return db.queries.DeleteRotaAssignment(ctx, id)
 }
 
 // Helper functions.

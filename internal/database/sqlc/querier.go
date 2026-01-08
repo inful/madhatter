@@ -12,14 +12,24 @@ import (
 
 type Querier interface {
 	AddTeamMember(ctx context.Context, arg AddTeamMemberParams) (sql.Result, error)
+	CountAdmins(ctx context.Context) (int64, error)
 	CreateCalendarSubscription(ctx context.Context, arg CreateCalendarSubscriptionParams) (sql.Result, error)
 	CreateLeaveRecord(ctx context.Context, arg CreateLeaveRecordParams) (sql.Result, error)
+	CreateOAuthToken(ctx context.Context, arg CreateOAuthTokenParams) (OauthToken, error)
 	CreateRotaAssignment(ctx context.Context, arg CreateRotaAssignmentParams) (sql.Result, error)
+	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
+	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	// Atomically creates a user and makes them admin only if no admins exist
+	CreateUserAsFirstAdmin(ctx context.Context, arg CreateUserAsFirstAdminParams) (User, error)
 	DeactivateTeamMember(ctx context.Context, id string) error
 	DeleteAssignmentsByDateRange(ctx context.Context, arg DeleteAssignmentsByDateRangeParams) error
 	DeleteCalendarSubscription(ctx context.Context, token string) error
+	DeleteExpiredSessions(ctx context.Context) error
 	DeleteMemberSubscriptions(ctx context.Context, memberID string) error
+	DeleteOAuthToken(ctx context.Context, arg DeleteOAuthTokenParams) error
 	DeleteRotaAssignment(ctx context.Context, id string) error
+	DeleteSession(ctx context.Context, token string) error
+	DeleteUserSessions(ctx context.Context, userID string) error
 	GetActiveTeamMembers(ctx context.Context) ([]TeamMember, error)
 	GetAssignmentByID(ctx context.Context, id string) (GetAssignmentByIDRow, error)
 	GetAssignmentsByDate(ctx context.Context, date time.Time) ([]GetAssignmentsByDateRow, error)
@@ -31,11 +41,21 @@ type Querier interface {
 	GetMemberByEmail(ctx context.Context, email string) (TeamMember, error)
 	GetMemberByID(ctx context.Context, id string) (TeamMember, error)
 	GetMemberByToken(ctx context.Context, token string) (TeamMember, error)
+	GetOAuthToken(ctx context.Context, arg GetOAuthTokenParams) (OauthToken, error)
+	GetSessionByToken(ctx context.Context, token string) (GetSessionByTokenRow, error)
 	GetSubscriptionByToken(ctx context.Context, token string) (CalendarSubscription, error)
 	GetSubscriptionsByMemberID(ctx context.Context, memberID string) ([]CalendarSubscription, error)
 	GetUpcomingAssignments(ctx context.Context, arg GetUpcomingAssignmentsParams) ([]GetUpcomingAssignmentsRow, error)
+	GetUserByEmail(ctx context.Context, email string) (User, error)
+	GetUserByID(ctx context.Context, id string) (User, error)
+	GetUserByProvider(ctx context.Context, arg GetUserByProviderParams) (User, error)
+	ListActiveUsers(ctx context.Context) ([]User, error)
+	ListAdminUsers(ctx context.Context) ([]User, error)
 	UpdateLeaveCoverMember(ctx context.Context, arg UpdateLeaveCoverMemberParams) error
 	UpdateLeaveStatus(ctx context.Context, arg UpdateLeaveStatusParams) error
+	UpdateOAuthToken(ctx context.Context, arg UpdateOAuthTokenParams) error
+	UpdateUser(ctx context.Context, arg UpdateUserParams) error
+	UpdateUserProvider(ctx context.Context, arg UpdateUserProviderParams) error
 }
 
 var _ Querier = (*Queries)(nil)

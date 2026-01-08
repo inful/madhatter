@@ -11,12 +11,16 @@ import (
 
 // UserService handles user-related operations.
 type UserService struct {
-	db *sqlc.Queries
+	db        *sqlc.Queries
+	encryptor *TokenEncryptor
 }
 
 // NewUserService creates a new user service.
-func NewUserService(db *sqlc.Queries) *UserService {
-	return &UserService{db: db}
+func NewUserService(db *sqlc.Queries, encryptor *TokenEncryptor) *UserService {
+	return &UserService{
+		db:        db,
+		encryptor: encryptor,
+	}
 }
 
 // GetOrCreateUser finds a user by provider info or creates a new one.
@@ -78,8 +82,23 @@ func (us *UserService) GetOrCreateUser(ctx context.Context, userInfo *UserInfo, 
 
 // StoreOAuthToken stores OAuth tokens for a user.
 func (us *UserService) StoreOAuthToken(ctx context.Context, userID, provider string, token *sqlc.OauthToken) error {
+	// Encrypt tokens before storage
+	encryptedAccessToken, err := us.encryptor.Encrypt(token.AccessToken)
+	if err != nil {
+		return fmt.Errorf("failed to encrypt access token: %w", err)
+	}
+
+	var encryptedRefreshToken sql.NullString
+	if token.RefreshToken.Valid && token.RefreshToken.String != "" {
+		encrypted, err := us.encryptor.Encrypt(token.RefreshToken.String)
+		if err != nil {
+			return fmt.Errorf("failed to encrypt refresh token: %w", err)
+		}
+		encryptedRefreshToken = sql.NullString{String: encrypted, Valid: true}
+	}
+
 	// Check if token exists
-	_, err := us.db.GetOAuthToken(ctx, sqlc.GetOAuthTokenParams{
+	_, err = us.db.GetOAuthToken(ctx, sqlc.GetOAuthTokenParams{
 		UserID:   userID,
 		Provider: provider,
 	})
@@ -89,8 +108,8 @@ func (us *UserService) StoreOAuthToken(ctx context.Context, userID, provider str
 		return us.db.UpdateOAuthToken(ctx, sqlc.UpdateOAuthTokenParams{
 			UserID:       userID,
 			Provider:     provider,
-			AccessToken:  token.AccessToken,
-			RefreshToken: token.RefreshToken,
+			AccessToken:  encryptedAccessToken,
+			RefreshToken: encryptedRefreshToken,
 			TokenType:    token.TokenType,
 			ExpiresAt:    token.ExpiresAt,
 		})
@@ -101,8 +120,8 @@ func (us *UserService) StoreOAuthToken(ctx context.Context, userID, provider str
 		ID:           uuid.New().String(),
 		UserID:       userID,
 		Provider:     provider,
-		AccessToken:  token.AccessToken,
-		RefreshToken: token.RefreshToken,
+		AccessToken:  encryptedAccessToken,
+		RefreshToken: encryptedRefreshToken,
 		TokenType:    token.TokenType,
 		ExpiresAt:    token.ExpiresAt,
 	})
@@ -118,6 +137,26 @@ func (us *UserService) GetOAuthToken(ctx context.Context, userID, provider strin
 	if err != nil {
 		return nil, err
 	}
+
+	// Decrypt tokens
+	decryptedAccessToken, err := us.encryptor.Decrypt(token.AccessToken)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt access token: %w", err)
+	}
+
+	var decryptedRefreshToken sql.NullString
+	if token.RefreshToken.Valid && token.RefreshToken.String != "" {
+		decrypted, err := us.encryptor.Decrypt(token.RefreshToken.String)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decrypt refresh token: %w", err)
+		}
+		decryptedRefreshToken = sql.NullString{String: decrypted, Valid: true}
+	}
+
+	// Return token with decrypted values
+	token.AccessToken = decryptedAccessToken
+	token.RefreshToken = decryptedRefreshToken
+
 	return &token, nil
 }
 

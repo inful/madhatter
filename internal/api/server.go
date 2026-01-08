@@ -50,9 +50,15 @@ func NewServer(db *database.DB) *Server {
 		log.Fatalf("Auth configuration invalid, aborting startup: %v\n", err)
 	}
 
+	// Create token encryptor for OAuth tokens
+	encryptor, err := auth.NewTokenEncryptor()
+	if err != nil {
+		log.Fatalf("Failed to create token encryptor: %v\n", err)
+	}
+
 	// Create auth components
 	providerFactory := auth.NewProviderFactory(authConfig.Providers)
-	userService := auth.NewUserService(db.GetQueries())
+	userService := auth.NewUserService(db.GetQueries(), encryptor)
 	sessionManager := auth.NewSessionManager(db.GetQueries(), time.Duration(authConfig.Sessions.DurationHours)*time.Hour)
 
 	authManager := auth.NewAuthManager(providerFactory, userService, sessionManager)

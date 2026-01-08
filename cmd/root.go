@@ -22,7 +22,7 @@ const (
 var CLI struct {
 	Serve struct {
 		Port        string `default:"8080" arg:""`
-		Development bool   `default:"false" help:"Enable development mode with fake OAuth"`
+		Development bool   `default:"false" help:"Enable development mode using fake OAuth to bypass full OAuth setup for local development"`
 	} `cmd:"" help:"Start web server"`
 
 	Team struct {

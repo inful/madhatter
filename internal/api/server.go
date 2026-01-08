@@ -27,7 +27,6 @@ const (
 	serverIdleTimeout      = 60 * time.Second
 	sessionCleanupInterval = 1 * time.Hour // Clean up expired sessions every hour
 	shutdownTimeout        = 30 * time.Second
-	sessionExpiryDuration  = 24 * time.Hour
 )
 
 type Server struct {
@@ -100,7 +99,7 @@ func setupDevelopmentAuth(db *database.DB) (*auth.AuthManager, *auth.Middleware,
 		"fake": fakeConfig,
 	})
 	userService := auth.NewUserService(db.GetQueries(), encryptor)
-	sessionManager := auth.NewSessionManager(db.GetQueries(), sessionExpiryDuration)
+	sessionManager := auth.NewSessionManager(db.GetQueries(), auth.SessionExpiryDuration)
 
 	authManager := auth.NewAuthManager(providerFactory, userService, sessionManager)
 	authMiddleware := auth.NewMiddleware(sessionManager)

@@ -53,6 +53,11 @@ func (am *AuthManager) GetProvider(name string) (Provider, error) {
 	return provider, nil
 }
 
+// GetSessionManager returns the session manager.
+func (am *AuthManager) GetSessionManager() *SessionManager {
+	return am.sessionManager
+}
+
 // HandleLogin initiates the OAuth2 flow.
 func (am *AuthManager) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	providerName := chi.URLParam(r, "provider")

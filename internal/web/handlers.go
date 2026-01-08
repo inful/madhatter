@@ -4,6 +4,7 @@ import (
 	"context"
 	"html/template"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -30,7 +31,7 @@ type Handler struct {
 	authMiddleware *auth.Middleware
 }
 
-func NewHandler(db *database.DB, authManager *auth.AuthManager, authMiddleware *auth.Middleware) *Handler {
+func NewHandler(db *database.DB, authManager *auth.AuthManager, authMiddleware *auth.Middleware, development bool) *Handler {
 	// Parse templates - use absolute path based on working directory
 	// Try multiple possible locations for templates
 	tmpl := parseTemplates()
@@ -47,6 +48,12 @@ func NewHandler(db *database.DB, authManager *auth.AuthManager, authMiddleware *
 	}
 
 	h.registerRoutes()
+
+	// Register development-specific routes if in development mode
+	if development {
+		h.registerDevelopmentRoutes()
+	}
+
 	return h
 }
 
@@ -145,6 +152,118 @@ func (h *Handler) registerRoutes() {
 		r.HandleFunc("/team", h.handleTeam)
 		r.HandleFunc("/schedule/generate", h.handleScheduleGenerate)
 	})
+}
+
+// registerDevelopmentRoutes adds development-specific routes.
+func (h *Handler) registerDevelopmentRoutes() {
+	if h.authManager == nil {
+		return
+	}
+
+	// Check if this is a fake provider
+	provider, err := h.authManager.GetProvider("fake")
+	if err != nil || provider == nil {
+		return
+	}
+
+	// Override the login view to show development mode message
+	h.router.HandleFunc("/login", h.handleDevelopmentLogin)
+}
+
+func (h *Handler) handleDevelopmentLogin(w http.ResponseWriter, r *http.Request) {
+	// Check if already logged in
+	if h.isUserLoggedIn(r) {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	// Show development mode login page
+	h.renderDevelopmentLogin(w)
+}
+
+func (h *Handler) isUserLoggedIn(r *http.Request) bool {
+	token, err := h.authManager.GetSessionManager().GetSessionCookie(r)
+	if err != nil {
+		return false
+	}
+
+	_, err = h.authManager.GetSessionManager().ValidateSession(r.Context(), token)
+	return err == nil
+}
+
+func (h *Handler) renderDevelopmentLogin(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/html")
+	var html strings.Builder
+	html.WriteString(`<!DOCTYPE html>
+<html>
+<head>
+    <title>Development Login - Support Rota</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }
+        .hero { background: rgba(255, 255, 255, 0.95); border-radius: 12px; margin: 2rem auto; max-width: 600px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+        .card { border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        .dev-warning { background: #fff3cd; border: 2px solid #ffc107; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; }
+        .dev-info { background: #e7f3ff; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; }
+        .dev-warning strong { color: #856404; }
+    </style>
+</head>
+<body>
+    <section class="section">
+        <div class="hero">
+            <div class="hero-body">
+                <div class="container">
+                    <h1 class="title is-2 has-text-centered has-text-primary">
+                        <i class="fas fa-flask"></i> Development Mode
+                    </h1>
+                    <p class="subtitle has-text-centered">Fake OAuth Authentication</p>
+
+                    <div class="card">
+                        <div class="card-content">
+                            <div class="dev-warning">
+                                <p class="has-text-centered has-text-weight-semibold mb-2">
+                                    <i class="fas fa-exclamation-triangle"></i> DEVELOPMENT MODE ENABLED
+                                </p>
+                                <p class="is-size-7 has-text-centered">
+                                    You are running in development mode with fake OAuth authentication.<br>
+                                    <strong>DO NOT use this in production!</strong>
+                                </p>
+                            </div>
+
+                            <div class="dev-info">
+                                <p class="has-text-weight-semibold mb-2"><i class="fas fa-info-circle"></i> How it works:</p>
+                                <ul class="is-size-7">
+                                    <li>- Clicking "Login" creates a fake user "dev@example.com"</li>
+                                    <li>- The user automatically becomes an admin</li>
+                                    <li>- No real OAuth provider is needed</li>
+                                    <li>- Perfect for local development and testing</li>
+                                </ul>
+                            </div>
+
+                            <div class="content has-text-centered">
+                                <form action="/auth/fake/login" method="GET">
+                                    <input type="hidden" name="state" value="dev-state-123" />
+                                    <button type="submit" class="button is-primary is-large is-fullwidth">
+                                        <i class="fas fa-sign-in-alt mr-2"></i> Login as Development User
+                                    </button>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="has-text-centered">
+                        <a href="/" class="button is-light is-small">
+                            <i class="fas fa-arrow-left mr-1"></i> Back to Home
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+</body>
+</html>`)
+	_, _ = w.Write([]byte(html.String()))
 }
 
 // Router returns the underlying chi router.

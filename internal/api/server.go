@@ -195,7 +195,7 @@ func (s *Server) registerOperations(development bool) {
 
 	// Development mode fake auth routes
 	if development && s.authManager != nil {
-		fakeHandler := auth.NewFakeCallbackHandler(s.authManager)
+		fakeHandler := auth.NewFakeCallbackHandler()
 		s.router.HandleFunc("/auth/fake/login", fakeHandler.HandleLogin)
 	}
 }

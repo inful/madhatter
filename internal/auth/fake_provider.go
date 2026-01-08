@@ -90,30 +90,25 @@ func (f *FakeProvider) GetOAuthConfig() *oauth2.Config {
 // FakeCallbackHandler handles the fake OAuth callback flow.
 // This bypasses the real OAuth flow and creates a session directly.
 type FakeCallbackHandler struct {
-	authManager *AuthManager
+	// No fields needed - uses standard callback handler
 }
 
 // NewFakeCallbackHandler creates a new fake callback handler.
-func NewFakeCallbackHandler(authManager *AuthManager) *FakeCallbackHandler {
-	return &FakeCallbackHandler{
-		authManager: authManager,
-	}
+func NewFakeCallbackHandler() *FakeCallbackHandler {
+	return &FakeCallbackHandler{}
 }
 
 // HandleLogin handles the fake login flow.
 // This creates a fake authorization code and redirects to the callback.
 func (h *FakeCallbackHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
-	// Get state from query parameter
-	state := r.URL.Query().Get("state")
-	if state == "" {
-		http.Error(w, "State parameter required", http.StatusBadRequest)
-		return
-	}
+	// Generate a random state for CSRF protection simulation
+	// This better simulates real OAuth flow and helps catch state validation issues
+	randomState := fmt.Sprintf("dev-state-%d", time.Now().UnixNano())
 
 	// Set state cookie (required for callback validation)
 	http.SetCookie(w, &http.Cookie{
 		Name:   "oauth_state",
-		Value:  state,
+		Value:  randomState,
 		Path:   "/auth/callback",
 		MaxAge: StateCookieExpiry,
 	})
@@ -121,86 +116,15 @@ func (h *FakeCallbackHandler) HandleLogin(w http.ResponseWriter, r *http.Request
 	// Generate a fake authorization code
 	fakeCode := fmt.Sprintf("fake-code-%d", time.Now().UnixNano())
 
-	// Redirect to callback with fake code and state
-	callbackURL := "/auth/callback?code=" + url.QueryEscape(fakeCode) + "&state=" + url.QueryEscape(state) + "&provider=fake"
+	// Redirect to callback with fake code and the random state
+	callbackURL := "/auth/callback?code=" + url.QueryEscape(fakeCode) + "&state=" + url.QueryEscape(randomState) + "&provider=fake"
 	http.Redirect(w, r, callbackURL, http.StatusSeeOther)
 }
 
-// HandleCallback handles the fake OAuth callback.
-// This bypasses token exchange and creates a session directly.
-func (h *FakeCallbackHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
-	// Validate state parameter
-	stateCookie, err := r.Cookie("oauth_state")
-	if err != nil {
-		http.Error(w, "Invalid state - no cookie", http.StatusBadRequest)
-		return
-	}
-
-	queryState := r.URL.Query().Get("state")
-	if queryState != stateCookie.Value {
-		http.Error(w, "State mismatch", http.StatusBadRequest)
-		return
-	}
-
-	// In development mode, create fake user directly
-	ctx := r.Context()
-
-	// Get or create user
-	user, err := h.authManager.userService.GetOrCreateUser(ctx, fakeUser, "fake")
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to create user: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	// Create session
-	sessionToken, err := h.authManager.sessionManager.CreateSession(ctx, user.ID)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to create session: %v", err), http.StatusInternalServerError)
-		return
-	}
-
-	// Determine if secure
-	scheme := r.Header.Get("X-Forwarded-Proto")
-	if scheme == "" {
-		if r.TLS != nil {
-			scheme = SchemeHTTPS
-		} else {
-			scheme = "http"
-		}
-	}
-	isSecure := scheme == SchemeHTTPS
-
-	// Set session cookie
-	h.authManager.sessionManager.SetSessionCookie(w, sessionToken, isSecure)
-
-	// Clear state cookie
-	http.SetCookie(w, &http.Cookie{
-		Name:   "oauth_state",
-		Value:  "",
-		Path:   "/auth/callback",
-		MaxAge: -1,
-	})
-
-	// Redirect to dashboard
-	http.Redirect(w, r, "/", http.StatusSeeOther)
-}
-
-// HandleFakeLoginView renders a fake login page for development mode with Bulma styling.
-func (h *FakeCallbackHandler) HandleFakeLoginView(w http.ResponseWriter, r *http.Request) {
-	// Check if already logged in
-	token, err := h.authManager.sessionManager.GetSessionCookie(r)
-	if err == nil {
-		_, err := h.authManager.sessionManager.ValidateSession(r.Context(), token)
-		if err == nil {
-			http.Redirect(w, r, "/", http.StatusSeeOther)
-			return
-		}
-	}
-
-	// HTML response with Bulma styling to match other pages
-	w.Header().Set("Content-Type", "text/html")
-	var html strings.Builder
-	html.WriteString(`<!DOCTYPE html>
+// GetDevelopmentLoginHTML returns the shared HTML for the development mode login page.
+// This eliminates duplication between web and auth packages.
+func GetDevelopmentLoginHTML() string {
+	return `<!DOCTYPE html>
 <html>
 <head>
     <title>Development Login - Support Rota</title>
@@ -211,6 +135,7 @@ func (h *FakeCallbackHandler) HandleFakeLoginView(w http.ResponseWriter, r *http
         .hero { background: rgba(255, 255, 255, 0.95); border-radius: 12px; margin: 2rem auto; max-width: 600px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
         .card { border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
         .dev-warning { background: #fff3cd; border: 2px solid #ffc107; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; }
+        .dev-info { background: #e7f3ff; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; }
         .dev-warning strong { color: #856404; }
     </style>
 </head>
@@ -231,23 +156,27 @@ func (h *FakeCallbackHandler) HandleFakeLoginView(w http.ResponseWriter, r *http
                                     <i class="fas fa-exclamation-triangle"></i> DEVELOPMENT MODE ENABLED
                                 </p>
                                 <p class="is-size-7 has-text-centered">
-                                    This bypasses real OAuth and creates a fake user automatically.<br>
+                                    You are running in development mode with fake OAuth authentication.<br>
                                     <strong>DO NOT use this in production!</strong>
                                 </p>
                             </div>
 
+                            <div class="dev-info">
+                                <p class="has-text-weight-semibold mb-2"><i class="fas fa-info-circle"></i> How it works:</p>
+                                <ul class="is-size-7">
+                                    <li>- Clicking "Login" creates a fake user "dev@example.com"</li>
+                                    <li>- The user automatically becomes an admin</li>
+                                    <li>- No real OAuth provider is needed</li>
+                                    <li>- Perfect for local development and testing</li>
+                                </ul>
+                            </div>
+
                             <div class="content has-text-centered">
-                                <p class="mb-3">Click the button below to login as a development user:</p>
                                 <form action="/auth/fake/login" method="GET">
-                                    <input type="hidden" name="state" value="dev-state-123" />
                                     <button type="submit" class="button is-primary is-large is-fullwidth">
                                         <i class="fas fa-sign-in-alt mr-2"></i> Login as Development User
                                     </button>
                                 </form>
-
-                                <p class="mt-4 is-size-7 has-text-grey">
-                                    <i class="fas fa-info-circle"></i> User: dev@example.com (Admin)
-                                </p>
                             </div>
                         </div>
                     </div>
@@ -262,6 +191,8 @@ func (h *FakeCallbackHandler) HandleFakeLoginView(w http.ResponseWriter, r *http
         </div>
     </section>
 </body>
-</html>`)
-	_, _ = w.Write([]byte(html.String()))
+</html>`
 }
+
+// FakeCallbackHandler.HandleCallback has been removed in favor of the standard
+// AuthManager.HandleCallback, which handles /auth/callback for all providers.

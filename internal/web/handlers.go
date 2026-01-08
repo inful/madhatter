@@ -91,10 +91,17 @@ func (h *Handler) registerRoutes() {
 	h.router.Group(func(r chi.Router) {
 		r.Use(h.authMiddleware.RequireAuth)
 
-		r.HandleFunc("/team", h.handleTeam)
 		r.HandleFunc("/leave/report", h.handleLeaveReport)
-		r.HandleFunc("/schedule/generate", h.handleScheduleGenerate)
 		r.HandleFunc("/calendar", h.handleCalendar)
+	})
+
+	// Admin routes (require authentication and admin privileges)
+	h.router.Group(func(r chi.Router) {
+		r.Use(h.authMiddleware.RequireAuth)
+		r.Use(h.authMiddleware.RequireAdmin)
+
+		r.HandleFunc("/team", h.handleTeam)
+		r.HandleFunc("/schedule/generate", h.handleScheduleGenerate)
 	})
 }
 

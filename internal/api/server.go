@@ -197,7 +197,6 @@ func (s *Server) registerOperations(development bool) {
 	if development && s.authManager != nil {
 		fakeHandler := auth.NewFakeCallbackHandler(s.authManager)
 		s.router.HandleFunc("/auth/fake/login", fakeHandler.HandleLogin)
-		s.router.HandleFunc("/auth/fake/callback", fakeHandler.HandleCallback)
 	}
 }
 

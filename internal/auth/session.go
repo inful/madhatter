@@ -24,6 +24,7 @@ type SessionManager struct {
 	cookieName      string
 	cleanupInterval time.Duration
 	stopCleanup     chan struct{}
+	cleanupStopped  bool
 }
 
 // NewSessionManager creates a new session manager.
@@ -129,8 +130,10 @@ func (sm *SessionManager) StartCleanup(ctx context.Context) {
 		for {
 			select {
 			case <-ticker.C:
-				// Clean up expired sessions
-				_ = sm.db.DeleteExpiredSessions(ctx)
+				// Clean up expired sessions using a background context
+				// to avoid issues if the original context is canceled
+				cleanupCtx := context.Background()
+				_ = sm.db.DeleteExpiredSessions(cleanupCtx)
 			case <-sm.stopCleanup:
 				return
 			case <-ctx.Done():
@@ -142,7 +145,10 @@ func (sm *SessionManager) StartCleanup(ctx context.Context) {
 
 // StopCleanup stops the background cleanup goroutine.
 func (sm *SessionManager) StopCleanup() {
-	close(sm.stopCleanup)
+	if !sm.cleanupStopped {
+		sm.cleanupStopped = true
+		close(sm.stopCleanup)
+	}
 }
 
 // generateSecureToken generates a cryptographically secure random token.

@@ -42,50 +42,17 @@ type Server struct {
 	cleanupCancel context.CancelFunc
 }
 
-func NewServer(db *database.DB) (*Server, error) {
+func NewServer(db *database.DB, development bool) (*Server, error) {
 	router := chi.NewRouter()
 
 	// Create HUMA API with Chi adapter
 	config := huma.DefaultConfig("Support Rota API", "1.0.0")
 	api := humachi.New(router, config)
 
-	// Load OAuth configuration from environment
-	authConfig := auth.LoadConfigFromEnv()
-
-	// Validate configuration
-	var authManager *auth.AuthManager
-	var authMiddleware *auth.Middleware
-	var sessionManager *auth.SessionManager
-
-	if err := authConfig.Validate(); err != nil {
-		// Log warning but continue without authentication
-		log.Printf("WARNING: Authentication disabled - %v\n", err)
-		log.Printf("The server will start without authentication. Features requiring login will be unavailable.\n")
-		log.Printf("To enable authentication, configure OAuth provider environment variables.\n")
-	} else {
-		// Create token encryptor for OAuth tokens
-		encryptor, err := auth.NewTokenEncryptor()
-		if err != nil {
-			return nil, fmt.Errorf("failed to create token encryptor: %w", err)
-		}
-
-		// Create auth components
-		providerFactory := auth.NewProviderFactory(authConfig.Providers)
-		userService := auth.NewUserService(db.GetQueries(), encryptor)
-		sessionManager = auth.NewSessionManager(db.GetQueries(), time.Duration(authConfig.Sessions.DurationHours)*time.Hour)
-
-		authManager = auth.NewAuthManager(providerFactory, userService, sessionManager)
-		authMiddleware = auth.NewMiddleware(sessionManager)
-
-		// Register configured providers
-		for providerName := range authConfig.Providers {
-			provider, err := providerFactory.Create(providerName)
-			if err != nil {
-				log.Printf("Failed to create auth provider %q: %v\n", providerName, err)
-				continue
-			}
-			authManager.RegisterProvider(provider)
-		}
+	// Setup authentication components
+	authManager, authMiddleware, sessionManager, err := setupAuth(db, development)
+	if err != nil {
+		return nil, err
 	}
 
 	s := &Server{
@@ -98,12 +65,86 @@ func NewServer(db *database.DB) (*Server, error) {
 		sessionManager: sessionManager,
 	}
 
-	s.registerOperations()
-	s.registerWebRoutes()
+	s.registerOperations(development)
+	s.registerWebRoutes(development)
 	return s, nil
 }
 
-func (s *Server) registerOperations() {
+func setupAuth(db *database.DB, development bool) (*auth.AuthManager, *auth.Middleware, *auth.SessionManager, error) {
+	if development {
+		return setupDevelopmentAuth(db)
+	}
+	return setupProductionAuth(db)
+}
+
+func setupDevelopmentAuth(db *database.DB) (*auth.AuthManager, *auth.Middleware, *auth.SessionManager, error) {
+	log.Println("Development mode: Using fake OAuth provider")
+
+	fakeConfig := auth.ProviderConfig{
+		ClientID:     "dev-client-id",
+		ClientSecret: "dev-client-secret",
+		RedirectURL:  "http://localhost:8080/auth/callback?provider=fake",
+		AuthURL:      "/auth/fake/login",
+		TokenURL:     "/auth/fake/token",
+		UserInfoURL:  "/auth/fake/userinfo",
+		Scope:        "read:user",
+	}
+
+	encryptor, err := auth.NewTokenEncryptor()
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to create token encryptor: %w", err)
+	}
+
+	providerFactory := auth.NewProviderFactory(map[string]auth.ProviderConfig{
+		"fake": fakeConfig,
+	})
+	userService := auth.NewUserService(db.GetQueries(), encryptor)
+	sessionManager := auth.NewSessionManager(db.GetQueries(), auth.SessionExpiryDuration)
+
+	authManager := auth.NewAuthManager(providerFactory, userService, sessionManager)
+	authMiddleware := auth.NewMiddleware(sessionManager)
+
+	fakeProvider := auth.NewFakeProvider(fakeConfig)
+	authManager.RegisterProvider(fakeProvider)
+
+	return authManager, authMiddleware, sessionManager, nil
+}
+
+func setupProductionAuth(db *database.DB) (*auth.AuthManager, *auth.Middleware, *auth.SessionManager, error) {
+	authConfig := auth.LoadConfigFromEnv()
+
+	if err := authConfig.Validate(); err != nil {
+		log.Printf("WARNING: Authentication disabled - %v\n", err)
+		log.Printf("The server will start without authentication. Features requiring login will be unavailable.\n")
+		log.Printf("To enable authentication, configure OAuth provider environment variables.\n")
+		return nil, nil, nil, nil
+	}
+
+	encryptor, err := auth.NewTokenEncryptor()
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to create token encryptor: %w", err)
+	}
+
+	providerFactory := auth.NewProviderFactory(authConfig.Providers)
+	userService := auth.NewUserService(db.GetQueries(), encryptor)
+	sessionManager := auth.NewSessionManager(db.GetQueries(), time.Duration(authConfig.Sessions.DurationHours)*time.Hour)
+
+	authManager := auth.NewAuthManager(providerFactory, userService, sessionManager)
+	authMiddleware := auth.NewMiddleware(sessionManager)
+
+	for providerName := range authConfig.Providers {
+		provider, err := providerFactory.Create(providerName)
+		if err != nil {
+			log.Printf("Failed to create auth provider %q: %v\n", providerName, err)
+			continue
+		}
+		authManager.RegisterProvider(provider)
+	}
+
+	return authManager, authMiddleware, sessionManager, nil
+}
+
+func (s *Server) registerOperations(development bool) {
 	// Team Operations
 	huma.Register(s.api, huma.Operation{
 		OperationID: "add-team-member",
@@ -150,11 +191,20 @@ func (s *Server) registerOperations() {
 
 	// ICS Feed (no auth required)
 	s.router.Get("/api/v1/calendar/{token}/ics", s.handleCalendarICS)
+
+	// Development mode fake auth routes
+	if development && s.authManager != nil {
+		fakeHandler := auth.NewFakeCallbackHandler()
+		s.router.HandleFunc("/auth/fake/login", fakeHandler.HandleLogin)
+	}
 }
 
-func (s *Server) registerWebRoutes() {
+func (s *Server) registerWebRoutes(development bool) {
 	// Create web handler with auth components
-	webHandler := web.NewHandler(s.db, s.authManager, s.authMiddleware)
+	webHandler := web.NewHandler(s.db, s.authManager, s.authMiddleware, development)
+
+	// Development mode: The web handler's registerDevelopmentRoutes will handle the fake login view
+	// No need to register it separately here
 
 	// Mount web routes
 	s.router.Mount("/", webHandler.Router())

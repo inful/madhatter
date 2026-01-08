@@ -30,7 +30,7 @@ type Handler struct {
 	authMiddleware *auth.Middleware
 }
 
-func NewHandler(db *database.DB, authManager *auth.AuthManager, authMiddleware *auth.Middleware) *Handler {
+func NewHandler(db *database.DB, authManager *auth.AuthManager, authMiddleware *auth.Middleware, development bool) *Handler {
 	// Parse templates - use absolute path based on working directory
 	// Try multiple possible locations for templates
 	tmpl := parseTemplates()
@@ -47,6 +47,12 @@ func NewHandler(db *database.DB, authManager *auth.AuthManager, authMiddleware *
 	}
 
 	h.registerRoutes()
+
+	// Register development-specific routes if in development mode
+	if development {
+		h.registerDevelopmentRoutes()
+	}
+
 	return h
 }
 
@@ -145,6 +151,49 @@ func (h *Handler) registerRoutes() {
 		r.HandleFunc("/team", h.handleTeam)
 		r.HandleFunc("/schedule/generate", h.handleScheduleGenerate)
 	})
+}
+
+// registerDevelopmentRoutes adds development-specific routes.
+func (h *Handler) registerDevelopmentRoutes() {
+	if h.authManager == nil {
+		return
+	}
+
+	// Check if this is a fake provider
+	provider, err := h.authManager.GetProvider("fake")
+	if err != nil || provider == nil {
+		return
+	}
+
+	// Override the login view to show development mode message
+	h.router.HandleFunc("/login", h.handleDevelopmentLogin)
+}
+
+func (h *Handler) handleDevelopmentLogin(w http.ResponseWriter, r *http.Request) {
+	// Check if already logged in
+	if h.isUserLoggedIn(r) {
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+
+	// Show development mode login page
+	h.renderDevelopmentLogin(w)
+}
+
+func (h *Handler) isUserLoggedIn(r *http.Request) bool {
+	token, err := h.authManager.GetSessionManager().GetSessionCookie(r)
+	if err != nil {
+		return false
+	}
+
+	_, err = h.authManager.GetSessionManager().ValidateSession(r.Context(), token)
+	return err == nil
+}
+
+func (h *Handler) renderDevelopmentLogin(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/html")
+	// Use shared HTML from auth package to eliminate duplication
+	_, _ = w.Write([]byte(auth.GetDevelopmentLoginHTML()))
 }
 
 // Router returns the underlying chi router.

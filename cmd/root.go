@@ -21,7 +21,8 @@ const (
 
 var CLI struct {
 	Serve struct {
-		Port string `default:"8080" arg:""`
+		Port        string `default:"8080" arg:""`
+		Development bool   `default:"false" help:"Enable development mode using fake OAuth to bypass full OAuth setup for local development"`
 	} `cmd:"" help:"Start web server"`
 
 	Team struct {
@@ -102,11 +103,14 @@ func Execute() {
 }
 
 func serveCommand(ctx context.Context, db *database.DB) {
-	server, err := api.NewServer(db)
+	server, err := api.NewServer(db, CLI.Serve.Development)
 	if err != nil {
 		log.Fatalf("Failed to create server: %v\n", err)
 	}
 	log.Printf("Starting server on port %s\n", CLI.Serve.Port)
+	if CLI.Serve.Development {
+		log.Println("! DEVELOPMENT MODE ENABLED - Using fake OAuth authentication")
+	}
 	if err := server.Start(ctx, CLI.Serve.Port); err != nil {
 		log.Printf("Server error: %v\n", err)
 		os.Exit(1)

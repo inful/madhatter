@@ -3,7 +3,9 @@ package auth
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"net/http"
@@ -48,30 +50,38 @@ func (sm *SessionManager) CreateSession(ctx context.Context, userID string) (str
 		return "", err
 	}
 
+	// Hash the token before storing in database
+	tokenHash := hashToken(token)
+
 	// Generate UUID for session ID
 	sessionID := uuid.New().String()
 
 	// Set expiration time
 	expiresAt := time.Now().Add(sm.sessionDuration)
 
-	// Store session in database
+	// Store session in database with hashed token
 	_, err = sm.db.CreateSession(ctx, sqlc.CreateSessionParams{
 		ID:        sessionID,
 		UserID:    userID,
-		Token:     token,
+		Token:     tokenHash,
 		ExpiresAt: expiresAt,
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to create session: %w", err)
 	}
 
+	// Return the original unhashed token to the client
 	return token, nil
 }
 
 // ValidateSession validates a session token and returns user info.
 func (sm *SessionManager) ValidateSession(ctx context.Context, token string) (*sqlc.GetSessionByTokenRow, error) {
-	// Get session (expired sessions are filtered by the query itself)
-	session, err := sm.db.GetSessionByToken(ctx, token)
+	// Hash the token before looking it up
+	tokenHash := hashToken(token)
+
+	// Get session using hashed token
+	session, err := sm.db.GetSessionByToken(ctx, tokenHash)
+
 	if err != nil {
 		return nil, ErrInvalidSession
 	}
@@ -81,7 +91,9 @@ func (sm *SessionManager) ValidateSession(ctx context.Context, token string) (*s
 
 // DestroySession removes a session.
 func (sm *SessionManager) DestroySession(ctx context.Context, token string) error {
-	return sm.db.DeleteSession(ctx, token)
+	// Hash the token before deletion
+	tokenHash := hashToken(token)
+	return sm.db.DeleteSession(ctx, tokenHash)
 }
 
 // DestroyUserSessions removes all sessions for a user.
@@ -113,6 +125,22 @@ func (sm *SessionManager) ClearSessionCookie(w http.ResponseWriter) {
 		MaxAge:   -1,
 	}
 	http.SetCookie(w, cookie)
+}
+
+// StartCleanupTask starts a background goroutine that periodically cleans up expired sessions.
+func (sm *SessionManager) StartCleanupTask(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	go func() {
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				_ = sm.db.DeleteExpiredSessions(ctx)
+			}
+		}
+	}()
 }
 
 // GetSessionCookie retrieves the session token from cookies.
@@ -161,4 +189,10 @@ func generateSecureToken(length int) (string, error) {
 		return "", err
 	}
 	return base64.URLEncoding.EncodeToString(bytes), nil
+}
+
+// hashToken hashes a session token using SHA-256.
+func hashToken(token string) string {
+	hash := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(hash[:])
 }

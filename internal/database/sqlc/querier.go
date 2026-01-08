@@ -12,6 +12,7 @@ import (
 
 type Querier interface {
 	AddTeamMember(ctx context.Context, arg AddTeamMemberParams) (sql.Result, error)
+	CountAdmins(ctx context.Context) (int64, error)
 	CreateCalendarSubscription(ctx context.Context, arg CreateCalendarSubscriptionParams) (sql.Result, error)
 	CreateLeaveRecord(ctx context.Context, arg CreateLeaveRecordParams) (sql.Result, error)
 	CreateOAuthToken(ctx context.Context, arg CreateOAuthTokenParams) (OauthToken, error)
@@ -52,6 +53,7 @@ type Querier interface {
 	UpdateLeaveStatus(ctx context.Context, arg UpdateLeaveStatusParams) error
 	UpdateOAuthToken(ctx context.Context, arg UpdateOAuthTokenParams) error
 	UpdateUser(ctx context.Context, arg UpdateUserParams) error
+	UpdateUserProvider(ctx context.Context, arg UpdateUserProviderParams) error
 }
 
 var _ Querier = (*Queries)(nil)

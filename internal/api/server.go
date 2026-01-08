@@ -20,10 +20,11 @@ import (
 )
 
 const (
-	calendarDaysLookahead = 30
-	serverReadTimeout     = 15 * time.Second
-	serverWriteTimeout    = 15 * time.Second
-	serverIdleTimeout     = 60 * time.Second
+	calendarDaysLookahead    = 30
+	serverReadTimeout        = 15 * time.Second
+	serverWriteTimeout       = 15 * time.Second
+	serverIdleTimeout        = 60 * time.Second
+	sessionCleanupInterval   = 1 * time.Hour // Clean up expired sessions every hour
 )
 
 type Server struct {
@@ -50,13 +51,19 @@ func NewServer(db *database.DB) *Server {
 
 	// Validate configuration
 	if err := authConfig.Validate(); err != nil {
-		// Log warning but continue - config may be set up later
-		log.Printf("Warning: Auth configuration invalid: %v\n", err)
+		// Fail fast if auth configuration is invalid to avoid confusing runtime errors
+		log.Fatalf("Auth configuration invalid, aborting startup: %v\n", err)
+	}
+
+	// Create token encryptor for OAuth tokens
+	encryptor, err := auth.NewTokenEncryptor()
+	if err != nil {
+		log.Fatalf("Failed to create token encryptor: %v\n", err)
 	}
 
 	// Create auth components
 	providerFactory := auth.NewProviderFactory(authConfig.Providers)
-	userService := auth.NewUserService(db.GetQueries())
+	userService := auth.NewUserService(db.GetQueries(), encryptor)
 	sessionManager := auth.NewSessionManager(db.GetQueries(), time.Duration(authConfig.Sessions.DurationHours)*time.Hour)
 
 	authManager := auth.NewAuthManager(providerFactory, userService, sessionManager)

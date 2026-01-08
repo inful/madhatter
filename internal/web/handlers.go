@@ -79,9 +79,12 @@ func (h *Handler) registerRoutes() {
 	h.router.HandleFunc("/auth/callback", h.authManager.HandleCallback)
 	h.router.HandleFunc("/auth/logout", h.authManager.HandleLogout)
 
-	// Public routes (no authentication required)
-	h.router.HandleFunc("/", h.handleDashboard)
-	h.router.HandleFunc("/schedule/current", h.handleScheduleCurrent)
+	// Public routes (no authentication required, but user info loaded if available)
+	h.router.Group(func(r chi.Router) {
+		r.Use(h.authMiddleware.OptionalAuth)
+		r.HandleFunc("/", h.handleDashboard)
+		r.HandleFunc("/schedule/current", h.handleScheduleCurrent)
+	})
 	h.router.HandleFunc("/calendar/{token}/ics", h.handleCalendarICS)
 
 	// Protected routes (require authentication)

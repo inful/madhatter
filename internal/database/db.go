@@ -71,6 +71,42 @@ func New(path string) (*DB, error) {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (member_id) REFERENCES team_members(id)
     );
+
+    CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        email TEXT UNIQUE NOT NULL,
+        name TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        provider_id TEXT NOT NULL,
+        is_admin INTEGER DEFAULT 0,
+        is_active INTEGER DEFAULT 1,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(provider, provider_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS sessions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        token TEXT UNIQUE NOT NULL,
+        expires_at DATETIME NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS oauth_tokens (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        access_token TEXT NOT NULL,
+        refresh_token TEXT,
+        token_type TEXT,
+        expires_at DATETIME,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        UNIQUE(user_id, provider)
+    );
     `
 
 	if _, err := db.ExecContext(ctx, schema); err != nil {

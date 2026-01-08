@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/inful/madhatter/internal/auth"
 	"github.com/inful/madhatter/internal/calendar"
 	"github.com/inful/madhatter/internal/database"
 	"github.com/inful/madhatter/internal/rota"
@@ -20,13 +21,15 @@ const (
 )
 
 type Handler struct {
-	db          *database.DB
-	maintenance *rota.ScheduleMaintenance
-	tmpl        *template.Template
-	router      *chi.Mux
+	db             *database.DB
+	maintenance    *rota.ScheduleMaintenance
+	tmpl           *template.Template
+	router         *chi.Mux
+	authManager    *auth.AuthManager
+	authMiddleware *auth.Middleware
 }
 
-func NewHandler(db *database.DB) *Handler {
+func NewHandler(db *database.DB, authManager *auth.AuthManager, authMiddleware *auth.Middleware) *Handler {
 	// Parse templates - use absolute path based on working directory
 	// Try multiple possible locations for templates
 	tmpl := parseTemplates()
@@ -34,10 +37,12 @@ func NewHandler(db *database.DB) *Handler {
 	router := chi.NewRouter()
 
 	h := &Handler{
-		db:          db,
-		maintenance: rota.NewScheduleMaintenance(db),
-		tmpl:        tmpl,
-		router:      router,
+		db:             db,
+		maintenance:    rota.NewScheduleMaintenance(db),
+		tmpl:           tmpl,
+		router:         router,
+		authManager:    authManager,
+		authMiddleware: authMiddleware,
 	}
 
 	h.registerRoutes()
@@ -68,13 +73,26 @@ func parseTemplates() *template.Template {
 }
 
 func (h *Handler) registerRoutes() {
+	// Auth routes (no authentication required)
+	h.router.HandleFunc("/login", h.authManager.HandleLoginView)
+	h.router.HandleFunc("/auth/login/{provider}", h.authManager.HandleLogin)
+	h.router.HandleFunc("/auth/callback", h.authManager.HandleCallback)
+	h.router.HandleFunc("/auth/logout", h.authManager.HandleLogout)
+
+	// Public routes (no authentication required)
 	h.router.HandleFunc("/", h.handleDashboard)
-	h.router.HandleFunc("/team", h.handleTeam)
-	h.router.HandleFunc("/leave/report", h.handleLeaveReport)
 	h.router.HandleFunc("/schedule/current", h.handleScheduleCurrent)
-	h.router.HandleFunc("/schedule/generate", h.handleScheduleGenerate)
-	h.router.HandleFunc("/calendar", h.handleCalendar)
 	h.router.HandleFunc("/calendar/{token}/ics", h.handleCalendarICS)
+
+	// Protected routes (require authentication)
+	h.router.Group(func(r chi.Router) {
+		r.Use(h.authMiddleware.RequireAuth)
+
+		r.HandleFunc("/team", h.handleTeam)
+		r.HandleFunc("/leave/report", h.handleLeaveReport)
+		r.HandleFunc("/schedule/generate", h.handleScheduleGenerate)
+		r.HandleFunc("/calendar", h.handleCalendar)
+	})
 }
 
 // Router returns the underlying chi router.
@@ -85,6 +103,12 @@ func (h *Handler) Router() *chi.Mux {
 func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	data := map[string]any{
 		"Today": time.Now().Format("Monday, Jan 2, 2006"),
+	}
+
+	// Add user info to data
+	if user, ok := auth.GetUserFromContext(r.Context()); ok {
+		data["User"] = user
+		data["IsAdmin"] = user.IsAdmin.Valid && user.IsAdmin.Int64 == 1
 	}
 
 	// Check team members and handle no-team case
@@ -212,6 +236,14 @@ func (h *Handler) getFullWeeks() (map[string][]database.RotaAssignment, error) {
 }
 
 func (h *Handler) handleTeam(w http.ResponseWriter, r *http.Request) {
+	data := make(map[string]any)
+
+	// Add user info to data
+	if user, ok := auth.GetUserFromContext(r.Context()); ok {
+		data["User"] = user
+		data["IsAdmin"] = user.IsAdmin.Valid && user.IsAdmin.Int64 == 1
+	}
+
 	if r.Method == http.MethodPost {
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -242,14 +274,22 @@ func (h *Handler) handleTeam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.tmpl.ExecuteTemplate(w, "team.html", map[string]any{
-		"Members": members,
-	}); err != nil {
+	data["Members"] = members
+
+	if err := h.tmpl.ExecuteTemplate(w, "team.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
 
 func (h *Handler) handleLeaveReport(w http.ResponseWriter, r *http.Request) {
+	data := make(map[string]any)
+
+	// Add user info to data
+	if user, ok := auth.GetUserFromContext(r.Context()); ok {
+		data["User"] = user
+		data["IsAdmin"] = user.IsAdmin.Valid && user.IsAdmin.Int64 == 1
+	}
+
 	if r.Method == http.MethodPost {
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -283,14 +323,22 @@ func (h *Handler) handleLeaveReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.tmpl.ExecuteTemplate(w, "leave_report.html", map[string]any{
-		"Members": members,
-	}); err != nil {
+	data["Members"] = members
+
+	if err := h.tmpl.ExecuteTemplate(w, "leave_report.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
 
 func (h *Handler) handleScheduleCurrent(w http.ResponseWriter, r *http.Request) {
+	data := make(map[string]any)
+
+	// Add user info to data
+	if user, ok := auth.GetUserFromContext(r.Context()); ok {
+		data["User"] = user
+		data["IsAdmin"] = user.IsAdmin.Valid && user.IsAdmin.Int64 == 1
+	}
+
 	now := time.Now()
 
 	// Get current week (Monday-Friday)
@@ -354,11 +402,11 @@ func (h *Handler) handleScheduleCurrent(w http.ResponseWriter, r *http.Request) 
 		calendar = append(calendar, day)
 	}
 
-	if err := h.tmpl.ExecuteTemplate(w, "schedule_current.html", map[string]any{
-		"Calendar":  calendar,
-		"StartDate": currentWeekStart.Format("January 2, 2006"),
-		"EndDate":   nextWeekEnd.Format("January 2, 2006"),
-	}); err != nil {
+	data["Calendar"] = calendar
+	data["StartDate"] = currentWeekStart.Format("January 2, 2006")
+	data["EndDate"] = nextWeekEnd.Format("January 2, 2006")
+
+	if err := h.tmpl.ExecuteTemplate(w, "schedule_current.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -407,16 +455,24 @@ func (h *Handler) handleScheduleGeneratePost(w http.ResponseWriter, r *http.Requ
 	http.Redirect(w, r, "/schedule/current", http.StatusSeeOther)
 }
 
-func (h *Handler) handleScheduleGenerateGet(w http.ResponseWriter, _ *http.Request) {
+func (h *Handler) handleScheduleGenerateGet(w http.ResponseWriter, r *http.Request) {
 	if !h.validateTeamMembers(w) {
 		return
 	}
 
+	data := make(map[string]any)
+
+	// Add user info to data
+	if user, ok := auth.GetUserFromContext(r.Context()); ok {
+		data["User"] = user
+		data["IsAdmin"] = user.IsAdmin.Valid && user.IsAdmin.Int64 == 1
+	}
+
 	now := time.Now()
-	if err := h.tmpl.ExecuteTemplate(w, "schedule_generate.html", map[string]any{
-		"DefaultStart": now.Format("2006-01-02"),
-		"DefaultEnd":   now.AddDate(0, 1, 0).Format("2006-01-02"),
-	}); err != nil {
+	data["DefaultStart"] = now.Format("2006-01-02")
+	data["DefaultEnd"] = now.AddDate(0, 1, 0).Format("2006-01-02")
+
+	if err := h.tmpl.ExecuteTemplate(w, "schedule_generate.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -454,6 +510,14 @@ func (h *Handler) parseDateRange(w http.ResponseWriter, r *http.Request) (time.T
 }
 
 func (h *Handler) handleCalendar(w http.ResponseWriter, r *http.Request) {
+	data := make(map[string]any)
+
+	// Add user info to data
+	if user, ok := auth.GetUserFromContext(r.Context()); ok {
+		data["User"] = user
+		data["IsAdmin"] = user.IsAdmin.Valid && user.IsAdmin.Int64 == 1
+	}
+
 	if r.Method == http.MethodPost {
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -468,11 +532,11 @@ func (h *Handler) handleCalendar(w http.ResponseWriter, r *http.Request) {
 		}
 
 		baseURL := "http://" + r.Host
-		if err := h.tmpl.ExecuteTemplate(w, "calendar.html", map[string]any{
-			"Token":       token,
-			"CalendarURL": baseURL + "/calendar/" + token + "/ics",
-			"ShowResult":  true,
-		}); err != nil {
+		data["Token"] = token
+		data["CalendarURL"] = baseURL + "/calendar/" + token + "/ics"
+		data["ShowResult"] = true
+
+		if err := h.tmpl.ExecuteTemplate(w, "calendar.html", data); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 		return
@@ -484,9 +548,9 @@ func (h *Handler) handleCalendar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.tmpl.ExecuteTemplate(w, "calendar.html", map[string]any{
-		"Members": members,
-	}); err != nil {
+	data["Members"] = members
+
+	if err := h.tmpl.ExecuteTemplate(w, "calendar.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }

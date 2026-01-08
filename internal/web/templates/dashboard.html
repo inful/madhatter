@@ -31,6 +31,43 @@
                     </h1>
                     <p class="subtitle has-text-centered">Manage your team schedule with ease</p>
 
+                    <!-- User Info / Login Prompt -->
+                    {{if .User}}
+                    <div class="card">
+                        <div class="card-content">
+                            <div class="columns is-vcentered is-mobile">
+                                <div class="column">
+                                    <p class="has-text-weight-semibold">
+                                        <i class="fas fa-user-circle mr-2"></i>{{.User.Name}}
+                                    </p>
+                                    <p class="is-size-7 has-text-grey">{{.User.Email}}</p>
+                                    {{if .IsAdmin}}
+                                        <span class="tag is-danger is-light mt-1">
+                                            <i class="fas fa-shield-alt mr-1"></i> Admin
+                                        </span>
+                                    {{end}}
+                                </div>
+                                <div class="column is-narrow">
+                                    <a href="/auth/logout" class="button is-small is-danger is-light">
+                                        <i class="fas fa-sign-out-alt mr-1"></i> Logout
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {{else}}
+                    <div class="card">
+                        <div class="card-content">
+                            <div class="content has-text-centered">
+                                <p class="mb-3">Login to access admin features</p>
+                                <a href="/login" class="button is-primary">
+                                    <i class="fas fa-sign-in-alt mr-2"></i> Login
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    {{end}}
+
                     <!-- Quick Actions -->
                     <div class="card">
                         <header class="card-header">
@@ -40,20 +77,24 @@
                         </header>
                         <div class="card-content">
                             <div class="buttons is-centered">
-                                <a href="/team" class="button is-primary action-btn">
-                                    <i class="fas fa-users mr-2"></i> Team Members
-                                </a>
-                                <a href="/leave/report" class="button is-info action-btn">
-                                    <i class="fas fa-user-clock mr-2"></i> Report Leave
-                                </a>
-                                <a href="/schedule/generate" class="button is-success action-btn">
-                                    <i class="fas fa-calendar-plus mr-2"></i> Generate Schedule
-                                </a>
+                                {{if .User}}
+                                    {{if .IsAdmin}}
+                                        <a href="/team" class="button is-primary action-btn">
+                                            <i class="fas fa-users mr-2"></i> Team Members
+                                        </a>
+                                        <a href="/schedule/generate" class="button is-success action-btn">
+                                            <i class="fas fa-calendar-plus mr-2"></i> Generate Schedule
+                                        </a>
+                                    {{end}}
+                                    <a href="/leave/report" class="button is-info action-btn">
+                                        <i class="fas fa-user-clock mr-2"></i> Report Leave
+                                    </a>
+                                    <a href="/calendar" class="button is-warning action-btn">
+                                        <i class="fas fa-calendar-star mr-2"></i> Calendar Subs
+                                    </a>
+                                {{end}}
                                 <a href="/schedule/current" class="button is-link action-btn">
                                     <i class="fas fa-calendar-alt mr-2"></i> View Schedule
-                                </a>
-                                <a href="/calendar" class="button is-warning action-btn">
-                                    <i class="fas fa-calendar-star mr-2"></i> Calendar Subs
                                 </a>
                             </div>
                         </div>

@@ -66,3 +66,30 @@ This file provides guidance to agents when working with code in this repository.
 - **Calendar Subscriptions**: Copy button with clipboard API and visual notification
 - **Schedule Display**: Shows cover badges and leave indicators
 - **Automatic Maintenance**: Triggers on team changes, leave reports, and page loads
+
+**Authentication System**: OAuth2-based authentication with multiple providers
+- **Providers**: Forgejo and GitLab (extensible to others)
+- **Session Management**: Secure session tokens stored in database
+- **User Roles**: Admin (first login) and Regular users
+- **Middleware**: `RequireAuth` and `RequireAdmin` for route protection
+- **Database Tables**: `users`, `sessions`, `oauth_tokens`
+- **Configuration**: YAML-based OAuth provider settings
+- **Admin Features**: Team management, schedule generation, leave approval
+- **User Features**: View schedules, report leave, calendar subscriptions
+
+**Auth Flow**:
+1. User clicks login → Redirects to provider
+2. Provider callback → Exchange code for token
+3. Get user email → Check/create user account
+4. Create session → Set secure cookie
+5. Middleware validates session on protected routes
+
+**Critical Auth Gotchas**:
+- First user to login becomes admin automatically
+- Sessions expire after 24 hours by default
+- OAuth tokens are stored but not currently used (for future API access)
+- Provider base URLs must be accessible from the server
+- Callback URLs must be registered exactly with providers
+- Session secret must be strong and kept secure
+- Database foreign keys must be enabled for session cleanup
+- Admin privileges required for team/leave/schedule operations

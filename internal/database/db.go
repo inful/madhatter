@@ -85,6 +85,12 @@ func (db *DB) Close() error {
 	return db.db.Close()
 }
 
+// GetQueries returns the underlying sqlc.Queries instance.
+// This is needed for auth components that require direct SQLC access.
+func (db *DB) GetQueries() *sqlc.Queries {
+	return db.queries
+}
+
 func (db *DB) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	return db.db.ExecContext(ctx, query, args...)
 }

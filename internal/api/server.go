@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
+	"github.com/inful/madhatter/internal/auth"
 	"github.com/inful/madhatter/internal/database"
 	"github.com/inful/madhatter/internal/rota"
 	"github.com/inful/madhatter/internal/web"
@@ -22,10 +24,12 @@ const (
 )
 
 type Server struct {
-	router *chi.Mux
-	api    huma.API
-	db     *database.DB
-	engine *rota.Engine
+	router         *chi.Mux
+	api            huma.API
+	db             *database.DB
+	engine         *rota.Engine
+	authManager    *auth.AuthManager
+	authMiddleware *auth.Middleware
 }
 
 func NewServer(db *database.DB) *Server {
@@ -35,11 +39,38 @@ func NewServer(db *database.DB) *Server {
 	config := huma.DefaultConfig("Support Rota API", "1.0.0")
 	api := humachi.New(router, config)
 
+	// Load OAuth configuration from environment
+	authConfig := auth.LoadConfigFromEnv()
+
+	// Validate configuration
+	if err := authConfig.Validate(); err != nil {
+		// Log warning but continue - config may be set up later
+		log.Printf("Warning: Auth configuration invalid: %v\n", err)
+	}
+
+	// Create auth components
+	providerFactory := auth.NewProviderFactory(authConfig.Providers)
+	userService := auth.NewUserService(db.GetQueries())
+	sessionManager := auth.NewSessionManager(db.GetQueries(), time.Duration(authConfig.Sessions.DurationHours)*time.Hour)
+
+	authManager := auth.NewAuthManager(providerFactory, userService, sessionManager)
+	authMiddleware := auth.NewMiddleware(sessionManager)
+
+	// Register configured providers
+	for providerName := range authConfig.Providers {
+		provider, err := providerFactory.Create(providerName)
+		if err == nil {
+			authManager.RegisterProvider(provider)
+		}
+	}
+
 	s := &Server{
-		router: router,
-		api:    api,
-		db:     db,
-		engine: rota.NewEngine(db),
+		router:         router,
+		api:            api,
+		db:             db,
+		engine:         rota.NewEngine(db),
+		authManager:    authManager,
+		authMiddleware: authMiddleware,
 	}
 
 	s.registerOperations()
@@ -97,8 +128,8 @@ func (s *Server) registerOperations() {
 }
 
 func (s *Server) registerWebRoutes() {
-	// Create web handler
-	webHandler := web.NewHandler(s.db)
+	// Create web handler with auth components
+	webHandler := web.NewHandler(s.db, s.authManager, s.authMiddleware)
 
 	// Mount web routes
 	s.router.Mount("/", webHandler.Router())

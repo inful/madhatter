@@ -27,6 +27,18 @@ type LeaveRecord struct {
 	CreatedAt     sql.NullTime   `json:"created_at"`
 }
 
+type OauthToken struct {
+	ID           string         `json:"id"`
+	UserID       string         `json:"user_id"`
+	Provider     string         `json:"provider"`
+	AccessToken  string         `json:"access_token"`
+	RefreshToken sql.NullString `json:"refresh_token"`
+	TokenType    sql.NullString `json:"token_type"`
+	ExpiresAt    sql.NullTime   `json:"expires_at"`
+	CreatedAt    sql.NullTime   `json:"created_at"`
+	UpdatedAt    sql.NullTime   `json:"updated_at"`
+}
+
 type RotaAssignment struct {
 	ID                   string         `json:"id"`
 	Date                 time.Time      `json:"date"`
@@ -36,10 +48,30 @@ type RotaAssignment struct {
 	CreatedAt            sql.NullTime   `json:"created_at"`
 }
 
+type Session struct {
+	ID        string       `json:"id"`
+	UserID    string       `json:"user_id"`
+	Token     string       `json:"token"`
+	ExpiresAt time.Time    `json:"expires_at"`
+	CreatedAt sql.NullTime `json:"created_at"`
+}
+
 type TeamMember struct {
 	ID        string        `json:"id"`
 	Name      string        `json:"name"`
 	Email     string        `json:"email"`
 	IsActive  sql.NullInt64 `json:"is_active"`
 	CreatedAt sql.NullTime  `json:"created_at"`
+}
+
+type User struct {
+	ID         string        `json:"id"`
+	Email      string        `json:"email"`
+	Name       string        `json:"name"`
+	Provider   string        `json:"provider"`
+	ProviderID string        `json:"provider_id"`
+	IsAdmin    sql.NullInt64 `json:"is_admin"`
+	IsActive   sql.NullInt64 `json:"is_active"`
+	CreatedAt  sql.NullTime  `json:"created_at"`
+	UpdatedAt  sql.NullTime  `json:"updated_at"`
 }

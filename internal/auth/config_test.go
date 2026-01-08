@@ -73,7 +73,7 @@ func TestValidateConfigPath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := validateConfigPath(tt.path)
+			_, err := validateConfigPath(tt.path)
 			if tt.expectError {
 				assert.Error(t, err)
 				if tt.errorMsg != "" {
@@ -187,7 +187,7 @@ sessions:
   forgejo:
     client_id: "id"
     client_secret: "secret
-    # Missing closing quote
+    # Missing closing quote for client_secret
 `
 		err := os.WriteFile(configPath, []byte(invalidContent), 0600)
 		require.NoError(t, err)

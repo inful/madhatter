@@ -34,6 +34,8 @@ type Server struct {
 	authManager    *auth.AuthManager
 	authMiddleware *auth.Middleware
 	sessionManager *auth.SessionManager
+	cleanupCtx     context.Context
+	cleanupCancel  context.CancelFunc
 }
 
 func NewServer(db *database.DB) *Server {
@@ -375,9 +377,8 @@ func (s *Server) handleCalendarICS(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) Start(port string) error {
 	// Start session cleanup background task
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	s.sessionManager.StartCleanup(ctx)
+	s.cleanupCtx, s.cleanupCancel = context.WithCancel(context.Background())
+	s.sessionManager.StartCleanup(s.cleanupCtx)
 
 	// Use http.Server with timeouts for production
 	srv := &http.Server{
@@ -395,7 +396,7 @@ func (s *Server) Start(port string) error {
 		<-sigint
 
 		log.Println("Shutting down server...")
-		cancel() // Cancel the cleanup context
+		s.cleanupCancel() // Cancel the cleanup context
 		s.sessionManager.StopCleanup()
 
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)

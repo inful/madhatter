@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -24,7 +25,7 @@ type SessionManager struct {
 	cookieName      string
 	cleanupInterval time.Duration
 	stopCleanup     chan struct{}
-	cleanupStopped  bool
+	stopOnce        sync.Once
 }
 
 // NewSessionManager creates a new session manager.
@@ -145,10 +146,9 @@ func (sm *SessionManager) StartCleanup(ctx context.Context) {
 
 // StopCleanup stops the background cleanup goroutine.
 func (sm *SessionManager) StopCleanup() {
-	if !sm.cleanupStopped {
-		sm.cleanupStopped = true
+	sm.stopOnce.Do(func() {
 		close(sm.stopCleanup)
-	}
+	})
 }
 
 // generateSecureToken generates a cryptographically secure random token.

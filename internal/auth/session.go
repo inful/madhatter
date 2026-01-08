@@ -127,22 +127,6 @@ func (sm *SessionManager) ClearSessionCookie(w http.ResponseWriter) {
 	http.SetCookie(w, cookie)
 }
 
-// StartCleanupTask starts a background goroutine that periodically cleans up expired sessions.
-func (sm *SessionManager) StartCleanupTask(ctx context.Context, interval time.Duration) {
-	ticker := time.NewTicker(interval)
-	go func() {
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				_ = sm.db.DeleteExpiredSessions(ctx)
-			}
-		}
-	}()
-}
-
 // GetSessionCookie retrieves the session token from cookies.
 func (sm *SessionManager) GetSessionCookie(r *http.Request) (string, error) {
 	cookie, err := r.Cookie(sm.cookieName)

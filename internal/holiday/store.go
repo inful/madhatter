@@ -2,6 +2,7 @@ package holiday
 
 import (
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 )
@@ -77,14 +78,10 @@ func (s *Store) GetUpcomingHolidays(daysAhead int) []Holiday {
 		}
 	}
 
-	// Sort by date
-	for i := range len(result) - 1 {
-		for j := i + 1; j < len(result); j++ {
-			if result[i].Date > result[j].Date {
-				result[i], result[j] = result[j], result[i]
-			}
-		}
-	}
+	// Sort by date using efficient sort
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Date < result[j].Date
+	})
 
 	return result
 }

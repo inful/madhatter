@@ -389,7 +389,8 @@ func TestEngine_determineCoveringMember_WithLeave(t *testing.T) {
 	}
 
 	originalMember := members[0]
-	cover := engine.determineCoveringMember(originalMember, leaves, members, 0)
+	currentDate := time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)
+	cover := engine.determineCoveringMember(ctx, originalMember, leaves, members, currentDate)
 
 	// Should return Bob as cover
 	require.Equal(t, bobID, cover.ID)
@@ -417,7 +418,8 @@ func TestEngine_determineCoveringMember_NoLeave(t *testing.T) {
 	leaves := []database.LeaveRecord{}
 
 	originalMember := members[0]
-	cover := engine.determineCoveringMember(originalMember, leaves, members, 0)
+	currentDate := time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)
+	cover := engine.determineCoveringMember(ctx, originalMember, leaves, members, currentDate)
 
 	// Should return original member
 	require.Equal(t, aliceID, cover.ID)

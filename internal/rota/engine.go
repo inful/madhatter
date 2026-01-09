@@ -71,7 +71,7 @@ func (e *Engine) processDate(ctx context.Context, currentDate time.Time, members
 	}
 
 	originalMember := members[*memberIndex]
-	coveringMember := e.determineCoveringMember(originalMember, leaves, members, *memberIndex)
+	coveringMember := e.determineCoveringMember(ctx, originalMember, leaves, members, currentDate)
 
 	if err := e.createAssignment(ctx, dateStr, originalMember, coveringMember, leaves); err != nil {
 		return err
@@ -82,10 +82,13 @@ func (e *Engine) processDate(ctx context.Context, currentDate time.Time, members
 }
 
 // determineCoveringMember finds who should cover the assignment.
-func (e *Engine) determineCoveringMember(originalMember database.TeamMember, leaves []database.LeaveRecord, members []database.TeamMember, memberIndex int) database.TeamMember {
+// Uses independent R2 cover rotation for fair distribution.
+func (e *Engine) determineCoveringMember(ctx context.Context, originalMember database.TeamMember, leaves []database.LeaveRecord, members []database.TeamMember, currentDate time.Time) database.TeamMember {
 	for i := range leaves {
 		if leaves[i].MemberID == originalMember.ID {
-			cover, coverErr := e.findCover(members, leaves, memberIndex)
+			// Use R2 cover rotation (independent from R1 original rotation)
+			coverIndex := e.getNextCoverIndex(ctx, members, currentDate)
+			cover, coverErr := e.findCover(members, leaves, coverIndex)
 			if coverErr == nil {
 				return cover
 			}

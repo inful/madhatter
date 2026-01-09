@@ -274,6 +274,12 @@ func (h *Handler) getUpcomingHolidays() []map[string]any {
 	endDate := now.AddDate(0, 0, defaultHolidayLookaheadDays)
 
 	for d := now; d.Before(endDate); d = d.AddDate(0, 0, 1) {
+		// Skip weekends - they are not holidays
+		if d.Weekday() == time.Saturday || d.Weekday() == time.Sunday {
+			continue
+		}
+
+		// Check if it's an actual holiday (not just a skipped date)
 		if h.holidayChecker(d) {
 			holidays = append(holidays, map[string]any{
 				"Date": d.Format("2006-01-02"),

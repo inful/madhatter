@@ -9,7 +9,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/inful/madhatter/internal/database/sqlc"
-	_ "modernc.org/sqlite"
+	_ "github.com/ncruces/go-sqlite3/driver"
+	_ "github.com/ncruces/go-sqlite3/embed"
 )
 
 type DB struct {
@@ -18,7 +19,7 @@ type DB struct {
 }
 
 func New(path string) (*DB, error) {
-	db, err := sql.Open("sqlite", path)
+	db, err := sql.Open("sqlite3", path)
 	if err != nil {
 		return nil, err
 	}

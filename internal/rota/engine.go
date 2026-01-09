@@ -8,12 +8,24 @@ import (
 	"github.com/inful/madhatter/internal/database"
 )
 
+// HolidayChecker is a function that checks if a date should be skipped due to holidays.
+type HolidayChecker func(date time.Time) bool
+
 type Engine struct {
-	db *database.DB
+	db              *database.DB
+	holidayChecker  HolidayChecker
 }
 
 func NewEngine(db *database.DB) *Engine {
-	return &Engine{db: db}
+	return &Engine{
+		db:             db,
+		holidayChecker: nil,
+	}
+}
+
+// SetHolidayChecker sets a function that checks if dates are holidays.
+func (e *Engine) SetHolidayChecker(checker HolidayChecker) {
+	e.holidayChecker = checker
 }
 
 // GenerateSchedule creates round-robin assignments for a date range.
@@ -44,6 +56,11 @@ func (e *Engine) GenerateSchedule(ctx context.Context, startDate, endDate time.T
 func (e *Engine) processDate(ctx context.Context, currentDate time.Time, members []database.TeamMember, memberIndex *int) error {
 	// Skip weekends
 	if currentDate.Weekday() == time.Saturday || currentDate.Weekday() == time.Sunday {
+		return nil
+	}
+
+	// Skip holidays if holiday checker is configured
+	if e.holidayChecker != nil && e.holidayChecker(currentDate) {
 		return nil
 	}
 
@@ -168,6 +185,11 @@ func (e *Engine) processLeaveDates(ctx context.Context, leave *database.LeaveRec
 func (e *Engine) processLeaveDate(ctx context.Context, d time.Time, members []database.TeamMember, originalIndex int, leave *database.LeaveRecord, leaveID string) error {
 	// Skip weekends
 	if d.Weekday() == time.Saturday || d.Weekday() == time.Sunday {
+		return nil
+	}
+
+	// Skip holidays if holiday checker is configured
+	if e.holidayChecker != nil && e.holidayChecker(d) {
 		return nil
 	}
 

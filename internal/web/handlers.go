@@ -28,9 +28,10 @@ type Handler struct {
 	router         *chi.Mux
 	authManager    *auth.AuthManager
 	authMiddleware *auth.Middleware
+	holidayChecker func(time.Time) bool
 }
 
-func NewHandler(db *database.DB, authManager *auth.AuthManager, authMiddleware *auth.Middleware, development bool) *Handler {
+func NewHandler(db *database.DB, authManager *auth.AuthManager, authMiddleware *auth.Middleware, development bool, holidayChecker func(time.Time) bool) *Handler {
 	// Parse templates - use absolute path based on working directory
 	// Try multiple possible locations for templates
 	tmpl := parseTemplates()
@@ -44,6 +45,7 @@ func NewHandler(db *database.DB, authManager *auth.AuthManager, authMiddleware *
 		router:         router,
 		authManager:    authManager,
 		authMiddleware: authMiddleware,
+		holidayChecker: holidayChecker,
 	}
 
 	h.registerRoutes()
@@ -272,35 +274,49 @@ func (h *Handler) loadDashboardData(ctx context.Context, data map[string]any) {
 		nextWeekStart := currentWeekStart.AddDate(0, 0, weekDaysInWeek)
 		nextWeekEnd := nextWeekStart.AddDate(0, 0, weekDaysOffset)
 
-		var currentWeek []database.RotaAssignment
-		var nextWeek []database.RotaAssignment
+		var currentWeek []map[string]any
+		var nextWeek []map[string]any
 
 		// Build current week (Monday-Friday) - always show all days
 		for d := currentWeekStart; d.Before(currentWeekEnd.AddDate(0, 0, 1)); d = d.AddDate(0, 0, 1) {
 			dateStr := d.Format("2006-01-02")
+			isHoliday := h.holidayChecker != nil && h.holidayChecker(d)
+			
+			var assignment database.RotaAssignment
 			if assignments, ok := weeksData[dateStr]; ok && len(assignments) > 0 {
-				currentWeek = append(currentWeek, assignments[0])
+				assignment = assignments[0]
 			} else {
-				// Add empty assignment for days without assignments
-				currentWeek = append(currentWeek, database.RotaAssignment{
+				assignment = database.RotaAssignment{
 					Date:       dateStr,
 					MemberName: "Unassigned",
-				})
+				}
 			}
+			
+			currentWeek = append(currentWeek, map[string]any{
+				"Assignment": assignment,
+				"IsHoliday":  isHoliday,
+			})
 		}
 
 		// Build next week (Monday-Friday) - always show all days
 		for d := nextWeekStart; d.Before(nextWeekEnd.AddDate(0, 0, 1)); d = d.AddDate(0, 0, 1) {
 			dateStr := d.Format("2006-01-02")
+			isHoliday := h.holidayChecker != nil && h.holidayChecker(d)
+			
+			var assignment database.RotaAssignment
 			if assignments, ok := weeksData[dateStr]; ok && len(assignments) > 0 {
-				nextWeek = append(nextWeek, assignments[0])
+				assignment = assignments[0]
 			} else {
-				// Add empty assignment for days without assignments
-				nextWeek = append(nextWeek, database.RotaAssignment{
+				assignment = database.RotaAssignment{
 					Date:       dateStr,
 					MemberName: "Unassigned",
-				})
+				}
 			}
+			
+			nextWeek = append(nextWeek, map[string]any{
+				"Assignment": assignment,
+				"IsHoliday":  isHoliday,
+			})
 		}
 
 		data["CurrentWeek"] = currentWeek
@@ -478,6 +494,7 @@ func (h *Handler) handleScheduleCurrent(w http.ResponseWriter, r *http.Request) 
 		dateStr := d.Format("2006-01-02")
 		dayAssignments := assignmentMap[dateStr]
 		isToday := d.Format("2006-01-02") == now.Format("2006-01-02")
+		isHoliday := h.holidayChecker != nil && h.holidayChecker(d)
 
 		day := map[string]any{
 			"Date":        d.Format("Jan 2 (Mon)"),
@@ -485,6 +502,7 @@ func (h *Handler) handleScheduleCurrent(w http.ResponseWriter, r *http.Request) 
 			"Assignments": dayAssignments,
 			"IsToday":     isToday,
 			"IsWeekend":   d.Weekday() == 0 || d.Weekday() == 6,
+			"IsHoliday":   isHoliday,
 			"WeekLabel":   "Current Week",
 		}
 		calendar = append(calendar, day)
@@ -495,6 +513,7 @@ func (h *Handler) handleScheduleCurrent(w http.ResponseWriter, r *http.Request) 
 		dateStr := d.Format("2006-01-02")
 		dayAssignments := assignmentMap[dateStr]
 		isToday := d.Format("2006-01-02") == now.Format("2006-01-02")
+		isHoliday := h.holidayChecker != nil && h.holidayChecker(d)
 
 		day := map[string]any{
 			"Date":        d.Format("Jan 2 (Mon)"),
@@ -502,6 +521,7 @@ func (h *Handler) handleScheduleCurrent(w http.ResponseWriter, r *http.Request) 
 			"Assignments": dayAssignments,
 			"IsToday":     isToday,
 			"IsWeekend":   d.Weekday() == 0 || d.Weekday() == 6,
+			"IsHoliday":   isHoliday,
 			"WeekLabel":   "Next Week",
 		}
 		calendar = append(calendar, day)

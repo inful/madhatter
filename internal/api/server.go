@@ -16,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/inful/madhatter/internal/auth"
 	"github.com/inful/madhatter/internal/database"
+	"github.com/inful/madhatter/internal/holiday"
 	"github.com/inful/madhatter/internal/rota"
 	"github.com/inful/madhatter/internal/web"
 )
@@ -37,6 +38,7 @@ type Server struct {
 	authManager    *auth.AuthManager
 	authMiddleware *auth.Middleware
 	sessionManager *auth.SessionManager
+	holidayService *holiday.Service
 	//nolint:containedctx // Context is used for graceful shutdown
 	cleanupCtx    context.Context
 	cleanupCancel context.CancelFunc
@@ -55,14 +57,29 @@ func NewServer(db *database.DB, development bool) (*Server, error) {
 		return nil, err
 	}
 
+	// Initialize holiday service
+	holidayService, err := holiday.InitializeHolidayService(db)
+	if err != nil {
+		log.Printf("Warning: Failed to initialize holiday service: %v\n", err)
+		// Continue without holiday service - it's optional
+		holidayService = nil
+	}
+
+	// Create engine and set holiday checker
+	engine := rota.NewEngine(db)
+	if holidayService != nil {
+		engine.SetHolidayChecker(holidayService.ShouldSkipDate)
+	}
+
 	s := &Server{
 		router:         router,
 		api:            api,
 		db:             db,
-		engine:         rota.NewEngine(db),
+		engine:         engine,
 		authManager:    authManager,
 		authMiddleware: authMiddleware,
 		sessionManager: sessionManager,
+		holidayService: holidayService,
 	}
 
 	s.registerOperations(development)
@@ -197,11 +214,41 @@ func (s *Server) registerOperations(development bool) {
 		fakeHandler := auth.NewFakeCallbackHandler()
 		s.router.HandleFunc("/auth/fake/login", fakeHandler.HandleLogin)
 	}
+
+	// Holiday Operations
+	huma.Register(s.api, huma.Operation{
+		OperationID: "get-holidays",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/holidays",
+		Summary:     "Get upcoming holidays",
+		Tags:        []string{"Holidays"},
+	}, s.handleGetHolidays)
+
+	huma.Register(s.api, huma.Operation{
+		OperationID: "get-holiday-status",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/holidays/status",
+		Summary:     "Get holiday service status",
+		Tags:        []string{"Holidays"},
+	}, s.handleGetHolidayStatus)
+
+	huma.Register(s.api, huma.Operation{
+		OperationID: "refresh-holidays",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/holidays/refresh",
+		Summary:     "Manually refresh holiday data",
+		Tags:        []string{"Holidays"},
+	}, s.handleRefreshHolidays)
 }
 
 func (s *Server) registerWebRoutes(development bool) {
-	// Create web handler with auth components
-	webHandler := web.NewHandler(s.db, s.authManager, s.authMiddleware, development)
+	// Create web handler with auth components and holiday checker
+	var holidayChecker func(time.Time) bool
+	if s.holidayService != nil {
+		holidayChecker = s.holidayService.ShouldSkipDate
+	}
+	
+	webHandler := web.NewHandler(s.db, s.authManager, s.authMiddleware, development, holidayChecker)
 
 	// Development mode: The web handler's registerDevelopmentRoutes will handle the fake login view
 	// No need to register it separately here
@@ -500,4 +547,79 @@ func (s *Server) Start(ctx context.Context, port string) error {
 		return err
 	}
 	return nil
+}
+
+// Holiday API Handlers
+
+type GetHolidaysOutput struct {
+	Body struct {
+		Holidays []holiday.Holiday `json:"holidays"`
+		Message  string            `json:"message"`
+	}
+}
+
+func (s *Server) handleGetHolidays(ctx context.Context, input *struct{}) (*GetHolidaysOutput, error) {
+	if s.holidayService == nil {
+		return nil, huma.Error503ServiceUnavailable("Holiday service not available")
+	}
+
+	holidays := s.holidayService.GetUpcomingHolidays(365)
+
+	resp := &GetHolidaysOutput{}
+	resp.Body.Holidays = holidays
+	resp.Body.Message = fmt.Sprintf("Found %d upcoming holidays", len(holidays))
+	return resp, nil
+}
+
+type GetHolidayStatusOutput struct {
+	Body struct {
+		SchedulerRunning bool   `json:"scheduler_running"`
+		LastFetch        string `json:"last_fetch,omitempty"`
+		LastError        string `json:"last_error,omitempty"`
+		URLCount         int    `json:"url_count"`
+		HolidayCount     int    `json:"holiday_count"`
+	}
+}
+
+func (s *Server) handleGetHolidayStatus(ctx context.Context, input *struct{}) (*GetHolidayStatusOutput, error) {
+	if s.holidayService == nil {
+		return nil, huma.Error503ServiceUnavailable("Holiday service not available")
+	}
+
+	status := s.holidayService.GetStatus()
+
+	resp := &GetHolidayStatusOutput{}
+	resp.Body.SchedulerRunning = status.SchedulerRunning
+	if !status.LastFetch.IsZero() {
+		resp.Body.LastFetch = status.LastFetch.Format("2006-01-02 15:04:05")
+	}
+	if status.LastError != nil {
+		resp.Body.LastError = status.LastError.Error()
+	}
+	resp.Body.URLCount = status.URLCount
+	resp.Body.HolidayCount = status.HolidayCount
+	return resp, nil
+}
+
+type RefreshHolidaysOutput struct {
+	Body struct {
+		Message string `json:"message"`
+		Success bool   `json:"success"`
+	}
+}
+
+func (s *Server) handleRefreshHolidays(ctx context.Context, input *struct{}) (*RefreshHolidaysOutput, error) {
+	if s.holidayService == nil {
+		return nil, huma.Error503ServiceUnavailable("Holiday service not available")
+	}
+
+	err := s.holidayService.ForceRefresh()
+	if err != nil {
+		return nil, huma.Error500InternalServerError("Failed to refresh holidays", err)
+	}
+
+	resp := &RefreshHolidaysOutput{}
+	resp.Body.Message = "Holiday refresh initiated successfully"
+	resp.Body.Success = true
+	return resp, nil
 }

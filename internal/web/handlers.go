@@ -354,38 +354,20 @@ func (h *Handler) getAssignedMember(ctx context.Context, dateStr string, memberM
 	return nil
 }
 
-// buildPresenceList creates a sorted list of present members with assigned person first.
-func buildPresenceList(memberMap map[string]database.TeamMember, onLeave map[string]struct{}, assigned *database.TeamMember) []database.TeamMember {
+// buildPresenceList creates a sorted list of present members.
+func buildPresenceList(memberMap map[string]database.TeamMember, onLeave map[string]struct{}) []database.TeamMember {
 	present := make([]database.TeamMember, 0, len(memberMap)-len(onLeave))
 
-	// Add assigned person first if they're present
-	if assigned != nil {
-		if _, absent := onLeave[assigned.ID]; !absent {
-			present = append(present, *assigned)
-		}
-	}
-
-	// Add other members (excluding assigned and those on leave)
 	for id, member := range memberMap {
 		if _, absent := onLeave[id]; absent {
-			continue
-		}
-		if assigned != nil && member.ID == assigned.ID {
 			continue
 		}
 		present = append(present, member)
 	}
 
-	// Sort all members except the first one (assigned person)
-	if len(present) > 1 && assigned != nil && present[0].ID == assigned.ID {
-		sort.Slice(present[1:], func(i, j int) bool {
-			return present[1+i].Name < present[1+j].Name
-		})
-	} else {
-		sort.Slice(present, func(i, j int) bool {
-			return present[i].Name < present[j].Name
-		})
-	}
+	sort.Slice(present, func(i, j int) bool {
+		return present[i].Name < present[j].Name
+	})
 
 	return present
 }
@@ -433,7 +415,7 @@ func (h *Handler) getUpcomingPresenceFrom(ctx context.Context, start time.Time) 
 			})
 		}
 
-		present := buildPresenceList(memberMap, onLeave, assigned)
+		present := buildPresenceList(memberMap, onLeave)
 
 		sort.Slice(away, func(i, j int) bool {
 			return away[i].Member.Name < away[j].Member.Name

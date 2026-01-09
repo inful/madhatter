@@ -86,6 +86,9 @@ linters:
         - "false"
     misspell:
       locale: US
+      ignore-rules:
+        - madhatter
+        - CANCELLED
     perfsprint:
       strconcat: false
     revive:

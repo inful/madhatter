@@ -620,7 +620,7 @@ func TestEngine_processLeaveDate_SkipsWeekends(t *testing.T) {
 
 	// Saturday
 	saturday := time.Date(2024, 1, 13, 0, 0, 0, 0, time.UTC)
-	err = engine.processLeaveDate(ctx, saturday, members, 0, leave, "leave-id")
+	_, err = engine.processLeaveDate(ctx, saturday, members, 0, leave, "leave-id")
 	require.NoError(t, err)
 
 	// No assignment should be created
@@ -665,4 +665,78 @@ func TestEngine_AssignCoversForLeave_LeaveStatusUpdate(t *testing.T) {
 	leave, err = db.GetLeaveByID(ctx, leaveID)
 	require.NoError(t, err)
 	require.Equal(t, "assigned", leave.Status)
+}
+
+func TestEngine_FairCoverRotation(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Add team members
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+	charlieID, err := db.AddTeamMember(ctx, "Charlie", "charlie@example.com")
+	require.NoError(t, err)
+	_, err = db.AddTeamMember(ctx, "Dave", "dave@example.com")
+	require.NoError(t, err)
+
+	engine := NewEngine(db)
+
+	// Create schedule for two weeks
+	// With 4 members, the rotation is: Alice, Bob, Charlie, Dave, Alice, Bob, ...
+	// Jan 15 (Mon): Alice
+	// Jan 16 (Tue): Bob
+	// Jan 17 (Wed): Charlie
+	// Jan 18 (Thu): Dave
+	// Jan 19 (Fri): Alice
+	// Jan 22 (Mon): Bob
+	// Jan 23 (Tue): Charlie
+	// Jan 24 (Wed): Dave
+	// Jan 25 (Thu): Alice
+	// Jan 26 (Fri): Bob
+	startDate := time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC) // Monday
+	endDate := time.Date(2024, 1, 26, 0, 0, 0, 0, time.UTC)   // Friday of next week
+	err = engine.GenerateSchedule(ctx, startDate, endDate)
+	require.NoError(t, err)
+
+	// Alice takes leave on Monday Jan 15 (her scheduled day)
+	leaveID1, err := db.CreateLeaveRecord(ctx, aliceID, "sick", "2024-01-15", "2024-01-15")
+	require.NoError(t, err)
+	err = engine.AssignCoversForLeave(ctx, leaveID1)
+	require.NoError(t, err)
+
+	// Alice takes leave again on Friday Jan 19 (also her scheduled day)
+	leaveID2, err := db.CreateLeaveRecord(ctx, aliceID, "sick", "2024-01-19", "2024-01-19")
+	require.NoError(t, err)
+	err = engine.AssignCoversForLeave(ctx, leaveID2)
+	require.NoError(t, err)
+
+	// Get cover assignments
+	assignments1, err := db.GetAssignmentsByDate(ctx, "2024-01-15")
+	require.NoError(t, err)
+	assignments2, err := db.GetAssignmentsByDate(ctx, "2024-01-19")
+	require.NoError(t, err)
+
+	// Find cover members
+	var cover1, cover2 string
+	for _, a := range assignments1 {
+		if a.IsCover {
+			cover1 = a.MemberID
+		}
+	}
+	for _, a := range assignments2 {
+		if a.IsCover {
+			cover2 = a.MemberID
+
+	// The covers should be different members (fair rotation)
+	require.NotEqual(t, cover1, cover2, "Cover assignments should rotate fairly, not always use the same person")
+
+	// Verify the rotation pattern:
+	// First cover (Jan 15): Bob should cover (next after Alice in rotation)
+	// Second cover (Jan 19): Charlie should cover (next after Bob in rotation)
+	require.Equal(t, bobID, cover1, "First cover should be Bob (next after Alice in rotation)")
+	require.Equal(t, charlieID, cover2, "Second cover should be Charlie (next after Bob in rotation)")
 }

@@ -158,7 +158,10 @@ func (e *Engine) AssignCoversForLeave(ctx context.Context, leaveID string) error
 		return errors.New("member not found")
 	}
 
-	return e.processLeaveDates(ctx, leave, members, originalIndex, leaveID)
+	// Find the last cover assignment before this leave to continue fair rotation
+	startIndex := e.getNextCoverIndex(ctx, members, originalIndex, leave.StartDate)
+
+	return e.processLeaveDates(ctx, leave, members, startIndex, leaveID)
 }
 
 // findMemberIndex finds the index of a member in the members slice.
@@ -171,45 +174,96 @@ func (e *Engine) findMemberIndex(members []database.TeamMember, memberID string)
 	return -1
 }
 
+// getNextCoverIndex finds the next fair index to start looking for cover.
+// It looks at cover assignments before the given date and returns the index to start the search from.
+// Note: findCover will start checking from (startIndex + 1), so we return (lastCoverIndex)
+// to make it check (lastCoverIndex + 1) which is the next person after the last cover.
+func (e *Engine) getNextCoverIndex(ctx context.Context, members []database.TeamMember, fallbackIndex int, beforeDate time.Time) int {
+	// Get assignments before this date to find the last cover
+	endDate := beforeDate.Format("2006-01-02")
+	startDate := beforeDate.AddDate(-1, 0, 0).Format("2006-01-02") // Look back 1 year
+
+	assignments, err := e.db.GetAssignmentsByDateRange(ctx, startDate, endDate)
+	if err != nil || len(assignments) == 0 {
+		return fallbackIndex
+	}
+
+	// Find the most recent cover assignment before this date
+	var lastCoverMemberID string
+	var lastCoverDate string
+
+	for i := range assignments {
+		if assignments[i].IsCover && assignments[i].Date < endDate {
+			// Find the most recent cover by date
+			if lastCoverDate == "" || assignments[i].Date > lastCoverDate {
+				lastCoverDate = assignments[i].Date
+				lastCoverMemberID = assignments[i].MemberID
+			}
+		}
+	}
+
+	// If we found a recent cover assignment, start from that person's index
+	// findCover will add 1 to this, so it will check the next person
+	if lastCoverMemberID != "" {
+		lastCoverIndex := e.findMemberIndex(members, lastCoverMemberID)
+		if lastCoverIndex != -1 {
+			return lastCoverIndex
+		}
+	}
+
+	return fallbackIndex
+}
+
 // processLeaveDates processes each day of leave and creates cover assignments.
-func (e *Engine) processLeaveDates(ctx context.Context, leave *database.LeaveRecord, members []database.TeamMember, originalIndex int, leaveID string) error {
+func (e *Engine) processLeaveDates(ctx context.Context, leave *database.LeaveRecord, members []database.TeamMember, startIndex int, leaveID string) error {
+	currentIndex := startIndex
 	for d := leave.StartDate; d.Before(leave.EndDate.AddDate(0, 0, 1)); d = d.AddDate(0, 0, 1) {
-		if err := e.processLeaveDate(ctx, d, members, originalIndex, leave, leaveID); err != nil {
+		newIndex, err := e.processLeaveDate(ctx, d, members, currentIndex, leave, leaveID)
+		if err != nil {
 			return err
+		}
+		// Update index for next day to continue fair rotation
+		if newIndex != -1 {
+			currentIndex = newIndex
 		}
 	}
 	return nil
 }
 
-// processLeaveDate handles a single day of leave.
-func (e *Engine) processLeaveDate(ctx context.Context, d time.Time, members []database.TeamMember, originalIndex int, leave *database.LeaveRecord, leaveID string) error {
+// processLeaveDate handles a single day of leave and returns the index of the cover member.
+func (e *Engine) processLeaveDate(ctx context.Context, d time.Time, members []database.TeamMember, startIndex int, leave *database.LeaveRecord, leaveID string) (int, error) {
 	// Skip weekends
 	if d.Weekday() == time.Saturday || d.Weekday() == time.Sunday {
-		return nil
+		return -1, nil
 	}
 
 	// Skip holidays if holiday checker is configured
 	if e.holidayChecker != nil && e.holidayChecker(d) {
-		return nil
+		return -1, nil
 	}
 
 	dateStr := d.Format("2006-01-02")
 	originalAssignmentID, err := e.ensureOriginalAssignment(ctx, dateStr, leave)
 	if err != nil {
-		return err
+		return -1, err
 	}
 
-	cover, err := e.findCover(members, []database.LeaveRecord{*leave}, originalIndex)
+	cover, err := e.findCover(members, []database.LeaveRecord{*leave}, startIndex)
 	if err != nil {
 		// Skip if no cover available - this is intentional
-		return nil //nolint:nilerr
+		return -1, nil //nolint:nilerr
 	}
 
 	if err := e.createCoverAssignment(ctx, dateStr, cover.ID, originalAssignmentID); err != nil {
-		return err
+		return -1, err
 	}
 
-	return e.db.UpdateLeaveStatus(ctx, leaveID, "assigned")
+	if err := e.db.UpdateLeaveStatus(ctx, leaveID, "assigned"); err != nil {
+		return -1, err
+	}
+
+	// Return the index of the cover member for next iteration
+	return e.findMemberIndex(members, cover.ID), nil
 }
 
 // ensureOriginalAssignment finds or creates the original assignment for the person on leave.

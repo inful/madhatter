@@ -102,7 +102,6 @@ func parseTemplates() *template.Template {
 	// Try different possible template locations
 	possiblePaths := []string{
 		"internal/web/templates/*.html",
-		"/workspaces/madhatter/internal/web/templates/*.html",
 	}
 
 	var tmpl *template.Template

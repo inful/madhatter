@@ -153,13 +153,10 @@ func (e *Engine) AssignCoversForLeave(ctx context.Context, leaveID string) error
 		return err
 	}
 
-	originalIndex := e.findMemberIndex(members, leave.MemberID)
-	if originalIndex == -1 {
-		return errors.New("member not found")
-	}
-
-	// Find the last cover assignment before this leave to continue fair rotation
-	startIndex := e.getNextCoverIndex(ctx, members, originalIndex, leave.StartDate)
+	// Find the last cover assignment to continue the independent cover rotation (R2)
+	// Cover rotation is completely independent from original rotation (R1)
+	// Pass the leave start date to query the right time range
+	startIndex := e.getNextCoverIndex(ctx, members, leave.StartDate)
 
 	return e.processLeaveDates(ctx, leave, members, startIndex, leaveID)
 }
@@ -174,27 +171,32 @@ func (e *Engine) findMemberIndex(members []database.TeamMember, memberID string)
 	return -1
 }
 
-// getNextCoverIndex finds the next fair index to start looking for cover.
-// It looks at cover assignments before the given date and returns the index to start the search from.
+// getNextCoverIndex finds the next index for the cover rotation (R2).
+// R2 is completely independent from the original schedule rotation (R1).
+// It looks at ALL cover assignments across the entire schedule and returns the index
+// to continue from the last person who provided cover.
 // Note: findCover will start checking from (startIndex + 1), so we return (lastCoverIndex)
 // to make it check (lastCoverIndex + 1) which is the next person after the last cover.
-func (e *Engine) getNextCoverIndex(ctx context.Context, members []database.TeamMember, fallbackIndex int, beforeDate time.Time) int {
-	// Get assignments before this date to find the last cover
-	endDate := beforeDate.Format("2006-01-02")
-	startDate := beforeDate.AddDate(-1, 0, 0).Format("2006-01-02") // Look back 1 year
+func (e *Engine) getNextCoverIndex(ctx context.Context, members []database.TeamMember, referenceDate time.Time) int {
+	// Look through ALL assignments to find the most recent cover assignment
+	// Use reference date to query the right time range (important for tests with old dates)
+	endDate := referenceDate.AddDate(1, 0, 0).Format("2006-01-02")    // Look forward 1 year from reference
+	startDate := referenceDate.AddDate(-1, 0, 0).Format("2006-01-02") // Look back 1 year from reference
 
 	assignments, err := e.db.GetAssignmentsByDateRange(ctx, startDate, endDate)
 	if err != nil || len(assignments) == 0 {
-		return fallbackIndex
+		// No previous covers found, start R2 from the beginning (index -1)
+		// so findCover will check from index 0
+		return -1
 	}
 
-	// Find the most recent cover assignment before this date
+	// Find the absolute most recent cover assignment by date
 	var lastCoverMemberID string
 	var lastCoverDate string
 
 	for i := range assignments {
-		if assignments[i].IsCover && assignments[i].Date < endDate {
-			// Find the most recent cover by date
+		if assignments[i].IsCover {
+			// Find the most recent cover by date (including future assigned dates)
 			if lastCoverDate == "" || assignments[i].Date > lastCoverDate {
 				lastCoverDate = assignments[i].Date
 				lastCoverMemberID = assignments[i].MemberID
@@ -202,8 +204,8 @@ func (e *Engine) getNextCoverIndex(ctx context.Context, members []database.TeamM
 		}
 	}
 
-	// If we found a recent cover assignment, start from that person's index
-	// findCover will add 1 to this, so it will check the next person
+	// If we found a cover assignment, continue R2 from that person's index
+	// findCover will add 1 to this, so it will check the next person in R2
 	if lastCoverMemberID != "" {
 		lastCoverIndex := e.findMemberIndex(members, lastCoverMemberID)
 		if lastCoverIndex != -1 {
@@ -211,7 +213,8 @@ func (e *Engine) getNextCoverIndex(ctx context.Context, members []database.TeamM
 		}
 	}
 
-	return fallbackIndex
+	// Fallback: start R2 from index -1 so findCover checks from index 0
+	return -1
 }
 
 // processLeaveDates processes each day of leave and creates cover assignments.

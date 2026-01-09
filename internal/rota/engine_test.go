@@ -730,6 +730,12 @@ func TestEngine_FairCoverRotation(t *testing.T) {
 	for _, a := range assignments2 {
 		if a.IsCover {
 			cover2 = a.MemberID
+		}
+	}
+
+	// Verify covers were found
+	require.NotEmpty(t, cover1, "First cover assignment should exist")
+	require.NotEmpty(t, cover2, "Second cover assignment should exist")
 
 	// The covers should be different members (fair rotation)
 	require.NotEqual(t, cover1, cover2, "Cover assignments should rotate fairly, not always use the same person")

@@ -103,17 +103,12 @@
                                                     <small class="has-text-grey">{{.DateISO}}</small>
                                                 </div>
                                                 <div class="column is-narrow has-text-right">
-                                                    {{if .Assigned}}
-                                                        <span class="tag is-link">
-                                                            <i class="fas fa-hat-wizard mr-1"></i> {{.Assigned.Name}} on duty
-                                                        </span>
-                                                    {{end}}
                                                     <span class="tag is-success is-light">
-                                                        <i class="fas fa-user-check mr-1"></i> {{len .Present}} present
+                                                        <i class="fas fa-user-check mr-1"></i> {{len .Present}}
                                                     </span>
                                                     {{if .Away}}
                                                         <span class="tag is-warning is-light ml-1">
-                                                            <i class="fas fa-plane-departure mr-1"></i> {{len .Away}} away
+                                                            <i class="fas fa-plane-departure mr-1"></i> {{len .Away}}
                                                         </span>
                                                     {{end}}
                                                 </div>

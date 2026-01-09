@@ -84,7 +84,9 @@ func NewServer(db *database.DB, development bool) (*Server, error) {
 	}
 
 	s.registerOperations(development)
-	s.registerWebRoutes(development)
+	if err := s.registerWebRoutes(development); err != nil {
+		return nil, err
+	}
 	return s, nil
 }
 
@@ -242,20 +244,24 @@ func (s *Server) registerOperations(development bool) {
 	}, s.handleRefreshHolidays)
 }
 
-func (s *Server) registerWebRoutes(development bool) {
+func (s *Server) registerWebRoutes(development bool) error {
 	// Create web handler with auth components and holiday checker
 	var holidayChecker func(time.Time) bool
 	if s.holidayService != nil {
 		holidayChecker = s.holidayService.ShouldSkipDate
 	}
 
-	webHandler := web.NewHandler(s.db, s.authManager, s.authMiddleware, development, holidayChecker)
+	webHandler, err := web.NewHandler(s.db, s.authManager, s.authMiddleware, development, holidayChecker)
+	if err != nil {
+		return err
+	}
 
 	// Development mode: The web handler's registerDevelopmentRoutes will handle the fake login view
 	// No need to register it separately here
 
 	// Mount web routes
 	s.router.Mount("/", webHandler.Router())
+	return nil
 }
 
 type AddTeamInput struct {

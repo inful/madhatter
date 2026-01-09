@@ -273,7 +273,7 @@ func generateStateToken() (string, error) {
 	return base64.URLEncoding.EncodeToString(bytes), nil
 }
 
-// capitalizeProviderName returns a properly capitalized display name for a provider.
+// capitalizeProviderName returns a properly capitalised display name for a provider.
 func capitalizeProviderName(provider string) string {
 	switch strings.ToLower(provider) {
 	case "forgejo":
@@ -281,7 +281,7 @@ func capitalizeProviderName(provider string) string {
 	case "gitlab":
 		return "GitLab"
 	default:
-		// Default: capitalize first letter
+		// Default: capitalise first letter
 		if len(provider) == 0 {
 			return provider
 		}

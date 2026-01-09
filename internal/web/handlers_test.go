@@ -15,7 +15,7 @@ import (
 func TestTemplateParsing(t *testing.T) {
 	// This should not panic
 	assert.NotPanics(t, func() {
-		parseTemplates()
+		_, _ = parseTemplates()
 	})
 }
 
@@ -30,8 +30,9 @@ func TestLoginTemplateExecution(t *testing.T) {
 	// Create a mock middleware
 	mockMiddleware := &auth.Middleware{}
 
-	// Create handler - this will parse templates
-	handler := NewHandler(mockDB, mockAuthManager, mockMiddleware, false, nil)
+	// Create handler - templates are now embedded
+	handler, err := NewHandler(mockDB, mockAuthManager, mockMiddleware, false, nil)
+	require.NoError(t, err)
 
 	// Test data that would be passed to the template
 	data := map[string]any{
@@ -42,7 +43,7 @@ func TestLoginTemplateExecution(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Execute template directly to test for errors
-	err := handler.tmpl.ExecuteTemplate(w, "login.html", data)
+	err = handler.tmpl.ExecuteTemplate(w, "login.html", data)
 
 	// This should not return an error
 	require.NoError(t, err, "Template execution should not fail")
@@ -62,10 +63,10 @@ func TestHandlerCreation(t *testing.T) {
 	mockAuthManager := &auth.AuthManager{}
 	mockMiddleware := &auth.Middleware{}
 
-	// This should not panic
-	assert.NotPanics(t, func() {
-		NewHandler(mockDB, mockAuthManager, mockMiddleware, false, nil)
-	})
+	// Templates are embedded, so this should always succeed
+	handler, err := NewHandler(mockDB, mockAuthManager, mockMiddleware, false, nil)
+	require.NoError(t, err)
+	require.NotNil(t, handler)
 }
 
 // TestRegisterRoutes verifies routes can be registered without template errors.
@@ -74,8 +75,9 @@ func TestRegisterRoutes(t *testing.T) {
 	mockAuthManager := &auth.AuthManager{}
 	mockMiddleware := &auth.Middleware{}
 
-	// Create handler
-	handler := NewHandler(mockDB, mockAuthManager, mockMiddleware, false, nil)
+	// Create handler - templates are embedded
+	handler, err := NewHandler(mockDB, mockAuthManager, mockMiddleware, false, nil)
+	require.NoError(t, err)
 
 	// Get router
 	router := handler.Router()
@@ -90,8 +92,9 @@ func TestAllTemplatesParse(t *testing.T) {
 	mockAuthManager := &auth.AuthManager{}
 	mockMiddleware := &auth.Middleware{}
 
-	// Create handler - this will parse templates
-	handler := NewHandler(mockDB, mockAuthManager, mockMiddleware, false, nil)
+	// Create handler - templates are embedded
+	handler, err := NewHandler(mockDB, mockAuthManager, mockMiddleware, false, nil)
+	require.NoError(t, err)
 
 	// All templates should be loaded without errors
 	require.NotNil(t, handler.tmpl, "Template should be loaded")
@@ -124,8 +127,9 @@ func TestAllTemplatesWithData(t *testing.T) {
 	mockAuthManager := &auth.AuthManager{}
 	mockMiddleware := &auth.Middleware{}
 
-	// Create handler
-	handler := NewHandler(mockDB, mockAuthManager, mockMiddleware, false, nil)
+	// Create handler - templates are embedded
+	handler, err := NewHandler(mockDB, mockAuthManager, mockMiddleware, false, nil)
+	require.NoError(t, err)
 
 	// Create test data that templates expect.
 	dashboardData := map[string]any{

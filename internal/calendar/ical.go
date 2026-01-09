@@ -20,7 +20,7 @@ func titleCase(s string) string {
 		return s
 	}
 
-	// Split by spaces and capitalize each word
+	// Split by spaces and capitalise each word
 	words := strings.Fields(s)
 	for i, word := range words {
 		if len(word) > 0 {

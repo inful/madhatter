@@ -31,6 +31,7 @@ func setupTestServer(t *testing.T) (*Server, func()) {
 	}
 
 	// Create server (development = false for tests)
+	// Templates are now embedded, so this should always succeed
 	server, err := NewServer(db, false)
 	require.NoError(t, err, "Failed to create server")
 

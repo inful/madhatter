@@ -333,21 +333,10 @@ func (h *Handler) getAssignedMember(ctx context.Context, dateStr string, memberM
 		return nil
 	}
 
-	// Look for original assignment first
+	// Return whoever is assigned (cover or original - doesn't matter for support)
 	for i := range assignments {
-		if !assignments[i].IsCover {
-			if member, ok := memberMap[assignments[i].MemberID]; ok {
-				return &member
-			}
-		}
-	}
-
-	// Fall back to cover assignment
-	for i := range assignments {
-		if assignments[i].IsCover {
-			if member, ok := memberMap[assignments[i].MemberID]; ok {
-				return &member
-			}
+		if member, ok := memberMap[assignments[i].MemberID]; ok {
+			return &member
 		}
 	}
 

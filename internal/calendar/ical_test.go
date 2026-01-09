@@ -91,7 +91,7 @@ func TestICalGenerator_AddHoliday(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Contains(t, icalStr, "Office Closed - New Year")
-	assert.Contains(t, icalStr, "CANCELED")
+	assert.Contains(t, icalStr, "CANCELLED")
 }
 
 func TestICalGenerator_Serialize(t *testing.T) {
@@ -354,7 +354,7 @@ func TestICalGenerator_ComplexScenario(t *testing.T) {
 	assert.Contains(t, icalStr, "COVER")
 	assert.Contains(t, icalStr, "Sick")
 	assert.Contains(t, icalStr, "Company Holiday")
-	assert.Contains(t, icalStr, "CANCELED")
+	assert.Contains(t, icalStr, "CANCELLED")
 
 	// Verify we have 4 events
 	events := generator.calendar.Events()

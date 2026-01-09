@@ -103,7 +103,7 @@ func Execute() {
 }
 
 func serveCommand(ctx context.Context, db *database.DB) {
-	server, err := api.NewServer(db, CLI.Serve.Development)
+	server, err := api.NewServer(db, CLI.Serve.Development) //nolint:contextcheck
 	if err != nil {
 		log.Fatalf("Failed to create server: %v\n", err)
 	}

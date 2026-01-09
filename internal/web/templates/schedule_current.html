@@ -134,6 +134,26 @@
             color: #7f1d1d;
         }
         
+        .badge-holiday {
+            background: #c4b5fd;
+            color: #5b21b6;
+        }
+        
+        .calendar-day.holiday {
+            border-color: #8b5cf6;
+            background: linear-gradient(135deg, #f5f3ff 0%, #faf5ff 100%);
+        }
+        
+        .holiday-indicator {
+            background: #c4b5fd;
+            color: #5b21b6;
+            padding: 0.15rem 0.4rem;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: bold;
+            margin-left: 0.3rem;
+        }
+        
         .empty-state {
             text-align: center;
             padding: 1rem;
@@ -231,12 +251,14 @@
                                 <div class="calendar-grid">
                                     {{range .Calendar}}
                                         {{if eq .WeekLabel "Current Week"}}
-                                            <div class="calendar-day {{if .IsToday}}today{{end}} {{if .IsWeekend}}weekend{{end}}">
+                                            <div class="calendar-day {{if .IsToday}}today{{end}} {{if .IsWeekend}}weekend{{end}} {{if .IsHoliday}}holiday{{end}}">
                                                 <div class="date-header">
                                                     <div>
                                                         <div class="date-label">{{.Date}}</div>
                                                         {{if .IsWeekend}}
                                                             <div class="weekend-indicator">Weekend</div>
+                                                        {{else if .IsHoliday}}
+                                                            <div class="holiday-indicator">HOLIDAY</div>
                                                         {{end}}
                                                     </div>
                                                     {{if .IsToday}}
@@ -245,7 +267,11 @@
                                                 </div>
                                                  
                                                 <div class="assignments">
-                                                    {{if .Assignments}}
+                                                    {{if .IsHoliday}}
+                                                        <div class="empty-state">
+                                                            <i class="fas fa-holly-berry"></i> Holiday
+                                                        </div>
+                                                    {{else if .Assignments}}
                                                         {{range .Assignments}}
                                                             <div class="assignment-card {{if .IsCover}}cover{{end}}">
                                                                 <div class="assignment-name">

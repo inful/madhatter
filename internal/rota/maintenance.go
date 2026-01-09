@@ -181,6 +181,7 @@ func (sm *ScheduleMaintenance) generateAssignmentsForMissingDates(
 			continue
 		}
 
+		// The engine's processDate will handle holiday checking internally
 		if err := sm.engine.processDate(ctx, currentDate, members, &memberIndex); err != nil {
 			return createdAny, fmt.Errorf("failed to create assignment for %s: %w",
 				currentDate.Format("2006-01-02"), err)
@@ -207,6 +208,8 @@ func (sm *ScheduleMaintenance) shouldSkipDate(date time.Time, datesWithAssignmen
 		return true
 	}
 
+	// Skip holidays - this will be checked by the engine's holiday checker
+	// The engine will handle holiday checking when processing dates
 	return false
 }
 

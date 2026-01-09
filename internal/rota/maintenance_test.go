@@ -228,9 +228,15 @@ func TestScheduleMaintenance_HandleLeaveChange(t *testing.T) {
 	require.NotEmpty(t, members)
 
 	t.Run("LeaveCreatesCover", func(t *testing.T) {
-		// Create leave for tomorrow
-		tomorrow := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
-		leaveID, err := db.CreateLeaveRecord(ctx, members[0].ID, "vacation", tomorrow, tomorrow)
+		// Find a weekday in the schedule (skip weekends)
+		targetDate := time.Now()
+		for targetDate.Weekday() == time.Saturday || targetDate.Weekday() == time.Sunday {
+			targetDate = targetDate.AddDate(0, 0, 1)
+		}
+		targetDateStr := targetDate.Format("2006-01-02")
+
+		// Create leave for the target date
+		leaveID, err := db.CreateLeaveRecord(ctx, members[0].ID, "vacation", targetDateStr, targetDateStr)
 		require.NoError(t, err)
 
 		// Handle leave change
@@ -238,7 +244,7 @@ func TestScheduleMaintenance_HandleLeaveChange(t *testing.T) {
 		require.NoError(t, err)
 
 		// Verify cover assignment exists
-		assignments, err := db.GetAssignmentsByDate(ctx, tomorrow)
+		assignments, err := db.GetAssignmentsByDate(ctx, targetDateStr)
 		require.NoError(t, err)
 
 		// Should have at least one assignment

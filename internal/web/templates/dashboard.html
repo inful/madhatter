@@ -13,11 +13,13 @@
         .card-header-title { color: white !important; }
         .cover-badge { background: #ffe08a; color: #664d03; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.85rem; font-weight: bold; }
         .leave-badge { background: #fecaca; color: #7f1d1d; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.85rem; font-weight: bold; }
+        .holiday-badge { background: #c4b5fd; color: #5b21b6; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.85rem; font-weight: bold; }
         .action-btn { transition: transform 0.2s; }
         .action-btn:hover { transform: translateY(-2px); }
         .empty-state { padding: 2rem; text-align: center; background: #f8f9fa; border-radius: 8px; }
         .assignment-item { padding: 0.75rem; border-left: 4px solid #667eea; background: #f8f9fa; margin-bottom: 0.5rem; border-radius: 4px; }
         .assignment-item.unassigned { border-left-color: #ff3860; background: #fff5f7; opacity: 0.7; }
+        .assignment-item.holiday { border-left-color: #8b5cf6; background: #f5f3ff; }
         .today-highlight { border-left-color: #48c774; background: #e8f8ee; }
     </style>
 </head>
@@ -163,17 +165,22 @@
                                 {{if .CurrentWeek}}
                                     <div class="content">
                                         {{range .CurrentWeek}}
-                                            <div class="assignment-item {{if eq .MemberName "Unassigned"}}unassigned{{end}}">
+                                            <div class="assignment-item {{if eq .Assignment.MemberName "Unassigned"}}unassigned{{end}} {{if .IsHoliday}}holiday{{end}}">
                                                 <div class="columns is-mobile is-vcentered">
                                                     <div class="column">
-                                                        <strong>{{.Date}}</strong> - {{.MemberName}}
+                                                        <strong>{{.Assignment.Date}}</strong> - {{.Assignment.MemberName}}
+                                                        {{if .IsHoliday}}
+                                                            <span class="leave-badge ml-2">
+                                                                <i class="fas fa-holly-berry"></i> HOLIDAY
+                                                            </span>
+                                                        {{end}}
                                                     </div>
                                                     <div class="column is-narrow">
-                                                        {{if .IsCover}}
+                                                        {{if .Assignment.IsCover}}
                                                             <span class="cover-badge">
                                                                 <i class="fas fa-shield-alt"></i> COVER
                                                             </span>
-                                                        {{else if eq .MemberName "Unassigned"}}
+                                                        {{else if eq .Assignment.MemberName "Unassigned"}}
                                                             <span class="leave-badge">
                                                                 <i class="fas fa-question"></i> UNASSIGNED
                                                             </span>
@@ -211,17 +218,22 @@
                                 {{if .NextWeek}}
                                     <div class="content">
                                         {{range .NextWeek}}
-                                            <div class="assignment-item {{if eq .MemberName "Unassigned"}}unassigned{{end}}">
+                                            <div class="assignment-item {{if eq .Assignment.MemberName "Unassigned"}}unassigned{{end}} {{if .IsHoliday}}holiday{{end}}">
                                                 <div class="columns is-mobile is-vcentered">
                                                     <div class="column">
-                                                        <strong>{{.Date}}</strong> - {{.MemberName}}
+                                                        <strong>{{.Assignment.Date}}</strong> - {{.Assignment.MemberName}}
+                                                        {{if .IsHoliday}}
+                                                            <span class="leave-badge ml-2">
+                                                                <i class="fas fa-holly-berry"></i> HOLIDAY
+                                                            </span>
+                                                        {{end}}
                                                     </div>
                                                     <div class="column is-narrow">
-                                                        {{if .IsCover}}
+                                                        {{if .Assignment.IsCover}}
                                                             <span class="cover-badge">
                                                                 <i class="fas fa-shield-alt"></i> COVER
                                                             </span>
-                                                        {{else if eq .MemberName "Unassigned"}}
+                                                        {{else if eq .Assignment.MemberName "Unassigned"}}
                                                             <span class="leave-badge">
                                                                 <i class="fas fa-question"></i> UNASSIGNED
                                                             </span>
@@ -239,6 +251,39 @@
                                         </a>
                                     </div>
                                 {{end}}
+                            {{end}}
+                        </div>
+                    </div>
+
+                    <!-- Upcoming Holidays -->
+                    <div class="card">
+                        <header class="card-header">
+                            <p class="card-header-title">
+                                <i class="fas fa-holly-berry mr-2"></i> Upcoming Holidays
+                            </p>
+                        </header>
+                        <div class="card-content">
+                            {{if .UpcomingHolidays}}
+                                <div class="content">
+                                    {{range .UpcomingHolidays}}
+                                        <div class="assignment-item holiday">
+                                            <div class="columns is-mobile is-vcentered">
+                                                <div class="column">
+                                                    <strong>{{.Date}}</strong> - {{.Name}}
+                                                </div>
+                                                <div class="column is-narrow">
+                                                    <span class="holiday-badge">
+                                                        <i class="fas fa-holly-berry"></i> HOLIDAY
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    {{end}}
+                                </div>
+                            {{else}}
+                                <div class="empty-state">
+                                    <p>No upcoming holidays</p>
+                                </div>
                             {{end}}
                         </div>
                     </div>

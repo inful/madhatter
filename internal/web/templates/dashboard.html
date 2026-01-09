@@ -21,6 +21,9 @@
         .assignment-item.unassigned { border-left-color: #ff3860; background: #fff5f7; opacity: 0.7; }
         .assignment-item.holiday { border-left-color: #8b5cf6; background: #f5f3ff; }
         .today-highlight { border-left-color: #48c774; background: #e8f8ee; }
+        .compact-header { display: flex; justify-content: space-between; align-items: center; padding: 1rem; background: rgba(255,255,255,0.9); border-radius: 8px; margin-bottom: 1rem; }
+        .compact-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+        .compact-actions .button { font-size: 0.875rem; padding: 0.5rem 0.75rem; }
     </style>
 </head>
 <body>
@@ -28,76 +31,51 @@
         <div class="hero">
             <div class="hero-body">
                 <div class="container">
-                    <h1 class="title is-2 has-text-centered has-text-primary">
+                    <h1 class="title is-3 has-text-centered has-text-primary mb-2">
                         <i class="fas fa-calendar-check"></i> MadHatter Dashboard
                     </h1>
-                    <p class="subtitle has-text-centered">Manage your team schedule with ease</p>
 
-                    <!-- User Info / Login Prompt -->
+                    <!-- Compact Header with User & Actions -->
                     {{if .User}}
-                    <div class="card">
-                        <div class="card-content">
-                            <div class="columns is-vcentered is-mobile">
-                                <div class="column">
-                                    <p class="has-text-weight-semibold">
-                                        <i class="fas fa-user-circle mr-2"></i>{{.User.Name}}
-                                    </p>
-                                    <p class="is-size-7 has-text-grey">{{.User.Email}}</p>
-                                    {{if .IsAdmin}}
-                                        <span class="tag is-danger is-light mt-1">
-                                            <i class="fas fa-shield-alt mr-1"></i> Admin
-                                        </span>
-                                    {{end}}
-                                </div>
-                                <div class="column is-narrow">
-                                    <a href="/auth/logout" class="button is-small is-danger is-light">
-                                        <i class="fas fa-sign-out-alt mr-1"></i> Logout
-                                    </a>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    {{else}}
-                    <div class="card">
-                        <div class="card-content">
-                            <div class="content has-text-centered">
-                                <p class="mb-3">Login to access admin features</p>
-                                <a href="/login" class="button is-primary">
-                                    <i class="fas fa-sign-in-alt mr-2"></i> Login
-                                </a>
-                            </div>
-                        </div>
-                    </div>
-                    {{end}}
-
-                    <!-- Quick Actions -->
-                    <div class="card">
-                        <header class="card-header">
-                            <p class="card-header-title">
-                                <i class="fas fa-bolt mr-2"></i> Quick Actions
-                            </p>
-                        </header>
-                        <div class="card-content">
-                            <div class="buttons is-centered">
-                                {{if .User}}
-                                    {{if .IsAdmin}}
-                                        <a href="/team" class="button is-primary action-btn">
-                                            <i class="fas fa-users mr-2"></i> Team Members
-                                        </a>
-                                        <a href="/schedule/generate" class="button is-success action-btn">
-                                            <i class="fas fa-calendar-plus mr-2"></i> Generate Schedule
-                                        </a>
-                                    {{end}}
-                                    <a href="/leave/report" class="button is-info action-btn">
-                                        <i class="fas fa-user-clock mr-2"></i> Report Leave
-                                    </a>
-                                    <a href="/calendar" class="button is-warning action-btn">
-                                        <i class="fas fa-calendar-star mr-2"></i> Calendar Subs
-                                    </a>
+                    <div class="compact-header">
+                        <div style="display: flex; align-items: center; gap: 1rem;">
+                            <div>
+                                <span class="has-text-weight-semibold">
+                                    <i class="fas fa-user-circle"></i> {{.User.Name}}
+                                </span>
+                                {{if .IsAdmin}}
+                                    <span class="tag is-danger is-light is-small ml-2">Admin</span>
                                 {{end}}
                             </div>
                         </div>
+                        <div class="compact-actions">
+                            {{if .IsAdmin}}
+                                <a href="/team" class="button is-primary is-small">
+                                    <i class="fas fa-users mr-1"></i> Team
+                                </a>
+                                <a href="/schedule/generate" class="button is-success is-small">
+                                    <i class="fas fa-calendar-plus mr-1"></i> Schedule
+                                </a>
+                            {{end}}
+                            <a href="/leave/report" class="button is-info is-small">
+                                <i class="fas fa-user-clock mr-1"></i> Leave
+                            </a>
+                            <a href="/calendar" class="button is-warning is-small">
+                                <i class="fas fa-calendar-star mr-1"></i> Calendar
+                            </a>
+                            <a href="/auth/logout" class="button is-light is-small">
+                                <i class="fas fa-sign-out-alt"></i>
+                            </a>
+                        </div>
                     </div>
+                    {{else}}
+                    <div class="compact-header">
+                        <p class="is-size-6">Login to access admin features</p>
+                        <a href="/login" class="button is-primary is-small">
+                            <i class="fas fa-sign-in-alt mr-1"></i> Login
+                        </a>
+                    </div>
+                    {{end}}
 
                     <!-- Today's Assignment -->
                     <div class="card">

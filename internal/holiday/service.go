@@ -1,22 +1,21 @@
 package holiday
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log"
 	"sync"
 	"time"
 
 	"github.com/inful/madhatter/internal/database"
-	"github.com/inful/madhatter/internal/rota"
 )
 
 // Service is the main holiday service that integrates holiday management with the rota system.
 type Service struct {
-	store      *Store
-	scheduler  *Scheduler
-	db         *database.DB
-	maintenance *rota.ScheduleMaintenance
-	mu         sync.RWMutex
+	store     *Store
+	scheduler *Scheduler
+	mu        sync.RWMutex
 }
 
 // NewService creates a new holiday service.
@@ -24,13 +23,10 @@ func NewService(db *database.DB) *Service {
 	store := NewStore()
 	urls := LoadHolidayURLsFromEnv()
 	scheduler := NewScheduler(store, urls)
-	maintenance := rota.NewScheduleMaintenance(db)
 
 	return &Service{
-		store:       store,
-		scheduler:   scheduler,
-		db:          db,
-		maintenance: maintenance,
+		store:     store,
+		scheduler: scheduler,
 	}
 }
 
@@ -94,11 +90,11 @@ func (s *Service) GetAllHolidays() []Holiday {
 }
 
 // ForceRefresh manually triggers a holiday refresh.
-func (s *Service) ForceRefresh() error {
+func (s *Service) ForceRefresh(ctx context.Context) error {
 	if s.scheduler == nil {
-		return fmt.Errorf("scheduler not initialized")
+		return errors.New("scheduler not initialized")
 	}
-	return s.scheduler.ForceFetch()
+	return s.scheduler.ForceFetch(ctx)
 }
 
 // GetStatus returns the current status of the holiday service.
@@ -188,8 +184,8 @@ type ServiceStatus struct {
 func GetEnvironmentConfig() map[string]string {
 	urls := LoadHolidayURLsFromEnv()
 	return map[string]string{
-		"HOLIDAY_URLS":    fmt.Sprintf("%d URLs configured", len(urls)),
-		"URLS":            fmt.Sprintf("%v", urls),
+		"HOLIDAY_URLS": fmt.Sprintf("%d URLs configured", len(urls)),
+		"URLS":         fmt.Sprintf("%v", urls),
 	}
 }
 
@@ -197,7 +193,7 @@ func GetEnvironmentConfig() map[string]string {
 // This is called during application startup.
 func InitializeHolidayService(db *database.DB) (*Service, error) {
 	service := NewService(db)
-	
+
 	// Start the service
 	if err := service.Start(); err != nil {
 		return nil, fmt.Errorf("failed to initialize holiday service: %w", err)

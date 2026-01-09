@@ -12,8 +12,8 @@ import (
 type HolidayChecker func(date time.Time) bool
 
 type Engine struct {
-	db              *database.DB
-	holidayChecker  HolidayChecker
+	db             *database.DB
+	holidayChecker HolidayChecker
 }
 
 func NewEngine(db *database.DB) *Engine {

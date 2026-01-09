@@ -1,6 +1,8 @@
 package holiday
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -9,18 +11,22 @@ import (
 	"time"
 )
 
+const (
+	dailyInterval = 24 * time.Hour
+)
+
 // Scheduler manages the background job for fetching holidays from iCal URLs.
 type Scheduler struct {
-	store       *Store
-	fetcher     *ICalFetcher
-	urls        []string
-	running     bool
-	stopChan    chan struct{}
-	wg          sync.WaitGroup
-	interval    time.Duration
-	lastFetch   time.Time
-	lastError   error
-	mu          sync.RWMutex
+	store     *Store
+	fetcher   *ICalFetcher
+	urls      []string
+	running   bool
+	stopChan  chan struct{}
+	wg        sync.WaitGroup
+	interval  time.Duration
+	lastFetch time.Time
+	lastError error
+	mu        sync.RWMutex
 }
 
 // NewScheduler creates a new holiday scheduler.
@@ -30,7 +36,7 @@ func NewScheduler(store *Store, urls []string) *Scheduler {
 		fetcher:  NewICalFetcher(),
 		urls:     urls,
 		stopChan: make(chan struct{}),
-		interval: 24 * time.Hour, // Default: run daily
+		interval: dailyInterval, // Default: run daily
 	}
 }
 
@@ -39,7 +45,7 @@ func (s *Scheduler) Start() error {
 	s.mu.Lock()
 	if s.running {
 		s.mu.Unlock()
-		return fmt.Errorf("scheduler is already running")
+		return errors.New("scheduler is already running")
 	}
 	s.running = true
 	s.mu.Unlock()
@@ -47,18 +53,14 @@ func (s *Scheduler) Start() error {
 	log.Printf("Starting holiday scheduler with %d URL(s)\n", len(s.urls))
 
 	// Run immediately on start
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
-		s.runFetch()
-	}()
+	s.wg.Go(func() {
+		s.runFetch(context.Background())
+	})
 
 	// Start periodic fetcher
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
+	s.wg.Go(func() {
 		s.periodicFetch()
-	}()
+	})
 
 	return nil
 }
@@ -68,7 +70,7 @@ func (s *Scheduler) Stop() error {
 	s.mu.Lock()
 	if !s.running {
 		s.mu.Unlock()
-		return fmt.Errorf("scheduler is not running")
+		return errors.New("scheduler is not running")
 	}
 	s.running = false
 	s.mu.Unlock()
@@ -90,17 +92,15 @@ func (s *Scheduler) periodicFetch() {
 		case <-s.stopChan:
 			return
 		case <-ticker.C:
-			s.wg.Add(1)
-			go func() {
-				defer s.wg.Done()
-				s.runFetch()
-			}()
+			s.wg.Go(func() {
+				s.runFetch(context.Background())
+			})
 		}
 	}
 }
 
 // runFetch performs a single fetch operation.
-func (s *Scheduler) runFetch() {
+func (s *Scheduler) runFetch(ctx context.Context) {
 	s.mu.Lock()
 	if !s.running {
 		s.mu.Unlock()
@@ -110,8 +110,8 @@ func (s *Scheduler) runFetch() {
 
 	log.Println("Running holiday fetch...")
 
-	holidays, err := s.fetcher.FetchMultiple(s.urls)
-	
+	holidays, err := s.fetcher.FetchMultiple(ctx, s.urls)
+
 	s.mu.Lock()
 	s.lastFetch = time.Now()
 	s.lastError = err
@@ -135,19 +135,17 @@ func (s *Scheduler) runFetch() {
 }
 
 // ForceFetch manually triggers a fetch operation.
-func (s *Scheduler) ForceFetch() error {
+func (s *Scheduler) ForceFetch(ctx context.Context) error {
 	s.mu.RLock()
 	if !s.running {
 		s.mu.RUnlock()
-		return fmt.Errorf("scheduler is not running")
+		return errors.New("scheduler is not running")
 	}
 	s.mu.RUnlock()
 
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
-		s.runFetch()
-	}()
+	s.wg.Go(func() {
+		s.runFetch(ctx)
+	})
 
 	return nil
 }
@@ -158,10 +156,10 @@ func (s *Scheduler) GetStatus() SchedulerStatus {
 	defer s.mu.RUnlock()
 
 	return SchedulerStatus{
-		Running:   s.running,
-		LastFetch: s.lastFetch,
-		LastError: s.lastError,
-		URLCount:  len(s.urls),
+		Running:      s.running,
+		LastFetch:    s.lastFetch,
+		LastError:    s.lastError,
+		URLCount:     len(s.urls),
 		HolidayCount: s.store.GetCount(),
 	}
 }
@@ -214,12 +212,12 @@ func LoadHolidayURLsFromEnv() []string {
 func ValidateHolidayURL(url string) error {
 	url = strings.TrimSpace(url)
 	if url == "" {
-		return fmt.Errorf("URL cannot be empty")
+		return errors.New("URL cannot be empty")
 	}
 
 	// Check if it looks like a URL (basic check)
 	if !strings.HasPrefix(url, "http://") && !strings.HasPrefix(url, "https://") {
-		return fmt.Errorf("URL must start with http:// or https://")
+		return errors.New("URL must start with http:// or https://")
 	}
 
 	return nil
@@ -228,7 +226,8 @@ func ValidateHolidayURL(url string) error {
 // FetchAndStoreImmediate fetches holidays immediately and stores them.
 // This is useful for initial setup or manual refresh.
 func (s *Scheduler) FetchAndStoreImmediate() ([]Holiday, error) {
-	holidays, err := s.fetcher.FetchMultiple(s.urls)
+	ctx := context.Background()
+	holidays, err := s.fetcher.FetchMultiple(ctx, s.urls)
 	if err != nil {
 		return nil, err
 	}

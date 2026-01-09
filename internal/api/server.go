@@ -22,6 +22,7 @@ import (
 )
 
 const (
+	lookaheadDays          = 365
 	calendarDaysLookahead  = 30
 	serverReadTimeout      = 15 * time.Second
 	serverWriteTimeout     = 15 * time.Second
@@ -247,7 +248,7 @@ func (s *Server) registerWebRoutes(development bool) {
 	if s.holidayService != nil {
 		holidayChecker = s.holidayService.ShouldSkipDate
 	}
-	
+
 	webHandler := web.NewHandler(s.db, s.authManager, s.authMiddleware, development, holidayChecker)
 
 	// Development mode: The web handler's registerDevelopmentRoutes will handle the fake login view
@@ -563,7 +564,7 @@ func (s *Server) handleGetHolidays(ctx context.Context, input *struct{}) (*GetHo
 		return nil, huma.Error503ServiceUnavailable("Holiday service not available")
 	}
 
-	holidays := s.holidayService.GetUpcomingHolidays(365)
+	holidays := s.holidayService.GetUpcomingHolidays(lookaheadDays)
 
 	resp := &GetHolidaysOutput{}
 	resp.Body.Holidays = holidays
@@ -613,7 +614,7 @@ func (s *Server) handleRefreshHolidays(ctx context.Context, input *struct{}) (*R
 		return nil, huma.Error503ServiceUnavailable("Holiday service not available")
 	}
 
-	err := s.holidayService.ForceRefresh()
+	err := s.holidayService.ForceRefresh(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to refresh holidays", err)
 	}

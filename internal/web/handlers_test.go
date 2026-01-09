@@ -31,7 +31,7 @@ func TestLoginTemplateExecution(t *testing.T) {
 	mockMiddleware := &auth.Middleware{}
 
 	// Create handler - this will parse templates
-	handler := NewHandler(mockDB, mockAuthManager, mockMiddleware, false)
+	handler := NewHandler(mockDB, mockAuthManager, mockMiddleware, false, nil)
 
 	// Test data that would be passed to the template
 	data := map[string]any{
@@ -64,7 +64,7 @@ func TestHandlerCreation(t *testing.T) {
 
 	// This should not panic
 	assert.NotPanics(t, func() {
-		NewHandler(mockDB, mockAuthManager, mockMiddleware, false)
+		NewHandler(mockDB, mockAuthManager, mockMiddleware, false, nil)
 	})
 }
 
@@ -75,7 +75,7 @@ func TestRegisterRoutes(t *testing.T) {
 	mockMiddleware := &auth.Middleware{}
 
 	// Create handler
-	handler := NewHandler(mockDB, mockAuthManager, mockMiddleware, false)
+	handler := NewHandler(mockDB, mockAuthManager, mockMiddleware, false, nil)
 
 	// Get router
 	router := handler.Router()
@@ -91,7 +91,7 @@ func TestAllTemplatesParse(t *testing.T) {
 	mockMiddleware := &auth.Middleware{}
 
 	// Create handler - this will parse templates
-	handler := NewHandler(mockDB, mockAuthManager, mockMiddleware, false)
+	handler := NewHandler(mockDB, mockAuthManager, mockMiddleware, false, nil)
 
 	// All templates should be loaded without errors
 	require.NotNil(t, handler.tmpl, "Template should be loaded")
@@ -125,7 +125,7 @@ func TestAllTemplatesWithData(t *testing.T) {
 	mockMiddleware := &auth.Middleware{}
 
 	// Create handler
-	handler := NewHandler(mockDB, mockAuthManager, mockMiddleware, false)
+	handler := NewHandler(mockDB, mockAuthManager, mockMiddleware, false, nil)
 
 	// Create test data that templates expect.
 	dashboardData := map[string]any{

@@ -6,6 +6,10 @@ import (
 	"time"
 )
 
+const (
+	yearsAhead = 2
+)
+
 // Holiday represents a holiday event.
 type Holiday struct {
 	Date string `json:"date"` // YYYY-MM-DD format
@@ -74,7 +78,7 @@ func (s *Store) GetUpcomingHolidays(daysAhead int) []Holiday {
 	}
 
 	// Sort by date
-	for i := 0; i < len(result)-1; i++ {
+	for i := range len(result) - 1 {
 		for j := i + 1; j < len(result); j++ {
 			if result[i].Date > result[j].Date {
 				result[i], result[j] = result[j], result[i]
@@ -127,7 +131,7 @@ func ValidateHolidayDate(dateStr string) error {
 	}
 
 	// Check if date is not too far in the future (more than 2 years ahead)
-	twoYearsAhead := time.Now().AddDate(2, 0, 0)
+	twoYearsAhead := time.Now().AddDate(yearsAhead, 0, 0)
 	if date.After(twoYearsAhead) {
 		return fmt.Errorf("date %s is more than 2 years in the future", dateStr)
 	}

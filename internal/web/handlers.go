@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"embed"
 	"html/template"
 	"net/http"
 	"time"
@@ -12,6 +13,9 @@ import (
 	"github.com/inful/madhatter/internal/database"
 	"github.com/inful/madhatter/internal/rota"
 )
+
+//go:embed templates/*.html
+var templateFS embed.FS
 
 const (
 	weekDaysCount                = 5
@@ -102,23 +106,8 @@ func (h *Handler) safeRequireAdmin(next http.Handler) http.Handler {
 }
 
 func parseTemplates() (*template.Template, error) {
-	// Try different possible template locations
-	possiblePaths := []string{
-		"internal/web/templates/*.html",
-	}
-
-	var lastErr error
-
-	for _, path := range possiblePaths {
-		tmpl, err := template.ParseGlob(path)
-		if err == nil {
-			return tmpl, nil
-		}
-		lastErr = err
-	}
-
-	// If all paths failed, return the last error
-	return nil, lastErr
+	// Parse templates from embedded filesystem
+	return template.ParseFS(templateFS, "templates/*.html")
 }
 
 func (h *Handler) registerRoutes() {

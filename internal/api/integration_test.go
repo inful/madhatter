@@ -31,10 +31,9 @@ func setupTestServer(t *testing.T) (*Server, func()) {
 	}
 
 	// Create server (development = false for tests)
+	// Templates are now embedded, so this should always succeed
 	server, err := NewServer(db, false)
-	if err != nil {
-		t.Skip("Skipping integration test: templates not available in test environment")
-	}
+	require.NoError(t, err, "Failed to create server")
 
 	return server, cleanup
 }

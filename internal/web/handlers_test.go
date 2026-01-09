@@ -30,11 +30,9 @@ func TestLoginTemplateExecution(t *testing.T) {
 	// Create a mock middleware
 	mockMiddleware := &auth.Middleware{}
 
-	// Create handler - this will parse templates
+	// Create handler - templates are now embedded
 	handler, err := NewHandler(mockDB, mockAuthManager, mockMiddleware, false, nil)
-	if err != nil {
-		t.Skip("Templates not available in test environment")
-	}
+	require.NoError(t, err)
 
 	// Test data that would be passed to the template
 	data := map[string]any{
@@ -65,11 +63,10 @@ func TestHandlerCreation(t *testing.T) {
 	mockAuthManager := &auth.AuthManager{}
 	mockMiddleware := &auth.Middleware{}
 
-	// This should not panic
-	_, err := NewHandler(mockDB, mockAuthManager, mockMiddleware, false, nil)
-	if err != nil {
-		t.Skip("Templates not available in test environment")
-	}
+	// Templates are embedded, so this should always succeed
+	handler, err := NewHandler(mockDB, mockAuthManager, mockMiddleware, false, nil)
+	require.NoError(t, err)
+	require.NotNil(t, handler)
 }
 
 // TestRegisterRoutes verifies routes can be registered without template errors.
@@ -78,11 +75,9 @@ func TestRegisterRoutes(t *testing.T) {
 	mockAuthManager := &auth.AuthManager{}
 	mockMiddleware := &auth.Middleware{}
 
-	// Create handler
+	// Create handler - templates are embedded
 	handler, err := NewHandler(mockDB, mockAuthManager, mockMiddleware, false, nil)
-	if err != nil {
-		t.Skip("Templates not available in test environment")
-	}
+	require.NoError(t, err)
 
 	// Get router
 	router := handler.Router()
@@ -97,11 +92,9 @@ func TestAllTemplatesParse(t *testing.T) {
 	mockAuthManager := &auth.AuthManager{}
 	mockMiddleware := &auth.Middleware{}
 
-	// Create handler - this will parse templates
+	// Create handler - templates are embedded
 	handler, err := NewHandler(mockDB, mockAuthManager, mockMiddleware, false, nil)
-	if err != nil {
-		t.Skip("Templates not available in test environment")
-	}
+	require.NoError(t, err)
 
 	// All templates should be loaded without errors
 	require.NotNil(t, handler.tmpl, "Template should be loaded")
@@ -134,11 +127,9 @@ func TestAllTemplatesWithData(t *testing.T) {
 	mockAuthManager := &auth.AuthManager{}
 	mockMiddleware := &auth.Middleware{}
 
-	// Create handler
+	// Create handler - templates are embedded
 	handler, err := NewHandler(mockDB, mockAuthManager, mockMiddleware, false, nil)
-	if err != nil {
-		t.Skip("Templates not available in test environment")
-	}
+	require.NoError(t, err)
 
 	// Create test data that templates expect.
 	dashboardData := map[string]any{

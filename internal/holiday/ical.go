@@ -14,10 +14,11 @@ import (
 )
 
 const (
-	httpTimeout   = 30 * time.Second
-	maxSplitParts = 2
-	minDateLength = 8
-	maxRedirects  = 10 // Maximum number of redirects to prevent loops and attacks
+	httpTimeout     = 30 * time.Second
+	maxSplitParts   = 2
+	minDateLength   = 8
+	maxRedirects    = 10               // Maximum number of redirects to prevent loops and attacks
+	maxResponseSize = 10 * 1024 * 1024 // 10MB maximum response size to prevent DoS
 )
 
 // ICalFetcher handles fetching and parsing iCal feeds from remote URLs.
@@ -55,8 +56,9 @@ func (f *ICalFetcher) FetchAndParse(ctx context.Context, url string) ([]Holiday,
 		return nil, fmt.Errorf("failed to fetch iCal from %s: %w", url, err)
 	}
 
-	// Ensure body is closed
-	body, readErr := io.ReadAll(resp.Body)
+	// Ensure body is closed and limit reading to prevent DoS
+	limitedReader := io.LimitReader(resp.Body, maxResponseSize)
+	body, readErr := io.ReadAll(limitedReader)
 	closeErr := resp.Body.Close()
 
 	// Handle close error
@@ -67,6 +69,11 @@ func (f *ICalFetcher) FetchAndParse(ctx context.Context, url string) ([]Holiday,
 	// Handle read error
 	if readErr != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", readErr)
+	}
+
+	// Check if response was truncated due to size limit
+	if len(body) >= int(maxResponseSize) {
+		return nil, fmt.Errorf("response size exceeds maximum allowed %d bytes", maxResponseSize)
 	}
 
 	if resp.StatusCode != http.StatusOK {

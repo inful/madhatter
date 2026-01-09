@@ -1,3 +1,5 @@
+version: 2
+
 project_name: madhatter
 
 before:
@@ -6,7 +8,8 @@ before:
     - go mod tidy
 
 builds:
-  - main: main.go
+  - id: madhatter
+    main: ./main.go
     binary: madhatter
     env:
       - CGO_ENABLED=1
@@ -24,14 +27,16 @@ builds:
       - -X github.com/inful/madhatter/internal/version.Date={{.Date}}
 
 archives:
-  - format: tar.gz
+  - id: default
+    format: tar.gz
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     format_overrides:
       - goos: windows
         format: zip
 
-docker_v2:
-  - image_templates:
+dockers:
+  - id: madhatter
+    image_templates:
       - "ghcr.io/inful/{{ .ProjectName }}:{{ .Version }}"
       - "ghcr.io/inful/{{ .ProjectName }}:latest"
     dockerfile: Dockerfile

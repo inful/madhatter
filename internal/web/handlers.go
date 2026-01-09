@@ -40,6 +40,7 @@ type Handler struct {
 type presenceDay struct {
 	DateISO     string
 	DateDisplay string
+	IsToday     bool
 	Assigned    *database.TeamMember
 	Present     []database.TeamMember
 	Away        []presenceLeave
@@ -421,9 +422,13 @@ func (h *Handler) getUpcomingPresenceFrom(ctx context.Context, start time.Time) 
 			return away[i].Member.Name < away[j].Member.Name
 		})
 
+		now := time.Now()
+		isToday := current.Year() == now.Year() && current.YearDay() == now.YearDay()
+
 		presence = append(presence, presenceDay{
 			DateISO:     dateStr,
 			DateDisplay: current.Format("Mon, Jan 2"),
+			IsToday:     isToday,
 			Assigned:    assigned,
 			Present:     present,
 			Away:        away,

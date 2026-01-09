@@ -267,10 +267,10 @@
                                 <div class="content">
                                     {{range .UpcomingPresence}}
                                         {{$assigned := .Assigned}}
-                                        <div class="assignment-item">
+                                        <div class="assignment-item{{if .IsToday}} has-background-link-light{{end}}">
                                             <div class="columns is-mobile is-vcentered">
                                                 <div class="column">
-                                                    <strong>{{.DateDisplay}}</strong><br>
+                                                    <strong>{{.DateDisplay}}{{if .IsToday}} <span class="tag is-info is-light">Today</span>{{end}}</strong><br>
                                                     <small class="has-text-grey">{{.DateISO}}</small>
                                                 </div>
                                                 <div class="column is-narrow has-text-right">

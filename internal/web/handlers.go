@@ -19,6 +19,7 @@ const (
 	schedulePrealloc             = 5
 	defaultCalendarLookaheadDays = 90
 	weekDaysInWeek               = 7
+	defaultHolidayLookaheadDays  = 30
 )
 
 type Handler struct {
@@ -270,6 +271,29 @@ func (h *Handler) loadDashboardData(ctx context.Context, data map[string]any) {
 		data["CurrentWeek"] = h.buildWeekData(weeksData, true)
 		data["NextWeek"] = h.buildWeekData(weeksData, false)
 	}
+
+	// Get upcoming holidays
+	if h.holidayChecker != nil {
+		data["UpcomingHolidays"] = h.getUpcomingHolidays()
+	}
+}
+
+// getUpcomingHolidays returns upcoming holidays for the configured lookahead days.
+func (h *Handler) getUpcomingHolidays() []map[string]any {
+	var holidays []map[string]any
+	now := time.Now()
+	endDate := now.AddDate(0, 0, defaultHolidayLookaheadDays)
+
+	for d := now; d.Before(endDate); d = d.AddDate(0, 0, 1) {
+		if h.holidayChecker(d) {
+			holidays = append(holidays, map[string]any{
+				"Date": d.Format("2006-01-02"),
+				"Name": "Holiday",
+			})
+		}
+	}
+
+	return holidays
 }
 
 // buildWeekData builds week data for dashboard display.

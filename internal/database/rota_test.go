@@ -82,8 +82,9 @@ func TestGetAssignmentsByDate_MultipleAssignments(t *testing.T) {
 	member1, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com")
 	member2, _ := db.AddTeamMember(ctx, "Bob", "bob@example.com")
 
-	_, _ = db.CreateRotaAssignment(ctx, "2024-01-15", member1, false, nil)
-	_, _ = db.CreateRotaAssignment(ctx, "2024-01-15", member2, false, nil)
+	// Create original assignment and cover assignment (different is_cover values)
+	originalID, _ := db.CreateRotaAssignment(ctx, "2024-01-15", member1, false, nil)
+	_, _ = db.CreateRotaAssignment(ctx, "2024-01-15", member2, true, &originalID)
 
 	// Act
 	assignments, err := db.GetAssignmentsByDate(ctx, "2024-01-15")

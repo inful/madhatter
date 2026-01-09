@@ -34,6 +34,7 @@ type Querier interface {
 	GetAssignmentByID(ctx context.Context, id string) (GetAssignmentByIDRow, error)
 	GetAssignmentsByDate(ctx context.Context, date time.Time) ([]GetAssignmentsByDateRow, error)
 	GetAssignmentsByDateRange(ctx context.Context, arg GetAssignmentsByDateRangeParams) ([]GetAssignmentsByDateRangeRow, error)
+	GetCoverAssignmentByDate(ctx context.Context, date time.Time) (GetCoverAssignmentByDateRow, error)
 	GetLatestAssignmentDate(ctx context.Context) (interface{}, error)
 	GetLeaveByDate(ctx context.Context, arg GetLeaveByDateParams) ([]LeaveRecord, error)
 	GetLeaveByID(ctx context.Context, id string) (LeaveRecord, error)
@@ -51,6 +52,7 @@ type Querier interface {
 	GetUserByProvider(ctx context.Context, arg GetUserByProviderParams) (User, error)
 	ListActiveUsers(ctx context.Context) ([]User, error)
 	ListAdminUsers(ctx context.Context) ([]User, error)
+	UpdateCoverMember(ctx context.Context, arg UpdateCoverMemberParams) error
 	UpdateLeaveCoverMember(ctx context.Context, arg UpdateLeaveCoverMemberParams) error
 	UpdateLeaveStatus(ctx context.Context, arg UpdateLeaveStatusParams) error
 	UpdateOAuthToken(ctx context.Context, arg UpdateOAuthTokenParams) error

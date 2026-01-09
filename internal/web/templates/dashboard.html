@@ -255,6 +255,70 @@
                         </div>
                     </div>
 
+                    <!-- Presence Overview -->
+                    <div class="card">
+                        <header class="card-header">
+                            <p class="card-header-title">
+                                <i class="fas fa-user-check mr-2"></i> Next 5 Business Days
+                            </p>
+                        </header>
+                        <div class="card-content">
+                            {{if .UpcomingPresence}}
+                                <div class="content">
+                                    {{range .UpcomingPresence}}
+                                        <div class="assignment-item">
+                                            <div class="columns is-mobile is-vcentered">
+                                                <div class="column">
+                                                    <strong>{{.DateDisplay}}</strong><br>
+                                                    <small class="has-text-grey">{{.DateISO}}</small>
+                                                </div>
+                                                <div class="column is-narrow has-text-right">
+                                                    <span class="tag is-success is-light">
+                                                        <i class="fas fa-user-check mr-1"></i> {{len .Present}} present
+                                                    </span>
+                                                    {{if .Away}}
+                                                        <span class="tag is-warning is-light ml-1">
+                                                            <i class="fas fa-plane-departure mr-1"></i> {{len .Away}} away
+                                                        </span>
+                                                    {{end}}
+                                                </div>
+                                            </div>
+                                            <div class="content">
+                                                <p class="mb-1 has-text-weight-semibold">Present</p>
+                                                {{if .Present}}
+                                                    <div class="tags">
+                                                        {{range .Present}}
+                                                            <span class="tag is-success is-light">
+                                                                <i class="fas fa-user"></i> {{.Name}}
+                                                            </span>
+                                                        {{end}}
+                                                    </div>
+                                                {{else}}
+                                                    <p class="is-size-7 has-text-grey">No one scheduled.</p>
+                                                {{end}}
+
+                                                {{if .Away}}
+                                                    <p class="mb-1 has-text-weight-semibold">Away</p>
+                                                    <div class="tags">
+                                                        {{range .Away}}
+                                                            <span class="tag is-warning is-light">
+                                                                <i class="fas fa-user-clock"></i> {{.Member.Name}} ({{.Type}})
+                                                            </span>
+                                                        {{end}}
+                                                    </div>
+                                                {{end}}
+                                            </div>
+                                        </div>
+                                    {{end}}
+                                </div>
+                            {{else}}
+                                <div class="empty-state">
+                                    <p>Presence data unavailable</p>
+                                </div>
+                            {{end}}
+                        </div>
+                    </div>
+
                     <!-- Upcoming Holidays -->
                     <div class="card">
                         <header class="card-header">

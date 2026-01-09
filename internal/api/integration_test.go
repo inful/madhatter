@@ -115,7 +115,7 @@ func TestLeaveEndpoints(t *testing.T) {
 		input := &ReportLeaveInput{}
 		input.Body.MemberID = aliceID
 		input.Body.Type = "sick"
-		input.Body.StartDate = "2024-01-15"
+		input.Body.StartDate = "2024-01-17"
 		input.Body.EndDate = "2024-01-17"
 
 		resp, err := server.handleReportLeave(ctx, input)
@@ -123,8 +123,8 @@ func TestLeaveEndpoints(t *testing.T) {
 		assert.NotEmpty(t, resp.Body.LeaveID)
 
 		// Verify covers were assigned
-		// Jan 15 is a Monday, Alice was assigned, now should be covered
-		assignments, err := server.db.GetAssignmentsByDate(ctx, "2024-01-15")
+		// Jan 17 is a day Alice is scheduled, so it should be covered
+		assignments, err := server.db.GetAssignmentsByDate(ctx, "2024-01-17")
 		require.NoError(t, err)
 
 		// Find the cover assignment

@@ -16,6 +16,8 @@ type Engine struct {
 	holidayChecker HolidayChecker
 }
 
+var errMemberNotScheduled = errors.New("member not scheduled for this date")
+
 func NewEngine(db *database.DB) *Engine {
 	return &Engine{
 		db:             db,
@@ -237,24 +239,42 @@ func (e *Engine) processLeaveDates(ctx context.Context, leave *database.LeaveRec
 }
 
 // processLeaveDate handles a single day of leave and returns the index of the cover member.
-func (e *Engine) processLeaveDate(ctx context.Context, d time.Time, members []database.TeamMember, startIndex int, leave *database.LeaveRecord, leaveID string) (int, error) {
+// shouldSkipDate checks if a date should be skipped (weekend or holiday).
+func (e *Engine) shouldSkipDate(d time.Time) bool {
 	// Skip weekends
 	if d.Weekday() == time.Saturday || d.Weekday() == time.Sunday {
-		return -1, nil
+		return true
 	}
 
 	// Skip holidays if holiday checker is configured
 	if e.holidayChecker != nil && e.holidayChecker(d) {
+		return true
+	}
+
+	return false
+}
+
+func (e *Engine) processLeaveDate(ctx context.Context, d time.Time, members []database.TeamMember, startIndex int, leave *database.LeaveRecord, leaveID string) (int, error) {
+	if e.shouldSkipDate(d) {
 		return -1, nil
 	}
 
 	dateStr := d.Format("2006-01-02")
 	originalAssignmentID, err := e.ensureOriginalAssignment(ctx, dateStr, leave)
+	if errors.Is(err, errMemberNotScheduled) {
+		return -1, nil
+	}
 	if err != nil {
 		return -1, err
 	}
 
-	cover, err := e.findCover(members, []database.LeaveRecord{*leave}, startIndex)
+	// Get all leave records for this date to exclude them from cover selection
+	allLeaves, err := e.db.GetLeaveByDate(ctx, dateStr)
+	if err != nil {
+		return -1, err
+	}
+
+	cover, err := e.findCover(members, allLeaves, startIndex)
 	if err != nil {
 		// Skip if no cover available - this is intentional
 		return -1, nil //nolint:nilerr
@@ -279,17 +299,55 @@ func (e *Engine) ensureOriginalAssignment(ctx context.Context, dateStr string, l
 		return "", err
 	}
 
+	// First check if the person on leave is the original assignment
 	for _, a := range existingAssignments {
 		if a.MemberID == leave.MemberID && !a.IsCover {
 			return a.ID, nil
 		}
 	}
 
-	return e.db.CreateRotaAssignment(ctx, dateStr, leave.MemberID, false, nil)
+	// If the person on leave is the cover, find the original assignment
+	for _, a := range existingAssignments {
+		if a.MemberID == leave.MemberID && a.IsCover && a.OriginalAssignmentID != nil {
+			// The cover person is taking leave - return the original assignment they were covering
+			return *a.OriginalAssignmentID, nil
+		}
+	}
+
+	// No assignment found for this person on this date
+	if len(existingAssignments) > 0 {
+		return "", errMemberNotScheduled
+	}
+
+	return "", errMemberNotScheduled
 }
 
-// createCoverAssignment creates a cover assignment.
+// createCoverAssignment creates or updates a cover assignment.
+// If a cover already exists for the date, it updates the member_id.
+// Otherwise, it creates a new cover assignment.
 func (e *Engine) createCoverAssignment(ctx context.Context, dateStr, coverMemberID, originalAssignmentID string) error {
-	_, err := e.db.CreateRotaAssignment(ctx, dateStr, coverMemberID, true, &originalAssignmentID)
+	// Check if there's already a cover assignment for this date
+	existingAssignments, err := e.db.GetAssignmentsByDate(ctx, dateStr)
+	if err != nil {
+		return err
+	}
+
+	for _, a := range existingAssignments {
+		if a.IsCover && a.MemberID != coverMemberID {
+			// Update the existing cover to point to the new person
+			// Parse the date string to time.Time for the SQL query
+			dateTime, parseErr := time.Parse("2006-01-02", dateStr)
+			if parseErr != nil {
+				return parseErr
+			}
+
+			query := `UPDATE rota_assignments SET member_id = ? WHERE date = ? AND is_cover = 1`
+			_, err = e.db.ExecContext(ctx, query, coverMemberID, dateTime)
+			return err
+		}
+	}
+
+	// No existing cover, create a new one
+	_, err = e.db.CreateRotaAssignment(ctx, dateStr, coverMemberID, true, &originalAssignmentID)
 	return err
 }

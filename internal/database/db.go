@@ -62,7 +62,8 @@ func New(path string) (*DB, error) {
         original_assignment_id TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (member_id) REFERENCES team_members(id),
-        FOREIGN KEY (original_assignment_id) REFERENCES rota_assignments(id)
+        FOREIGN KEY (original_assignment_id) REFERENCES rota_assignments(id),
+        UNIQUE(date, is_cover)
     );
 
     CREATE TABLE IF NOT EXISTS calendar_subscriptions (

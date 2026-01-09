@@ -210,6 +210,43 @@ func TestEngine_AssignCoversForLeave_BasicCover(t *testing.T) {
 	require.Equal(t, original.ID, *cover.OriginalAssignmentID)
 }
 
+func TestEngine_AssignCoversForLeave_IgnoresUnscheduledLeave(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	engine := NewEngine(db)
+
+	startDate := time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)
+	endDate := time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)
+
+	err = engine.GenerateSchedule(ctx, startDate, endDate)
+	require.NoError(t, err)
+
+	assignments, err := db.GetAssignmentsByDate(ctx, "2024-01-15")
+	require.NoError(t, err)
+	require.Len(t, assignments, 1)
+	require.Equal(t, aliceID, assignments[0].MemberID)
+
+	leaveID, err := db.CreateLeaveRecord(ctx, bobID, "vacation", "2024-01-15", "2024-01-15")
+	require.NoError(t, err)
+
+	err = engine.AssignCoversForLeave(ctx, leaveID)
+	require.NoError(t, err)
+
+	assignmentsAfter, err := db.GetAssignmentsByDate(ctx, "2024-01-15")
+	require.NoError(t, err)
+	require.Len(t, assignmentsAfter, 1)
+	require.Equal(t, aliceID, assignmentsAfter[0].MemberID)
+	require.False(t, assignmentsAfter[0].IsCover)
+}
+
 func TestEngine_AssignCoversForLeave_MultiDayLeave(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
@@ -243,10 +280,9 @@ func TestEngine_AssignCoversForLeave_MultiDayLeave(t *testing.T) {
 	// Verify assignments for Wed-Fri
 	// The schedule creates: Mon (Alice), Tue (Bob), Wed (Charlie), Thu (Alice), Fri (Bob)
 	// Alice takes leave Wed-Fri, so:
-	// Wed: Charlie (original) + Bob (cover for Alice) = 2 assignments
-	// Thu: Alice (original) + Bob (cover) = 2 assignments
-	// Fri: Bob (original) + ??? (Alice is on leave but Bob is assigned, so no cover needed)
-	// Wait, let me check what actually happens...
+	// Wed: Charlie already assigned, Alice not on rota -> no cover created
+	// Thu: Alice assigned -> cover created
+	// Fri: Bob assigned -> no cover
 
 	// Let's just verify the key things:
 	// 1. Leave status should be updated
@@ -255,20 +291,25 @@ func TestEngine_AssignCoversForLeave_MultiDayLeave(t *testing.T) {
 	require.Equal(t, "assigned", leave.Status)
 
 	// 2. There should be cover assignments created
-	// Check Wednesday specifically
 	wedAssignments, err := db.GetAssignmentsByDate(ctx, "2024-01-17")
 	require.NoError(t, err)
 
-	// Find if there's a cover assignment
-	var hasCover bool
 	for _, a := range wedAssignments {
+		require.False(t, a.IsCover, "No cover should be created for a day where leave member is not scheduled")
+	}
+
+	thuAssignments, err := db.GetAssignmentsByDate(ctx, "2024-01-18")
+	require.NoError(t, err)
+
+	var thuCoverFound bool
+	for _, a := range thuAssignments {
 		if a.IsCover {
-			hasCover = true
-			require.Equal(t, bobID, a.MemberID, "Cover should be Bob")
+			thuCoverFound = true
+			require.Equal(t, bobID, a.MemberID, "Cover should be Bob on scheduled leave day")
 			require.NotNil(t, a.OriginalAssignmentID)
 		}
 	}
-	require.True(t, hasCover, "Should have at least one cover assignment on Wednesday")
+	require.True(t, thuCoverFound, "Should have a cover assignment on the day the leave member was scheduled")
 }
 
 func TestEngine_AssignCoversForLeave_LeaveOnWeekend(t *testing.T) {
@@ -521,7 +562,7 @@ func TestEngine_ensureOriginalAssignment_Existing(t *testing.T) {
 	require.Len(t, assignments, 1)
 }
 
-func TestEngine_ensureOriginalAssignment_New(t *testing.T) {
+func TestEngine_ensureOriginalAssignment_NotScheduled(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -534,17 +575,13 @@ func TestEngine_ensureOriginalAssignment_New(t *testing.T) {
 
 	leave := &database.LeaveRecord{MemberID: aliceID}
 
-	// Should create new
 	assignmentID, err := engine.ensureOriginalAssignment(ctx, "2024-01-15", leave)
-	require.NoError(t, err)
-	require.NotEmpty(t, assignmentID)
+	require.ErrorIs(t, err, errMemberNotScheduled)
+	require.Empty(t, assignmentID)
 
-	// Verify created
 	assignments, err := db.GetAssignmentsByDate(ctx, "2024-01-15")
 	require.NoError(t, err)
-	require.Len(t, assignments, 1)
-	require.Equal(t, aliceID, assignments[0].MemberID)
-	require.False(t, assignments[0].IsCover)
+	require.Empty(t, assignments)
 }
 
 func TestEngine_findCover_SkipsOnLeave(t *testing.T) {

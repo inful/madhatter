@@ -5,6 +5,7 @@ import (
 	"embed"
 	"html/template"
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -34,6 +35,18 @@ type Handler struct {
 	authManager    *auth.AuthManager
 	authMiddleware *auth.Middleware
 	holidayChecker func(time.Time) bool
+}
+
+type presenceDay struct {
+	DateISO     string
+	DateDisplay string
+	Present     []database.TeamMember
+	Away        []presenceLeave
+}
+
+type presenceLeave struct {
+	Member database.TeamMember
+	Type   string
 }
 
 func NewHandler(db *database.DB, authManager *auth.AuthManager, authMiddleware *auth.Middleware, development bool, holidayChecker func(time.Time) bool) (*Handler, error) {
@@ -254,6 +267,11 @@ func (h *Handler) loadDashboardData(ctx context.Context, data map[string]any) {
 		data["TodayAssignment"] = assignments[0]
 	}
 
+	// Get upcoming presence for next business days
+	if presence, presenceErr := h.getUpcomingPresence(ctx); presenceErr == nil {
+		data["UpcomingPresence"] = presence
+	}
+
 	// Get current and next week assignments
 	weeksData, err := h.getFullWeeks(ctx)
 	if err == nil {
@@ -289,6 +307,92 @@ func (h *Handler) getUpcomingHolidays() []map[string]any {
 	}
 
 	return holidays
+}
+
+func (h *Handler) isBusinessDay(date time.Time) bool {
+	if date.Weekday() == time.Saturday || date.Weekday() == time.Sunday {
+		return false
+	}
+
+	if h.holidayChecker != nil && h.holidayChecker(date) {
+		return false
+	}
+
+	return true
+}
+
+func (h *Handler) getUpcomingPresence(ctx context.Context) ([]presenceDay, error) {
+	return h.getUpcomingPresenceFrom(ctx, time.Now())
+}
+
+func (h *Handler) getUpcomingPresenceFrom(ctx context.Context, start time.Time) ([]presenceDay, error) {
+	members, err := h.db.GetActiveTeamMembers(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	memberMap := make(map[string]database.TeamMember, len(members))
+	for _, member := range members {
+		memberMap[member.ID] = member
+	}
+
+	current := start
+	presence := make([]presenceDay, 0, weekDaysCount)
+
+	for len(presence) < weekDaysCount {
+		if !h.isBusinessDay(current) {
+			current = current.AddDate(0, 0, 1)
+			continue
+		}
+
+		dateStr := current.Format("2006-01-02")
+		leaveRecords, leaveErr := h.db.GetLeaveByDate(ctx, dateStr)
+		if leaveErr != nil {
+			return nil, leaveErr
+		}
+
+		away := make([]presenceLeave, 0, len(leaveRecords))
+		onLeave := make(map[string]struct{})
+		for i := range leaveRecords {
+			leave := &leaveRecords[i]
+			member, ok := memberMap[leave.MemberID]
+			if !ok {
+				continue
+			}
+			onLeave[leave.MemberID] = struct{}{}
+			away = append(away, presenceLeave{
+				Member: member,
+				Type:   leave.Type,
+			})
+		}
+
+		present := make([]database.TeamMember, 0, len(memberMap)-len(onLeave))
+		for id, member := range memberMap {
+			if _, absent := onLeave[id]; absent {
+				continue
+			}
+			present = append(present, member)
+		}
+
+		sort.Slice(present, func(i, j int) bool {
+			return present[i].Name < present[j].Name
+		})
+
+		sort.Slice(away, func(i, j int) bool {
+			return away[i].Member.Name < away[j].Member.Name
+		})
+
+		presence = append(presence, presenceDay{
+			DateISO:     dateStr,
+			DateDisplay: current.Format("Mon, Jan 2"),
+			Present:     present,
+			Away:        away,
+		})
+
+		current = current.AddDate(0, 0, 1)
+	}
+
+	return presence, nil
 }
 
 // buildWeekData builds week data for dashboard display.

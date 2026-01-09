@@ -188,6 +188,33 @@ func (q *Queries) GetAssignmentsByDateRange(ctx context.Context, arg GetAssignme
 	return items, nil
 }
 
+const getCoverAssignmentByDate = `-- name: GetCoverAssignmentByDate :one
+SELECT id, date, member_id, is_cover, original_assignment_id
+FROM rota_assignments
+WHERE date = ? AND is_cover = 1
+`
+
+type GetCoverAssignmentByDateRow struct {
+	ID                   string         `json:"id"`
+	Date                 time.Time      `json:"date"`
+	MemberID             string         `json:"member_id"`
+	IsCover              sql.NullInt64  `json:"is_cover"`
+	OriginalAssignmentID sql.NullString `json:"original_assignment_id"`
+}
+
+func (q *Queries) GetCoverAssignmentByDate(ctx context.Context, date time.Time) (GetCoverAssignmentByDateRow, error) {
+	row := q.db.QueryRowContext(ctx, getCoverAssignmentByDate, date)
+	var i GetCoverAssignmentByDateRow
+	err := row.Scan(
+		&i.ID,
+		&i.Date,
+		&i.MemberID,
+		&i.IsCover,
+		&i.OriginalAssignmentID,
+	)
+	return i, err
+}
+
 const getLatestAssignmentDate = `-- name: GetLatestAssignmentDate :one
 SELECT MAX(date) AS max_date
 FROM rota_assignments
@@ -247,4 +274,20 @@ func (q *Queries) GetUpcomingAssignments(ctx context.Context, arg GetUpcomingAss
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateCoverMember = `-- name: UpdateCoverMember :exec
+UPDATE rota_assignments
+SET member_id = ?
+WHERE date = ? AND is_cover = 1
+`
+
+type UpdateCoverMemberParams struct {
+	MemberID string    `json:"member_id"`
+	Date     time.Time `json:"date"`
+}
+
+func (q *Queries) UpdateCoverMember(ctx context.Context, arg UpdateCoverMemberParams) error {
+	_, err := q.db.ExecContext(ctx, updateCoverMember, arg.MemberID, arg.Date)
+	return err
 }

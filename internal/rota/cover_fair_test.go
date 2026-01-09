@@ -187,13 +187,17 @@ func TestEngine_CoverRotationAcrossMultipleMembers(t *testing.T) {
 	t.Logf("Cover for Alice (Jan 15): %s", memberNames[covers["2024-01-15"]])
 	t.Logf("Cover for Bob (Jan 16): %s", memberNames[covers["2024-01-16"]])
 	t.Logf("Cover for Charlie (Jan 17): %s", memberNames[covers["2024-01-17"]])
-	t.Logf("Cover for Alice (Jan 22): %s", memberNames[covers["2024-01-22"]])
+	if cover, ok := covers["2024-01-22"]; ok {
+		t.Logf("Cover for Alice (Jan 22): %s", memberNames[cover])
+	} else {
+		t.Log("No cover on Jan 22 because Alice was not scheduled")
+	}
 
 	// Expected fair rotation with independent R2 (team: Alice, Bob, Charlie, Dave):
 	// Jan 15 (Alice out): R2 starts from 0, Alice on leave, skip to index 1 -> Bob
 	// Jan 16 (Bob out): R2 at index 1 (Bob just covered), next is 2 -> Charlie
 	// Jan 17 (Charlie out): R2 at index 2 (Charlie just covered), next is 3 -> Dave
-	// Jan 22 (Alice out): R2 at index 3 (Dave just covered), next is 0 (Alice on leave), skip to 1 -> Bob
+	// Jan 22 (Alice out): Alice was not scheduled, so no cover is created
 	//
 	// With 4 people and 4 cover needs, someone must cover twice. The fair rotation means
 	// each person covers in order before anyone covers a second time.
@@ -201,5 +205,5 @@ func TestEngine_CoverRotationAcrossMultipleMembers(t *testing.T) {
 	require.Equal(t, bobID, covers["2024-01-15"], "Bob should cover (R2 starts, skip Alice who's on leave)")
 	require.Equal(t, charlieID, covers["2024-01-16"], "Charlie should cover (next in R2)")
 	require.Equal(t, daveID, covers["2024-01-17"], "Dave should cover (next in R2)")
-	require.Equal(t, bobID, covers["2024-01-22"], "Bob should cover (R2 wraps around after Dave, skip Alice who's on leave)")
+	require.NotContains(t, covers, "2024-01-22", "No cover should be created when leave member was not scheduled")
 }

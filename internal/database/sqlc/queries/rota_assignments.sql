@@ -37,3 +37,13 @@ FROM rota_assignments;
 -- name: DeleteAssignmentsByDateRange :exec
 DELETE FROM rota_assignments
 WHERE date >= ? AND date <= ?;
+
+-- name: UpdateCoverMember :exec
+UPDATE rota_assignments
+SET member_id = ?
+WHERE date = ? AND is_cover = 1;
+
+-- name: GetCoverAssignmentByDate :one
+SELECT id, date, member_id, is_cover, original_assignment_id
+FROM rota_assignments
+WHERE date = ? AND is_cover = 1;

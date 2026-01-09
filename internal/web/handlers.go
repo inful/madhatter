@@ -32,10 +32,13 @@ type Handler struct {
 	holidayChecker func(time.Time) bool
 }
 
-func NewHandler(db *database.DB, authManager *auth.AuthManager, authMiddleware *auth.Middleware, development bool, holidayChecker func(time.Time) bool) *Handler {
+func NewHandler(db *database.DB, authManager *auth.AuthManager, authMiddleware *auth.Middleware, development bool, holidayChecker func(time.Time) bool) (*Handler, error) {
 	// Parse templates - use absolute path based on working directory
 	// Try multiple possible locations for templates
-	tmpl := parseTemplates()
+	tmpl, err := parseTemplates()
+	if err != nil {
+		return nil, err
+	}
 
 	router := chi.NewRouter()
 
@@ -56,7 +59,7 @@ func NewHandler(db *database.DB, authManager *auth.AuthManager, authMiddleware *
 		h.registerDevelopmentRoutes()
 	}
 
-	return h
+	return h, nil
 }
 
 // safeAuthMiddleware wraps middleware to handle nil auth components gracefully.
@@ -98,26 +101,24 @@ func (h *Handler) safeRequireAdmin(next http.Handler) http.Handler {
 	})
 }
 
-func parseTemplates() *template.Template {
+func parseTemplates() (*template.Template, error) {
 	// Try different possible template locations
 	possiblePaths := []string{
 		"internal/web/templates/*.html",
 	}
 
-	var tmpl *template.Template
 	var lastErr error
 
 	for _, path := range possiblePaths {
-		var err error
-		tmpl, err = template.ParseGlob(path)
+		tmpl, err := template.ParseGlob(path)
 		if err == nil {
-			return tmpl
+			return tmpl, nil
 		}
 		lastErr = err
 	}
 
-	// If all paths failed, panic with the last error
-	panic(lastErr)
+	// If all paths failed, return the last error
+	return nil, lastErr
 }
 
 func (h *Handler) registerRoutes() {

@@ -34,22 +34,19 @@ archives:
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
 dockers_v2:
-  - id: madhatter
-    image_templates:
-      - "ghcr.io/inful/{{ .ProjectName }}:{{ .Version }}"
-      - "ghcr.io/inful/{{ .ProjectName }}:latest"
-    dockerfile: Dockerfile
-    use: buildx
-    build_flag_templates:
-      - "--platform=linux/amd64,linux/arm64"
-      - "--label=org.opencontainers.image.title={{ .ProjectName }}"
-      - "--label=org.opencontainers.image.description=Support rota scheduling system"
-      - "--label=org.opencontainers.image.url=https://github.com/inful/{{ .ProjectName }}"
-      - "--label=org.opencontainers.image.source=https://github.com/inful/{{ .ProjectName }}"
-      - "--label=org.opencontainers.image.version={{ .Version }}"
-      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
-      - "--label=org.opencontainers.image.created={{ .Date }}"
-
+    - images:
+        - "ghcr.io/inful/{{ .ProjectName }}"
+      tags:
+        - "{{ .Version }}"
+        - "latest"
+      labels:
+        "org.opencontainers.image.title": "{{ .ProjectName }}"
+        "org.opencontainers.image.description": "Madhatter support rota scheduling system"
+        "org.opencontainers.image.url": "https://github.com/inful/{{ .ProjectName }}"
+        "org.opencontainers.image.source": "https://github.com/inful/{{ .ProjectName }}"
+        "org.opencontainers.image.version": "{{ .Version }}"
+        "org.opencontainers.image.revision": "{{ .FullCommit }}"
+        "org.opencontainers.image.created": "{{ .Date }}"
 release:
   github:
     owner: inful

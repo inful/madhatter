@@ -289,41 +289,30 @@
                                                 </div>
                                             </div>
                                             <div class="content">
-                                                <p class="mb-1 has-text-weight-semibold">Present</p>
-                                                {{if .Present}}
-                                                    <div class="tags">
-                                                        {{range .Present}}
-                                                            {{if $.Assigned}}
-                                                                {{if eq .ID $.Assigned.ID}}
-                                                                    <span class="tag is-link">
-                                                                        <i class="fas fa-hat-wizard mr-1"></i> {{.Name}}
-                                                                    </span>
-                                                                {{else}}
-                                                                    <span class="tag is-success is-light">
-                                                                        <i class="fas fa-user"></i> {{.Name}}
-                                                                    </span>
-                                                                {{end}}
+                                                <div class="tags">
+                                                    {{range .Present}}
+                                                        {{if $.Assigned}}
+                                                            {{if eq .ID $.Assigned.ID}}
+                                                                <span class="tag is-link">
+                                                                    <i class="fas fa-hat-wizard mr-1"></i> {{.Name}}
+                                                                </span>
                                                             {{else}}
                                                                 <span class="tag is-success is-light">
-                                                                    <i class="fas fa-user"></i> {{.Name}}
+                                                                    <i class="fas fa-user mr-1"></i> {{.Name}}
                                                                 </span>
                                                             {{end}}
-                                                        {{end}}
-                                                    </div>
-                                                {{else}}
-                                                    <p class="is-size-7 has-text-grey">No one present.</p>
-                                                {{end}}
-
-                                                {{if .Away}}
-                                                    <p class="mb-1 has-text-weight-semibold">Away</p>
-                                                    <div class="tags">
-                                                        {{range .Away}}
-                                                            <span class="tag is-warning is-light">
-                                                                <i class="fas fa-user-clock"></i> {{.Member.Name}} ({{.Type}})
+                                                        {{else}}
+                                                            <span class="tag is-success is-light">
+                                                                <i class="fas fa-user mr-1"></i> {{.Name}}
                                                             </span>
                                                         {{end}}
-                                                    </div>
-                                                {{end}}
+                                                    {{end}}
+                                                    {{range .Away}}
+                                                        <span class="tag is-warning">
+                                                            <i class="fas fa-user-clock mr-1"></i> {{.Member.Name}} ({{.Type}})
+                                                        </span>
+                                                    {{end}}
+                                                </div>
                                             </div>
                                         </div>
                                     {{end}}

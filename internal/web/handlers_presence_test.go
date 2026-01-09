@@ -50,13 +50,18 @@ func TestGetUpcomingPresenceFrom_SkipsNonBusinessDays(t *testing.T) {
 
 	presence, err := handler.getUpcomingPresenceFrom(ctx, start)
 	require.NoError(t, err)
-	require.Len(t, presence, 5)
+	require.Len(t, presence, 10)
 
 	require.Equal(t, "2024-01-05", presence[0].DateISO)
 	require.Equal(t, "2024-01-08", presence[1].DateISO)
 	require.Equal(t, "2024-01-10", presence[2].DateISO)
 	require.Equal(t, "2024-01-11", presence[3].DateISO)
 	require.Equal(t, "2024-01-12", presence[4].DateISO)
+	require.Equal(t, "2024-01-15", presence[5].DateISO)
+	require.Equal(t, "2024-01-16", presence[6].DateISO)
+	require.Equal(t, "2024-01-17", presence[7].DateISO)
+	require.Equal(t, "2024-01-18", presence[8].DateISO)
+	require.Equal(t, "2024-01-19", presence[9].DateISO)
 
 	require.Len(t, presence[0].Present, 2)
 	require.Len(t, presence[1].Present, 1)

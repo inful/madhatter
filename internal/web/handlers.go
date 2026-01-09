@@ -19,7 +19,7 @@ import (
 var templateFS embed.FS
 
 const (
-	weekDaysCount                = 5
+	weekDaysCount                = 10
 	weekDaysOffset               = 4
 	schedulePrealloc             = 5
 	defaultCalendarLookaheadDays = 90

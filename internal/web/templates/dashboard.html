@@ -219,39 +219,6 @@
                             {{end}}
                         </div>
                     </div>
-
-                    <!-- Upcoming Holidays -->
-                    <div class="card">
-                        <header class="card-header">
-                            <p class="card-header-title">
-                                <i class="fas fa-holly-berry mr-2"></i> Upcoming Holidays
-                            </p>
-                        </header>
-                        <div class="card-content">
-                            {{if .UpcomingHolidays}}
-                                <div class="content">
-                                    {{range .UpcomingHolidays}}
-                                        <div class="assignment-item holiday">
-                                            <div class="columns is-mobile is-vcentered">
-                                                <div class="column">
-                                                    <strong>{{.Date}}</strong> - {{.Name}}
-                                                </div>
-                                                <div class="column is-narrow">
-                                                    <span class="holiday-badge">
-                                                        <i class="fas fa-holly-berry"></i> HOLIDAY
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    {{end}}
-                                </div>
-                            {{else}}
-                                <div class="empty-state">
-                                    <p>No upcoming holidays</p>
-                                </div>
-                            {{end}}
-                        </div>
-                    </div>
                 </div>
             </div>
         </div>

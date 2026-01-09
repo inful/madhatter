@@ -40,6 +40,7 @@ type Handler struct {
 type presenceDay struct {
 	DateISO     string
 	DateDisplay string
+	Assigned    *database.TeamMember
 	Present     []database.TeamMember
 	Away        []presenceLeave
 }
@@ -325,6 +326,34 @@ func (h *Handler) getUpcomingPresence(ctx context.Context) ([]presenceDay, error
 	return h.getUpcomingPresenceFrom(ctx, time.Now())
 }
 
+// getAssignedMember fetches the assigned member for a given date.
+func (h *Handler) getAssignedMember(ctx context.Context, dateStr string, memberMap map[string]database.TeamMember) *database.TeamMember {
+	assignments, err := h.db.GetAssignmentsByDate(ctx, dateStr)
+	if err != nil {
+		return nil
+	}
+
+	// Look for original assignment first
+	for i := range assignments {
+		if !assignments[i].IsCover {
+			if member, ok := memberMap[assignments[i].MemberID]; ok {
+				return &member
+			}
+		}
+	}
+
+	// Fall back to cover assignment
+	for i := range assignments {
+		if assignments[i].IsCover {
+			if member, ok := memberMap[assignments[i].MemberID]; ok {
+				return &member
+			}
+		}
+	}
+
+	return nil
+}
+
 func (h *Handler) getUpcomingPresenceFrom(ctx context.Context, start time.Time) ([]presenceDay, error) {
 	members, err := h.db.GetActiveTeamMembers(ctx)
 	if err != nil {
@@ -346,6 +375,8 @@ func (h *Handler) getUpcomingPresenceFrom(ctx context.Context, start time.Time) 
 		}
 
 		dateStr := current.Format("2006-01-02")
+		assigned := h.getAssignedMember(ctx, dateStr, memberMap)
+
 		leaveRecords, leaveErr := h.db.GetLeaveByDate(ctx, dateStr)
 		if leaveErr != nil {
 			return nil, leaveErr
@@ -385,6 +416,7 @@ func (h *Handler) getUpcomingPresenceFrom(ctx context.Context, start time.Time) 
 		presence = append(presence, presenceDay{
 			DateISO:     dateStr,
 			DateDisplay: current.Format("Mon, Jan 2"),
+			Assigned:    assigned,
 			Present:     present,
 			Away:        away,
 		})

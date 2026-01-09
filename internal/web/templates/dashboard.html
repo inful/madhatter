@@ -273,6 +273,11 @@
                                                     <small class="has-text-grey">{{.DateISO}}</small>
                                                 </div>
                                                 <div class="column is-narrow has-text-right">
+                                                    {{if .Assigned}}
+                                                        <span class="tag is-link">
+                                                            <i class="fas fa-hat-wizard mr-1"></i> {{.Assigned.Name}} on duty
+                                                        </span>
+                                                    {{end}}
                                                     <span class="tag is-success is-light">
                                                         <i class="fas fa-user-check mr-1"></i> {{len .Present}} present
                                                     </span>
@@ -284,17 +289,33 @@
                                                 </div>
                                             </div>
                                             <div class="content">
+                                                {{if .Assigned}}
+                                                    <p class="mb-1 has-text-weight-semibold">On Duty</p>
+                                                    <div class="tags">
+                                                        <span class="tag is-link is-medium">
+                                                            <i class="fas fa-hat-wizard mr-2"></i> {{.Assigned.Name}}
+                                                        </span>
+                                                    </div>
+                                                {{end}}
                                                 <p class="mb-1 has-text-weight-semibold">Present</p>
                                                 {{if .Present}}
                                                     <div class="tags">
                                                         {{range .Present}}
-                                                            <span class="tag is-success is-light">
-                                                                <i class="fas fa-user"></i> {{.Name}}
-                                                            </span>
+                                                            {{if $.Assigned}}
+                                                                {{if ne .ID $.Assigned.ID}}
+                                                                    <span class="tag is-success is-light">
+                                                                        <i class="fas fa-user"></i> {{.Name}}
+                                                                    </span>
+                                                                {{end}}
+                                                            {{else}}
+                                                                <span class="tag is-success is-light">
+                                                                    <i class="fas fa-user"></i> {{.Name}}
+                                                                </span>
+                                                            {{end}}
                                                         {{end}}
                                                     </div>
                                                 {{else}}
-                                                    <p class="is-size-7 has-text-grey">No one scheduled.</p>
+                                                    <p class="is-size-7 has-text-grey">No one else present.</p>
                                                 {{end}}
 
                                                 {{if .Away}}

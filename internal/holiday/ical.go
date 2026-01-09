@@ -370,7 +370,7 @@ func FilterHolidaysByDateRange(holidays []Holiday, startDate, endDate string) ([
 		if err != nil {
 			continue
 		}
-		if (hDate.Equal(start) || hDate.After(start)) && (hDate.Equal(end) || hDate.Before(end)) {
+		if (hDate.Equal(start) || hDate.After(start)) && !hDate.After(end) {
 			filtered = append(filtered, h)
 		}
 	}

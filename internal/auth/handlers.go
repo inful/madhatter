@@ -226,7 +226,7 @@ func (am *AuthManager) HandleLoginView(w http.ResponseWriter, r *http.Request) {
 	html.WriteString(`<!DOCTYPE html>
 <html>
 <head>
-	   <title>Login - Support Rota</title>
+	   <title>Login - MadHatter</title>
 	   <style>
 	       body { font-family: system-ui; max-width: 600px; margin: 50px auto; padding: 20px; }
 	       h1 { color: #333; }
@@ -246,7 +246,7 @@ func (am *AuthManager) HandleLoginView(w http.ResponseWriter, r *http.Request) {
 	   </style>
 </head>
 <body>
-	   <h1>Support Rota Login</h1>
+	   <h1>MadHatter Login</h1>
 	   <p>Please select your authentication provider:</p>
 	   <ul class="provider-list">
 `)

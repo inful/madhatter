@@ -127,7 +127,7 @@ func GetDevelopmentLoginHTML() string {
 	return `<!DOCTYPE html>
 <html>
 <head>
-    <title>Development Login - Support Rota</title>
+    <title>Development Login - MadHatter</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>

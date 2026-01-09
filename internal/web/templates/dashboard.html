@@ -266,6 +266,7 @@
                             {{if .UpcomingPresence}}
                                 <div class="content">
                                     {{range .UpcomingPresence}}
+                                        {{$assigned := .Assigned}}
                                         <div class="assignment-item">
                                             <div class="columns is-mobile is-vcentered">
                                                 <div class="column">
@@ -291,8 +292,8 @@
                                             <div class="content">
                                                 <div class="tags">
                                                     {{range .Present}}
-                                                        {{if $.Assigned}}
-                                                            {{if eq .ID $.Assigned.ID}}
+                                                        {{if $assigned}}
+                                                            {{if eq .ID $assigned.ID}}
                                                                 <span class="tag is-link">
                                                                     <i class="fas fa-hat-wizard mr-1"></i> {{.Name}}
                                                                 </span>

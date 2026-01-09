@@ -138,7 +138,6 @@ func (h *Handler) registerRoutes() {
 	h.router.Group(func(r chi.Router) {
 		r.Use(h.safeAuthMiddleware)
 		r.HandleFunc("/", h.handleDashboard)
-		r.HandleFunc("/schedule/current", h.handleScheduleCurrent)
 	})
 	h.router.HandleFunc("/calendar/{token}/ics", h.handleCalendarICS)
 
@@ -581,7 +580,7 @@ func (h *Handler) handleLeaveReport(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		http.Redirect(w, r, "/schedule/current", http.StatusSeeOther)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
 
@@ -596,86 +595,6 @@ func (h *Handler) handleLeaveReport(w http.ResponseWriter, r *http.Request) {
 	if err := h.tmpl.ExecuteTemplate(w, "leave_report.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
-}
-
-func (h *Handler) handleScheduleCurrent(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	data := make(map[string]any)
-
-	// Add user info to data
-	if user, ok := auth.GetUserFromContext(ctx); ok {
-		data["User"] = user
-		data["IsAdmin"] = user.IsAdmin.Valid && user.IsAdmin.Int64 == 1
-	}
-
-	// Get schedule data
-	calendar, startDate, endDate, err := h.getScheduleData(ctx)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	data["Calendar"] = calendar
-	data["StartDate"] = startDate
-	data["EndDate"] = endDate
-
-	if err := h.tmpl.ExecuteTemplate(w, "schedule_current.html", data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
-}
-
-// getScheduleData retrieves and builds schedule data for current and next week.
-func (h *Handler) getScheduleData(ctx context.Context) ([]map[string]any, string, string, error) {
-	now := time.Now()
-
-	// Calculate week boundaries
-	currentWeekStart := now.AddDate(0, 0, -int(now.Weekday())+1)
-	currentWeekEnd := currentWeekStart.AddDate(0, 0, weekDaysOffset)
-	nextWeekStart := currentWeekStart.AddDate(0, 0, weekDaysInWeek)
-	nextWeekEnd := nextWeekStart.AddDate(0, 0, weekDaysOffset)
-
-	// Get assignments
-	startDate := currentWeekStart.Format("2006-01-02")
-	endDate := nextWeekEnd.Format("2006-01-02")
-	assignments, err := h.db.GetAssignmentsByDateRange(ctx, startDate, endDate)
-	if err != nil {
-		return nil, "", "", err
-	}
-
-	// Build lookup map
-	assignmentMap := make(map[string][]database.RotaAssignment)
-	for _, a := range assignments {
-		assignmentMap[a.Date] = append(assignmentMap[a.Date], a)
-	}
-
-	// Build calendar
-	calendar := make([]map[string]any, 0)
-	calendar = h.appendWeekToCalendar(calendar, currentWeekStart, currentWeekEnd, assignmentMap, now, "Current Week")
-	calendar = h.appendWeekToCalendar(calendar, nextWeekStart, nextWeekEnd, assignmentMap, now, "Next Week")
-
-	return calendar, currentWeekStart.Format("January 2, 2006"), nextWeekEnd.Format("January 2, 2006"), nil
-}
-
-// appendWeekToCalendar adds a week's data to the calendar.
-func (h *Handler) appendWeekToCalendar(calendar []map[string]any, weekStart, weekEnd time.Time, assignmentMap map[string][]database.RotaAssignment, now time.Time, weekLabel string) []map[string]any {
-	for d := weekStart; d.Before(weekEnd.AddDate(0, 0, 1)); d = d.AddDate(0, 0, 1) {
-		dateStr := d.Format("2006-01-02")
-		dayAssignments := assignmentMap[dateStr]
-		isToday := d.Format("2006-01-02") == now.Format("2006-01-02")
-		isHoliday := h.holidayChecker != nil && h.holidayChecker(d)
-
-		day := map[string]any{
-			"Date":        d.Format("Jan 2 (Mon)"),
-			"DateISO":     dateStr,
-			"Assignments": dayAssignments,
-			"IsToday":     isToday,
-			"IsWeekend":   d.Weekday() == 0 || d.Weekday() == 6,
-			"IsHoliday":   isHoliday,
-			"WeekLabel":   weekLabel,
-		}
-		calendar = append(calendar, day)
-	}
-	return calendar
 }
 
 func (h *Handler) handleScheduleGenerate(w http.ResponseWriter, r *http.Request) {
@@ -720,7 +639,7 @@ func (h *Handler) handleScheduleGeneratePost(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	http.Redirect(w, r, "/schedule/current", http.StatusSeeOther)
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func (h *Handler) handleScheduleGenerateGet(w http.ResponseWriter, r *http.Request) {

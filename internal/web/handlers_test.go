@@ -105,7 +105,6 @@ func TestAllTemplatesParse(t *testing.T) {
 		"dashboard.html",
 		"team.html",
 		"leave_report.html",
-		"schedule_current.html",
 		"schedule_generate.html",
 		"calendar.html",
 	}
@@ -157,14 +156,6 @@ func TestAllTemplatesWithData(t *testing.T) {
 		"IsAdmin": true,
 	}
 
-	scheduleData := map[string]any{
-		"Assignments": []map[string]any{
-			{"Date": "2026-01-10", "Member": "Test User", "IsCover": false, "IsLeave": false},
-		},
-		"User":    map[string]any{"Email": "test@example.com", "IsAdmin": true},
-		"IsAdmin": true,
-	}
-
 	generateData := map[string]any{
 		"Members": []map[string]any{
 			{"ID": 1, "Name": "Test User", "Email": "test@example.com"},
@@ -195,7 +186,6 @@ func TestAllTemplatesWithData(t *testing.T) {
 		{"Dashboard", "dashboard.html", dashboardData},
 		{"Team", "team.html", teamData},
 		{"LeaveReport", "leave_report.html", leaveData},
-		{"ScheduleCurrent", "schedule_current.html", scheduleData},
 		{"ScheduleGenerate", "schedule_generate.html", generateData},
 		{"Calendar", "calendar.html", calendarData},
 		{"Login", "login.html", loginData},

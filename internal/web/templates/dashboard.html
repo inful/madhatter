@@ -77,11 +77,11 @@
                     </div>
                     {{end}}
 
-                    <!-- Today's Assignment -->
+                    <!-- Schedule -->
                     <div class="card">
                         <header class="card-header">
                             <p class="card-header-title">
-                                <i class="fas fa-star mr-2"></i> Today's Assignment
+                                <i class="fas fa-calendar-alt mr-2"></i> Schedule
                             </p>
                         </header>
                         <div class="card-content">
@@ -92,47 +92,7 @@
                                         <i class="fas fa-user-plus mr-2"></i> Add Team Members
                                     </a>
                                 </div>
-                            {{else}}
-                                <div class="content">
-                                    <p class="subtitle is-5 has-text-weight-semibold">{{.Today}}</p>
-                                    {{if .TodayAssignment}}
-                                        <div class="assignment-item today-highlight">
-                                            <div class="columns is-mobile is-vcentered">
-                                                <div class="column">
-                                                    <strong>{{.TodayAssignment.MemberName}}</strong><br>
-                                                    <small>{{.TodayAssignment.MemberEmail}}</small>
-                                                </div>
-                                                <div class="column is-narrow">
-                                                    {{if .TodayAssignment.IsCover}}
-                                                        <span class="cover-badge">
-                                                            <i class="fas fa-shield-alt"></i> COVER
-                                                        </span>
-                                                    {{end}}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    {{else}}
-                                        <div class="empty-state">
-                                            <p class="mb-3">No schedule for today</p>
-                                            <a href="/schedule/generate" class="button is-success">
-                                                <i class="fas fa-calendar-plus mr-2"></i> Generate Schedule
-                                            </a>
-                                        </div>
-                                    {{end}}
-                                </div>
-                            {{end}}
-                        </div>
-                    </div>
-
-                    <!-- Presence Overview -->
-                    <div class="card">
-                        <header class="card-header">
-                            <p class="card-header-title">
-                                <i class="fas fa-user-check mr-2"></i> Next 10 Business Days
-                            </p>
-                        </header>
-                        <div class="card-content">
-                            {{if .UpcomingPresence}}
+                            {{else if .UpcomingPresence}}
                                 <div class="content">
                                     {{range .UpcomingPresence}}
                                         {{$assigned := .Assigned}}

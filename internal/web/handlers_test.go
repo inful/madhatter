@@ -15,7 +15,7 @@ import (
 func TestTemplateParsing(t *testing.T) {
 	// This should not panic
 	assert.NotPanics(t, func() {
-		parseTemplates()
+		_, _ = parseTemplates()
 	})
 }
 

@@ -220,8 +220,8 @@ func TestSessionManager_Integration(t *testing.T) {
 		token, err := shortSessionManager.CreateSession(ctx, user.ID)
 		require.NoError(t, err)
 
-		// Wait for expiration
-		time.Sleep(2 * time.Second)
+		// Wait for expiration plus buffer
+		time.Sleep(3 * time.Second)
 
 		// Should no longer be valid (query checks expires_at)
 		_, err = shortSessionManager.ValidateSession(ctx, token)

@@ -10,7 +10,7 @@ RETURNING *;
 SELECT s.*, u.email, u.name, u.is_admin 
 FROM sessions s
 JOIN users u ON s.user_id = u.id
-WHERE s.token = ? AND s.expires_at > CURRENT_TIMESTAMP;
+WHERE s.token = ? AND datetime(s.expires_at) > datetime('now');
 
 -- name: DeleteSession :exec
 DELETE FROM sessions 
@@ -18,7 +18,7 @@ WHERE token = ?;
 
 -- name: DeleteExpiredSessions :exec
 DELETE FROM sessions 
-WHERE expires_at <= CURRENT_TIMESTAMP;
+WHERE datetime(expires_at) <= datetime('now');
 
 -- name: DeleteUserSessions :exec
 DELETE FROM sessions 

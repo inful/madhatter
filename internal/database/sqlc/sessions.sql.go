@@ -47,7 +47,7 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) (S
 
 const deleteExpiredSessions = `-- name: DeleteExpiredSessions :exec
 DELETE FROM sessions 
-WHERE expires_at <= CURRENT_TIMESTAMP
+WHERE datetime(expires_at) <= datetime('now')
 `
 
 func (q *Queries) DeleteExpiredSessions(ctx context.Context) error {
@@ -79,7 +79,7 @@ const getSessionByToken = `-- name: GetSessionByToken :one
 SELECT s.id, s.user_id, s.token, s.expires_at, s.created_at, u.email, u.name, u.is_admin 
 FROM sessions s
 JOIN users u ON s.user_id = u.id
-WHERE s.token = ? AND s.expires_at > CURRENT_TIMESTAMP
+WHERE s.token = ? AND datetime(s.expires_at) > datetime('now')
 `
 
 type GetSessionByTokenRow struct {

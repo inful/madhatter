@@ -17,6 +17,7 @@ const (
 	httpTimeout   = 30 * time.Second
 	maxSplitParts = 2
 	minDateLength = 8
+	maxRedirects  = 10 // Maximum number of redirects to prevent loops and attacks
 )
 
 // ICalFetcher handles fetching and parsing iCal feeds from remote URLs.
@@ -29,8 +30,11 @@ func NewICalFetcher() *ICalFetcher {
 	return &ICalFetcher{
 		client: &http.Client{
 			Timeout: httpTimeout,
-			// Follow redirects automatically
+			// Follow redirects with a reasonable limit to prevent loops and attacks
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				if len(via) >= maxRedirects {
+					return http.ErrUseLastResponse
+				}
 				return nil
 			},
 		},

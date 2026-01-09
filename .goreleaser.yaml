@@ -1,0 +1,62 @@
+project_name: madhatter
+
+before:
+  hooks:
+    - go mod download
+    - go mod tidy
+
+builds:
+  - main: main.go
+    binary: madhatter
+    env:
+      - CGO_ENABLED=1
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/inful/madhatter/internal/version.Version={{.Version}}
+      - -X github.com/inful/madhatter/internal/version.Commit={{.Commit}}
+      - -X github.com/inful/madhatter/internal/version.Date={{.Date}}
+
+archives:
+  - format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        format: zip
+
+docker_v2:
+  - image_templates:
+      - "ghcr.io/inful/{{ .ProjectName }}:{{ .Version }}"
+      - "ghcr.io/inful/{{ .ProjectName }}:latest"
+    dockerfile: Dockerfile
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/amd64,linux/arm64"
+      - "--label=org.opencontainers.image.title={{ .ProjectName }}"
+      - "--label=org.opencontainers.image.description=Support rota scheduling system"
+      - "--label=org.opencontainers.image.url=https://github.com/inful/{{ .ProjectName }}"
+      - "--label=org.opencontainers.image.source=https://github.com/inful/{{ .ProjectName }}"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
+      - "--label=org.opencontainers.image.created={{ .Date }}"
+
+release:
+  github:
+    owner: inful
+    name: madhatter
+  name_template: "Version {{.Version}}"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^ci:"

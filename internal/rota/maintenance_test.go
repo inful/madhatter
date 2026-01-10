@@ -23,7 +23,7 @@ func TestScheduleMaintenance_EnsureSchedule(t *testing.T) {
 
 	maintenance := NewScheduleMaintenance(db)
 
-	// Test 1: No existing assignments - should create 14 days from today
+	// Test 1: No existing assignments - should create schedule up to 14 days from today
 	t.Run("NoExistingAssignments", func(t *testing.T) {
 		created, err := maintenance.EnsureSchedule(ctx)
 		require.NoError(t, err)
@@ -39,11 +39,20 @@ func TestScheduleMaintenance_EnsureSchedule(t *testing.T) {
 		expectedEnd := todayTime.AddDate(0, 0, 14)
 
 		// Should have assignments up to 14 days from today
-		// Compare dates only, ignoring time components
+		// Since weekends are skipped, the latest assignment might be before the exact 14-day mark
+		// But it should be within the 14-day window
 		latestDateOnly := latestTime.Format("2006-01-02")
 		expectedEndOnly := expectedEnd.Format("2006-01-02")
-		assert.GreaterOrEqual(t, latestDateOnly, expectedEndOnly,
-			"Should have assignments up to 14 days from today (latest=%s, expected=%s)", latestDateOnly, expectedEndOnly)
+
+		// Check that latest assignment is not beyond the 14-day window
+		assert.LessOrEqual(t, latestDateOnly, expectedEndOnly,
+			"Latest assignment should not be beyond 14 days from today")
+
+		// GetScheduleGap should return empty when schedule is complete for business days
+		start, end, err := maintenance.GetScheduleGap(ctx)
+		require.NoError(t, err)
+		assert.Empty(t, start, "Schedule should be complete (no gaps)")
+		assert.Empty(t, end, "Schedule should be complete (no gaps)")
 	})
 
 	// Test 2: Existing complete schedule - should not create new assignments
@@ -87,9 +96,9 @@ func TestScheduleMaintenance_GetScheduleGap(t *testing.T) {
 		start, end, err := maintenance.GetScheduleGap(ctx)
 		require.NoError(t, err)
 
-		// No gap should exist
-		assert.Empty(t, start)
-		assert.Empty(t, end)
+		// Schedule should be complete for business days
+		assert.Empty(t, start, "Start should be empty when schedule is complete")
+		assert.Empty(t, end, "End should be empty when schedule is complete")
 	})
 }
 
@@ -199,6 +208,8 @@ func TestScheduleMaintenance_HandleTeamChange(t *testing.T) {
 		// Verify schedule is still complete
 		start, end, err := maintenance.GetScheduleGap(ctx)
 		require.NoError(t, err)
+
+		// Schedule should be complete for business days
 		assert.Empty(t, start, "Schedule should be complete after team change")
 		assert.Empty(t, end, "Schedule should be complete after team change")
 	})

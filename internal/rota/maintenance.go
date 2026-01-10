@@ -71,23 +71,47 @@ func (sm *ScheduleMaintenance) GetScheduleGap(ctx context.Context) (string, stri
 		return "", "", fmt.Errorf("failed to get latest assignment date: %w", err)
 	}
 
-	var startDate string
+	var startDate time.Time
 	if latestAssignmentDate == "" {
-		startDate = today
+		startDate, _ = time.Parse("2006-01-02", today)
 	} else {
-		latestDate, _ := time.Parse("2006-01-02", latestAssignmentDate)
-		startDate = latestDate.AddDate(0, 0, 1).Format("2006-01-02")
+		startDate, _ = time.Parse("2006-01-02", latestAssignmentDate)
+		startDate = startDate.AddDate(0, 0, 1)
 	}
 
 	todayTime, _ := time.Parse("2006-01-02", today)
-	endDate := todayTime.AddDate(0, 0, scheduleDaysAhead).Format("2006-01-02")
+	endDate := todayTime.AddDate(0, 0, scheduleDaysAhead)
 
 	// Check if start is already beyond end
-	if startDate > endDate {
+	if startDate.After(endDate) {
 		return "", "", nil
 	}
 
-	return startDate, endDate, nil
+	// Check if there are any business days in the range that need assignments
+	// by looking at what GenerateMissingDays would actually process
+	hasBusinessDays := false
+	currentDate := startDate
+	for currentDate.Before(endDate.AddDate(0, 0, 1)) {
+		// Check if this date already has an assignment
+		dateStr := currentDate.Format("2006-01-02")
+		assignments, err := sm.db.GetAssignmentsByDate(ctx, dateStr)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to check assignments for %s: %w", dateStr, err)
+		}
+
+		// Skip if already has assignment or is weekend
+		if len(assignments) == 0 && currentDate.Weekday() != time.Saturday && currentDate.Weekday() != time.Sunday {
+			hasBusinessDays = true
+			break
+		}
+		currentDate = currentDate.AddDate(0, 0, 1)
+	}
+
+	if !hasBusinessDays {
+		return "", "", nil
+	}
+
+	return startDate.Format("2006-01-02"), endDate.Format("2006-01-02"), nil
 }
 
 // GenerateMissingDays generates assignments for a date range.

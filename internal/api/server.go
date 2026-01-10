@@ -560,6 +560,11 @@ func (s *Server) handleListLeave(ctx context.Context, input *struct{}) (*ListLea
 		return nil, huma.Error401Unauthorized("Authentication required")
 	}
 
+	// Note: Returns all leave records for all team members.
+	// This is intentional as the system is designed for a single team where
+	// all authenticated users need visibility into leave schedules.
+	// If per-user or per-team filtering is needed in the future, the query
+	// would need to filter by member_id or team membership.
 	leaveRecords, err := s.db.GetLeaveRecords(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to get leave records", err)

@@ -7,7 +7,6 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -541,33 +540,6 @@ func (s *Server) getCoversForLeave(ctx context.Context, leaveID string, startDat
 	}
 
 	return covers
-}
-
-// createTestSession creates a test session for integration testing.
-// This bypasses authentication for testing purposes.
-func (s *Server) createTestSession(ctx context.Context) (string, error) {
-	if s.sessionManager == nil {
-		return "", errors.New("session manager not available")
-	}
-
-	// Create or get test user
-	user, err := s.db.GetQueries().GetUserByEmail(ctx, "test@example.com")
-	if err != nil {
-		// User doesn't exist, create one
-		user, err = s.db.GetQueries().CreateUser(ctx, sqlc.CreateUserParams{
-			Email:      "test@example.com",
-			Name:       "Test User",
-			Provider:   "fake",
-			ProviderID: "test-user-id",
-			IsAdmin:    sql.NullInt64{Int64: 1, Valid: true},
-		})
-		if err != nil {
-			return "", err
-		}
-	}
-
-	// Create session
-	return s.sessionManager.CreateSession(ctx, user.ID)
 }
 
 type ListLeaveOutput struct {

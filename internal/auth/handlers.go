@@ -318,11 +318,18 @@ func (am *AuthManager) HandleGenerateAPIToken(w http.ResponseWriter, r *http.Req
 	// Generate unique ID for the token
 	tokenID := uuid.New().String()
 
+	// Get token name from query parameter
+	tokenName := r.URL.Query().Get("name")
+	if tokenName == "" {
+		http.Error(w, "Token name is required", http.StatusBadRequest)
+		return
+	}
+
 	// Store token in database
 	_, err = am.sessionManager.db.CreateAPIToken(r.Context(), sqlc.CreateAPITokenParams{
 		ID:        tokenID,
 		UserID:    userSession.UserID,
-		Name:      r.URL.Query().Get("name"),
+		Name:      tokenName,
 		TokenHash: hashedToken,
 		IsActive:  sql.NullInt64{Int64: 1, Valid: true},
 	})
@@ -379,8 +386,8 @@ func (am *AuthManager) writeTokensResponse(w http.ResponseWriter, tokens []sqlc.
 				return
 			}
 		}
-		// #nosec G602 - bounds check is handled by range loop
-		token := &tokens[i]
+		// #nosec G602 -- bounds check is handled by range loop
+		token := tokens[i]
 		createdAt := ""
 		if token.CreatedAt.Valid {
 			createdAt = token.CreatedAt.Time.Format("2006-01-02T15:04:05Z")

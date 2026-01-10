@@ -7,7 +7,6 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -100,10 +99,10 @@ func NewServer(db *database.DB, development bool) (*Server, error) {
 	config.Components.SecuritySchemes = map[string]*huma.SecurityScheme{
 		// Session-based authentication (web interface)
 		"sessionAuth": {
-			Type:         "http",
-			Scheme:       "bearer",
-			BearerFormat: "Session Token",
-			Description:  "Session-based authentication using secure cookies. Used for web interface authentication.",
+			Type:        "apiKey",
+			In:          "cookie",
+			Name:        "session_token",
+			Description: "Session-based authentication using secure cookies. Used for web interface authentication.",
 		},
 		// Token-based authentication (API access)
 		"apiTokenAuth": {
@@ -543,33 +542,6 @@ func (s *Server) getCoversForLeave(ctx context.Context, leaveID string, startDat
 	return covers
 }
 
-// createTestSession creates a test session for integration testing.
-// This bypasses authentication for testing purposes.
-func (s *Server) createTestSession(ctx context.Context) (string, error) {
-	if s.sessionManager == nil {
-		return "", errors.New("session manager not available")
-	}
-
-	// Create or get test user
-	user, err := s.db.GetQueries().GetUserByEmail(ctx, "test@example.com")
-	if err != nil {
-		// User doesn't exist, create one
-		user, err = s.db.GetQueries().CreateUser(ctx, sqlc.CreateUserParams{
-			Email:      "test@example.com",
-			Name:       "Test User",
-			Provider:   "fake",
-			ProviderID: "test-user-id",
-			IsAdmin:    sql.NullInt64{Int64: 1, Valid: true},
-		})
-		if err != nil {
-			return "", err
-		}
-	}
-
-	// Create session
-	return s.sessionManager.CreateSession(ctx, user.ID)
-}
-
 type ListLeaveOutput struct {
 	Body struct {
 		LeaveRecords []database.LeaveRecord `json:"leave_records"`
@@ -588,6 +560,11 @@ func (s *Server) handleListLeave(ctx context.Context, input *struct{}) (*ListLea
 		return nil, huma.Error401Unauthorized("Authentication required")
 	}
 
+	// Note: Returns all leave records for all team members.
+	// This is intentional as the system is designed for a single team where
+	// all authenticated users need visibility into leave schedules.
+	// If per-user or per-team filtering is needed in the future, the query
+	// would need to filter by member_id or team membership.
 	leaveRecords, err := s.db.GetLeaveRecords(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to get leave records", err)
@@ -927,7 +904,9 @@ type APITokenInfo struct {
 }
 
 type RevokeAPITokenInput struct {
-	ID string `json:"id"`
+	Path struct {
+		ID string `doc:"Token ID to revoke" path:"id"`
+	}
 }
 
 type RevokeAPITokenOutput struct {
@@ -1063,7 +1042,7 @@ func (s *Server) handleRevokeAPIToken(ctx context.Context, input *RevokeAPIToken
 	}
 
 	// Verify token belongs to user
-	token, err := s.db.GetQueries().GetAPITokenByID(ctx, input.ID)
+	token, err := s.db.GetQueries().GetAPITokenByID(ctx, input.Path.ID)
 	if err != nil {
 		return nil, huma.Error404NotFound("Token not found")
 	}
@@ -1073,7 +1052,7 @@ func (s *Server) handleRevokeAPIToken(ctx context.Context, input *RevokeAPIToken
 	}
 
 	// Delete token
-	_, err = s.db.GetQueries().DeleteAPIToken(ctx, input.ID)
+	_, err = s.db.GetQueries().DeleteAPIToken(ctx, input.Path.ID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to delete token", err)
 	}

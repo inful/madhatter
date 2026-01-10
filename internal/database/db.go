@@ -275,8 +275,8 @@ func boolToInt(b bool) int64 {
 	return 0
 }
 
-// CreateAPIToken creates a new API token for a user.
-func (db *DB) CreateAPIToken(ctx context.Context, userID, name, tokenHash string) (string, error) {
+// CreateAPIToken creates a new API token for a user with optional expiration.
+func (db *DB) CreateAPIToken(ctx context.Context, userID, name, tokenHash string, expiresAt sql.NullTime) (string, error) {
 	id := uuid.New().String()
 	params := sqlc.CreateAPITokenParams{
 		ID:        id,
@@ -284,6 +284,7 @@ func (db *DB) CreateAPIToken(ctx context.Context, userID, name, tokenHash string
 		Name:      name,
 		TokenHash: tokenHash,
 		IsActive:  sql.NullInt64{Int64: 1, Valid: true},
+		ExpiresAt: expiresAt,
 	}
 
 	_, err := db.queries.CreateAPIToken(ctx, params)

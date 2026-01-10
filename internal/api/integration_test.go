@@ -3,7 +3,9 @@ package api
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -11,7 +13,9 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/inful/madhatter/internal/auth"
 	"github.com/inful/madhatter/internal/database"
+	"github.com/inful/madhatter/internal/database/sqlc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -30,17 +34,62 @@ func setupTestServer(t *testing.T) (*Server, func()) {
 		_ = db.Close()
 	}
 
-	// Create server (development = false for tests)
-	// Templates are now embedded, so this should always succeed
-	server, err := NewServer(db, false)
+	// Create server with development = true to bypass authentication
+	// This allows tests to focus on business logic without auth complexity
+	server, err := NewServer(db, true)
 	require.NoError(t, err, "Failed to create server")
 
 	return server, cleanup
 }
 
+// createTestSession creates a test session for integration testing.
+// This bypasses authentication for testing purposes.
+func (s *Server) createTestSession(ctx context.Context) (string, error) {
+	if s.sessionManager == nil {
+		return "", errors.New("session manager not available")
+	}
+
+	// Create or get test user
+	user, err := s.db.GetQueries().GetUserByEmail(ctx, "test@example.com")
+	if err != nil {
+		// User doesn't exist, create one
+		user, err = s.db.GetQueries().CreateUser(ctx, sqlc.CreateUserParams{
+			Email:      "test@example.com",
+			Name:       "Test User",
+			Provider:   "fake",
+			ProviderID: "test-user-id",
+			IsAdmin:    sql.NullInt64{Int64: 1, Valid: true},
+		})
+		if err != nil {
+			return "", err
+		}
+	}
+
+	// Create session
+	return s.sessionManager.CreateSession(ctx, user.ID)
+}
+
+// createTestContext creates a context with a test session for authenticated requests.
+func createTestContext(t *testing.T, server *Server) context.Context {
+	t.Helper()
+
+	ctx := context.Background()
+	sessionToken, err := server.createTestSession(ctx)
+	require.NoError(t, err, "Failed to create test session")
+
+	// Get the session data to add to context
+	session, err := server.sessionManager.ValidateSession(ctx, sessionToken)
+	require.NoError(t, err, "Failed to validate test session")
+
+	// Add user session to context (this is what the handlers expect)
+	return context.WithValue(ctx, auth.UserContextKey, session)
+}
+
 func TestTeamEndpoints(t *testing.T) {
 	server, cleanup := setupTestServer(t)
 	defer cleanup()
+
+	ctx := createTestContext(t, server)
 
 	// Test adding team member
 	t.Run("AddTeamMember", func(t *testing.T) {
@@ -48,7 +97,7 @@ func TestTeamEndpoints(t *testing.T) {
 		input.Body.Name = "Alice Johnson"
 		input.Body.Email = "alice@example.com"
 
-		resp, err := server.handleAddTeam(context.Background(), input)
+		resp, err := server.handleAddTeam(ctx, input)
 		require.NoError(t, err)
 		assert.NotEmpty(t, resp.Body.ID)
 		assert.Equal(t, "Team member added successfully", resp.Body.Message)
@@ -56,7 +105,7 @@ func TestTeamEndpoints(t *testing.T) {
 
 	// Test listing team members
 	t.Run("ListTeamMembers", func(t *testing.T) {
-		resp, err := server.handleListTeam(context.Background(), &struct{}{})
+		resp, err := server.handleListTeam(ctx, &struct{}{})
 		require.NoError(t, err)
 		assert.Len(t, resp.Body.Members, 1)
 		assert.Equal(t, "Alice Johnson", resp.Body.Members[0].Name)
@@ -67,8 +116,9 @@ func TestScheduleEndpoints(t *testing.T) {
 	server, cleanup := setupTestServer(t)
 	defer cleanup()
 
+	ctx := createTestContext(t, server)
+
 	// Setup: Add team members
-	ctx := context.Background()
 	_, err := server.db.AddTeamMember(ctx, "Alice", "alice@example.com")
 	require.NoError(t, err)
 	_, err = server.db.AddTeamMember(ctx, "Bob", "bob@example.com")
@@ -96,7 +146,7 @@ func TestLeaveEndpoints(t *testing.T) {
 	server, cleanup := setupTestServer(t)
 	defer cleanup()
 
-	ctx := context.Background()
+	ctx := createTestContext(t, server)
 
 	// Setup: Add team members and generate schedule
 	aliceID, _ := server.db.AddTeamMember(ctx, "Alice", "alice@example.com")
@@ -144,7 +194,7 @@ func TestCalendarEndpoints(t *testing.T) {
 	server, cleanup := setupTestServer(t)
 	defer cleanup()
 
-	ctx := context.Background()
+	ctx := createTestContext(t, server)
 
 	// Setup: Add team member and generate schedule
 	aliceID, _ := server.db.AddTeamMember(ctx, "Alice", "alice@example.com")
@@ -206,17 +256,24 @@ func TestHUMAAPIIntegration(t *testing.T) {
 	server, cleanup := setupTestServer(t)
 	defer cleanup()
 
-	// Create a test request to the HUMA API
-	router := server.router
+	// Create a test session and add it to the request context
+	ctx := context.Background()
+	sessionToken, err := server.createTestSession(ctx)
+	require.NoError(t, err)
 
 	t.Run("TeamAPI", func(t *testing.T) {
 		// Test POST /api/v1/team
 		body := `{"name":"Test User","email":"test@example.com"}`
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/team", bytes.NewBufferString(body))
 		req.Header.Set("Content-Type", "application/json")
+		req.AddCookie(&http.Cookie{
+			Name:  "session_token",
+			Value: sessionToken,
+		})
 		w := httptest.NewRecorder()
 
-		router.ServeHTTP(w, req)
+		// Use the router which has the HUMA operations registered
+		server.router.ServeHTTP(w, req)
 
 		assert.Equal(t, http.StatusOK, w.Code)
 
@@ -230,9 +287,14 @@ func TestHUMAAPIIntegration(t *testing.T) {
 	t.Run("TeamAPIList", func(t *testing.T) {
 		// Test GET /api/v1/team
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/team", nil)
+		req.AddCookie(&http.Cookie{
+			Name:  "session_token",
+			Value: sessionToken,
+		})
 		w := httptest.NewRecorder()
 
-		router.ServeHTTP(w, req)
+		// Use the router which has the HUMA operations registered
+		server.router.ServeHTTP(w, req)
 
 		assert.Equal(t, http.StatusOK, w.Code)
 

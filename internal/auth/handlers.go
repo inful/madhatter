@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/inful/madhatter/internal/database/sqlc"
 )
 
@@ -287,4 +288,194 @@ func capitalizeProviderName(provider string) string {
 		}
 		return strings.ToUpper(provider[:1]) + provider[1:]
 	}
+}
+
+// HandleGenerateAPIToken generates a new API token for the authenticated user.
+func (am *AuthManager) HandleGenerateAPIToken(w http.ResponseWriter, r *http.Request) {
+	// Get user from session
+	session, err := am.sessionManager.GetSessionCookie(r)
+	if err != nil {
+		http.Error(w, "Authentication required", http.StatusUnauthorized)
+		return
+	}
+
+	userSession, err := am.sessionManager.ValidateSession(r.Context(), session)
+	if err != nil {
+		http.Error(w, "Invalid session", http.StatusUnauthorized)
+		return
+	}
+
+	// Generate token
+	token, err := generateSecureToken()
+	if err != nil {
+		http.Error(w, "Failed to generate token", http.StatusInternalServerError)
+		return
+	}
+
+	// Hash token for storage
+	hashedToken := hashToken(token)
+
+	// Generate unique ID for the token
+	tokenID := uuid.New().String()
+
+	// Get token name from query parameter
+	tokenName := r.URL.Query().Get("name")
+	if tokenName == "" {
+		http.Error(w, "Token name is required", http.StatusBadRequest)
+		return
+	}
+
+	// Store token in database
+	_, err = am.sessionManager.db.CreateAPIToken(r.Context(), sqlc.CreateAPITokenParams{
+		ID:        tokenID,
+		UserID:    userSession.UserID,
+		Name:      tokenName,
+		TokenHash: hashedToken,
+		IsActive:  sql.NullInt64{Int64: 1, Valid: true},
+	})
+	if err != nil {
+		http.Error(w, "Failed to store token", http.StatusInternalServerError)
+		return
+	}
+
+	// Return token to user (only time it's shown)
+	w.Header().Set("Content-Type", "application/json")
+	if _, err := fmt.Fprintf(w, `{"token": "%s"}`, token); err != nil {
+		http.Error(w, "Failed to write response", http.StatusInternalServerError)
+		return
+	}
+}
+
+// HandleListAPITokens lists all API tokens for the authenticated user.
+func (am *AuthManager) HandleListAPITokens(w http.ResponseWriter, r *http.Request) {
+	// Get user from session
+	session, err := am.sessionManager.GetSessionCookie(r)
+	if err != nil {
+		http.Error(w, "Authentication required", http.StatusUnauthorized)
+		return
+	}
+
+	userSession, err := am.sessionManager.ValidateSession(r.Context(), session)
+	if err != nil {
+		http.Error(w, "Invalid session", http.StatusUnauthorized)
+		return
+	}
+
+	// Get tokens
+	tokens, err := am.sessionManager.db.GetAPITokensByUser(r.Context(), userSession.UserID)
+	if err != nil {
+		http.Error(w, "Failed to get tokens", http.StatusInternalServerError)
+		return
+	}
+
+	// Return tokens (without sensitive data)
+	w.Header().Set("Content-Type", "application/json")
+	am.writeTokensResponse(w, tokens)
+}
+
+// writeTokensResponse writes the tokens as JSON to the response.
+func (am *AuthManager) writeTokensResponse(w http.ResponseWriter, tokens []sqlc.ApiToken) {
+	if _, err := w.Write([]byte("[")); err != nil {
+		http.Error(w, "Failed to write response", http.StatusInternalServerError)
+		return
+	}
+	for i := range tokens {
+		if i > 0 {
+			if _, err := w.Write([]byte(",")); err != nil {
+				http.Error(w, "Failed to write response", http.StatusInternalServerError)
+				return
+			}
+		}
+		// #nosec G602 -- bounds check is handled by range loop
+		token := tokens[i]
+		createdAt := ""
+		if token.CreatedAt.Valid {
+			createdAt = token.CreatedAt.Time.Format("2006-01-02T15:04:05Z")
+		}
+		if _, err := fmt.Fprintf(w, `{"id":"%s","name":"%s","created_at":"%s","is_active":%t}`,
+			token.ID, token.Name, createdAt, token.IsActive.Valid && token.IsActive.Int64 == 1); err != nil {
+			http.Error(w, "Failed to write response", http.StatusInternalServerError)
+			return
+		}
+	}
+	if _, err := w.Write([]byte("]")); err != nil {
+		http.Error(w, "Failed to write response", http.StatusInternalServerError)
+		return
+	}
+}
+
+// HandleCleanupExpiredTokens removes expired API tokens (admin only).
+func (am *AuthManager) HandleCleanupExpiredTokens(w http.ResponseWriter, r *http.Request) {
+	// Get user from session
+	session, err := am.sessionManager.GetSessionCookie(r)
+	if err != nil {
+		http.Error(w, "Authentication required", http.StatusUnauthorized)
+		return
+	}
+
+	userSession, err := am.sessionManager.ValidateSession(r.Context(), session)
+	if err != nil {
+		http.Error(w, "Invalid session", http.StatusUnauthorized)
+		return
+	}
+
+	// Check admin privileges (handle sql.NullInt64)
+	if !userSession.IsAdmin.Valid || userSession.IsAdmin.Int64 == 0 {
+		http.Error(w, "Admin privileges required", http.StatusForbidden)
+		return
+	}
+
+	// Cleanup expired tokens
+	_, err = am.sessionManager.db.CleanupExpiredTokens(r.Context())
+	if err != nil {
+		http.Error(w, "Failed to cleanup tokens", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// HandleRevokeAPIToken revokes an API token.
+func (am *AuthManager) HandleRevokeAPIToken(w http.ResponseWriter, r *http.Request) {
+	// Get user from session
+	session, err := am.sessionManager.GetSessionCookie(r)
+	if err != nil {
+		http.Error(w, "Authentication required", http.StatusUnauthorized)
+		return
+	}
+
+	userSession, err := am.sessionManager.ValidateSession(r.Context(), session)
+	if err != nil {
+		http.Error(w, "Invalid session", http.StatusUnauthorized)
+		return
+	}
+
+	// Get token ID from URL
+	tokenID := chi.URLParam(r, "id")
+	if tokenID == "" {
+		http.Error(w, "Token ID required", http.StatusBadRequest)
+		return
+	}
+
+	// Verify token belongs to user
+	token, err := am.sessionManager.db.GetAPITokenByID(r.Context(), tokenID)
+	if err != nil {
+		http.Error(w, "Token not found", http.StatusNotFound)
+		return
+	}
+
+	// Check ownership
+	if token.UserID != userSession.UserID {
+		http.Error(w, "Not authorized", http.StatusForbidden)
+		return
+	}
+
+	// Delete token
+	_, err = am.sessionManager.db.DeleteAPIToken(r.Context(), tokenID)
+	if err != nil {
+		http.Error(w, "Failed to delete token", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

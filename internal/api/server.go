@@ -99,10 +99,10 @@ func NewServer(db *database.DB, development bool) (*Server, error) {
 	config.Components.SecuritySchemes = map[string]*huma.SecurityScheme{
 		// Session-based authentication (web interface)
 		"sessionAuth": {
-			Type:         "http",
-			Scheme:       "bearer",
-			BearerFormat: "Session Token",
-			Description:  "Session-based authentication using secure cookies. Used for web interface authentication.",
+			Type:        "apiKey",
+			In:          "cookie",
+			Name:        "session_token",
+			Description: "Session-based authentication using secure cookies. Used for web interface authentication.",
 		},
 		// Token-based authentication (API access)
 		"apiTokenAuth": {

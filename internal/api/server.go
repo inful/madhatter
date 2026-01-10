@@ -905,7 +905,7 @@ type APITokenInfo struct {
 
 type RevokeAPITokenInput struct {
 	Path struct {
-		ID string `path:"id" doc:"Token ID to revoke"`
+		ID string `doc:"Token ID to revoke" path:"id"`
 	}
 }
 

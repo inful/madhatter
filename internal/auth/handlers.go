@@ -386,6 +386,7 @@ func (am *AuthManager) writeTokensResponse(w http.ResponseWriter, tokens []sqlc.
 				return
 			}
 		}
+		// #nosec G602 -- bounds check is handled by range loop
 		token := tokens[i]
 		createdAt := ""
 		if token.CreatedAt.Valid {

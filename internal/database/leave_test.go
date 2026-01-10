@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -16,21 +17,25 @@ func TestCreateLeaveRecord_Success(t *testing.T) {
 	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
 	require.NoError(t, err)
 
+	// Use dynamic dates
+	startDate := time.Now().AddDate(0, 0, 7).Format("2006-01-02")
+	endDate := time.Now().AddDate(0, 0, 9).Format("2006-01-02")
+
 	// Act
-	leaveID, err := db.CreateLeaveRecord(ctx, memberID, "sick", "2024-01-15", "2024-01-17")
+	leaveID, err := db.CreateLeaveRecord(ctx, memberID, "sick", startDate, endDate)
 
 	// Assert
 	require.NoError(t, err)
 	require.NotEmpty(t, leaveID)
 
 	// Verify in database
-	leaves, err := db.GetLeaveByDate(ctx, "2024-01-15")
+	leaves, err := db.GetLeaveByDate(ctx, startDate)
 	require.NoError(t, err)
 	require.Len(t, leaves, 1)
 	require.Equal(t, memberID, leaves[0].MemberID)
 	require.Equal(t, "sick", leaves[0].Type)
-	require.Equal(t, "2024-01-15", leaves[0].StartDate.Format("2006-01-02"))
-	require.Equal(t, "2024-01-17", leaves[0].EndDate.Format("2006-01-02"))
+	require.Equal(t, startDate, leaves[0].StartDate.Format("2006-01-02"))
+	require.Equal(t, endDate, leaves[0].EndDate.Format("2006-01-02"))
 	require.Equal(t, "pending", leaves[0].Status)
 }
 
@@ -41,8 +46,12 @@ func TestCreateLeaveRecord_InvalidMember(t *testing.T) {
 
 	ctx := context.Background()
 
+	// Use dynamic dates
+	startDate := time.Now().AddDate(0, 0, 7).Format("2006-01-02")
+	endDate := time.Now().AddDate(0, 0, 9).Format("2006-01-02")
+
 	// Act
-	_, err := db.CreateLeaveRecord(ctx, "nonexistent", "sick", "2024-01-15", "2024-01-17")
+	_, err := db.CreateLeaveRecord(ctx, "nonexistent", "sick", startDate, endDate)
 
 	// Assert
 	require.Error(t, err)
@@ -55,29 +64,38 @@ func TestGetLeaveByDate_Range(t *testing.T) {
 
 	ctx := context.Background()
 	memberID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com")
-	_, _ = db.CreateLeaveRecord(ctx, memberID, "sick", "2024-01-15", "2024-01-17")
+
+	// Use dynamic dates
+	baseDate := time.Now().AddDate(0, 0, 7)
+	startDate := baseDate.Format("2006-01-02")
+	middleDate := baseDate.AddDate(0, 0, 1).Format("2006-01-02")
+	endDate := baseDate.AddDate(0, 0, 2).Format("2006-01-02")
+	beforeDate := baseDate.AddDate(0, 0, -1).Format("2006-01-02")
+	afterDate := baseDate.AddDate(0, 0, 3).Format("2006-01-02")
+
+	_, _ = db.CreateLeaveRecord(ctx, memberID, "sick", startDate, endDate)
 
 	// Act & Assert - Should find leave on start date
-	leaves, err := db.GetLeaveByDate(ctx, "2024-01-15")
+	leaves, err := db.GetLeaveByDate(ctx, startDate)
 	require.NoError(t, err)
 	require.Len(t, leaves, 1)
 
 	// Should find leave on end date
-	leaves, err = db.GetLeaveByDate(ctx, "2024-01-17")
+	leaves, err = db.GetLeaveByDate(ctx, endDate)
 	require.NoError(t, err)
 	require.Len(t, leaves, 1)
 
 	// Should find leave in middle of range
-	leaves, err = db.GetLeaveByDate(ctx, "2024-01-16")
+	leaves, err = db.GetLeaveByDate(ctx, middleDate)
 	require.NoError(t, err)
 	require.Len(t, leaves, 1)
 
 	// Should NOT find leave outside range
-	leaves, err = db.GetLeaveByDate(ctx, "2024-01-14")
+	leaves, err = db.GetLeaveByDate(ctx, beforeDate)
 	require.NoError(t, err)
 	require.Empty(t, leaves)
 
-	leaves, err = db.GetLeaveByDate(ctx, "2024-01-18")
+	leaves, err = db.GetLeaveByDate(ctx, afterDate)
 	require.NoError(t, err)
 	require.Empty(t, leaves)
 }
@@ -91,11 +109,18 @@ func TestGetLeaveByDate_MultipleMembers(t *testing.T) {
 	member1, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com")
 	member2, _ := db.AddTeamMember(ctx, "Bob", "bob@example.com")
 
-	_, _ = db.CreateLeaveRecord(ctx, member1, "sick", "2024-01-15", "2024-01-17")
-	_, _ = db.CreateLeaveRecord(ctx, member2, "vacation", "2024-01-16", "2024-01-18")
+	// Use dynamic dates
+	baseDate := time.Now().AddDate(0, 0, 7)
+	aliceLeaveStart := baseDate.Format("2006-01-02")
+	aliceLeaveEnd := baseDate.AddDate(0, 0, 1).Format("2006-01-02")
+	bobLeaveStart := aliceLeaveEnd
+	bobLeaveEnd := baseDate.AddDate(0, 0, 2).Format("2006-01-02")
 
-	// Act
-	leaves, err := db.GetLeaveByDate(ctx, "2024-01-16")
+	_, _ = db.CreateLeaveRecord(ctx, member1, "sick", aliceLeaveStart, aliceLeaveEnd)
+	_, _ = db.CreateLeaveRecord(ctx, member2, "vacation", bobLeaveStart, bobLeaveEnd)
+
+	// Act - query for the overlapping date (Alice's end date = Bob's start date)
+	leaves, err := db.GetLeaveByDate(ctx, aliceLeaveEnd)
 
 	// Assert
 	require.NoError(t, err)
@@ -109,7 +134,12 @@ func TestUpdateLeaveStatus(t *testing.T) {
 
 	ctx := context.Background()
 	memberID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com")
-	leaveID, _ := db.CreateLeaveRecord(ctx, memberID, "sick", "2024-01-15", "2024-01-17")
+
+	// Use dynamic dates
+	startDate := time.Now().AddDate(0, 0, 7).Format("2006-01-02")
+	endDate := time.Now().AddDate(0, 0, 9).Format("2006-01-02")
+
+	leaveID, _ := db.CreateLeaveRecord(ctx, memberID, "sick", startDate, endDate)
 
 	// Act
 	err := db.UpdateLeaveStatus(ctx, leaveID, "assigned")
@@ -117,7 +147,7 @@ func TestUpdateLeaveStatus(t *testing.T) {
 	// Assert
 	require.NoError(t, err)
 
-	leaves, _ := db.GetLeaveByDate(ctx, "2024-01-15")
+	leaves, _ := db.GetLeaveByDate(ctx, startDate)
 	require.Equal(t, "assigned", leaves[0].Status)
 }
 
@@ -128,7 +158,12 @@ func TestGetLeaveByID(t *testing.T) {
 
 	ctx := context.Background()
 	memberID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com")
-	leaveID, _ := db.CreateLeaveRecord(ctx, memberID, "sick", "2024-01-15", "2024-01-17")
+
+	// Use dynamic dates
+	startDate := time.Now().AddDate(0, 0, 7).Format("2006-01-02")
+	endDate := time.Now().AddDate(0, 0, 9).Format("2006-01-02")
+
+	leaveID, _ := db.CreateLeaveRecord(ctx, memberID, "sick", startDate, endDate)
 
 	// Act
 	leave, err := db.GetLeaveByID(ctx, leaveID)

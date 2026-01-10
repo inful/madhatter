@@ -92,3 +92,20 @@ CREATE INDEX IF NOT EXISTS idx_users_provider ON users(provider, provider_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
 CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
 CREATE INDEX IF NOT EXISTS idx_oauth_tokens_user_provider ON oauth_tokens(user_id, provider);
+
+-- API Token Authentication Tables
+CREATE TABLE IF NOT EXISTS api_tokens (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    token_hash TEXT UNIQUE NOT NULL,
+    is_active INTEGER DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    expires_at DATETIME,
+    last_used_at DATETIME,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_api_tokens_user ON api_tokens(user_id);
+CREATE INDEX IF NOT EXISTS idx_api_tokens_token_hash ON api_tokens(token_hash);
+CREATE INDEX IF NOT EXISTS idx_api_tokens_active ON api_tokens(is_active);

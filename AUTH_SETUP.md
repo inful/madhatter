@@ -87,33 +87,73 @@ The system automatically creates the required tables on first run. The schema in
 
 ## Running the Application
 
+### Development Mode (No OAuth Required)
+
+For local development and testing, you can use the built-in development mode:
+
+```bash
+# Build the application
+go build -o support-rota
+
+# Run in development mode
+./support-rota serve --port 8080 --development
+```
+
+**Development Mode Features**:
+- Bypasses full OAuth setup
+- Uses fake OAuth provider
+- Automatically creates admin user
+- Special development login page at `/login`
+- No external OAuth provider configuration needed
+
+**Access**: Navigate to `http://localhost:8080` and click login.
+
+### Production Mode
+
 1. **Install dependencies**:
-   ```bash
-   go mod download
-   ```
+    ```bash
+    go mod download
+    ```
 
 2. **Build the application**:
-   ```bash
-   go build -o madhatter
-   ```
+    ```bash
+    go build -o support-rota
+    ```
 
 3. **Set environment variables** (production only):
-   ```bash
-   # Required for production: encryption key for OAuth tokens
-   export TOKEN_ENCRYPTION_KEY=$(openssl rand -base64 32)
-   ```
-   
-   > **Note**: Without this key, a random key is generated at startup, which means OAuth tokens won't survive application restarts.
+    ```bash
+    # Required for production: encryption key for OAuth tokens
+    export TOKEN_ENCRYPTION_KEY=$(openssl rand -base64 32)
+    # Required: strong session secret
+    export SESSION_SECRET=$(openssl rand -base64 32)
+    ```
+    
+    > **Note**: Without `TOKEN_ENCRYPTION_KEY`, a random key is generated at startup, which means OAuth tokens won't survive application restarts.
 
-4. **Run with config**:
-   ```bash
-   ./madhatter --config config.yaml
-   ```
+4. **Create configuration file** (`config.yaml`):
+    ```yaml
+    server:
+      address: ":8080"
+      session_secret: "${SESSION_SECRET}"
+    
+    oauth:
+      app_url: "http://localhost:8080"
+      forgejo:
+        enabled: true
+        client_id: "your-client-id"
+        client_secret: "your-client-secret"
+        base_url: "https://git.example.com"
+    ```
 
-5. **Access the application**:
-   - Navigate to `http://localhost:8080`
-   - Click **Login** to see available providers
-   - Choose your provider and authorize the application
+5. **Run with config**:
+    ```bash
+    ./support-rota serve --port 8080
+    ```
+
+6. **Access the application**:
+    - Navigate to `http://localhost:8080`
+    - Click **Login** to see available providers
+    - Choose your provider and authorize the application
 
 ## User Management
 

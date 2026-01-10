@@ -548,11 +548,11 @@ go build -o support-rota
 ## Support
 
 For issues or questions, refer to:
-- **FINAL_SPECIFICATION.md** - Complete system requirements
-- **IMPLEMENTATION_GUIDE_HUMA_HTMX.md** - Step-by-step implementation
-- **PROJECT_ROADMAP.md** - Development timeline
-- **TDD_TEST_PLAN.md** - Testing methodology
-- **COMMIT_WORKFLOW.md** - Quality assurance process
+- **README.md** - Main project documentation
+- **AGENTS.md** - Code standards and development guidelines
+- **AUTH_SETUP.md** - OAuth2 authentication setup
+- **HOLIDAY_IMPLEMENTATION.md** - Holiday support implementation
+- **SQLC_MIGRATION_GUIDE.md** - Database layer migration guide
 
 ---
 

@@ -109,6 +109,18 @@ func New(path string) (*DB, error) {
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
         UNIQUE(user_id, provider)
     );
+
+    CREATE TABLE IF NOT EXISTS api_tokens (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        token_hash TEXT UNIQUE NOT NULL,
+        is_active INTEGER DEFAULT 1,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        expires_at DATETIME,
+        last_used_at DATETIME,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
     `
 
 	if _, err := db.ExecContext(ctx, schema); err != nil {
@@ -261,4 +273,58 @@ func boolToInt(b bool) int64 {
 		return 1
 	}
 	return 0
+}
+
+// CreateAPIToken creates a new API token for a user.
+func (db *DB) CreateAPIToken(ctx context.Context, userID, name, tokenHash string) (string, error) {
+	id := uuid.New().String()
+	params := sqlc.CreateAPITokenParams{
+		ID:        id,
+		UserID:    userID,
+		Name:      name,
+		TokenHash: tokenHash,
+		IsActive:  sql.NullInt64{Int64: 1, Valid: true},
+	}
+
+	_, err := db.queries.CreateAPIToken(ctx, params)
+	return id, err
+}
+
+// GetAPITokensByUser gets all API tokens for a user.
+func (db *DB) GetAPITokensByUser(ctx context.Context, userID string) ([]sqlc.ApiToken, error) {
+	return db.queries.GetAPITokensByUser(ctx, userID)
+}
+
+// GetAPITokenByID gets an API token by ID.
+func (db *DB) GetAPITokenByID(ctx context.Context, tokenID string) (sqlc.ApiToken, error) {
+	return db.queries.GetAPITokenByID(ctx, tokenID)
+}
+
+// GetAPITokenByHash gets an API token by its hash.
+func (db *DB) GetAPITokenByHash(ctx context.Context, tokenHash string) (sqlc.ApiToken, error) {
+	return db.queries.GetAPITokenByHash(ctx, tokenHash)
+}
+
+// UpdateAPITokenLastUsed updates the last used timestamp of an API token.
+func (db *DB) UpdateAPITokenLastUsed(ctx context.Context, tokenID string) error {
+	_, err := db.queries.UpdateAPITokenLastUsed(ctx, tokenID)
+	return err
+}
+
+// DeleteAPIToken deletes an API token.
+func (db *DB) DeleteAPIToken(ctx context.Context, tokenID string) error {
+	_, err := db.queries.DeleteAPIToken(ctx, tokenID)
+	return err
+}
+
+// DeactivateAPIToken deactivates an API token.
+func (db *DB) DeactivateAPIToken(ctx context.Context, tokenID string) error {
+	_, err := db.queries.DeactivateAPIToken(ctx, tokenID)
+	return err
+}
+
+// CleanupExpiredTokens removes expired API tokens.
+func (db *DB) CleanupExpiredTokens(ctx context.Context) error {
+	_, err := db.queries.CleanupExpiredTokens(ctx)
+	return err
 }

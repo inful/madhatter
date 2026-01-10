@@ -9,6 +9,17 @@ import (
 	"time"
 )
 
+type ApiToken struct {
+	ID         string        `json:"id"`
+	UserID     string        `json:"user_id"`
+	Name       string        `json:"name"`
+	TokenHash  string        `json:"token_hash"`
+	IsActive   sql.NullInt64 `json:"is_active"`
+	CreatedAt  sql.NullTime  `json:"created_at"`
+	ExpiresAt  sql.NullTime  `json:"expires_at"`
+	LastUsedAt sql.NullTime  `json:"last_used_at"`
+}
+
 type CalendarSubscription struct {
 	ID        string       `json:"id"`
 	MemberID  string       `json:"member_id"`

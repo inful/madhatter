@@ -12,7 +12,9 @@ import (
 
 type Querier interface {
 	AddTeamMember(ctx context.Context, arg AddTeamMemberParams) (sql.Result, error)
+	CleanupExpiredTokens(ctx context.Context) (sql.Result, error)
 	CountAdmins(ctx context.Context) (int64, error)
+	CreateAPIToken(ctx context.Context, arg CreateAPITokenParams) (sql.Result, error)
 	CreateCalendarSubscription(ctx context.Context, arg CreateCalendarSubscriptionParams) (sql.Result, error)
 	CreateLeaveRecord(ctx context.Context, arg CreateLeaveRecordParams) (sql.Result, error)
 	CreateOAuthToken(ctx context.Context, arg CreateOAuthTokenParams) (OauthToken, error)
@@ -21,7 +23,9 @@ type Querier interface {
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	// Atomically creates a user and makes them admin only if no admins exist
 	CreateUserAsFirstAdmin(ctx context.Context, arg CreateUserAsFirstAdminParams) (User, error)
+	DeactivateAPIToken(ctx context.Context, id string) (sql.Result, error)
 	DeactivateTeamMember(ctx context.Context, id string) error
+	DeleteAPIToken(ctx context.Context, id string) (sql.Result, error)
 	DeleteAssignmentsByDateRange(ctx context.Context, arg DeleteAssignmentsByDateRangeParams) error
 	DeleteCalendarSubscription(ctx context.Context, token string) error
 	DeleteExpiredSessions(ctx context.Context) error
@@ -30,6 +34,9 @@ type Querier interface {
 	DeleteRotaAssignment(ctx context.Context, id string) error
 	DeleteSession(ctx context.Context, token string) error
 	DeleteUserSessions(ctx context.Context, userID string) error
+	GetAPITokenByHash(ctx context.Context, tokenHash string) (ApiToken, error)
+	GetAPITokenByID(ctx context.Context, id string) (ApiToken, error)
+	GetAPITokensByUser(ctx context.Context, userID string) ([]ApiToken, error)
 	GetActiveTeamMembers(ctx context.Context) ([]TeamMember, error)
 	GetAssignmentByID(ctx context.Context, id string) (GetAssignmentByIDRow, error)
 	GetAssignmentsByDate(ctx context.Context, date time.Time) ([]GetAssignmentsByDateRow, error)
@@ -52,6 +59,7 @@ type Querier interface {
 	GetUserByProvider(ctx context.Context, arg GetUserByProviderParams) (User, error)
 	ListActiveUsers(ctx context.Context) ([]User, error)
 	ListAdminUsers(ctx context.Context) ([]User, error)
+	UpdateAPITokenLastUsed(ctx context.Context, id string) (sql.Result, error)
 	UpdateCoverMember(ctx context.Context, arg UpdateCoverMemberParams) error
 	UpdateLeaveCoverMember(ctx context.Context, arg UpdateLeaveCoverMemberParams) error
 	UpdateLeaveStatus(ctx context.Context, arg UpdateLeaveStatusParams) error

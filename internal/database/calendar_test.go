@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
@@ -134,10 +135,11 @@ func TestGetUpcomingAssignments_WithCovers(t *testing.T) {
 	coverMemberID, _ := db.AddTeamMember(ctx, "Bob", "bob@example.com")
 
 	// Create original assignment (tomorrow)
-	originalID, _ := db.CreateRotaAssignment(ctx, "2026-01-09", memberID, false, nil)
+	tomorrow := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
+	originalID, _ := db.CreateRotaAssignment(ctx, tomorrow, memberID, false, nil)
 
 	// Create cover assignment (same day)
-	_, _ = db.CreateRotaAssignment(ctx, "2026-01-09", coverMemberID, true, &originalID)
+	_, _ = db.CreateRotaAssignment(ctx, tomorrow, coverMemberID, true, &originalID)
 
 	// Act
 	assignments, err := db.GetUpcomingAssignments(ctx, memberID, 10)
@@ -158,7 +160,8 @@ func TestGetUpcomingAssignments_BeyondRange(t *testing.T) {
 	memberID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com")
 
 	// Create assignment 15 days in future
-	_, _ = db.CreateRotaAssignment(ctx, "2026-01-22", memberID, false, nil)
+	fifteenDaysAway := time.Now().AddDate(0, 0, 15).Format("2006-01-02")
+	_, _ = db.CreateRotaAssignment(ctx, fifteenDaysAway, memberID, false, nil)
 
 	// Act - Get only 10 days ahead
 	assignments, err := db.GetUpcomingAssignments(ctx, memberID, 10)

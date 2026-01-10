@@ -12,14 +12,13 @@ import (
 )
 
 const createLeaveRecord = `-- name: CreateLeaveRecord :execresult
-INSERT INTO leave_records (id, member_id, type, start_date, end_date, status)
-VALUES (?, ?, ?, ?, ?, 'pending')
+INSERT INTO leave_records (id, member_id, start_date, end_date, status)
+VALUES (?, ?, ?, ?, 'pending')
 `
 
 type CreateLeaveRecordParams struct {
 	ID        string    `json:"id"`
 	MemberID  string    `json:"member_id"`
-	Type      string    `json:"type"`
 	StartDate time.Time `json:"start_date"`
 	EndDate   time.Time `json:"end_date"`
 }
@@ -28,14 +27,13 @@ func (q *Queries) CreateLeaveRecord(ctx context.Context, arg CreateLeaveRecordPa
 	return q.db.ExecContext(ctx, createLeaveRecord,
 		arg.ID,
 		arg.MemberID,
-		arg.Type,
 		arg.StartDate,
 		arg.EndDate,
 	)
 }
 
 const getLeaveByDate = `-- name: GetLeaveByDate :many
-SELECT id, member_id, start_date, end_date, type, cover_member_id, status, created_at
+SELECT id, member_id, start_date, end_date, cover_member_id, status, created_at
 FROM leave_records
 WHERE ? >= start_date AND ? <= end_date AND status != 'completed'
 `
@@ -59,7 +57,6 @@ func (q *Queries) GetLeaveByDate(ctx context.Context, arg GetLeaveByDateParams) 
 			&i.MemberID,
 			&i.StartDate,
 			&i.EndDate,
-			&i.Type,
 			&i.CoverMemberID,
 			&i.Status,
 			&i.CreatedAt,
@@ -78,7 +75,7 @@ func (q *Queries) GetLeaveByDate(ctx context.Context, arg GetLeaveByDateParams) 
 }
 
 const getLeaveByID = `-- name: GetLeaveByID :one
-SELECT id, member_id, start_date, end_date, type, cover_member_id, status, created_at
+SELECT id, member_id, start_date, end_date, cover_member_id, status, created_at
 FROM leave_records
 WHERE id = ?
 `
@@ -91,7 +88,6 @@ func (q *Queries) GetLeaveByID(ctx context.Context, id string) (LeaveRecord, err
 		&i.MemberID,
 		&i.StartDate,
 		&i.EndDate,
-		&i.Type,
 		&i.CoverMemberID,
 		&i.Status,
 		&i.CreatedAt,
@@ -100,7 +96,7 @@ func (q *Queries) GetLeaveByID(ctx context.Context, id string) (LeaveRecord, err
 }
 
 const getLeaveRecords = `-- name: GetLeaveRecords :many
-SELECT id, member_id, start_date, end_date, type, cover_member_id, status, created_at
+SELECT id, member_id, start_date, end_date, cover_member_id, status, created_at
 FROM leave_records
 WHERE (status = ? OR ? = '')
 ORDER BY start_date DESC
@@ -125,7 +121,6 @@ func (q *Queries) GetLeaveRecords(ctx context.Context, arg GetLeaveRecordsParams
 			&i.MemberID,
 			&i.StartDate,
 			&i.EndDate,
-			&i.Type,
 			&i.CoverMemberID,
 			&i.Status,
 			&i.CreatedAt,

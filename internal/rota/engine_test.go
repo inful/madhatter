@@ -31,7 +31,7 @@ func TestDebugLeaveDates(t *testing.T) {
 	aliceID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com")
 
 	// Create leave
-	leaveID, err := db.CreateLeaveRecord(ctx, aliceID, "sick", "2024-01-15", "2024-01-15")
+	leaveID, err := db.CreateLeaveRecord(ctx, aliceID, "2024-01-15", "2024-01-15")
 	require.NoError(t, err)
 	t.Logf("Created leave ID: %s", leaveID)
 
@@ -175,7 +175,7 @@ func TestEngine_AssignCoversForLeave_BasicCover(t *testing.T) {
 	require.Equal(t, aliceID, assignments[0].MemberID)
 
 	// Alice takes leave
-	leaveID, err := db.CreateLeaveRecord(ctx, aliceID, "vacation", "2024-01-15", "2024-01-15")
+	leaveID, err := db.CreateLeaveRecord(ctx, aliceID, "2024-01-15", "2024-01-15")
 	require.NoError(t, err)
 
 	// Assign covers
@@ -234,7 +234,7 @@ func TestEngine_AssignCoversForLeave_IgnoresUnscheduledLeave(t *testing.T) {
 	require.Len(t, assignments, 1)
 	require.Equal(t, aliceID, assignments[0].MemberID)
 
-	leaveID, err := db.CreateLeaveRecord(ctx, bobID, "vacation", "2024-01-15", "2024-01-15")
+	leaveID, err := db.CreateLeaveRecord(ctx, bobID, "2024-01-15", "2024-01-15")
 	require.NoError(t, err)
 
 	err = engine.AssignCoversForLeave(ctx, leaveID)
@@ -270,7 +270,7 @@ func TestEngine_AssignCoversForLeave_MultiDayLeave(t *testing.T) {
 	require.NoError(t, err)
 
 	// Alice takes leave for Wed-Fri
-	leaveID, err := db.CreateLeaveRecord(ctx, aliceID, "vacation", "2024-01-17", "2024-01-19")
+	leaveID, err := db.CreateLeaveRecord(ctx, aliceID, "2024-01-17", "2024-01-19")
 	require.NoError(t, err)
 
 	// Assign covers
@@ -324,7 +324,7 @@ func TestEngine_AssignCoversForLeave_LeaveOnWeekend(t *testing.T) {
 	engine := NewEngine(db)
 
 	// Alice takes leave over weekend
-	leaveID, err := db.CreateLeaveRecord(ctx, aliceID, "vacation", "2024-01-13", "2024-01-14")
+	leaveID, err := db.CreateLeaveRecord(ctx, aliceID, "2024-01-13", "2024-01-14")
 	require.NoError(t, err)
 
 	// Assign covers
@@ -356,7 +356,7 @@ func TestEngine_findCover_AllMembersOnLeave(t *testing.T) {
 	require.NoError(t, err)
 
 	// Alice takes leave
-	leaveID, err := db.CreateLeaveRecord(ctx, aliceID, "vacation", "2024-01-15", "2024-01-15")
+	leaveID, err := db.CreateLeaveRecord(ctx, aliceID, "2024-01-15", "2024-01-15")
 	require.NoError(t, err)
 
 	// Try to assign covers - should succeed but no cover available
@@ -688,7 +688,7 @@ func TestEngine_AssignCoversForLeave_LeaveStatusUpdate(t *testing.T) {
 	require.NoError(t, err)
 
 	// Alice takes leave
-	leaveID, err := db.CreateLeaveRecord(ctx, aliceID, "vacation", "2024-01-15", "2024-01-15")
+	leaveID, err := db.CreateLeaveRecord(ctx, aliceID, "2024-01-15", "2024-01-15")
 	require.NoError(t, err)
 
 	// Verify initial status
@@ -742,13 +742,13 @@ func TestEngine_FairCoverRotation(t *testing.T) {
 	require.NoError(t, err)
 
 	// Alice takes leave on Monday Jan 15 (her scheduled day)
-	leaveID1, err := db.CreateLeaveRecord(ctx, aliceID, "sick", "2024-01-15", "2024-01-15")
+	leaveID1, err := db.CreateLeaveRecord(ctx, aliceID, "2024-01-15", "2024-01-15")
 	require.NoError(t, err)
 	err = engine.AssignCoversForLeave(ctx, leaveID1)
 	require.NoError(t, err)
 
 	// Alice takes leave again on Friday Jan 19 (also her scheduled day)
-	leaveID2, err := db.CreateLeaveRecord(ctx, aliceID, "sick", "2024-01-19", "2024-01-19")
+	leaveID2, err := db.CreateLeaveRecord(ctx, aliceID, "2024-01-19", "2024-01-19")
 	require.NoError(t, err)
 	err = engine.AssignCoversForLeave(ctx, leaveID2)
 	require.NoError(t, err)

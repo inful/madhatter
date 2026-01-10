@@ -37,7 +37,7 @@ func TestGetUpcomingPresenceFrom_SkipsNonBusinessDays(t *testing.T) {
 	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
 	require.NoError(t, err)
 
-	_, err = db.CreateLeaveRecord(ctx, bobID, "vacation", "2024-01-08", "2024-01-08")
+	_, err = db.CreateLeaveRecord(ctx, bobID, "2024-01-08", "2024-01-08")
 	require.NoError(t, err)
 
 	holidayChecker := func(date time.Time) bool {

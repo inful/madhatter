@@ -37,7 +37,6 @@ var CLI struct {
 	Leave struct {
 		Report struct {
 			MemberID string `help:"Member ID or email" arg:""`
-			Type     string `help:"Leave type (sick/vacation/other)" arg:""`
 			Start    string `help:"Start date (YYYY-MM-DD)" arg:""`
 			End      string `help:"End date (YYYY-MM-DD)" arg:""`
 		} `cmd:"" help:"Report leave"`
@@ -146,7 +145,7 @@ func leaveReportCommand(ctx context.Context, db *database.DB) {
 		member = &database.TeamMember{ID: CLI.Leave.Report.MemberID}
 	}
 
-	leaveID, err := db.CreateLeaveRecord(ctx, member.ID, CLI.Leave.Report.Type, CLI.Leave.Report.Start, CLI.Leave.Report.End)
+	leaveID, err := db.CreateLeaveRecord(ctx, member.ID, CLI.Leave.Report.Start, CLI.Leave.Report.End)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -176,7 +175,7 @@ func leaveListCommand(ctx context.Context, db *database.DB) {
 	} else {
 		for i := range leaves {
 			l := &leaves[i]
-			log.Printf("%d. %s - %s to %s (%s) [%s]\n", i+1, l.MemberID, l.StartDate, l.EndDate, l.Type, l.Status)
+			log.Printf("%d. %s - %s to %s [%s]\n", i+1, l.MemberID, l.StartDate, l.EndDate, l.Status)
 		}
 	}
 }

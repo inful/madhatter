@@ -46,7 +46,6 @@ func New(path string) (*DB, error) {
         member_id TEXT NOT NULL,
         start_date DATE NOT NULL,
         end_date DATE NOT NULL,
-        type TEXT NOT NULL,
         cover_member_id TEXT,
         status TEXT NOT NULL,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,

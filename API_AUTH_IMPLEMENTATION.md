@@ -16,9 +16,9 @@ This document describes the authentication layer implementation for the Support 
 
 2. **Token-Based Authentication** (API Access)
    - Uses Bearer tokens in Authorization header
-   - AES-256-GCM encryption for token storage
    - SHA-256 hashing for database storage
    - Flexible expiration (never expires by default)
+   - Tokens shown only once during generation
 
 ## Database Schema
 
@@ -26,21 +26,21 @@ This document describes the authentication layer implementation for the Support 
 
 ```sql
 CREATE TABLE api_tokens (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
     name TEXT NOT NULL,
     token_hash TEXT NOT NULL UNIQUE,
-    encrypted_token TEXT NOT NULL,
-    created_at TEXT NOT NULL,
-    last_used_at TEXT,
-    expires_at TEXT,
+    is_active INTEGER DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    expires_at DATETIME,
+    last_used_at DATETIME,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 ```
 
 **Key Features:**
 - `token_hash`: SHA-256 hash for quick lookup and security
-- `encrypted_token`: AES-256-GCM encrypted full token for display
+- `is_active`: Boolean flag to enable/disable token without deletion
 - `last_used_at`: Tracks token usage for security auditing
 - `expires_at`: Optional expiration for temporary tokens
 
@@ -66,9 +66,8 @@ CREATE TABLE api_tokens (
 - `ValidateAPIToken(token)`: Validates and returns user
 
 **Token Format:**
-```
-rota_api_<random_32_bytes>
-```
+- UUID-based token IDs (stored as TEXT PRIMARY KEY)
+- Token hash: SHA-256 hex-encoded string
 
 ### 3. Authentication Middleware
 
@@ -76,20 +75,24 @@ rota_api_<random_32_bytes>
 ```go
 func RequireAuth(next http.Handler) http.Handler
 func RequireAdmin(next http.Handler) http.Handler
+func OptionalAuth(next http.Handler) http.Handler
 ```
 
-**API Token Middleware** (`internal/auth/middleware.go`):
-```go
-func RequireAPIToken(db *database.DB) func(next http.Handler) http.Handler
-```
+**API Token Authentication:**
+The system uses `OptionalAuth` middleware combined with handler-level authentication checks. API tokens are validated by:
+1. Checking the Authorization header for Bearer tokens
+2. Hashing the token with SHA-256
+3. Looking up the hash in the database
+4. Adding user info to context if valid
 
 **Usage:**
 ```go
 // For web routes (session-based)
 router.With(middleware.RequireAuth).Get("/api/team", handlers.GetTeam)
 
-// For API routes (token-based)  
-router.With(middleware.RequireAPIToken(db)).Get("/v1/team", apiHandlers.GetTeam)
+// For API routes (token or session-based)
+router.With(middleware.OptionalAuth).Get("/api/v1/team", apiHandlers.GetTeam)
+// Handler checks auth: auth.GetUserFromContext(ctx)
 ```
 
 ### 4. HUMA v2 API Endpoints (`internal/api/server.go`)
@@ -150,40 +153,41 @@ curl -X DELETE http://localhost:8080/api/v1/tokens/123 \
 
 ### 1. Token Storage
 - **Hash**: SHA-256(token) stored in database for lookup
-- **Encryption**: AES-256-GCM(token) stored for display
 - **Never stored in plain text**
+- Tokens are only shown once during generation
 
 ### 2. Token Validation
 ```go
-func (am *AuthManager) ValidateAPIToken(token string) (*User, error) {
+func ValidateAPIToken(ctx context.Context, db *database.DB, token string) (*User, error) {
     // 1. Hash token
     hash := sha256.Sum256([]byte(token))
     hashHex := hex.EncodeToString(hash[:])
     
     // 2. Lookup in database
-    dbToken, err := am.db.GetAPITokenByHash(hashHex)
+    dbToken, err := db.GetAPITokenByHash(hashHex)
     
-    // 3. Check expiration
+    // 3. Check if active
+    if !dbToken.IsActive.Valid || dbToken.IsActive.Int64 != 1 {
+        return nil, ErrTokenInactive
+    }
+    
+    // 4. Check expiration
     if dbToken.ExpiresAt.Valid && time.Now().After(dbToken.ExpiresAt.Time) {
         return nil, ErrTokenExpired
     }
     
-    // 4. Update last used
-    am.db.UpdateAPITokenLastUsed(dbToken.ID)
+    // 5. Update last used
+    db.UpdateAPITokenLastUsed(dbToken.ID)
     
-    return am.db.GetUser(dbToken.UserID)
+    return db.GetUser(dbToken.UserID)
 }
 ```
 
-### 3. Encryption/Decryption
+### 3. Token Hashing
 ```go
-func encryptToken(token string) (string, error) {
-    // AES-256-GCM encryption
-    block, _ := aes.NewCipher(encryptionKey)
-    gcm, _ := cipher.NewGCM(block)
-    nonce := make([]byte, gcm.NonceSize())
-    ciphertext := gcm.Seal(nonce, nonce, []byte(token), nil)
-    return base64.StdEncoding.EncodeToString(ciphertext), nil
+func hashToken(token string) string {
+    hash := sha256.Sum256([]byte(token))
+    return hex.EncodeToString(hash[:])
 }
 ```
 
@@ -194,15 +198,12 @@ func encryptToken(token string) (string, error) {
 ```bash
 # Session secret (minimum 32 bytes)
 export SESSION_SECRET="your-very-strong-secret-key-here"
-
-# Token encryption key (32 bytes for AES-256)
-export TOKEN_ENCRYPTION_KEY="your-32-byte-encryption-key-here"
 ```
 
 ### Development Mode
 
 ```bash
-# No encryption keys needed
+# No secrets needed in development mode
 ./support-rota serve --port 8080 --development
 ```
 
@@ -254,7 +255,6 @@ func TestAPITokenSecurity(t *testing.T) {
 
 ### 1. Production Requirements
 - Strong `SESSION_SECRET` (32+ bytes)
-- Strong `TOKEN_ENCRYPTION_KEY` (32 bytes exactly)
 - HTTPS for all API endpoints
 - Secure database file permissions (600)
 
@@ -262,6 +262,7 @@ func TestAPITokenSecurity(t *testing.T) {
 - Regular cleanup of expired tokens
 - Monitor `last_used_at` for suspicious activity
 - Implement token rotation policies
+- Disable tokens with `is_active` flag instead of deletion
 
 ### 3. Monitoring
 - Log token generation events
@@ -295,8 +296,7 @@ sqlite3 support_rota.db < internal/database/sqlc/schema.sql
 
 2. **Set Environment Variables**
 ```bash
-export SESSION_SECRET="..."
-export TOKEN_ENCRYPTION_KEY="..."
+export SESSION_SECRET="your-strong-secret-here"
 ```
 
 3. **Rebuild Application**
@@ -305,7 +305,7 @@ go build -o support-rota
 ```
 
 4. **Generate Tokens**
-Users can generate tokens via web interface or existing sessions.
+Users can generate tokens via web interface after logging in with OAuth.
 
 ### Backward Compatibility
 
@@ -343,7 +343,7 @@ Users can generate tokens via web interface or existing sessions.
 
 The API authentication layer provides:
 
-✅ **Security**: AES-256-GCM encryption, SHA-256 hashing  
+✅ **Security**: SHA-256 hashing, secure token storage  
 ✅ **Flexibility**: Session and token-based auth  
 ✅ **Compatibility**: Works with existing system  
 ✅ **Usability**: Simple token generation and management  

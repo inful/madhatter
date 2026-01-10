@@ -899,7 +899,9 @@ type APITokenInfo struct {
 }
 
 type RevokeAPITokenInput struct {
-	ID string `json:"id"`
+	Path struct {
+		ID string `path:"id" doc:"Token ID to revoke"`
+	}
 }
 
 type RevokeAPITokenOutput struct {
@@ -1035,7 +1037,7 @@ func (s *Server) handleRevokeAPIToken(ctx context.Context, input *RevokeAPIToken
 	}
 
 	// Verify token belongs to user
-	token, err := s.db.GetQueries().GetAPITokenByID(ctx, input.ID)
+	token, err := s.db.GetQueries().GetAPITokenByID(ctx, input.Path.ID)
 	if err != nil {
 		return nil, huma.Error404NotFound("Token not found")
 	}
@@ -1045,7 +1047,7 @@ func (s *Server) handleRevokeAPIToken(ctx context.Context, input *RevokeAPIToken
 	}
 
 	// Delete token
-	_, err = s.db.GetQueries().DeleteAPIToken(ctx, input.ID)
+	_, err = s.db.GetQueries().DeleteAPIToken(ctx, input.Path.ID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to delete token", err)
 	}

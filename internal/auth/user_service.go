@@ -3,7 +3,9 @@ package auth
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/inful/madhatter/internal/database/sqlc"
@@ -59,6 +61,78 @@ func (us *UserService) GetOrCreateUser(ctx context.Context, userInfo *UserInfo, 
 	}
 
 	return &newUser, nil
+}
+
+// EnsureTeamMember ensures a corresponding team member exists for an authenticated user.
+//
+// If the member exists, it will be reactivated (if inactive) and its name updated.
+// If not, it will be created.
+func (us *UserService) EnsureTeamMember(ctx context.Context, userInfo *UserInfo) error {
+	name, email, err := normalizeUserIdentity(userInfo)
+	if err != nil {
+		return err
+	}
+
+	member, err := us.db.GetMemberByEmail(ctx, email)
+	if err == nil {
+		return us.syncTeamMember(ctx, member, name, email)
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("failed to look up team member: %w", err)
+	}
+
+	if err := us.insertTeamMember(ctx, name, email); err == nil {
+		return nil
+	} else if isUniqueConstraint(err) {
+		member, fetchErr := us.db.GetMemberByEmail(ctx, email)
+		if fetchErr != nil {
+			return fmt.Errorf("failed to fetch team member after unique constraint: %w", fetchErr)
+		}
+		return us.syncTeamMember(ctx, member, name, email)
+	} else {
+		return fmt.Errorf("failed to create team member: %w", err)
+	}
+}
+
+func normalizeUserIdentity(userInfo *UserInfo) (string, string, error) {
+	if userInfo == nil {
+		return "", "", errors.New("userInfo is required")
+	}
+
+	name := strings.TrimSpace(userInfo.Name)
+	email := strings.TrimSpace(userInfo.Email)
+	if name == "" || email == "" {
+		return "", "", errors.New("userInfo name and email are required")
+	}
+
+	return name, email, nil
+}
+
+func (us *UserService) insertTeamMember(ctx context.Context, name, email string) error {
+	_, err := us.db.AddTeamMember(ctx, sqlc.AddTeamMemberParams{ID: uuid.New().String(), Name: name, Email: email})
+	return err
+}
+
+func (us *UserService) syncTeamMember(ctx context.Context, member sqlc.TeamMember, name, email string) error {
+	if member.IsActive.Valid && member.IsActive.Int64 == 0 {
+		if err := us.db.ActivateTeamMember(ctx, member.ID); err != nil {
+			return fmt.Errorf("failed to activate team member: %w", err)
+		}
+	}
+	if member.Name == name {
+		return nil
+	}
+	if err := us.db.UpdateTeamMember(ctx, sqlc.UpdateTeamMemberParams{ID: member.ID, Name: name, Email: email}); err != nil {
+		return fmt.Errorf("failed to update team member: %w", err)
+	}
+	return nil
+}
+
+func isUniqueConstraint(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "UNIQUE")
 }
 
 // StoreOAuthToken stores OAuth tokens for a user.

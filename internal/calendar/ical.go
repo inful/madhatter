@@ -41,19 +41,25 @@ type ICalGenerator struct {
 	calendar *ics.Calendar
 }
 
-// NewICalGenerator creates a new iCalendar generator.
-func NewICalGenerator() *ICalGenerator {
+// NewICalGeneratorWithMetadata creates a new iCalendar generator with custom metadata.
+func NewICalGeneratorWithMetadata(name, description string) *ICalGenerator {
 	cal := ics.NewCalendar()
-	cal.SetName("Support Rota Calendar")
-	cal.SetDescription("Automated support rota assignments")
+	cal.SetName(name)
+	cal.SetDescription(description)
 	cal.SetProductId("-//SupportRota//EN")
 	cal.SetVersion("2.0")
 	cal.SetCalscale("GREGORIAN")
 	cal.SetMethod(ics.MethodPublish)
 
-	return &ICalGenerator{
-		calendar: cal,
-	}
+	return &ICalGenerator{calendar: cal}
+}
+
+// NewICalGenerator creates a new iCalendar generator.
+func NewICalGenerator() *ICalGenerator {
+	return NewICalGeneratorWithMetadata(
+		"Support Rota Calendar",
+		"Automated support rota assignments",
+	)
 }
 
 // AddAssignment adds a rota assignment as a calendar event.

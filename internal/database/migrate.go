@@ -11,7 +11,11 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/sqlite"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
+	embeddedmigrations "github.com/inful/madhatter/migrations"
 )
+
+var errMigrationsNotFound = errors.New("migrations directory not found")
 
 // getMigrationsPath returns the absolute path to the migrations directory.
 // It tries to find the migrations directory by looking up from the current directory
@@ -19,7 +23,14 @@ import (
 func getMigrationsPath() (string, error) {
 	// First, try MIGRATIONS_PATH environment variable
 	if path := os.Getenv("MIGRATIONS_PATH"); path != "" {
-		return filepath.Abs(path)
+		abs, err := filepath.Abs(path)
+		if err != nil {
+			return "", err
+		}
+		if _, err := os.Stat(abs); err != nil {
+			return "", fmt.Errorf("MIGRATIONS_PATH does not exist: %w", err)
+		}
+		return abs, nil
 	}
 
 	// Try to find migrations directory relative to current working directory
@@ -45,36 +56,65 @@ func getMigrationsPath() (string, error) {
 		projectRoot := filepath.Join(dir, "..", "..")
 		migrationsPath := filepath.Join(projectRoot, "migrations")
 		if _, err := os.Stat(migrationsPath); err == nil {
-			return filepath.Abs(migrationsPath)
+			abs, err := filepath.Abs(migrationsPath)
+			if err != nil {
+				return "", err
+			}
+			return abs, nil
 		}
 	}
 
-	return "", errors.New("migrations directory not found")
+	return "", errMigrationsNotFound
+}
+
+func newMigrator(db *sql.DB) (*migrate.Migrate, error) {
+	// Create database driver
+	driver, err := sqlite.WithInstance(db, &sqlite.Config{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create database driver: %w", err)
+	}
+
+	// Prefer filesystem migrations if present; fall back to embedded migrations.
+	migrationsPath, err := getMigrationsPath()
+	if err == nil {
+		m, createErr := migrate.NewWithDatabaseInstance(
+			"file://"+migrationsPath,
+			"sqlite",
+			driver,
+		)
+		if createErr != nil {
+			return nil, fmt.Errorf("failed to create migration instance: %w", createErr)
+		}
+		return m, nil
+	}
+	if !errors.Is(err, errMigrationsNotFound) {
+		return nil, fmt.Errorf("failed to get migrations path: %w", err)
+	}
+
+	sourceDriver, err := iofs.New(embeddedmigrations.FS, ".")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create embedded migrations source: %w", err)
+	}
+
+	m, err := migrate.NewWithInstance(
+		"iofs",
+		sourceDriver,
+		"sqlite",
+		driver,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create embedded migration instance: %w", err)
+	}
+
+	return m, nil
 }
 
 // RunMigrations executes all pending database migrations.
 // It uses migration files from the migrations directory at the project root.
 func RunMigrations(db *sql.DB) error {
-	// Get absolute path to migrations directory
-	migrationsPath, err := getMigrationsPath()
+	m, err := newMigrator(db)
 	if err != nil {
-		return fmt.Errorf("failed to get migrations path: %w", err)
-	}
-
-	// Create database driver
-	driver, err := sqlite.WithInstance(db, &sqlite.Config{})
-	if err != nil {
-		return fmt.Errorf("failed to create database driver: %w", err)
-	}
-
-	// Create migration instance with file:// protocol
-	m, err := migrate.NewWithDatabaseInstance(
-		"file://"+migrationsPath,
-		"sqlite",
-		driver,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create migration instance: %w", err)
+		return err
 	}
 
 	// Run migrations
@@ -87,26 +127,9 @@ func RunMigrations(db *sql.DB) error {
 
 // GetMigrationVersion returns the current migration version of the database.
 func GetMigrationVersion(db *sql.DB) (uint, bool, error) {
-	// Get absolute path to migrations directory
-	migrationsPath, err := getMigrationsPath()
+	m, err := newMigrator(db)
 	if err != nil {
-		return 0, false, fmt.Errorf("failed to get migrations path: %w", err)
-	}
-
-	// Create database driver
-	driver, err := sqlite.WithInstance(db, &sqlite.Config{})
-	if err != nil {
-		return 0, false, fmt.Errorf("failed to create database driver: %w", err)
-	}
-
-	// Create migration instance
-	m, err := migrate.NewWithDatabaseInstance(
-		"file://"+migrationsPath,
-		"sqlite",
-		driver,
-	)
-	if err != nil {
-		return 0, false, fmt.Errorf("failed to create migration instance: %w", err)
+		return 0, false, err
 	}
 
 	version, dirty, err := m.Version()
@@ -148,26 +171,9 @@ func GetMigrationStatus(db *sql.DB) (*MigrationStatus, error) {
 // RollbackMigration rolls back the last applied migration.
 // This should be used with caution in production environments.
 func RollbackMigration(db *sql.DB) error {
-	// Get absolute path to migrations directory
-	migrationsPath, err := getMigrationsPath()
+	m, err := newMigrator(db)
 	if err != nil {
-		return fmt.Errorf("failed to get migrations path: %w", err)
-	}
-
-	// Create database driver
-	driver, err := sqlite.WithInstance(db, &sqlite.Config{})
-	if err != nil {
-		return fmt.Errorf("failed to create database driver: %w", err)
-	}
-
-	// Create migration instance
-	m, err := migrate.NewWithDatabaseInstance(
-		"file://"+migrationsPath,
-		"sqlite",
-		driver,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create migration instance: %w", err)
+		return err
 	}
 
 	// Roll back one migration
@@ -181,26 +187,9 @@ func RollbackMigration(db *sql.DB) error {
 // MigrateToVersion migrates the database to a specific version.
 // Use with caution - this can migrate up or down.
 func MigrateToVersion(db *sql.DB, version uint) error {
-	// Get absolute path to migrations directory
-	migrationsPath, err := getMigrationsPath()
+	m, err := newMigrator(db)
 	if err != nil {
-		return fmt.Errorf("failed to get migrations path: %w", err)
-	}
-
-	// Create database driver
-	driver, err := sqlite.WithInstance(db, &sqlite.Config{})
-	if err != nil {
-		return fmt.Errorf("failed to create database driver: %w", err)
-	}
-
-	// Create migration instance
-	m, err := migrate.NewWithDatabaseInstance(
-		"file://"+migrationsPath,
-		"sqlite",
-		driver,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to create migration instance: %w", err)
+		return err
 	}
 
 	// Migrate to specific version

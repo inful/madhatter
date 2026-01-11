@@ -156,6 +156,11 @@ func (am *AuthManager) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if ensureErr := am.userService.EnsureTeamMember(ctx, userInfo); ensureErr != nil {
+		http.Error(w, fmt.Sprintf("Failed to create team member: %v", ensureErr), http.StatusInternalServerError)
+		return
+	}
+
 	// Store OAuth token
 	oauthToken := &sqlc.OauthToken{
 		AccessToken:  token.AccessToken,

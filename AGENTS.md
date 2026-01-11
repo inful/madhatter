@@ -65,6 +65,16 @@ go run main.go migrate-status
 - `RollbackMigration(db)` - Rollback last migration (use with caution)
 - `MigrateToVersion(db, version)` - Migrate to specific version
 
+**Schema Change Workflow:**
+1. Create migration files (NNNNNN_description.{up,down}.sql)
+2. Update `internal/database/sqlc/schema.sql` to match final state
+3. Run `sqlc generate` to update generated code
+4. Test migration on existing database
+5. Add integration tests to verify schema compatibility
+6. Commit migration files, schema.sql, and generated code together
+
+**Important:** Never modify schema.sql without a corresponding migration. Migrations are the source of truth for schema changes.
+
 ### CLI Framework
 - Uses `github.com/alecthomas/kong` for CLI parsing
 - Commands are defined in a struct hierarchy in `cmd/root.go`
@@ -138,6 +148,8 @@ go test ./internal/database -v
 10. **Migration Workflow**: Schema changes must be done via migrations - never directly edit db.go
 11. **Migration Testing**: Always test both up and down migrations before committing
 12. **Migration Path**: Migrations are found via env var, working dir search, or source file location
+13. **Schema Synchronization**: Always create migration when updating schema.sql - migrations are source of truth
+14. **Integration Testing**: Add integration tests for any new database operations to catch schema issues early
 
 ### Authentication System
 
@@ -267,6 +279,13 @@ This is implemented in:
 - **Compliance**: testifylint compliant
 - **Style**: Use `require.NoError(t, err)` for errors, `assert.Equal(t, expected, actual)` for values
 
+### Testing Strategy
+- **Integration Tests**: Must test complete user flows through web handlers
+- **Database Tests**: Must verify schema compatibility with current migrations
+- **Schema Validation**: Integration tests should catch schema mismatches
+- **Example**: `internal/web/handlers_leave_test.go` demonstrates proper integration testing
+- **Key principle**: Tests should catch issues that users would encounter
+
 ### Web Templates
 - **Requirements**: 
   - Include copy functionality for URLs
@@ -276,6 +295,7 @@ This is implemented in:
 
 ### Code Organization
 - **Tests**: Co-located with source files (e.g., `db_test.go` next to `db.go`)
+- **Integration Tests**: Separate files with `_integration_test.go` or feature-specific naming
 - **Package Structure**: Internal packages for domain logic
 - **API Registration**: All endpoints registered in `internal/api/server.go`
 

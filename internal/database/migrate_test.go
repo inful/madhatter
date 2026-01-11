@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"database/sql"
 	"os"
 	"path/filepath"
@@ -18,7 +19,7 @@ func setupTestMigrations(t *testing.T) string {
 
 	tmpDir := t.TempDir()
 	migrationsDir := filepath.Join(tmpDir, "migrations")
-	err := os.Mkdir(migrationsDir, 0o755)
+	err := os.Mkdir(migrationsDir, 0o750)
 	require.NoError(t, err)
 
 	// Create a simple test migration
@@ -30,10 +31,10 @@ CREATE TABLE IF NOT EXISTS test_table (
 `
 	downSQL := `DROP TABLE IF EXISTS test_table;`
 
-	err = os.WriteFile(filepath.Join(migrationsDir, "000001_test_migration.up.sql"), []byte(upSQL), 0o644)
+	err = os.WriteFile(filepath.Join(migrationsDir, "000001_test_migration.up.sql"), []byte(upSQL), 0o600)
 	require.NoError(t, err)
 
-	err = os.WriteFile(filepath.Join(migrationsDir, "000001_test_migration.down.sql"), []byte(downSQL), 0o644)
+	err = os.WriteFile(filepath.Join(migrationsDir, "000001_test_migration.down.sql"), []byte(downSQL), 0o600)
 	require.NoError(t, err)
 
 	// Create a second migration for testing multiple migrations
@@ -45,10 +46,10 @@ CREATE TABLE IF NOT EXISTS test_table2 (
 `
 	down2SQL := `DROP TABLE IF EXISTS test_table2;`
 
-	err = os.WriteFile(filepath.Join(migrationsDir, "000002_second_migration.up.sql"), []byte(up2SQL), 0o644)
+	err = os.WriteFile(filepath.Join(migrationsDir, "000002_second_migration.up.sql"), []byte(up2SQL), 0o600)
 	require.NoError(t, err)
 
-	err = os.WriteFile(filepath.Join(migrationsDir, "000002_second_migration.down.sql"), []byte(down2SQL), 0o644)
+	err = os.WriteFile(filepath.Join(migrationsDir, "000002_second_migration.down.sql"), []byte(down2SQL), 0o600)
 	require.NoError(t, err)
 
 	return migrationsDir
@@ -59,7 +60,7 @@ func TestGetMigrationsPath(t *testing.T) {
 	t.Run("Environment variable", func(t *testing.T) {
 		tmpDir := t.TempDir()
 		migrationsDir := filepath.Join(tmpDir, "migrations")
-		err := os.Mkdir(migrationsDir, 0o755)
+		err := os.Mkdir(migrationsDir, 0o750)
 		require.NoError(t, err)
 
 		// Set environment variable
@@ -155,7 +156,7 @@ func TestRunMigrations(t *testing.T) {
 		defer func() { _ = db.Close() }()
 
 		// Enable foreign keys
-		_, err = db.Exec("PRAGMA foreign_keys = ON")
+		_, err = db.ExecContext(context.Background(), "PRAGMA foreign_keys = ON")
 		require.NoError(t, err)
 
 		// Setup test migrations
@@ -179,7 +180,7 @@ func TestRunMigrations(t *testing.T) {
 
 		// Verify table was created
 		var tableName string
-		err = db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='test_table'").Scan(&tableName)
+		err = db.QueryRowContext(context.Background(), "SELECT name FROM sqlite_master WHERE type='table' AND name='test_table'").Scan(&tableName)
 		require.NoError(t, err)
 		assert.Equal(t, "test_table", tableName)
 	})
@@ -191,7 +192,7 @@ func TestRunMigrations(t *testing.T) {
 		defer func() { _ = db.Close() }()
 
 		// Enable foreign keys
-		_, err = db.Exec("PRAGMA foreign_keys = ON")
+		_, err = db.ExecContext(context.Background(), "PRAGMA foreign_keys = ON")
 		require.NoError(t, err)
 
 		// Setup test migrations
@@ -252,7 +253,7 @@ func TestGetMigrationVersion(t *testing.T) {
 		defer func() { _ = db.Close() }()
 
 		// Enable foreign keys
-		_, err = db.Exec("PRAGMA foreign_keys = ON")
+		_, err = db.ExecContext(context.Background(), "PRAGMA foreign_keys = ON")
 		require.NoError(t, err)
 
 		// Setup test migrations
@@ -319,7 +320,7 @@ func TestGetMigrationStatus(t *testing.T) {
 		defer func() { _ = db.Close() }()
 
 		// Enable foreign keys
-		_, err = db.Exec("PRAGMA foreign_keys = ON")
+		_, err = db.ExecContext(context.Background(), "PRAGMA foreign_keys = ON")
 		require.NoError(t, err)
 
 		// Setup test migrations
@@ -391,7 +392,7 @@ func TestRollbackMigration(t *testing.T) {
 		defer func() { _ = db.Close() }()
 
 		// Enable foreign keys
-		_, err = db.Exec("PRAGMA foreign_keys = ON")
+		_, err = db.ExecContext(context.Background(), "PRAGMA foreign_keys = ON")
 		require.NoError(t, err)
 
 		// Setup test migrations
@@ -415,7 +416,7 @@ func TestRollbackMigration(t *testing.T) {
 
 		// Verify both tables exist
 		var tableCount int
-		err = db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND (name='test_table' OR name='test_table2')").Scan(&tableCount)
+		err = db.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND (name='test_table' OR name='test_table2')").Scan(&tableCount)
 		require.NoError(t, err)
 		assert.Equal(t, 2, tableCount, "Should have 2 tables after migration")
 
@@ -430,12 +431,12 @@ func TestRollbackMigration(t *testing.T) {
 		assert.False(t, dirty)
 
 		// Verify test_table2 no longer exists
-		err = db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='test_table2'").Scan(&tableCount)
-		assert.Error(t, err, "test_table2 should not exist after rollback")
+		err = db.QueryRowContext(context.Background(), "SELECT name FROM sqlite_master WHERE type='table' AND name='test_table2'").Scan(&tableCount) //nolint:execinquery // Query is read-only
+		require.Error(t, err, "test_table2 should not exist after rollback")
 
 		// Verify test_table still exists
 		var tableName string
-		err = db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='test_table'").Scan(&tableName)
+		err = db.QueryRowContext(context.Background(), "SELECT name FROM sqlite_master WHERE type='table' AND name='test_table'").Scan(&tableName)
 		require.NoError(t, err)
 		assert.Equal(t, "test_table", tableName)
 	})
@@ -476,7 +477,7 @@ func TestMigrateToVersion(t *testing.T) {
 		defer func() { _ = db.Close() }()
 
 		// Enable foreign keys
-		_, err = db.Exec("PRAGMA foreign_keys = ON")
+		_, err = db.ExecContext(context.Background(), "PRAGMA foreign_keys = ON")
 		require.NoError(t, err)
 
 		// Setup test migrations
@@ -506,12 +507,12 @@ func TestMigrateToVersion(t *testing.T) {
 
 		// Verify only test_table exists
 		var tableName string
-		err = db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='test_table'").Scan(&tableName)
+		err = db.QueryRowContext(context.Background(), "SELECT name FROM sqlite_master WHERE type='table' AND name='test_table'").Scan(&tableName)
 		require.NoError(t, err)
 		assert.Equal(t, "test_table", tableName)
 
 		// Verify test_table2 doesn't exist
-		err = db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='test_table2'").Scan(&tableName)
+		err = db.QueryRowContext(context.Background(), "SELECT name FROM sqlite_master WHERE type='table' AND name='test_table2'").Scan(&tableName)
 		assert.Error(t, err, "test_table2 should not exist at version 1")
 	})
 
@@ -522,7 +523,7 @@ func TestMigrateToVersion(t *testing.T) {
 		defer func() { _ = db.Close() }()
 
 		// Enable foreign keys
-		_, err = db.Exec("PRAGMA foreign_keys = ON")
+		_, err = db.ExecContext(context.Background(), "PRAGMA foreign_keys = ON")
 		require.NoError(t, err)
 
 		// Setup test migrations
@@ -562,7 +563,7 @@ func TestMigrateToVersion(t *testing.T) {
 
 		// Verify test_table2 doesn't exist anymore
 		var tableName string
-		err = db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name='test_table2'").Scan(&tableName)
+		err = db.QueryRowContext(context.Background(), "SELECT name FROM sqlite_master WHERE type='table' AND name='test_table2'").Scan(&tableName)
 		assert.Error(t, err, "test_table2 should not exist after downgrade")
 	})
 
@@ -573,7 +574,7 @@ func TestMigrateToVersion(t *testing.T) {
 		defer func() { _ = db.Close() }()
 
 		// Enable foreign keys
-		_, err = db.Exec("PRAGMA foreign_keys = ON")
+		_, err = db.ExecContext(context.Background(), "PRAGMA foreign_keys = ON")
 		require.NoError(t, err)
 
 		// Setup test migrations
@@ -643,21 +644,21 @@ func TestMigrationEdgeCases(t *testing.T) {
 		defer func() { _ = db.Close() }()
 
 		// Enable foreign keys
-		_, err = db.Exec("PRAGMA foreign_keys = ON")
+		_, err = db.ExecContext(context.Background(), "PRAGMA foreign_keys = ON")
 		require.NoError(t, err)
 
 		// Create temporary directory for migrations
 		tmpDir := t.TempDir()
 		migrationsDir := filepath.Join(tmpDir, "migrations")
-		err = os.Mkdir(migrationsDir, 0o755)
+		err = os.Mkdir(migrationsDir, 0o750)
 		require.NoError(t, err)
 
 		// Create a migration with invalid SQL
 		invalidSQL := "THIS IS NOT VALID SQL;"
-		err = os.WriteFile(filepath.Join(migrationsDir, "000001_invalid.up.sql"), []byte(invalidSQL), 0o644)
+		err = os.WriteFile(filepath.Join(migrationsDir, "000001_invalid.up.sql"), []byte(invalidSQL), 0o600)
 		require.NoError(t, err)
 
-		err = os.WriteFile(filepath.Join(migrationsDir, "000001_invalid.down.sql"), []byte(""), 0o644)
+		err = os.WriteFile(filepath.Join(migrationsDir, "000001_invalid.down.sql"), []byte(""), 0o600)
 		require.NoError(t, err)
 
 		// Set migrations path
@@ -695,11 +696,11 @@ func TestMigrationEdgeCases(t *testing.T) {
 		// Create empty migrations directory
 		tmpDir := t.TempDir()
 		migrationsDir := filepath.Join(tmpDir, "migrations")
-		err = os.Mkdir(migrationsDir, 0o755)
+		err = os.Mkdir(migrationsDir, 0o750)
 		require.NoError(t, err)
 
 		// Create a placeholder file so the directory isn't completely empty
-		err = os.WriteFile(filepath.Join(migrationsDir, ".gitkeep"), []byte(""), 0o644)
+		err = os.WriteFile(filepath.Join(migrationsDir, ".gitkeep"), []byte(""), 0o600)
 		require.NoError(t, err)
 
 		// Set migrations path
@@ -738,7 +739,7 @@ func TestMigrationConcurrency(t *testing.T) {
 		defer func() { _ = db.Close() }()
 
 		// Enable foreign keys
-		_, err = db.Exec("PRAGMA foreign_keys = ON")
+		_, err = db.ExecContext(context.Background(), "PRAGMA foreign_keys = ON")
 		require.NoError(t, err)
 
 		// Setup test migrations

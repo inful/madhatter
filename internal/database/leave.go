@@ -9,20 +9,6 @@ import (
 	"github.com/inful/madhatter/internal/database/sqlc"
 )
 
-// validateLeaveStatus checks if the status is valid.
-func validateLeaveStatus(status string) error {
-	validStatuses := map[string]bool{
-		"pending":   true,
-		"approved":  true,
-		"rejected":  true,
-		"cancelled": true,
-	}
-	if !validStatuses[status] {
-		return errors.New("invalid status, must be one of: pending, approved, rejected, cancelled")
-	}
-	return nil
-}
-
 func (db *DB) CreateLeaveRecord(ctx context.Context, memberID, startDate, endDate string) (string, error) {
 	if memberID == "" || startDate == "" || endDate == "" {
 		return "", errors.New("memberID, startDate, and endDate are required")
@@ -180,11 +166,6 @@ func parseLeaveDates(startDate, endDate string) (time.Time, time.Time, error) {
 func (db *DB) UpdateLeaveRecord(ctx context.Context, leaveID, memberID, startDate, endDate, status string) error {
 	if leaveID == "" || memberID == "" || startDate == "" || endDate == "" || status == "" {
 		return errors.New("leaveID, memberID, startDate, endDate, and status are required")
-	}
-
-	// Validate status enum
-	if err := validateLeaveStatus(status); err != nil {
-		return err
 	}
 
 	// Verify member exists

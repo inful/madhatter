@@ -11,7 +11,7 @@ func TestDateDebug(t *testing.T) {
 
 	ctx := context.Background()
 	memberID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com")
-	leaveID, err := db.CreateLeaveRecord(ctx, memberID, "sick", "2024-01-15", "2024-01-15")
+	leaveID, err := db.CreateLeaveRecord(ctx, memberID, "2024-01-15", "2024-01-15")
 	if err != nil {
 		t.Fatalf("CreateLeaveRecord failed: %v", err)
 	}

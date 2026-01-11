@@ -455,7 +455,6 @@ func (s *Server) handleListTeam(ctx context.Context, input *struct{}) (*ListTeam
 type ReportLeaveInput struct {
 	Body struct {
 		MemberID  string `json:"member_id"`
-		Type      string `enum:"sick,vacation,other" json:"type"`
 		StartDate string `format:"date" json:"start_date"`
 		EndDate   string `format:"date" json:"end_date"`
 	}
@@ -485,7 +484,7 @@ func (s *Server) handleReportLeave(ctx context.Context, input *ReportLeaveInput)
 	}
 
 	// Create leave record
-	leaveID, err := s.db.CreateLeaveRecord(ctx, input.Body.MemberID, input.Body.Type, input.Body.StartDate, input.Body.EndDate)
+	leaveID, err := s.db.CreateLeaveRecord(ctx, input.Body.MemberID, input.Body.StartDate, input.Body.EndDate)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to create leave record", err)
 	}

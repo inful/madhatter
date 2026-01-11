@@ -48,7 +48,6 @@ type presenceDay struct {
 
 type presenceLeave struct {
 	Member database.TeamMember
-	Type   string
 }
 
 func NewHandler(db *database.DB, authManager *auth.AuthManager, authMiddleware *auth.Middleware, development bool, holidayChecker func(time.Time) bool) (*Handler, error) {
@@ -411,7 +410,6 @@ func (h *Handler) getUpcomingPresenceFrom(ctx context.Context, start time.Time) 
 			onLeave[leave.MemberID] = struct{}{}
 			away = append(away, presenceLeave{
 				Member: member,
-				Type:   leave.Type,
 			})
 		}
 
@@ -563,11 +561,10 @@ func (h *Handler) handleLeaveReport(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		memberID := r.FormValue("member_id")
-		leaveType := r.FormValue("type")
 		startDate := r.FormValue("start_date")
 		endDate := r.FormValue("end_date")
 
-		leaveID, err := h.db.CreateLeaveRecord(ctx, memberID, leaveType, startDate, endDate)
+		leaveID, err := h.db.CreateLeaveRecord(ctx, memberID, startDate, endDate)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

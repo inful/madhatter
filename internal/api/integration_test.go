@@ -164,7 +164,6 @@ func TestLeaveEndpoints(t *testing.T) {
 	t.Run("ReportLeaveWithAutoCover", func(t *testing.T) {
 		input := &ReportLeaveInput{}
 		input.Body.MemberID = aliceID
-		input.Body.Type = "sick"
 		input.Body.StartDate = "2024-01-17"
 		input.Body.EndDate = "2024-01-17"
 

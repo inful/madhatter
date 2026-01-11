@@ -9,9 +9,9 @@ import (
 	"github.com/inful/madhatter/internal/database/sqlc"
 )
 
-func (db *DB) CreateLeaveRecord(ctx context.Context, memberID, leaveType, startDate, endDate string) (string, error) {
-	if memberID == "" || leaveType == "" || startDate == "" || endDate == "" {
-		return "", errors.New("all fields are required")
+func (db *DB) CreateLeaveRecord(ctx context.Context, memberID, startDate, endDate string) (string, error) {
+	if memberID == "" || startDate == "" || endDate == "" {
+		return "", errors.New("memberID, startDate, and endDate are required")
 	}
 
 	// Verify member exists
@@ -34,7 +34,6 @@ func (db *DB) CreateLeaveRecord(ctx context.Context, memberID, leaveType, startD
 	params := sqlc.CreateLeaveRecordParams{
 		ID:        id,
 		MemberID:  memberID,
-		Type:      leaveType,
 		StartDate: startTime,
 		EndDate:   endTime,
 	}
@@ -72,7 +71,6 @@ func (db *DB) GetLeaveByDate(ctx context.Context, date string) ([]LeaveRecord, e
 			MemberID:      l.MemberID,
 			StartDate:     l.StartDate,
 			EndDate:       l.EndDate,
-			Type:          l.Type,
 			CoverMemberID: coverMemberID,
 			Status:        l.Status,
 			CreatedAt:     l.CreatedAt.Time,
@@ -104,7 +102,6 @@ func (db *DB) GetLeaveByID(ctx context.Context, leaveID string) (*LeaveRecord, e
 		MemberID:      leave.MemberID,
 		StartDate:     leave.StartDate,
 		EndDate:       leave.EndDate,
-		Type:          leave.Type,
 		CoverMemberID: coverMemberID,
 		Status:        leave.Status,
 		CreatedAt:     leave.CreatedAt.Time,
@@ -139,7 +136,6 @@ func (db *DB) GetLeaveRecords(ctx context.Context, statusFilter ...string) ([]Le
 			MemberID:      l.MemberID,
 			StartDate:     l.StartDate,
 			EndDate:       l.EndDate,
-			Type:          l.Type,
 			CoverMemberID: coverMemberID,
 			Status:        l.Status,
 			CreatedAt:     l.CreatedAt.Time,

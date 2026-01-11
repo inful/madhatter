@@ -15,7 +15,6 @@ type LeaveRecord struct {
 	MemberID      string    `json:"member_id"`
 	StartDate     time.Time `json:"start_date"`
 	EndDate       time.Time `json:"end_date"`
-	Type          string    `json:"type"`
 	CoverMemberID string    `json:"cover_member_id"`
 	Status        string    `json:"status"`
 	CreatedAt     time.Time `json:"created_at"`

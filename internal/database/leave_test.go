@@ -22,7 +22,7 @@ func TestCreateLeaveRecord_Success(t *testing.T) {
 	endDate := time.Now().AddDate(0, 0, 9).Format("2006-01-02")
 
 	// Act
-	leaveID, err := db.CreateLeaveRecord(ctx, memberID, "sick", startDate, endDate)
+	leaveID, err := db.CreateLeaveRecord(ctx, memberID, startDate, endDate)
 
 	// Assert
 	require.NoError(t, err)
@@ -33,7 +33,6 @@ func TestCreateLeaveRecord_Success(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, leaves, 1)
 	require.Equal(t, memberID, leaves[0].MemberID)
-	require.Equal(t, "sick", leaves[0].Type)
 	require.Equal(t, startDate, leaves[0].StartDate.Format("2006-01-02"))
 	require.Equal(t, endDate, leaves[0].EndDate.Format("2006-01-02"))
 	require.Equal(t, "pending", leaves[0].Status)
@@ -51,7 +50,7 @@ func TestCreateLeaveRecord_InvalidMember(t *testing.T) {
 	endDate := time.Now().AddDate(0, 0, 9).Format("2006-01-02")
 
 	// Act
-	_, err := db.CreateLeaveRecord(ctx, "nonexistent", "sick", startDate, endDate)
+	_, err := db.CreateLeaveRecord(ctx, "nonexistent", startDate, endDate)
 
 	// Assert
 	require.Error(t, err)
@@ -73,7 +72,7 @@ func TestGetLeaveByDate_Range(t *testing.T) {
 	beforeDate := baseDate.AddDate(0, 0, -1).Format("2006-01-02")
 	afterDate := baseDate.AddDate(0, 0, 3).Format("2006-01-02")
 
-	_, _ = db.CreateLeaveRecord(ctx, memberID, "sick", startDate, endDate)
+	_, _ = db.CreateLeaveRecord(ctx, memberID, startDate, endDate)
 
 	// Act & Assert - Should find leave on start date
 	leaves, err := db.GetLeaveByDate(ctx, startDate)
@@ -116,8 +115,8 @@ func TestGetLeaveByDate_MultipleMembers(t *testing.T) {
 	bobLeaveStart := aliceLeaveEnd
 	bobLeaveEnd := baseDate.AddDate(0, 0, 2).Format("2006-01-02")
 
-	_, _ = db.CreateLeaveRecord(ctx, member1, "sick", aliceLeaveStart, aliceLeaveEnd)
-	_, _ = db.CreateLeaveRecord(ctx, member2, "vacation", bobLeaveStart, bobLeaveEnd)
+	_, _ = db.CreateLeaveRecord(ctx, member1, aliceLeaveStart, aliceLeaveEnd)
+	_, _ = db.CreateLeaveRecord(ctx, member2, bobLeaveStart, bobLeaveEnd)
 
 	// Act - query for the overlapping date (Alice's end date = Bob's start date)
 	leaves, err := db.GetLeaveByDate(ctx, aliceLeaveEnd)
@@ -139,7 +138,7 @@ func TestUpdateLeaveStatus(t *testing.T) {
 	startDate := time.Now().AddDate(0, 0, 7).Format("2006-01-02")
 	endDate := time.Now().AddDate(0, 0, 9).Format("2006-01-02")
 
-	leaveID, _ := db.CreateLeaveRecord(ctx, memberID, "sick", startDate, endDate)
+	leaveID, _ := db.CreateLeaveRecord(ctx, memberID, startDate, endDate)
 
 	// Act
 	err := db.UpdateLeaveStatus(ctx, leaveID, "assigned")
@@ -163,7 +162,7 @@ func TestGetLeaveByID(t *testing.T) {
 	startDate := time.Now().AddDate(0, 0, 7).Format("2006-01-02")
 	endDate := time.Now().AddDate(0, 0, 9).Format("2006-01-02")
 
-	leaveID, _ := db.CreateLeaveRecord(ctx, memberID, "sick", startDate, endDate)
+	leaveID, _ := db.CreateLeaveRecord(ctx, memberID, startDate, endDate)
 
 	// Act
 	leave, err := db.GetLeaveByID(ctx, leaveID)
@@ -172,7 +171,6 @@ func TestGetLeaveByID(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, leaveID, leave.ID)
 	require.Equal(t, memberID, leave.MemberID)
-	require.Equal(t, "sick", leave.Type)
 }
 
 func TestGetLeaveByID_NotFound(t *testing.T) {

@@ -1,9 +1,9 @@
 -- name: CreateLeaveRecord :execresult
-INSERT INTO leave_records (id, member_id, type, start_date, end_date, status)
-VALUES (?, ?, ?, ?, ?, 'pending');
+INSERT INTO leave_records (id, member_id, start_date, end_date, status)
+VALUES (?, ?, ?, ?, 'pending');
 
 -- name: GetLeaveByDate :many
-SELECT id, member_id, start_date, end_date, type, cover_member_id, status, created_at
+SELECT id, member_id, start_date, end_date, cover_member_id, status, created_at
 FROM leave_records
 WHERE ? >= start_date AND ? <= end_date AND status != 'completed';
 
@@ -13,12 +13,12 @@ SET status = ?
 WHERE id = ?;
 
 -- name: GetLeaveByID :one
-SELECT id, member_id, start_date, end_date, type, cover_member_id, status, created_at
+SELECT id, member_id, start_date, end_date, cover_member_id, status, created_at
 FROM leave_records
 WHERE id = ?;
 
 -- name: GetLeaveRecords :many
-SELECT id, member_id, start_date, end_date, type, cover_member_id, status, created_at
+SELECT id, member_id, start_date, end_date, cover_member_id, status, created_at
 FROM leave_records
 WHERE (status = ? OR ? = '')
 ORDER BY start_date DESC;

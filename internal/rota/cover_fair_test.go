@@ -43,19 +43,19 @@ func TestEngine_MultipleSeparateLeaves(t *testing.T) {
 	// Create leaves in chronological order to test proper cover rotation
 
 	// Leave 1: Tuesday Jan 16 (Bob's scheduled day)
-	leave1ID, err := db.CreateLeaveRecord(ctx, bobID, "sick", "2024-01-16", "2024-01-16")
+	leave1ID, err := db.CreateLeaveRecord(ctx, bobID, "2024-01-16", "2024-01-16")
 	require.NoError(t, err)
 	err = engine.AssignCoversForLeave(ctx, leave1ID)
 	require.NoError(t, err)
 
 	// Leave 2: Wednesday Jan 17 (Charlie's scheduled day) - happens AFTER Bob's first leave
-	leave2ID, err := db.CreateLeaveRecord(ctx, charlieID, "sick", "2024-01-17", "2024-01-17")
+	leave2ID, err := db.CreateLeaveRecord(ctx, charlieID, "2024-01-17", "2024-01-17")
 	require.NoError(t, err)
 	err = engine.AssignCoversForLeave(ctx, leave2ID)
 	require.NoError(t, err)
 
 	// Leave 3: Tuesday Jan 23 (Bob's scheduled day again) - happens AFTER the above leaves
-	leave3ID, err := db.CreateLeaveRecord(ctx, bobID, "sick", "2024-01-23", "2024-01-23")
+	leave3ID, err := db.CreateLeaveRecord(ctx, bobID, "2024-01-23", "2024-01-23")
 	require.NoError(t, err)
 	err = engine.AssignCoversForLeave(ctx, leave3ID)
 	require.NoError(t, err)
@@ -142,25 +142,25 @@ func TestEngine_CoverRotationAcrossMultipleMembers(t *testing.T) {
 	require.NoError(t, err)
 
 	// Alice takes leave on Mon Jan 15 (her day)
-	leaveAlice1, err := db.CreateLeaveRecord(ctx, aliceID, "sick", "2024-01-15", "2024-01-15")
+	leaveAlice1, err := db.CreateLeaveRecord(ctx, aliceID, "2024-01-15", "2024-01-15")
 	require.NoError(t, err)
 	err = engine.AssignCoversForLeave(ctx, leaveAlice1)
 	require.NoError(t, err)
 
 	// Bob takes leave on Tue Jan 16 (his day)
-	leaveBob1, err := db.CreateLeaveRecord(ctx, bobID, "sick", "2024-01-16", "2024-01-16")
+	leaveBob1, err := db.CreateLeaveRecord(ctx, bobID, "2024-01-16", "2024-01-16")
 	require.NoError(t, err)
 	err = engine.AssignCoversForLeave(ctx, leaveBob1)
 	require.NoError(t, err)
 
 	// Charlie takes leave on Wed Jan 17 (his day)
-	leaveCharlie1, err := db.CreateLeaveRecord(ctx, charlieID, "sick", "2024-01-17", "2024-01-17")
+	leaveCharlie1, err := db.CreateLeaveRecord(ctx, charlieID, "2024-01-17", "2024-01-17")
 	require.NoError(t, err)
 	err = engine.AssignCoversForLeave(ctx, leaveCharlie1)
 	require.NoError(t, err)
 
 	// Alice takes leave again on Mon Jan 22
-	leaveAlice2, err := db.CreateLeaveRecord(ctx, aliceID, "sick", "2024-01-22", "2024-01-22")
+	leaveAlice2, err := db.CreateLeaveRecord(ctx, aliceID, "2024-01-22", "2024-01-22")
 	require.NoError(t, err)
 	err = engine.AssignCoversForLeave(ctx, leaveAlice2)
 	require.NoError(t, err)

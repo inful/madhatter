@@ -247,7 +247,7 @@ func TestScheduleMaintenance_HandleLeaveChange(t *testing.T) {
 		targetDateStr := targetDate.Format("2006-01-02")
 
 		// Create leave for the target date
-		leaveID, err := db.CreateLeaveRecord(ctx, members[0].ID, "vacation", targetDateStr, targetDateStr)
+		leaveID, err := db.CreateLeaveRecord(ctx, members[0].ID, targetDateStr, targetDateStr)
 		require.NoError(t, err)
 
 		// Handle leave change

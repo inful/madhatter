@@ -31,6 +31,39 @@ This file provides guidance to agents when working with code in this repository.
 - All dates stored as DATE strings in format `"2006-01-02"`
 - SQLC generates `time.Time` for dates, but existing code uses string dates - use wrapper for compatibility
 
+### Database Migrations
+- Uses `golang-migrate/migrate` for schema versioning
+- Migration files located in `migrations/` directory at project root
+- Migration file naming: `NNNNNN_description.up.sql` and `NNNNNN_description.down.sql`
+- Migrations run automatically on database initialization via `database.RunMigrations()`
+- Migration path resolution uses multiple fallback methods:
+  1. `MIGRATIONS_PATH` environment variable
+  2. Search up to 3 directories from working directory
+  3. Relative to source file location (internal/database -> root)
+- Compatible with `modernc.org/sqlite` via generic `database/sqlite` driver
+
+**Migration Commands:**
+```bash
+# Migrations run automatically during database.New()
+# Manual migration status check
+go run main.go migrate-status
+
+# Create new migration
+# File format: migrations/NNNNNN_description.{up,down}.sql
+```
+
+**Key Migration Files:**
+- `migrations/` - All migration files
+- `internal/database/migrate.go` - Migration runner and utilities
+- `internal/database/db.go` - Calls RunMigrations() on init
+
+**Migration Functions:**
+- `RunMigrations(db)` - Apply all pending migrations
+- `GetMigrationVersion(db)` - Get current migration version
+- `GetMigrationStatus(db)` - Detailed migration status
+- `RollbackMigration(db)` - Rollback last migration (use with caution)
+- `MigrateToVersion(db, version)` - Migrate to specific version
+
 ### CLI Framework
 - Uses `github.com/alecthomas/kong` for CLI parsing
 - Commands are defined in a struct hierarchy in `cmd/root.go`
@@ -101,6 +134,9 @@ go test ./internal/database -v
 7. **Static Scheduling**: `GenerateMissingDays()` preserves existing assignments and only fills gaps
 8. **Template Compatibility**: Dashboard template handles string dates directly (no `.Format` calls)
 9. **No Duplicate Days**: Only one assignment per day (original or cover, not both)
+10. **Migration Workflow**: Schema changes must be done via migrations - never directly edit db.go
+11. **Migration Testing**: Always test both up and down migrations before committing
+12. **Migration Path**: Migrations are found via env var, working dir search, or source file location
 
 ### Authentication System
 
@@ -291,6 +327,25 @@ go test ./internal/database -v
 ./support-rota serve --port 8080
 ```
 
+### Migrations
+```bash
+# Migrations run automatically during database initialization
+# To check migration status programmatically, use the functions in internal/database/migrate.go
+
+# Create new migration
+# 1. Create two files in migrations/:
+#    - NNNNNN_description.up.sql (apply changes)
+#    - NNNNNN_description.down.sql (rollback changes)
+# 2. Use incrementing numbers (e.g., 000001, 000002, etc.)
+# 3. Test both up and down migrations
+# 4. Update schema.sql to reflect final state (for SQLC)
+# 5. Run `sqlc generate` to update generated code
+
+# Example:
+# migrations/000002_add_user_preferences.up.sql
+# migrations/000002_add_user_preferences.down.sql
+```
+
 ## File Structure Key
 
 ```
@@ -308,6 +363,7 @@ madhatter/
 │   │   └── handlers.go            # Auth handlers
 │   ├── database/
 │   │   ├── db.go                  # Database wrapper
+│   │   ├── migrate.go             # Migration runner and utilities
 │   │   ├── models.go              # Go models
 │   │   ├── sqlc/                  # Generated SQLC code
 │   │   │   ├── schema.sql         # Database schema
@@ -329,6 +385,10 @@ madhatter/
 │   └── web/
 │       ├── handlers.go            # Web UI handlers
 │       └── templates/             # HTML templates
+├── migrations/                     # Database migrations
+│   ├── 000001_initial_schema.up.sql
+│   ├── 000001_initial_schema.down.sql
+│   └── ...
 ├── plans/                          # Documentation plans
 ├── sqlc.yaml                       # SQLC configuration
 ├── go.mod                          # Go dependencies

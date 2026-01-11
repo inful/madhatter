@@ -30,6 +30,13 @@ func NewScheduleMaintenance(db *database.DB) *ScheduleMaintenance {
 // Returns true if new assignments were created, false if schedule was already complete.
 func (sm *ScheduleMaintenance) EnsureSchedule(ctx context.Context) (bool, error) {
 	today := time.Now().Format("2006-01-02")
+	todayTime, _ := time.Parse("2006-01-02", today)
+	endDate := todayTime.AddDate(0, 0, scheduleDaysAhead)
+
+	// First reconcile stale covers in the 14-day window
+	if err := sm.reconcileCoversForDateRange(ctx, todayTime, endDate); err != nil {
+		return false, fmt.Errorf("failed to reconcile covers: %w", err)
+	}
 
 	// Get the latest date that has any assignments
 	latestAssignmentDate, err := sm.db.GetLatestAssignmentDate(ctx)
@@ -41,16 +48,12 @@ func (sm *ScheduleMaintenance) EnsureSchedule(ctx context.Context) (bool, error)
 	var startDate time.Time
 	if latestAssignmentDate == "" {
 		// No assignments exist, start from today
-		startDate, _ = time.Parse("2006-01-02", today)
+		startDate = todayTime
 	} else {
 		// Start from the day after the latest existing assignment
 		latestDate, _ := time.Parse("2006-01-02", latestAssignmentDate)
 		startDate = latestDate.AddDate(0, 0, 1)
 	}
-
-	// Calculate the end date (14 days from today)
-	todayTime, _ := time.Parse("2006-01-02", today)
-	endDate := todayTime.AddDate(0, 0, scheduleDaysAhead)
 
 	// If start date is already beyond the 14-day window, nothing to do
 	if startDate.After(endDate) {

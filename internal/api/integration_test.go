@@ -1,7 +1,6 @@
 package api
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -12,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/danielgtaylor/huma/v2/humatest"
 	"github.com/go-chi/chi/v5"
 	"github.com/inful/madhatter/internal/auth"
 	"github.com/inful/madhatter/internal/database"
@@ -110,6 +110,46 @@ func TestTeamEndpoints(t *testing.T) {
 		assert.Len(t, resp.Body.Members, 1)
 		assert.Equal(t, "Alice Johnson", resp.Body.Members[0].Name)
 	})
+
+	// Test updating team member
+	t.Run("UpdateTeamMember", func(t *testing.T) {
+		// Add a member first
+		addInput := &AddTeamInput{}
+		addInput.Body.Name = "Bob Smith"
+		addInput.Body.Email = "bob@example.com"
+		addResp, err := server.handleAddTeam(ctx, addInput)
+		require.NoError(t, err)
+
+		// Update the member
+		updateInput := &UpdateTeamInput{
+			ID: addResp.Body.ID,
+		}
+		updateInput.Body.Name = "Bob Johnson"
+		updateInput.Body.Email = "bob.johnson@example.com"
+
+		updateResp, err := server.handleUpdateTeam(ctx, updateInput)
+		require.NoError(t, err)
+		assert.Equal(t, "Team member updated successfully", updateResp.Body.Message)
+	})
+
+	// Test deleting team member
+	t.Run("DeleteTeamMember", func(t *testing.T) {
+		// Add a member first
+		addInput := &AddTeamInput{}
+		addInput.Body.Name = "Charlie Brown"
+		addInput.Body.Email = "charlie@example.com"
+		addResp, err := server.handleAddTeam(ctx, addInput)
+		require.NoError(t, err)
+
+		// Delete the member
+		deleteInput := &DeleteTeamInput{
+			ID: addResp.Body.ID,
+		}
+
+		deleteResp, err := server.handleDeleteTeam(ctx, deleteInput)
+		require.NoError(t, err)
+		assert.Equal(t, "Team member deleted successfully", deleteResp.Body.Message)
+	})
 }
 
 func TestScheduleEndpoints(t *testing.T) {
@@ -187,6 +227,43 @@ func TestLeaveEndpoints(t *testing.T) {
 		}
 		assert.True(t, coverFound, "Should have at least one cover assignment")
 	})
+
+	t.Run("UpdateLeaveRecord", func(t *testing.T) {
+		// Report leave first
+		input := &ReportLeaveInput{}
+		input.Body.MemberID = aliceID
+		input.Body.StartDate = "2024-01-20"
+		input.Body.EndDate = "2024-01-22"
+		resp, err := server.handleReportLeave(ctx, input)
+		require.NoError(t, err)
+
+		// Update the leave
+		updateInput := &UpdateLeaveInput{ID: resp.Body.LeaveID}
+		updateInput.Body.MemberID = aliceID
+		updateInput.Body.StartDate = "2024-01-25"
+		updateInput.Body.EndDate = "2024-01-27"
+		updateInput.Body.Status = "assigned"
+
+		updateResp, err := server.handleUpdateLeave(ctx, updateInput)
+		require.NoError(t, err)
+		assert.Equal(t, "Leave record updated successfully", updateResp.Body.Message)
+	})
+
+	t.Run("DeleteLeaveRecord", func(t *testing.T) {
+		// Report leave first
+		input := &ReportLeaveInput{}
+		input.Body.MemberID = aliceID
+		input.Body.StartDate = "2024-01-28"
+		input.Body.EndDate = "2024-01-29"
+		resp, err := server.handleReportLeave(ctx, input)
+		require.NoError(t, err)
+
+		// Delete the leave
+		deleteInput := &DeleteLeaveInput{ID: resp.Body.LeaveID}
+		deleteResp, err := server.handleDeleteLeave(ctx, deleteInput)
+		require.NoError(t, err)
+		assert.Equal(t, "Leave record deleted successfully", deleteResp.Body.Message)
+	})
 }
 
 func TestCalendarEndpoints(t *testing.T) {
@@ -250,58 +327,100 @@ func TestCalendarEndpoints(t *testing.T) {
 	})
 }
 
-// TestHUMAAPIIntegration tests the full HUMA API integration.
+// TestHUMAAPIIntegration tests the full HUMA API integration using humatest.
 func TestHUMAAPIIntegration(t *testing.T) {
 	server, cleanup := setupTestServer(t)
 	defer cleanup()
 
-	// Create a test session and add it to the request context
+	api := humatest.Wrap(t, server.api)
+
 	ctx := context.Background()
 	sessionToken, err := server.createTestSession(ctx)
 	require.NoError(t, err)
 
 	t.Run("TeamAPI", func(t *testing.T) {
 		// Test POST /api/v1/team
-		body := `{"name":"Test User","email":"test@example.com"}`
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/team", bytes.NewBufferString(body))
-		req.Header.Set("Content-Type", "application/json")
-		req.AddCookie(&http.Cookie{
-			Name:  "session_token",
-			Value: sessionToken,
-		})
-		w := httptest.NewRecorder()
-
-		// Use the router which has the HUMA operations registered
-		server.router.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusOK, w.Code)
-
-		var resp map[string]any
-		err := json.NewDecoder(w.Body).Decode(&resp)
+		resp := api.Post("/api/v1/team",
+			map[string]string{
+				"name":  "John Doe",
+				"email": "john@example.com",
+			},
+			"Cookie: session_token="+sessionToken,
+		)
+		assert.Equal(t, 200, resp.Code)
+		var body map[string]any
+		err := json.NewDecoder(resp.Body).Decode(&body)
 		require.NoError(t, err)
-		assert.NotEmpty(t, resp["id"])
-		assert.Equal(t, "Team member added successfully", resp["message"])
+		assert.NotEmpty(t, body["id"])
+		assert.Equal(t, "Team member added successfully", body["message"])
 	})
 
 	t.Run("TeamAPIList", func(t *testing.T) {
 		// Test GET /api/v1/team
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/team", nil)
-		req.AddCookie(&http.Cookie{
-			Name:  "session_token",
-			Value: sessionToken,
-		})
-		w := httptest.NewRecorder()
-
-		// Use the router which has the HUMA operations registered
-		server.router.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusOK, w.Code)
-
-		var resp map[string]any
-		err := json.NewDecoder(w.Body).Decode(&resp)
+		resp := api.Get("/api/v1/team",
+			"Cookie: session_token="+sessionToken,
+		)
+		assert.Equal(t, 200, resp.Code)
+		var body map[string]any
+		err := json.NewDecoder(resp.Body).Decode(&body)
 		require.NoError(t, err)
-
-		members := resp["members"].([]any)
+		members := body["members"].([]any)
 		assert.Len(t, members, 1)
+	})
+
+	t.Run("TeamAPIUpdate", func(t *testing.T) {
+		// First, add a team member
+		addResp := api.Post("/api/v1/team",
+			map[string]string{
+				"name":  "Jane Doe",
+				"email": "jane@example.com",
+			},
+			"Cookie: session_token="+sessionToken,
+		)
+		require.Equal(t, 200, addResp.Code)
+		var addBody map[string]any
+		err := json.NewDecoder(addResp.Body).Decode(&addBody)
+		require.NoError(t, err)
+		memberID := addBody["id"].(string)
+
+		// Now update the team member
+		updateResp := api.Put("/api/v1/team/"+memberID,
+			map[string]string{
+				"name":  "Jane Smith",
+				"email": "jane.smith@example.com",
+			},
+			"Cookie: session_token="+sessionToken,
+		)
+		assert.Equal(t, 200, updateResp.Code)
+		var updateBody map[string]any
+		err = json.NewDecoder(updateResp.Body).Decode(&updateBody)
+		require.NoError(t, err)
+		assert.Equal(t, "Team member updated successfully", updateBody["message"])
+	})
+
+	t.Run("TeamAPIDelete", func(t *testing.T) {
+		// First, add a team member to delete
+		addResp := api.Post("/api/v1/team",
+			map[string]string{
+				"name":  "Bob Johnson",
+				"email": "bob@example.com",
+			},
+			"Cookie: session_token="+sessionToken,
+		)
+		require.Equal(t, 200, addResp.Code)
+		var addBody map[string]any
+		err := json.NewDecoder(addResp.Body).Decode(&addBody)
+		require.NoError(t, err)
+		memberID := addBody["id"].(string)
+
+		// Now delete the team member
+		deleteResp := api.Delete("/api/v1/team/"+memberID,
+			"Cookie: session_token="+sessionToken,
+		)
+		assert.Equal(t, 200, deleteResp.Code)
+		var deleteBody map[string]any
+		err = json.NewDecoder(deleteResp.Body).Decode(&deleteBody)
+		require.NoError(t, err)
+		assert.Equal(t, "Team member deleted successfully", deleteBody["message"])
 	})
 }

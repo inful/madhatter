@@ -28,3 +28,12 @@ WHERE cs.token = ?;
 UPDATE team_members
 SET is_active = 0
 WHERE id = ?;
+
+-- name: UpdateTeamMember :exec
+UPDATE team_members
+SET name = ?, email = ?
+WHERE id = ?;
+
+-- name: DeleteTeamMember :exec
+DELETE FROM team_members
+WHERE id = ?;

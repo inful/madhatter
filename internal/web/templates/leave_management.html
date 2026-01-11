@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Leave Management</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }
+        .hero { background: rgba(255, 255, 255, 0.95); border-radius: 12px; margin: 2rem auto; max-width: 1200px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+        .card { border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin-bottom: 1.5rem; border: none; }
+        .card-header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px 8px 0 0; }
+        .card-header-title { color: white !important; }
+        .leave-card { border-left: 4px solid #48c774; transition: transform 0.2s; }
+        .leave-card.pending { border-left-color: #ffe08a; }
+        .leave-card.assigned { border-left-color: #48c774; }
+        .leave-card.completed { border-left-color: #b5b5b5; }
+        .leave-card:hover { transform: translateX(4px); }
+        .back-btn { transition: transform 0.2s; }
+        .back-btn:hover { transform: translateX(-2px); }
+        table th { background-color: #f5f5f5; }
+    </style>
+</head>
+<body>
+    <section class="section">
+        <div class="hero">
+            <div class="hero-body">
+                <div class="container">
+                    <!-- User Info -->
+                    {{if .User}}
+                    <div class="card">
+                        <div class="card-content">
+                            <div class="columns is-vcentered is-mobile">
+                                <div class="column">
+                                    <p class="has-text-weight-semibold">
+                                        <i class="fas fa-user-circle mr-2"></i>{{.User.Name}}
+                                    </p>
+                                    <p class="is-size-7 has-text-grey">{{.User.Email}}</p>
+                                    {{if .IsAdmin}}
+                                        <span class="tag is-danger is-light mt-1">
+                                            <i class="fas fa-shield-alt mr-1"></i> Admin
+                                        </span>
+                                    {{end}}
+                                </div>
+                                <div class="column is-narrow">
+                                    <a href="/auth/logout" class="button is-small is-danger is-light">
+                                        <i class="fas fa-sign-out-alt mr-1"></i> Logout
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {{end}}
+
+                    <div class="level is-mobile">
+                        <div class="level-left">
+                            <div class="level-item">
+                                <h1 class="title is-2 has-text-primary">
+                                    <i class="fas fa-calendar-times"></i> Leave Management
+                                </h1>
+                            </div>
+                        </div>
+                        <div class="level-right">
+                            <a href="/" class="button is-light back-btn">
+                                <i class="fas fa-arrow-left mr-2"></i> Dashboard
+                            </a>
+                        </div>
+                    </div>
+
+                    <!-- Leave Records -->
+                    <div class="card">
+                        <header class="card-header">
+                            <p class="card-header-title">
+                                <i class="fas fa-list mr-2"></i> All Leave Records
+                            </p>
+                        </header>
+                        <div class="card-content">
+                            {{if .Leaves}}
+                                <div class="table-container">
+                                    <table class="table is-fullwidth is-hoverable">
+                                        <thead>
+                                            <tr>
+                                                <th>Member</th>
+                                                <th>Start Date</th>
+                                                <th>End Date</th>
+                                                <th>Status</th>
+                                                <th>Created</th>
+                                                <th>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {{range .Leaves}}
+                                            <tr>
+                                                <td>
+                                                    <strong>{{.MemberName}}</strong>
+                                                </td>
+                                                <td>{{.Leave.StartDate.Format "2006-01-02"}}</td>
+                                                <td>{{.Leave.EndDate.Format "2006-01-02"}}</td>
+                                                <td>
+                                                    {{if eq .Leave.Status "pending"}}
+                                                        <span class="tag is-warning">
+                                                            <i class="fas fa-clock mr-1"></i> Pending
+                                                        </span>
+                                                    {{else if eq .Leave.Status "assigned"}}
+                                                        <span class="tag is-success">
+                                                            <i class="fas fa-check mr-1"></i> Assigned
+                                                        </span>
+                                                    {{else if eq .Leave.Status "completed"}}
+                                                        <span class="tag is-light">
+                                                            <i class="fas fa-check-double mr-1"></i> Completed
+                                                        </span>
+                                                    {{else}}
+                                                        <span class="tag is-info">{{.Leave.Status}}</span>
+                                                    {{end}}
+                                                </td>
+                                                <td>{{.Leave.CreatedAt.Format "2006-01-02"}}</td>
+                                                <td>
+                                                    {{if $.IsAdmin}}
+                                                        <button class="button is-small is-info is-light mr-1" 
+                                                                onclick='showEditModal("{{.Leave.ID}}", "{{.Leave.MemberID}}", "{{.Leave.StartDate.Format "2006-01-02"}}", "{{.Leave.EndDate.Format "2006-01-02"}}", "{{.Leave.Status}}")'>
+                                                            <i class="fas fa-edit"></i>
+                                                        </button>
+                                                        <form method="POST" action="/leave/{{.Leave.ID}}/delete" style="display: inline;" 
+                                                              onsubmit="return confirm(&quot;Are you sure you want to delete this leave record?&quot;);">
+                                                            <button type="submit" class="button is-small is-danger is-light">
+                                                                <i class="fas fa-trash"></i>
+                                                            </button>
+                                                        </form>
+                                                    {{end}}
+                                                </td>
+                                            </tr>
+                                            {{end}}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            {{else}}
+                                <div class="empty-state" style="text-align: center; padding: 2rem;">
+                                    <p class="has-text-grey mb-3">No leave records found</p>
+                                    <p class="is-size-7">Report leave to add records</p>
+                                    <a href="/leave/report" class="button is-primary mt-3">
+                                        <i class="fas fa-plus mr-2"></i> Report Leave
+                                    </a>
+                                </div>
+                            {{end}}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Edit Modal -->
+    <div id="editModal" class="modal">
+        <div class="modal-background" onclick="closeEditModal()"></div>
+        <div class="modal-card">
+            <header class="modal-card-head">
+                <p class="modal-card-title">
+                    <i class="fas fa-edit mr-2"></i> Edit Leave Record
+                </p>
+                <button class="delete" aria-label="close" onclick="closeEditModal()"></button>
+            </header>
+            <form id="editForm" method="POST">
+                <section class="modal-card-body">
+                    <div class="field">
+                        <label class="label">Team Member</label>
+                        <div class="control">
+                            <div class="select is-fullwidth">
+                                <select id="editMemberID" name="member_id" required>
+                                    {{range .Members}}
+                                    <option value="{{.ID}}">{{.Name}}</option>
+                                    {{end}}
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label class="label">Start Date</label>
+                        <div class="control">
+                            <input id="editStartDate" class="input" type="date" name="start_date" required>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label class="label">End Date</label>
+                        <div class="control">
+                            <input id="editEndDate" class="input" type="date" name="end_date" required>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label class="label">Status</label>
+                        <div class="control">
+                            <div class="select is-fullwidth">
+                                <select id="editStatus" name="status" required>
+                                    <option value="pending">Pending</option>
+                                    <option value="assigned">Assigned</option>
+                                    <option value="completed">Completed</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+                <footer class="modal-card-foot">
+                    <button type="submit" class="button is-success">
+                        <i class="fas fa-save mr-2"></i> Save Changes
+                    </button>
+                    <button type="button" class="button" onclick="closeEditModal()">Cancel</button>
+                </footer>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        function showEditModal(id, memberID, startDate, endDate, status) {
+            const modal = document.getElementById('editModal');
+            const form = document.getElementById('editForm');
+            const memberSelect = document.getElementById('editMemberID');
+            const startDateInput = document.getElementById('editStartDate');
+            const endDateInput = document.getElementById('editEndDate');
+            const statusSelect = document.getElementById('editStatus');
+
+            form.action = '/leave/' + id + '/edit';
+            memberSelect.value = memberID;
+            startDateInput.value = startDate;
+            endDateInput.value = endDate;
+            statusSelect.value = status;
+
+            modal.classList.add('is-active');
+        }
+
+        function closeEditModal() {
+            const modal = document.getElementById('editModal');
+            modal.classList.remove('is-active');
+        }
+
+        // Close modal on Escape key
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                closeEditModal();
+            }
+        });
+    </script>
+</body>
+</html>

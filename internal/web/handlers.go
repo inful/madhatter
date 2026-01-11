@@ -154,6 +154,11 @@ func (h *Handler) registerRoutes() {
 		r.Use(h.safeRequireAdmin)
 
 		r.HandleFunc("/team", h.handleTeam)
+		r.HandleFunc("/team/{id}/edit", h.handleTeamMemberEdit)
+		r.HandleFunc("/team/{id}/delete", h.handleTeamMemberDelete)
+		r.HandleFunc("/leave/manage", h.handleLeaveManagement)
+		r.HandleFunc("/leave/{id}/edit", h.handleLeaveEdit)
+		r.HandleFunc("/leave/{id}/delete", h.handleLeaveDelete)
 		r.HandleFunc("/schedule/generate", h.handleScheduleGenerate)
 	})
 }
@@ -763,4 +768,164 @@ func (h *Handler) handleCalendarICS(w http.ResponseWriter, r *http.Request) {
 
 	// Write ICS content
 	_, _ = w.Write([]byte(icsContent))
+}
+
+func (h *Handler) handleTeamMemberEdit(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	memberID := chi.URLParam(r, "id")
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	name := r.FormValue("name")
+	email := r.FormValue("email")
+
+	if err := h.db.UpdateTeamMember(ctx, memberID, name, email); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, "/team", http.StatusSeeOther)
+}
+
+func (h *Handler) handleTeamMemberDelete(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	memberID := chi.URLParam(r, "id")
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if err := h.db.DeleteTeamMember(ctx, memberID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Handle team change - update schedule
+	if err := h.maintenance.HandleTeamChange(ctx); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, "/team", http.StatusSeeOther)
+}
+
+func (h *Handler) handleLeaveManagement(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	data := make(map[string]any)
+
+	// Add user info to data
+	if user, ok := auth.GetUserFromContext(ctx); ok {
+		data["User"] = user
+		data["IsAdmin"] = user.IsAdmin.Valid && user.IsAdmin.Int64 == 1
+	}
+
+	// Get all leave records
+	leaves, err := h.db.GetLeaveRecords(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Get all team members to enrich leave data
+	members, err := h.db.GetActiveTeamMembers(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Create member map for quick lookup
+	memberMap := make(map[string]database.TeamMember)
+	for _, m := range members {
+		memberMap[m.ID] = m
+	}
+
+	// Enrich leaves with member details
+	type enrichedLeave struct {
+		Leave      database.LeaveRecord
+		MemberName string
+	}
+
+	enrichedLeaves := make([]enrichedLeave, 0, len(leaves))
+	for i := range leaves {
+		el := enrichedLeave{
+			Leave:      leaves[i],
+			MemberName: "Unknown",
+		}
+		if member, ok := memberMap[leaves[i].MemberID]; ok {
+			el.MemberName = member.Name
+		}
+		enrichedLeaves = append(enrichedLeaves, el)
+	}
+
+	data["Leaves"] = enrichedLeaves
+	data["Members"] = members
+
+	if err := h.tmpl.ExecuteTemplate(w, "leave_management.html", data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func (h *Handler) handleLeaveEdit(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	leaveID := chi.URLParam(r, "id")
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	memberID := r.FormValue("member_id")
+	startDate := r.FormValue("start_date")
+	endDate := r.FormValue("end_date")
+	status := r.FormValue("status")
+
+	if err := h.db.UpdateLeaveRecord(ctx, leaveID, memberID, startDate, endDate, status); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Handle leave change using maintenance service
+	if err := h.maintenance.HandleLeaveChange(ctx, leaveID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, "/leave/manage", http.StatusSeeOther)
+}
+
+func (h *Handler) handleLeaveDelete(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	leaveID := chi.URLParam(r, "id")
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if err := h.db.DeleteLeaveRecord(ctx, leaveID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Regenerate schedule after deleting leave
+	if err := h.maintenance.HandleTeamChange(ctx); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, "/leave/manage", http.StatusSeeOther)
 }

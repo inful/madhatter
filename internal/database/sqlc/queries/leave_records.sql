@@ -27,3 +27,12 @@ ORDER BY start_date DESC;
 UPDATE leave_records
 SET cover_member_id = ?
 WHERE id = ?;
+
+-- name: UpdateLeaveRecord :exec
+UPDATE leave_records
+SET member_id = ?, start_date = ?, end_date = ?, status = ?
+WHERE id = ?;
+
+-- name: DeleteLeaveRecord :exec
+DELETE FROM leave_records
+WHERE id = ?;

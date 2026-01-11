@@ -16,6 +16,7 @@ This file provides guidance to agents when working with code in this repository.
 - **Authentication**: OAuth2 (Forgejo, GitLab)
 - **Calendar Format**: ICS (iCalendar)
 - **SQL Generation**: sqlc for type-safe SQL
+- **Linter**: golangci-lint version 2.8.0
 
 ## Non-Obvious Project-Specific Information
 

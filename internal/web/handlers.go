@@ -197,13 +197,24 @@ func (h *Handler) registerRoutes() {
 		h.router.HandleFunc("/auth/login/{provider}", h.authManager.HandleLogin)
 		h.router.HandleFunc("/auth/callback", h.authManager.HandleCallback)
 		h.router.HandleFunc("/auth/logout", h.authManager.HandleLogout)
+	} else {
+		// Provide a helpful page instead of a 404 when auth is disabled.
+		h.router.HandleFunc("/login", h.handleLoginUnavailable)
 	}
 
 	// Public routes (no authentication required, but user info loaded if available)
-	h.router.Group(func(r chi.Router) {
-		r.Use(h.safeAuthMiddleware)
-		r.HandleFunc("/", h.handleDashboard)
-	})
+	if h.authMiddleware != nil {
+		// When auth is configured, hide the schedule until the user has authenticated.
+		h.router.Group(func(r chi.Router) {
+			r.Use(h.safeRequireAuth)
+			r.HandleFunc("/", h.handleDashboard)
+		})
+	} else {
+		h.router.Group(func(r chi.Router) {
+			r.Use(h.safeAuthMiddleware)
+			r.HandleFunc("/", h.handleDashboard)
+		})
+	}
 	h.router.HandleFunc("/calendar/{token}/ics", h.handleCalendarICS)
 	h.router.HandleFunc("/calendar/{token}/meetings.ics", h.handleMeetingsCalendarICS)
 
@@ -285,6 +296,8 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		"Template": "dashboard",
 	}
 
+	data["AuthEnabled"] = h.authManager != nil && h.authMiddleware != nil
+
 	// Add user info to data
 	if user, ok := auth.GetUserFromContext(ctx); ok {
 		data["User"] = user
@@ -316,6 +329,12 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	if err := h.tmpl.ExecuteTemplate(w, "dashboard.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+func (h *Handler) handleLoginUnavailable(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusServiceUnavailable)
+	_, _ = w.Write([]byte("Authentication is disabled on this server.\n\nTo enable login, configure OAuth provider environment variables (see AUTH_SETUP.md), or run the server with --development for fake login during local development.\n"))
 }
 
 // loadDashboardData populates the dashboard with today's and week's assignments.

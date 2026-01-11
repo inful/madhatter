@@ -38,12 +38,19 @@
     </div>
 </div>
 {{else}}
-<div class="notification is-info is-light">
-    <p class="has-text-weight-semibold mb-2">Login to access personalized features.</p>
-    <a href="/login" class="button is-primary is-small action-btn">
-        <i class="fas fa-sign-in-alt mr-1"></i> Login
-    </a>
-</div>
+    {{if .AuthEnabled}}
+    <div class="notification is-info is-light">
+        <p class="has-text-weight-semibold mb-2">Login to access personalized features.</p>
+        <a href="/login" class="button is-primary is-small action-btn">
+            <i class="fas fa-sign-in-alt mr-1"></i> Login
+        </a>
+    </div>
+    {{else}}
+    <div class="notification is-warning is-light">
+        <p class="has-text-weight-semibold mb-2">Authentication is disabled on this server.</p>
+        <p class="is-size-7 has-text-grey">Configure OAuth provider environment variables to enable login.</p>
+    </div>
+    {{end}}
 {{end}}
 
 <div class="card">
@@ -56,9 +63,11 @@
         {{if .NoTeamMessage}}
             <div class="notification is-warning is-light">
                 <p class="has-text-weight-semibold mb-2">{{.NoTeamMessage}}</p>
-                <a href="/team" class="button is-warning is-small">
-                    <i class="fas fa-user-plus mr-2"></i> Add Team Members
-                </a>
+                {{if and .User .IsAdmin}}
+                    <a href="/team" class="button is-warning is-small">
+                        <i class="fas fa-user-plus mr-2"></i> Add Team Members
+                    </a>
+                {{end}}
             </div>
         {{end}}
 

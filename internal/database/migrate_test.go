@@ -187,7 +187,7 @@ func TestRunMigrations(t *testing.T) {
 		// Run migrations should fail
 		err = RunMigrations(db)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "failed to create migration instance")
+		assert.Contains(t, err.Error(), "failed to get migrations path")
 	})
 }
 

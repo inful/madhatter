@@ -69,7 +69,7 @@ func securityDeclaresScheme(security []any, scheme string) bool {
 	return false
 }
 
-func TestAPIAuthDocsVsRuntime_BearerTokenNotAccepted(t *testing.T) {
+func TestAPIAuthDocsVsRuntime_BearerTokenAccepted(t *testing.T) {
 	server, cleanup := setupTestServer(t)
 	defer cleanup()
 
@@ -108,7 +108,7 @@ func TestAPIAuthDocsVsRuntime_BearerTokenNotAccepted(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &tokenResp))
 	require.NotEmpty(t, tokenResp.Token)
 
-	// 5) Using that token as Bearer auth does NOT currently authenticate requests.
+	// 5) Using that token as Bearer auth authenticates requests.
 	w = doJSONRequest(t, server, http.MethodGet, "/api/v1/team", nil, map[string]string{"Authorization": "Bearer " + tokenResp.Token}, nil)
-	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	assert.Equal(t, http.StatusOK, w.Code)
 }

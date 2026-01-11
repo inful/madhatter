@@ -2,7 +2,10 @@ package auth
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
+	"strings"
 
 	"github.com/inful/madhatter/internal/database/sqlc"
 )
@@ -87,16 +90,64 @@ func (m *Middleware) RequireAdmin(next http.Handler) http.Handler {
 // User info is added to context if available.
 func (m *Middleware) OptionalAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token, err := m.sessionManager.GetSessionCookie(r)
-		if err == nil {
-			session, err := m.sessionManager.ValidateSession(r.Context(), token)
-			if err == nil {
-				ctx := context.WithValue(r.Context(), UserContextKey, session)
-				r = r.WithContext(ctx)
-			}
+		if session, ok := m.authenticateOptional(r); ok {
+			ctx := context.WithValue(r.Context(), UserContextKey, session)
+			r = r.WithContext(ctx)
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (m *Middleware) authenticateOptional(r *http.Request) (*sqlc.GetSessionByTokenRow, bool) {
+	// Prefer cookie-based sessions for browser flows.
+	if token, err := m.sessionManager.GetSessionCookie(r); err == nil {
+		if session, err := m.sessionManager.ValidateSession(r.Context(), token); err == nil {
+			return session, true
+		}
+	}
+
+	// Fall back to API token auth (Bearer) for API clients.
+	bearer := strings.TrimSpace(r.Header.Get("Authorization"))
+	if bearer == "" {
+		return nil, false
+	}
+
+	const prefix = "Bearer "
+	if !strings.HasPrefix(bearer, prefix) {
+		return nil, false
+	}
+
+	apiToken := strings.TrimSpace(strings.TrimPrefix(bearer, prefix))
+	if apiToken == "" {
+		return nil, false
+	}
+
+	tokenHash := hashTokenHex(apiToken)
+	storedToken, err := m.sessionManager.db.GetAPITokenByHash(r.Context(), tokenHash)
+	if err != nil {
+		return nil, false
+	}
+
+	user, err := m.sessionManager.db.GetUserByID(r.Context(), storedToken.UserID)
+	if err != nil {
+		return nil, false
+	}
+
+	// Best-effort: update last used timestamp.
+	_, _ = m.sessionManager.db.UpdateAPITokenLastUsed(r.Context(), storedToken.ID)
+
+	// Populate the same context shape as session auth so existing handlers keep working.
+	return &sqlc.GetSessionByTokenRow{
+		UserID:  user.ID,
+		Email:   user.Email,
+		Name:    user.Name,
+		IsAdmin: user.IsAdmin,
+	}, true
+}
+
+func hashTokenHex(token string) string {
+	hash := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(hash[:])
 }
 
 // GetUserFromContext extracts user information from the request context.

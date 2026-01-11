@@ -83,7 +83,7 @@
 </head>
 <body class="has-gradient {{if not .Template}}is-login{{end}}">
     <section class="section">
-        <div class="hero" {{if and .Template (eq .Template "leave_management")}}{{template "leave_management_hero_attrs" .}}{{end}}>
+        <div class="hero" {{if .Template}}{{renderAttrOptional (printf "%s_hero_attrs" .Template) .}}{{end}}>
             <div class="hero-body">
                 <div class="container">
                     {{if .Template}}

@@ -32,6 +32,16 @@ func (q *Queries) CreateLeaveRecord(ctx context.Context, arg CreateLeaveRecordPa
 	)
 }
 
+const deleteLeaveRecord = `-- name: DeleteLeaveRecord :exec
+DELETE FROM leave_records
+WHERE id = ?
+`
+
+func (q *Queries) DeleteLeaveRecord(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, deleteLeaveRecord, id)
+	return err
+}
+
 const getLeaveByDate = `-- name: GetLeaveByDate :many
 SELECT id, member_id, start_date, end_date, cover_member_id, status, created_at
 FROM leave_records
@@ -151,6 +161,31 @@ type UpdateLeaveCoverMemberParams struct {
 
 func (q *Queries) UpdateLeaveCoverMember(ctx context.Context, arg UpdateLeaveCoverMemberParams) error {
 	_, err := q.db.ExecContext(ctx, updateLeaveCoverMember, arg.CoverMemberID, arg.ID)
+	return err
+}
+
+const updateLeaveRecord = `-- name: UpdateLeaveRecord :exec
+UPDATE leave_records
+SET member_id = ?, start_date = ?, end_date = ?, status = ?
+WHERE id = ?
+`
+
+type UpdateLeaveRecordParams struct {
+	MemberID  string    `json:"member_id"`
+	StartDate time.Time `json:"start_date"`
+	EndDate   time.Time `json:"end_date"`
+	Status    string    `json:"status"`
+	ID        string    `json:"id"`
+}
+
+func (q *Queries) UpdateLeaveRecord(ctx context.Context, arg UpdateLeaveRecordParams) error {
+	_, err := q.db.ExecContext(ctx, updateLeaveRecord,
+		arg.MemberID,
+		arg.StartDate,
+		arg.EndDate,
+		arg.Status,
+		arg.ID,
+	)
 	return err
 }
 

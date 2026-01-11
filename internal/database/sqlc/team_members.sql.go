@@ -36,6 +36,16 @@ func (q *Queries) DeactivateTeamMember(ctx context.Context, id string) error {
 	return err
 }
 
+const deleteTeamMember = `-- name: DeleteTeamMember :exec
+DELETE FROM team_members
+WHERE id = ?
+`
+
+func (q *Queries) DeleteTeamMember(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, deleteTeamMember, id)
+	return err
+}
+
 const getActiveTeamMembers = `-- name: GetActiveTeamMembers :many
 SELECT id, name, email, is_active, created_at
 FROM team_members
@@ -128,4 +138,21 @@ func (q *Queries) GetMemberByToken(ctx context.Context, token string) (TeamMembe
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const updateTeamMember = `-- name: UpdateTeamMember :exec
+UPDATE team_members
+SET name = ?, email = ?
+WHERE id = ?
+`
+
+type UpdateTeamMemberParams struct {
+	Name  string `json:"name"`
+	Email string `json:"email"`
+	ID    string `json:"id"`
+}
+
+func (q *Queries) UpdateTeamMember(ctx context.Context, arg UpdateTeamMemberParams) error {
+	_, err := q.db.ExecContext(ctx, updateTeamMember, arg.Name, arg.Email, arg.ID)
+	return err
 }

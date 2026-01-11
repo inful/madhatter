@@ -29,10 +29,12 @@ type Querier interface {
 	DeleteAssignmentsByDateRange(ctx context.Context, arg DeleteAssignmentsByDateRangeParams) error
 	DeleteCalendarSubscription(ctx context.Context, token string) error
 	DeleteExpiredSessions(ctx context.Context) error
+	DeleteLeaveRecord(ctx context.Context, id string) error
 	DeleteMemberSubscriptions(ctx context.Context, memberID string) error
 	DeleteOAuthToken(ctx context.Context, arg DeleteOAuthTokenParams) error
 	DeleteRotaAssignment(ctx context.Context, id string) error
 	DeleteSession(ctx context.Context, token string) error
+	DeleteTeamMember(ctx context.Context, id string) error
 	DeleteUserSessions(ctx context.Context, userID string) error
 	GetAPITokenByHash(ctx context.Context, tokenHash string) (ApiToken, error)
 	GetAPITokenByID(ctx context.Context, id string) (ApiToken, error)
@@ -62,8 +64,10 @@ type Querier interface {
 	UpdateAPITokenLastUsed(ctx context.Context, id string) (sql.Result, error)
 	UpdateCoverMember(ctx context.Context, arg UpdateCoverMemberParams) error
 	UpdateLeaveCoverMember(ctx context.Context, arg UpdateLeaveCoverMemberParams) error
+	UpdateLeaveRecord(ctx context.Context, arg UpdateLeaveRecordParams) error
 	UpdateLeaveStatus(ctx context.Context, arg UpdateLeaveStatusParams) error
 	UpdateOAuthToken(ctx context.Context, arg UpdateOAuthTokenParams) error
+	UpdateTeamMember(ctx context.Context, arg UpdateTeamMemberParams) error
 	UpdateUser(ctx context.Context, arg UpdateUserParams) error
 	UpdateUserProvider(ctx context.Context, arg UpdateUserProviderParams) error
 }

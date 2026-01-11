@@ -194,6 +194,43 @@ func (db *DB) GetMemberByEmail(ctx context.Context, email string) (*TeamMember, 
 	}, nil
 }
 
+func (db *DB) UpdateTeamMember(ctx context.Context, id, name, email string) error {
+	if id == "" || name == "" || email == "" {
+		return errors.New("id, name and email cannot be empty")
+	}
+
+	params := sqlc.UpdateTeamMemberParams{
+		ID:    id,
+		Name:  name,
+		Email: email,
+	}
+
+	return db.queries.UpdateTeamMember(ctx, params)
+}
+
+func (db *DB) DeleteTeamMember(ctx context.Context, id string) error {
+	if id == "" {
+		return errors.New("id cannot be empty")
+	}
+
+	return db.queries.DeleteTeamMember(ctx, id)
+}
+
+func (db *DB) GetMemberByID(ctx context.Context, id string) (*TeamMember, error) {
+	member, err := db.queries.GetMemberByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	return &TeamMember{
+		ID:        member.ID,
+		Name:      member.Name,
+		Email:     member.Email,
+		IsActive:  member.IsActive.Valid && member.IsActive.Int64 == 1,
+		CreatedAt: member.CreatedAt.Time,
+	}, nil
+}
+
 func (db *DB) CreateCalendarSubscription(ctx context.Context, memberID string) (string, error) {
 	// Verify member exists
 	_, err := db.queries.GetMemberByID(ctx, memberID)

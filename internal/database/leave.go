@@ -143,3 +143,61 @@ func (db *DB) GetLeaveRecords(ctx context.Context, statusFilter ...string) ([]Le
 	}
 	return result, nil
 }
+
+// parseLeaveDates parses and validates leave date strings.
+func parseLeaveDates(startDate, endDate string) (time.Time, time.Time, error) {
+	startTime, err := time.Parse("2006-01-02", startDate)
+	if err != nil {
+		return time.Time{}, time.Time{}, err
+	}
+	endTime, err := time.Parse("2006-01-02", endDate)
+	if err != nil {
+		return time.Time{}, time.Time{}, err
+	}
+
+	// Validate date ordering
+	if endTime.Before(startTime) {
+		return time.Time{}, time.Time{}, errors.New("endDate must be on or after startDate")
+	}
+
+	return startTime, endTime, nil
+}
+
+func (db *DB) UpdateLeaveRecord(ctx context.Context, leaveID, memberID, startDate, endDate, status string) error {
+	if leaveID == "" || memberID == "" || startDate == "" || endDate == "" || status == "" {
+		return errors.New("leaveID, memberID, startDate, endDate, and status are required")
+	}
+
+	// Verify member exists
+	_, err := db.queries.GetMemberByID(ctx, memberID)
+	if err != nil {
+		return errors.New("member not found")
+	}
+
+	// Parse and validate dates
+	startTime, endTime, err := parseLeaveDates(startDate, endDate)
+	if err != nil {
+		return err
+	}
+	if endTime.Before(startTime) {
+		return errors.New("endDate must be on or after startDate")
+	}
+
+	params := sqlc.UpdateLeaveRecordParams{
+		MemberID:  memberID,
+		StartDate: startTime,
+		EndDate:   endTime,
+		Status:    status,
+		ID:        leaveID,
+	}
+
+	return db.queries.UpdateLeaveRecord(ctx, params)
+}
+
+func (db *DB) DeleteLeaveRecord(ctx context.Context, leaveID string) error {
+	if leaveID == "" {
+		return errors.New("leaveID cannot be empty")
+	}
+
+	return db.queries.DeleteLeaveRecord(ctx, leaveID)
+}

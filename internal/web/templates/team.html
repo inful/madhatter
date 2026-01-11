@@ -123,9 +123,19 @@
                                                     <span class="has-text-grey">{{.Email}}</span>
                                                 </div>
                                                 <div class="column is-narrow">
-                                                    <span class="tag is-success is-light">
+                                                    <span class="tag is-success is-light mr-2">
                                                         <i class="fas fa-check-circle mr-1"></i> Active
                                                     </span>
+                                                    {{if $.IsAdmin}}
+                                                        <button class="button is-small is-info is-light mr-1" onclick='showEditModal("{{js .ID}}", "{{js .Name}}", "{{js .Email}}")' aria-label="Edit team member">
+                                                            <i class="fas fa-edit"></i>
+                                                        </button>
+                                                        <form method="POST" action="/team/{{.ID}}/delete" style="display: inline;" onsubmit="return confirm(&quot;Are you sure you want to delete {{js .Name}}? This will also remove all associated assignments.&quot;);">
+                                                            <button type="submit" class="button is-small is-danger is-light" aria-label="Delete team member">
+                                                                <i class="fas fa-trash"></i>
+                                                            </button>
+                                                        </form>
+                                                    {{end}}
                                                 </div>
                                             </div>
                                         </div>
@@ -143,5 +153,76 @@
             </div>
         </div>
     </section>
+
+    <!-- Edit Modal -->
+    <div id="editModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="editModalTitle">
+        <div class="modal-background" onclick="closeEditModal()"></div>
+        <div class="modal-card">
+            <header class="modal-card-head">
+                <p class="modal-card-title" id="editModalTitle">
+                    <i class="fas fa-edit mr-2"></i> Edit Team Member
+                </p>
+                <button class="delete" aria-label="close" onclick="closeEditModal()"></button>
+            </header>
+            <form id="editForm" method="POST">
+                <section class="modal-card-body">
+                    <div class="field">
+                        <label class="label">Name</label>
+                        <div class="control has-icons-left">
+                            <input id="editName" class="input" type="text" name="name" required>
+                            <span class="icon is-small is-left">
+                                <i class="fas fa-user"></i>
+                            </span>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label class="label">Email</label>
+                        <div class="control has-icons-left">
+                            <input id="editEmail" class="input" type="email" name="email" required>
+                            <span class="icon is-small is-left">
+                                <i class="fas fa-envelope"></i>
+                            </span>
+                        </div>
+                    </div>
+                </section>
+                <footer class="modal-card-foot">
+                    <button type="submit" class="button is-success">
+                        <i class="fas fa-save mr-2"></i> Save Changes
+                    </button>
+                    <button type="button" class="button" onclick="closeEditModal()">Cancel</button>
+                </footer>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        function showEditModal(id, name, email) {
+            const modal = document.getElementById('editModal');
+            const form = document.getElementById('editForm');
+            const nameInput = document.getElementById('editName');
+            const emailInput = document.getElementById('editEmail');
+
+            form.action = '/team/' + id + '/edit';
+            nameInput.value = name;
+            emailInput.value = email;
+
+            modal.classList.add('is-active');
+        }
+
+        function closeEditModal() {
+            const modal = document.getElementById('editModal');
+            modal.classList.remove('is-active');
+        }
+
+        // Close modal on Escape key; ensure listener is only added once
+        if (!window.__teamEditModalEscListenerAdded) {
+            document.addEventListener('keydown', function(event) {
+                if (event.key === 'Escape') {
+                    closeEditModal();
+                }
+            });
+            window.__teamEditModalEscListenerAdded = true;
+        }
+    </script>
 </body>
 </html>

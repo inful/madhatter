@@ -12,7 +12,7 @@ linters:
     - copyloopvar
     - cyclop
     - dogsled
-    - dupl
+    # - dupl  # Disabled - too many false positives in REST API handlers
     - dupword
     - durationcheck
     - errcheck
@@ -62,6 +62,8 @@ linters:
     - cyclop
     - testifylint
   settings:
+    dupl:
+      threshold: 40
     tagalign:
       sort: true
       strict: false

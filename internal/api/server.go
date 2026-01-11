@@ -224,6 +224,30 @@ func (s *Server) registerOperations(development bool) {
 		},
 	}, s.handleListTeam)
 
+	huma.Register(s.api, huma.Operation{
+		OperationID: "update-team-member",
+		Method:      http.MethodPut,
+		Path:        "/api/v1/team/{id}",
+		Summary:     "Update a team member",
+		Tags:        []string{"Team"},
+		Security: []map[string][]string{
+			{"sessionAuth": {}},
+			{"apiTokenAuth": {}},
+		},
+	}, s.handleUpdateTeam)
+
+	huma.Register(s.api, huma.Operation{
+		OperationID: "delete-team-member",
+		Method:      http.MethodDelete,
+		Path:        "/api/v1/team/{id}",
+		Summary:     "Delete a team member",
+		Tags:        []string{"Team"},
+		Security: []map[string][]string{
+			{"sessionAuth": {}},
+			{"apiTokenAuth": {}},
+		},
+	}, s.handleDeleteTeam)
+
 	// Leave Operations
 	huma.Register(s.api, huma.Operation{
 		OperationID: "report-leave",
@@ -248,6 +272,30 @@ func (s *Server) registerOperations(development bool) {
 			{"apiTokenAuth": {}},
 		},
 	}, s.handleListLeave)
+
+	huma.Register(s.api, huma.Operation{
+		OperationID: "update-leave",
+		Method:      http.MethodPut,
+		Path:        "/api/v1/leave/{id}",
+		Summary:     "Update a leave record",
+		Tags:        []string{"Leave"},
+		Security: []map[string][]string{
+			{"sessionAuth": {}},
+			{"apiTokenAuth": {}},
+		},
+	}, s.handleUpdateLeave)
+
+	huma.Register(s.api, huma.Operation{
+		OperationID: "delete-leave",
+		Method:      http.MethodDelete,
+		Path:        "/api/v1/leave/{id}",
+		Summary:     "Delete a leave record",
+		Tags:        []string{"Leave"},
+		Security: []map[string][]string{
+			{"sessionAuth": {}},
+			{"apiTokenAuth": {}},
+		},
+	}, s.handleDeleteLeave)
 
 	// Schedule Operations
 	huma.Register(s.api, huma.Operation{
@@ -452,6 +500,90 @@ func (s *Server) handleListTeam(ctx context.Context, input *struct{}) (*ListTeam
 	return resp, nil
 }
 
+type UpdateTeamInput struct {
+	ID   string `minLength:"1" path:"id"`
+	Body struct {
+		Name  string `json:"name" minLength:"1"`
+		Email string `format:"email" json:"email"`
+	}
+}
+
+type UpdateTeamOutput struct {
+	Body struct {
+		Message string `json:"message"`
+	}
+}
+
+func (s *Server) handleUpdateTeam(ctx context.Context, input *UpdateTeamInput) (*UpdateTeamOutput, error) {
+	// Check authentication
+	if s.authMiddleware == nil {
+		return nil, huma.Error503ServiceUnavailable("Authentication not available")
+	}
+
+	// Get user from context using middleware's context key
+	userSession, ok := auth.GetUserFromContext(ctx)
+	if !ok {
+		return nil, huma.Error401Unauthorized("Authentication required")
+	}
+
+	// Check admin privileges
+	if !userSession.IsAdmin.Valid || userSession.IsAdmin.Int64 == 0 {
+		return nil, huma.Error403Forbidden("Admin privileges required")
+	}
+
+	err := s.db.UpdateTeamMember(ctx, input.ID, input.Body.Name, input.Body.Email)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("Failed to update team member", err)
+	}
+
+	resp := &UpdateTeamOutput{}
+	resp.Body.Message = "Team member updated successfully"
+	return resp, nil
+}
+
+type DeleteTeamInput struct {
+	ID string `minLength:"1" path:"id"`
+}
+
+type DeleteTeamOutput struct {
+	Body struct {
+		Message string `json:"message"`
+	}
+}
+
+func (s *Server) handleDeleteTeam(ctx context.Context, input *DeleteTeamInput) (*DeleteTeamOutput, error) {
+	// Check authentication
+	if s.authMiddleware == nil {
+		return nil, huma.Error503ServiceUnavailable("Authentication not available")
+	}
+
+	// Get user from context using middleware's context key
+	userSession, ok := auth.GetUserFromContext(ctx)
+	if !ok {
+		return nil, huma.Error401Unauthorized("Authentication required")
+	}
+
+	// Check admin privileges
+	if !userSession.IsAdmin.Valid || userSession.IsAdmin.Int64 == 0 {
+		return nil, huma.Error403Forbidden("Admin privileges required")
+	}
+
+	err := s.db.DeleteTeamMember(ctx, input.ID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("Failed to delete team member", err)
+	}
+
+	// Update schedule after deletion
+	maintenance := rota.NewScheduleMaintenance(s.db)
+	if err := maintenance.HandleTeamChange(ctx); err != nil {
+		return nil, huma.Error500InternalServerError("Failed to update schedule", err)
+	}
+
+	resp := &DeleteTeamOutput{}
+	resp.Body.Message = "Team member deleted successfully"
+	return resp, nil
+}
+
 type ReportLeaveInput struct {
 	Body struct {
 		MemberID  string `json:"member_id"`
@@ -571,6 +703,98 @@ func (s *Server) handleListLeave(ctx context.Context, input *struct{}) (*ListLea
 
 	resp := &ListLeaveOutput{}
 	resp.Body.LeaveRecords = leaveRecords
+	return resp, nil
+}
+
+type UpdateLeaveInput struct {
+	ID   string `minLength:"1" path:"id"`
+	Body struct {
+		MemberID  string `json:"member_id"`
+		StartDate string `format:"date" json:"start_date"`
+		EndDate   string `format:"date" json:"end_date"`
+		Status    string `enum:"pending,assigned,completed" json:"status"`
+	}
+}
+
+type UpdateLeaveOutput struct {
+	Body struct {
+		Message string `json:"message"`
+	}
+}
+
+func (s *Server) handleUpdateLeave(ctx context.Context, input *UpdateLeaveInput) (*UpdateLeaveOutput, error) {
+	// Check authentication
+	if s.authMiddleware == nil {
+		return nil, huma.Error503ServiceUnavailable("Authentication not available")
+	}
+
+	// Get user from context using middleware's context key
+	userSession, ok := auth.GetUserFromContext(ctx)
+	if !ok {
+		return nil, huma.Error401Unauthorized("Authentication required")
+	}
+
+	// Check admin privileges
+	if !userSession.IsAdmin.Valid || userSession.IsAdmin.Int64 == 0 {
+		return nil, huma.Error403Forbidden("Admin privileges required")
+	}
+
+	err := s.db.UpdateLeaveRecord(ctx, input.ID, input.Body.MemberID, input.Body.StartDate, input.Body.EndDate, input.Body.Status)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("Failed to update leave record", err)
+	}
+
+	// Update schedule after modification
+	maintenance := rota.NewScheduleMaintenance(s.db)
+	if err := maintenance.HandleLeaveChange(ctx, input.ID); err != nil {
+		return nil, huma.Error500InternalServerError("Failed to update schedule", err)
+	}
+
+	resp := &UpdateLeaveOutput{}
+	resp.Body.Message = "Leave record updated successfully"
+	return resp, nil
+}
+
+type DeleteLeaveInput struct {
+	ID string `minLength:"1" path:"id"`
+}
+
+type DeleteLeaveOutput struct {
+	Body struct {
+		Message string `json:"message"`
+	}
+}
+
+func (s *Server) handleDeleteLeave(ctx context.Context, input *DeleteLeaveInput) (*DeleteLeaveOutput, error) {
+	// Check authentication
+	if s.authMiddleware == nil {
+		return nil, huma.Error503ServiceUnavailable("Authentication not available")
+	}
+
+	// Get user from context using middleware's context key
+	userSession, ok := auth.GetUserFromContext(ctx)
+	if !ok {
+		return nil, huma.Error401Unauthorized("Authentication required")
+	}
+
+	// Check admin privileges
+	if !userSession.IsAdmin.Valid || userSession.IsAdmin.Int64 == 0 {
+		return nil, huma.Error403Forbidden("Admin privileges required")
+	}
+
+	err := s.db.DeleteLeaveRecord(ctx, input.ID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("Failed to delete leave record", err)
+	}
+
+	// Update schedule after deletion
+	maintenance := rota.NewScheduleMaintenance(s.db)
+	if err := maintenance.HandleTeamChange(ctx); err != nil {
+		return nil, huma.Error500InternalServerError("Failed to update schedule", err)
+	}
+
+	resp := &DeleteLeaveOutput{}
+	resp.Body.Message = "Leave record deleted successfully"
 	return resp, nil
 }
 

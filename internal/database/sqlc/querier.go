@@ -11,6 +11,7 @@ import (
 )
 
 type Querier interface {
+	ActivateTeamMember(ctx context.Context, id string) error
 	AddTeamMember(ctx context.Context, arg AddTeamMemberParams) (sql.Result, error)
 	CleanupExpiredTokens(ctx context.Context) (sql.Result, error)
 	CountAdmins(ctx context.Context) (int64, error)

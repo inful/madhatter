@@ -227,6 +227,13 @@ func TestAuthManager_HandleCallback(t *testing.T) {
 	assert.Equal(t, http.StatusSeeOther, w.Code)
 	assert.Equal(t, "/", w.Header().Get("Location"))
 
+	// Assert - Team member is auto-created.
+	member, err := db.GetMemberByEmail(context.Background(), "dev@example.com")
+	require.NoError(t, err)
+	require.NotNil(t, member)
+	assert.Equal(t, "Development User", member.Name)
+	assert.True(t, member.IsActive)
+
 	// Check session cookie was set
 	cookies := w.Result().Cookies()
 	found := false

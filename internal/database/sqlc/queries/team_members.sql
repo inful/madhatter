@@ -29,6 +29,11 @@ UPDATE team_members
 SET is_active = 0
 WHERE id = ?;
 
+-- name: ActivateTeamMember :exec
+UPDATE team_members
+SET is_active = 1
+WHERE id = ?;
+
 -- name: UpdateTeamMember :exec
 UPDATE team_members
 SET name = ?, email = ?

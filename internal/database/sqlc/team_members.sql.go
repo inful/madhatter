@@ -10,6 +10,17 @@ import (
 	"database/sql"
 )
 
+const activateTeamMember = `-- name: ActivateTeamMember :exec
+UPDATE team_members
+SET is_active = 1
+WHERE id = ?
+`
+
+func (q *Queries) ActivateTeamMember(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, activateTeamMember, id)
+	return err
+}
+
 const addTeamMember = `-- name: AddTeamMember :execresult
 INSERT INTO team_members (id, name, email)
 VALUES (?, ?, ?)

@@ -996,7 +996,7 @@ func (h *Handler) handleLeaveDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Regenerate schedule after deleting leave
+	// Reconcile covers - will remove any stale covers automatically
 	if err := h.maintenance.HandleTeamChange(ctx); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

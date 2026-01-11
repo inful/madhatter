@@ -787,7 +787,7 @@ func (s *Server) handleDeleteLeave(ctx context.Context, input *DeleteLeaveInput)
 		return nil, huma.Error500InternalServerError("Failed to delete leave record", err)
 	}
 
-	// Update schedule after deletion
+	// Reconcile schedule - will remove any stale covers automatically
 	maintenance := rota.NewScheduleMaintenance(s.db)
 	if err := maintenance.HandleTeamChange(ctx); err != nil {
 		return nil, huma.Error500InternalServerError("Failed to update schedule", err)

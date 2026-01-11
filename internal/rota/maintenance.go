@@ -275,9 +275,90 @@ func (sm *ScheduleMaintenance) RegenerateSchedule(ctx context.Context, start, en
 }
 
 // HandleLeaveChange processes leave changes and updates cover assignments.
-// This is a wrapper around the engine's AssignCoversForLeave method.
+// This reconciles covers for the specific leave and assigns new ones as needed.
 func (sm *ScheduleMaintenance) HandleLeaveChange(ctx context.Context, leaveID string) error {
+	// Get the leave to know which dates to reconcile
+	leave, err := sm.db.GetLeaveByID(ctx, leaveID)
+	if err != nil {
+		return err
+	}
+
+	// Reconcile covers for this specific leave's date range
+	if err := sm.reconcileCoversForDateRange(ctx, leave.StartDate, leave.EndDate); err != nil {
+		return err
+	}
+
+	// Then assign covers for the updated leave if still active
 	return sm.engine.AssignCoversForLeave(ctx, leaveID)
+}
+
+// findOriginalMemberID finds the member ID of the original assignment.
+func (sm *ScheduleMaintenance) findOriginalMemberID(assignments []database.RotaAssignment, originalAssignmentID *string) string {
+	if originalAssignmentID == nil {
+		return ""
+	}
+	for i := range assignments {
+		if assignments[i].ID == *originalAssignmentID {
+			return assignments[i].MemberID
+		}
+	}
+	return ""
+}
+
+// isMemberOnLeave checks if a member is on leave for a given date.
+func (sm *ScheduleMaintenance) isMemberOnLeave(ctx context.Context, date string, memberID string) (bool, error) {
+	leaves, err := sm.db.GetLeaveByDate(ctx, date)
+	if err != nil {
+		return false, err
+	}
+	for i := range leaves {
+		if leaves[i].MemberID == memberID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// reconcileCoversForDateRange removes stale covers for a specific date range.
+func (sm *ScheduleMaintenance) reconcileCoversForDateRange(ctx context.Context, startDate, endDate time.Time) error {
+	// Get all assignments in the specified range
+	assignments, err := sm.db.GetAssignmentsByDateRange(
+		ctx,
+		startDate.Format("2006-01-02"),
+		endDate.Format("2006-01-02"),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to get assignments for reconciliation: %w", err)
+	}
+
+	// Check each cover assignment
+	for i := range assignments {
+		assignment := &assignments[i]
+		if !assignment.IsCover || assignment.OriginalAssignmentID == nil {
+			continue
+		}
+
+		// Find the original assignment
+		originalMemberID := sm.findOriginalMemberID(assignments, assignment.OriginalAssignmentID)
+		if originalMemberID == "" {
+			continue
+		}
+
+		// Check if original person is still on leave for this date
+		onLeave, err := sm.isMemberOnLeave(ctx, assignment.Date, originalMemberID)
+		if err != nil {
+			return fmt.Errorf("failed to check leave for date %s: %w", assignment.Date, err)
+		}
+
+		// If not on leave (or leave is completed/deleted), remove the cover
+		if !onLeave {
+			if err := sm.db.DeleteRotaAssignment(ctx, assignment.ID); err != nil {
+				return fmt.Errorf("failed to remove stale cover %s: %w", assignment.ID, err)
+			}
+		}
+	}
+
+	return nil
 }
 
 // findLastAssignedMember finds the last member who was assigned in the existing schedule.

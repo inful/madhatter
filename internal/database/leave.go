@@ -11,7 +11,7 @@ import (
 
 func (db *DB) CreateLeaveRecord(ctx context.Context, memberID, startDate, endDate string) (string, error) {
 	if memberID == "" || startDate == "" || endDate == "" {
-		return "", errors.New("all fields are required")
+		return "", errors.New("memberID, startDate, and endDate are required")
 	}
 
 	// Verify member exists

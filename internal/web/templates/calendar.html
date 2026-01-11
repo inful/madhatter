@@ -1,185 +1,150 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Calendar Subscriptions</title>
-    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }
-        .hero { background: rgba(255, 255, 255, 0.95); border-radius: 12px; margin: 2rem auto; max-width: 900px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
-        .card { border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin-bottom: 1.5rem; border: none; }
-        .card-header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px 8px 0 0; }
-        .card-header-title { color: white !important; }
-        .result-box { background: #d4edda; border: 2px solid #28a745; border-radius: 8px; padding: 1.5rem; margin: 1rem 0; }
-        .url-box { background: #f8f9fa; padding: 1rem; border-radius: 6px; word-break: break-all; font-family: monospace; border: 1px solid #dee2e6; display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
-        .back-btn { transition: transform 0.2s; }
-        .back-btn:hover { transform: translateX(-2px); }
-        .submit-btn { transition: transform 0.2s; }
-        .submit-btn:hover { transform: translateY(-2px); }
-        .step { background: #f8f9fa; padding: 1rem; border-radius: 6px; margin-bottom: 0.5rem; }
-        .step-number { background: #667eea; color: white; width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: bold; margin-right: 0.5rem; }
-        .copy-btn { flex-shrink: 0; white-space: nowrap; }
-        .copy-notification { background: #28a745; color: white; padding: 0.5rem 1rem; border-radius: 4px; position: fixed; top: 20px; right: 20px; display: none; z-index: 1000; }
-    </style>
-</head>
-<body>
-    <section class="section">
-        <div class="hero">
-            <div class="hero-body">
-                <div class="container">
-                    <div class="level is-mobile">
-                        <div class="level-left">
-                            <div class="level-item">
-                                <h1 class="title is-2 has-text-primary">
-                                    <i class="fas fa-calendar-star"></i> Calendar Subscriptions
-                                </h1>
-                            </div>
-                        </div>
-                        <div class="level-right">
-                            <a href="/" class="button is-light back-btn">
-                                <i class="fas fa-arrow-left mr-2"></i> Dashboard
-                            </a>
-                        </div>
+{{define "calendar.html"}}
+{{template "base" .}}
+{{end}}
+
+{{define "calendar_title"}}Calendar Subscriptions{{end}}
+
+{{define "calendar_content"}}
+{{template "user_card" .}}
+{{template "page_header" (dict "Title" "Calendar Subscriptions" "Icon" "fas fa-calendar-star" "BackHref" "/" "BackLabel" "Dashboard")}}
+
+{{if .ShowResult}}
+    <div class="result-box">
+        <h3 class="title is-4 has-text-success mb-3">
+            <i class="fas fa-check-circle"></i> Calendar Subscription Created
+        </h3>
+        <p class="has-text-weight-semibold mb-2">Calendar URL:</p>
+        <div class="url-box" id="calendar-url-box">
+            {{.CalendarURL}}
+            <button class="button is-success is-small copy-btn" onclick="copyCalendarURL()">
+                <i class="fas fa-copy"></i> Copy
+            </button>
+        </div>
+        <p class="mt-3"><strong>Token:</strong> <code>{{.Token}}</code></p>
+        <p class="mt-3 is-size-6">Copy this URL and add it to your calendar app (Google Calendar, Outlook, Apple Calendar, etc.)</p>
+    </div>
+{{end}}
+
+<div class="card">
+    <header class="card-header">
+        <p class="card-header-title">
+            <i class="fas fa-plus-circle mr-2"></i> Create New Subscription
+        </p>
+    </header>
+    <div class="card-content">
+        <form method="POST" action="/calendar">
+            <div class="field">
+                <label class="label">Select Team Member</label>
+                <div class="control has-icons-left">
+                    <div class="select is-fullwidth">
+                        <select name="member_id" required>
+                            <option value="">Select Team Member</option>
+                            {{range .Members}}
+                                <option value="{{.ID}}">{{.Name}} - {{.Email}}</option>
+                            {{end}}
+                        </select>
                     </div>
-
-                    {{if .ShowResult}}
-                        <div class="result-box">
-                            <h3 class="title is-4 has-text-success mb-3">
-                                <i class="fas fa-check-circle"></i> Calendar Subscription Created
-                            </h3>
-                            <p class="has-text-weight-semibold mb-2">Calendar URL:</p>
-                            <div class="url-box" id="calendar-url-box">
-                                {{.CalendarURL}}
-                                <button class="button is-success is-small copy-btn" onclick="copyCalendarURL()">
-                                    <i class="fas fa-copy"></i> Copy
-                                </button>
-                            </div>
-                            <p class="mt-3"><strong>Token:</strong> <code>{{.Token}}</code></p>
-                            <p class="mt-3 is-size-6">Copy this URL and add it to your calendar app (Google Calendar, Outlook, Apple Calendar, etc.)</p>
-                        </div>
-                    {{end}}
-
-                    <div class="card">
-                        <header class="card-header">
-                            <p class="card-header-title">
-                                <i class="fas fa-plus-circle mr-2"></i> Create New Subscription
-                            </p>
-                        </header>
-                        <div class="card-content">
-                            <form method="POST" action="/calendar">
-                                <div class="field">
-                                    <label class="label">Select Team Member</label>
-                                    <div class="control has-icons-left">
-                                        <div class="select is-fullwidth">
-                                            <select name="member_id" required>
-                                                <option value="">Select Team Member</option>
-                                                {{range .Members}}
-                                                    <option value="{{.ID}}">{{.Name}} - {{.Email}}</option>
-                                                {{end}}
-                                            </select>
-                                        </div>
-                                        <span class="icon is-small is-left">
-                                            <i class="fas fa-user"></i>
-                                        </span>
-                                    </div>
-                                </div>
-
-                                <div class="field">
-                                    <div class="control">
-                                        <button type="submit" class="button is-primary is-fullwidth submit-btn">
-                                            <i class="fas fa-calendar-plus mr-2"></i> Create Subscription
-                                        </button>
-                                    </div>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-
-                    <div class="card">
-                        <header class="card-header">
-                            <p class="card-header-title">
-                                <i class="fas fa-question-circle mr-2"></i> How to Subscribe
-                            </p>
-                        </header>
-                        <div class="card-content">
-                            <div class="content">
-                                <div class="step">
-                                    <span class="step-number">1</span>
-                                    <strong>Copy your calendar URL</strong> from the result above
-                                </div>
-                                <div class="step">
-                                    <span class="step-number">2</span>
-                                    Open your calendar app (Google Calendar, Outlook, Apple Calendar, etc.)
-                                </div>
-                                <div class="step">
-                                    <span class="step-number">3</span>
-                                    Add new calendar by URL
-                                </div>
-                                <div class="step">
-                                    <span class="step-number">4</span>
-                                    Paste the URL
-                                </div>
-                                <div class="step">
-                                    <span class="step-number">5</span>
-                                    Your support days will appear automatically and stay up-to-date
-                                </div>
-                            </div>
-
-                            <div class="notification is-info is-light mt-4">
-                                <i class="fas fa-info-circle mr-2"></i>
-                                <strong>Tip:</strong> Calendar subscriptions automatically update when your schedule changes. No need to re-subscribe!
-                            </div>
-                        </div>
-                    </div>
+                    <span class="icon is-small is-left">
+                        <i class="fas fa-user"></i>
+                    </span>
                 </div>
             </div>
-        </div>
-    </section>
 
-    <!-- Copy Notification -->
-    <div id="copy-notification" class="copy-notification">
-        <i class="fas fa-check mr-2"></i> URL copied to clipboard!
+            <div class="field">
+                <div class="control">
+                    <button type="submit" class="button is-primary is-fullwidth submit-btn">
+                        <i class="fas fa-calendar-plus mr-2"></i> Create Subscription
+                    </button>
+                </div>
+            </div>
+        </form>
     </div>
+</div>
 
-    <!-- JavaScript for Copy Functionality -->
-    <script>
-        function copyCalendarURL() {
-            const urlBox = document.getElementById('calendar-url-box');
-            // Get only the text nodes (excluding the button)
-            let urlText = '';
-            urlBox.childNodes.forEach(node => {
-                if (node.nodeType === Node.TEXT_NODE) {
-                    urlText += node.textContent;
-                }
-            });
-            urlText = urlText.trim();
-            
-            // Create a temporary textarea to copy the text
-            const textarea = document.createElement('textarea');
-            textarea.value = urlText;
-            textarea.style.position = 'fixed';
-            textarea.style.opacity = '0';
-            document.body.appendChild(textarea);
-            textarea.select();
-            
-            try {
-                // Copy to clipboard
-                document.execCommand('copy');
-                
-                // Show notification
-                const notification = document.getElementById('copy-notification');
-                notification.style.display = 'block';
-                setTimeout(() => {
-                    notification.style.display = 'none';
-                }, 2000);
-            } catch (err) {
-                console.error('Failed to copy:', err);
-                alert('Failed to copy URL. Please copy it manually.');
-            } finally {
-                document.body.removeChild(textarea);
+<div class="card">
+    <header class="card-header">
+        <p class="card-header-title">
+            <i class="fas fa-question-circle mr-2"></i> How to Subscribe
+        </p>
+    </header>
+    <div class="card-content">
+        <div class="content">
+            <div class="step">
+                <span class="step-number">1</span>
+                <strong>Copy your calendar URL</strong> from the result above
+            </div>
+            <div class="step">
+                <span class="step-number">2</span>
+                Open your calendar app (Google Calendar, Outlook, Apple Calendar, etc.)
+            </div>
+            <div class="step">
+                <span class="step-number">3</span>
+                Add new calendar by URL
+            </div>
+            <div class="step">
+                <span class="step-number">4</span>
+                Paste the URL
+            </div>
+            <div class="step">
+                <span class="step-number">5</span>
+                Your support days will appear automatically and stay up-to-date
+            </div>
+        </div>
+
+        <div class="notification is-info is-light mt-4">
+            <i class="fas fa-info-circle mr-2"></i>
+            <strong>Tip:</strong> Calendar subscriptions automatically update when your schedule changes. No need to re-subscribe!
+        </div>
+    </div>
+</div>
+
+<div id="copy-notification" class="copy-notification">
+    <i class="fas fa-check mr-2"></i> URL copied to clipboard!
+</div>
+{{end}}
+
+{{define "calendar_styles"}}
+<style>
+    .result-box { background: #d4edda; border: 2px solid #28a745; border-radius: 8px; padding: 1.5rem; margin: 1rem 0; }
+    .url-box { background: #f8f9fa; padding: 1rem; border-radius: 6px; word-break: break-all; font-family: monospace; border: 1px solid #dee2e6; display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
+    .step { background: #f8f9fa; padding: 1rem; border-radius: 6px; margin-bottom: 0.5rem; }
+    .step-number { background: #667eea; color: white; width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: bold; margin-right: 0.5rem; }
+    .copy-btn { flex-shrink: 0; white-space: nowrap; }
+    .copy-notification { background: #28a745; color: white; padding: 0.5rem 1rem; border-radius: 4px; position: fixed; top: 20px; right: 20px; display: none; z-index: 1000; }
+</style>
+{{end}}
+
+{{define "calendar_scripts"}}
+<script>
+    function copyCalendarURL() {
+        const urlBox = document.getElementById('calendar-url-box');
+        let urlText = '';
+        urlBox.childNodes.forEach(node => {
+            if (node.nodeType === Node.TEXT_NODE) {
+                urlText += node.textContent;
             }
+        });
+        urlText = urlText.trim();
+        const textarea = document.createElement('textarea');
+        textarea.value = urlText;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+
+        try {
+            document.execCommand('copy');
+            const notification = document.getElementById('copy-notification');
+            notification.style.display = 'block';
+            setTimeout(() => {
+                notification.style.display = 'none';
+            }, 2000);
+        } catch (err) {
+            console.error('Failed to copy:', err);
+            alert('Failed to copy URL. Please copy it manually.');
+        } finally {
+            document.body.removeChild(textarea);
         }
-    </script>
-</body>
-</html>
+    }
+</script>
+{{end}}

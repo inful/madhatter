@@ -1,165 +1,111 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Generate Schedule</title>
-    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }
-        .hero { background: rgba(255, 255, 255, 0.95); border-radius: 12px; margin: 2rem auto; max-width: 900px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
-        .card { border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin-bottom: 1.5rem; border: none; }
-        .card-header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px 8px 0 0; }
-        .card-header-title { color: white !important; }
-        .info-box { background: #e7f3ff; border-left: 4px solid #3273dc; padding: 1rem; border-radius: 4px; margin: 1rem 0; }
-        .back-btn { transition: transform 0.2s; }
-        .back-btn:hover { transform: translateX(-2px); }
-        .submit-btn { transition: transform 0.2s; }
-        .submit-btn:hover { transform: translateY(-2px); }
-        .quick-action-btn { transition: transform 0.2s; }
-        .quick-action-btn:hover { transform: translateY(-2px); }
-    </style>
-</head>
-<body>
-    <section class="section">
-        <div class="hero">
-            <div class="hero-body">
-                <div class="container">
-                    <!-- User Info -->
-                    {{if .User}}
-                    <div class="card">
-                        <div class="card-content">
-                            <div class="columns is-vcentered is-mobile">
-                                <div class="column">
-                                    <p class="has-text-weight-semibold">
-                                        <i class="fas fa-user-circle mr-2"></i>{{.User.Name}}
-                                    </p>
-                                    <p class="is-size-7 has-text-grey">{{.User.Email}}</p>
-                                    {{if .IsAdmin}}
-                                        <span class="tag is-danger is-light mt-1">
-                                            <i class="fas fa-shield-alt mr-1"></i> Admin
-                                        </span>
-                                    {{end}}
-                                </div>
-                                <div class="column is-narrow">
-                                    <a href="/auth/logout" class="button is-small is-danger is-light">
-                                        <i class="fas fa-sign-out-alt mr-1"></i> Logout
-                                    </a>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    {{end}}
+{{define "schedule_generate.html"}}
+{{template "base" .}}
+{{end}}
 
-                    <div class="level is-mobile">
-                        <div class="level-left">
-                            <div class="level-item">
-                                <h1 class="title is-2 has-text-primary">
-                                    <i class="fas fa-calendar-plus"></i> Generate Schedule
-                                </h1>
-                            </div>
-                        </div>
-                        <div class="level-right">
-                            <a href="/" class="button is-light back-btn">
-                                <i class="fas fa-arrow-left mr-2"></i> Dashboard
-                            </a>
-                        </div>
-                    </div>
+{{define "schedule_generate_title"}}Generate Schedule{{end}}
 
-                    <div class="card">
-                        <header class="card-header">
-                            <p class="card-header-title">
-                                <i class="fas fa-info-circle mr-2"></i> Schedule Information
-                            </p>
-                        </header>
-                        <div class="card-content">
-                            <div class="info-box">
-                                <p class="mb-2"><strong><i class="fas fa-robot"></i> Automatic Maintenance:</strong></p>
-                                <p class="is-size-7 mb-2">The system automatically maintains a 14-day rolling schedule. This tool is for filling gaps or extending beyond the automatic window.</p>
-                                
-                                <p class="mt-3 mb-2"><strong><i class="fas fa-list-ul"></i> How it works:</strong></p>
-                                <ul class="is-size-7">
-                                    <li><i class="fas fa-check has-text-success mr-2"></i> Only generates assignments for dates without them (preserves existing)</li>
-                                    <li><i class="fas fa-check has-text-success mr-2"></i> Continues round-robin from the last assignment</li>
-                                    <li><i class="fas fa-check has-text-success mr-2"></i> Creates weekday assignments (Mon-Fri) only</li>
-                                    <li><i class="fas fa-check has-text-success mr-2"></i> Automatically skips weekends</li>
-                                </ul>
-                            </div>
-                        </div>
-                    </div>
+{{define "schedule_generate_content"}}
+{{template "user_card" .}}
+{{template "page_header" (dict "Title" "Generate Schedule" "Icon" "fas fa-calendar-plus" "BackHref" "/" "BackLabel" "Dashboard")}}
 
-                    <div class="card">
-                        <header class="card-header">
-                            <p class="card-header-title">
-                                <i class="fas fa-sliders-h mr-2"></i> Schedule Options
-                            </p>
-                        </header>
-                        <div class="card-content">
-                            <form method="POST" action="/schedule/generate">
-                                <div class="field">
-                                    <label class="label">Start Date</label>
-                                    <div class="control has-icons-left">
-                                        <input class="input" type="date" name="start_date" value="{{.DefaultStart}}" required>
-                                        <span class="icon is-small is-left">
-                                            <i class="fas fa-calendar-day"></i>
-                                        </span>
-                                    </div>
-                                </div>
+<div class="card">
+    <header class="card-header">
+        <p class="card-header-title">
+            <i class="fas fa-info-circle mr-2"></i> Schedule Information
+        </p>
+    </header>
+    <div class="card-content">
+        <div class="info-box">
+            <p class="mb-2"><strong><i class="fas fa-robot"></i> Automatic Maintenance:</strong></p>
+            <p class="is-size-7 mb-2">The system automatically maintains a 14-day rolling schedule. This tool is for filling gaps or extending beyond the automatic window.</p>
+            
+            <p class="mt-3 mb-2"><strong><i class="fas fa-list-ul"></i> How it works:</strong></p>
+            <ul class="is-size-7">
+                <li><i class="fas fa-check has-text-success mr-2"></i> Only generates assignments for dates without them (preserves existing)</li>
+                <li><i class="fas fa-check has-text-success mr-2"></i> Continues round-robin from the last assignment</li>
+                <li><i class="fas fa-check has-text-success mr-2"></i> Creates weekday assignments (Mon-Fri) only</li>
+                <li><i class="fas fa-check has-text-success mr-2"></i> Automatically skips weekends</li>
+            </ul>
+        </div>
+    </div>
+</div>
 
-                                <div class="field">
-                                    <label class="label">End Date</label>
-                                    <div class="control has-icons-left">
-                                        <input class="input" type="date" name="end_date" value="{{.DefaultEnd}}" required>
-                                        <span class="icon is-small is-left">
-                                            <i class="fas fa-calendar-day"></i>
-                                        </span>
-                                    </div>
-                                </div>
-
-                                <div class="field">
-                                    <label class="checkbox">
-                                        <input type="checkbox" id="regenerate" name="regenerate">
-                                        <span class="ml-2"><strong>Regenerate from scratch</strong> <span class="has-text-grey">(deletes existing assignments in range)</span></span>
-                                    </label>
-                                </div>
-
-                                <div class="field">
-                                    <div class="control">
-                                        <button type="submit" class="button is-primary is-fullwidth submit-btn">
-                                            <i class="fas fa-calendar-plus mr-2"></i> Generate Schedule
-                                        </button>
-                                    </div>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-
-                    <div class="card">
-                        <header class="card-header">
-                            <p class="card-header-title">
-                                <i class="fas fa-bolt mr-2"></i> Quick Actions
-                            </p>
-                        </header>
-                        <div class="card-content">
-                            <div class="buttons is-centered">
-                                <a href="/" class="button is-link quick-action-btn">
-                                    <i class="fas fa-home mr-2"></i> Dashboard
-                                </a>
-                                <a href="/team" class="button is-info quick-action-btn">
-                                    <i class="fas fa-users mr-2"></i> Manage Team
-                                </a>
-                                <a href="/leave/report" class="button is-warning quick-action-btn">
-                                    <i class="fas fa-user-clock mr-2"></i> Report Leave
-                                </a>
-                                <a href="/calendar" class="button is-success quick-action-btn">
-                                    <i class="fas fa-calendar-star mr-2"></i> Calendar Subs
-                                </a>
-                            </div>
-                        </div>
-                    </div>
+<div class="card">
+    <header class="card-header">
+        <p class="card-header-title">
+            <i class="fas fa-sliders-h mr-2"></i> Schedule Options
+        </p>
+    </header>
+    <div class="card-content">
+        <form method="POST" action="/schedule/generate">
+            <div class="field">
+                <label class="label">Start Date</label>
+                <div class="control has-icons-left">
+                    <input class="input" type="date" name="start_date" value="{{.DefaultStart}}" required>
+                    <span class="icon is-small is-left">
+                        <i class="fas fa-calendar-day"></i>
+                    </span>
                 </div>
             </div>
+
+            <div class="field">
+                <label class="label">End Date</label>
+                <div class="control has-icons-left">
+                    <input class="input" type="date" name="end_date" value="{{.DefaultEnd}}" required>
+                    <span class="icon is-small is-left">
+                        <i class="fas fa-calendar-day"></i>
+                    </span>
+                </div>
+            </div>
+
+            <div class="field">
+                <label class="checkbox">
+                    <input type="checkbox" id="regenerate" name="regenerate">
+                    <span class="ml-2"><strong>Regenerate from scratch</strong> <span class="has-text-grey">(deletes existing assignments in range)</span></span>
+                </label>
+            </div>
+
+            <div class="field">
+                <div class="control">
+                    <button type="submit" class="button is-primary is-fullwidth submit-btn">
+                        <i class="fas fa-calendar-plus mr-2"></i> Generate Schedule
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <header class="card-header">
+        <p class="card-header-title">
+            <i class="fas fa-bolt mr-2"></i> Quick Actions
+        </p>
+    </header>
+    <div class="card-content">
+        <div class="buttons is-centered">
+            <a href="/" class="button is-link quick-action-btn">
+                <i class="fas fa-home mr-2"></i> Dashboard
+            </a>
+            <a href="/team" class="button is-info quick-action-btn">
+                <i class="fas fa-users mr-2"></i> Manage Team
+            </a>
+            <a href="/leave/report" class="button is-warning quick-action-btn">
+                <i class="fas fa-user-clock mr-2"></i> Report Leave
+            </a>
+            <a href="/calendar" class="button is-success quick-action-btn">
+                <i class="fas fa-calendar-star mr-2"></i> Calendar Subs
+            </a>
         </div>
-    </section>
-</body>
-</html>
+    </div>
+</div>
+{{end}}
+
+{{define "schedule_generate_styles"}}
+<style>
+    .info-box { background: #e7f3ff; border-left: 4px solid #3273dc; padding: 1rem; border-radius: 4px; margin: 1rem 0; }
+</style>
+{{end}}
+
+{{define "schedule_generate_scripts"}}
+{{end}}

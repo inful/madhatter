@@ -1,0 +1,151 @@
+{{define "base"}}
+<!DOCTYPE html>
+<html>
+<head>
+    <title>
+        {{- if .Template -}}
+            {{- render (printf "%s_title" .Template) . -}}
+        {{- else -}}
+            {{- template "login_title" . -}}
+        {{- end -}}
+    </title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --gradient-start: #667eea;
+            --gradient-end: #764ba2;
+            --hero-width: 900px;
+        }
+
+        body {
+            background: linear-gradient(135deg, var(--gradient-start) 0%, var(--gradient-end) 100%);
+            min-height: 100vh;
+        }
+
+        body.is-login {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+        }
+
+        .hero {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 12px;
+            margin: 2rem auto;
+            max-width: var(--hero-width);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        .card {
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            margin-bottom: 1.5rem;
+            border: none;
+        }
+
+        .card-header {
+            background: linear-gradient(135deg, var(--gradient-start) 0%, var(--gradient-end) 100%);
+            color: white;
+            border-radius: 8px 8px 0 0;
+        }
+
+        .card-header-title {
+            color: white !important;
+        }
+
+        .back-btn,
+        .action-btn,
+        .submit-btn,
+        .quick-action-btn {
+            transition: transform 0.2s;
+        }
+
+        .back-btn:hover { transform: translateX(-2px); }
+        .action-btn:hover,
+        .submit-btn:hover,
+        .quick-action-btn:hover { transform: translateY(-2px); }
+
+        .empty-state {
+            padding: 2rem;
+            text-align: center;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+    </style>
+    {{if .Template}}
+        {{render (printf "%s_styles" .Template) .}}
+    {{else}}
+        {{template "login_styles" .}}
+    {{end}}
+</head>
+<body class="has-gradient {{if not .Template}}is-login{{end}}">
+    <section class="section">
+        <div class="hero" {{if .Template}}{{renderAttrOptional (printf "%s_hero_attrs" .Template) .}}{{end}}>
+            <div class="hero-body">
+                <div class="container">
+                    {{if .Template}}
+                        {{render (printf "%s_content" .Template) .}}
+                    {{else}}
+                        {{template "login_content" .}}
+                    {{end}}
+                </div>
+            </div>
+        </div>
+    </section>
+{{if .Template}}
+    {{render (printf "%s_scripts" .Template) .}}
+{{else}}
+    {{template "login_scripts" .}}
+{{end}}
+</body>
+</html>
+{{end}}
+
+{{define "user_card"}}
+{{if .User}}
+<div class="card">
+    <div class="card-content">
+        <div class="columns is-vcentered is-mobile">
+            <div class="column">
+                <p class="has-text-weight-semibold">
+                    <i class="fas fa-user-circle mr-2"></i>{{.User.Name}}
+                </p>
+                <p class="is-size-7 has-text-grey">{{.User.Email}}</p>
+                {{if .IsAdmin}}
+                    <span class="tag is-danger is-light mt-1">
+                        <i class="fas fa-shield-alt mr-1"></i> Admin
+                    </span>
+                {{end}}
+            </div>
+            <div class="column is-narrow">
+                <a href="/auth/logout" class="button is-small is-danger is-light">
+                    <i class="fas fa-sign-out-alt mr-1"></i> Logout
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{{end}}
+{{end}}
+
+{{define "page_header"}}
+<div class="level is-mobile">
+    <div class="level-left">
+        <div class="level-item">
+            <h1 class="title is-2 has-text-primary">
+                {{if .Icon}}<i class="{{.Icon}}"></i> {{end}}{{.Title}}
+            </h1>
+        </div>
+    </div>
+    {{if .BackHref}}
+    <div class="level-right">
+        <a href="{{.BackHref}}" class="button is-light back-btn">
+            <i class="fas fa-arrow-left mr-2"></i> {{if .BackLabel}}{{.BackLabel}}{{else}}Back{{end}}
+        </a>
+    </div>
+    {{end}}
+</div>
+{{end}}

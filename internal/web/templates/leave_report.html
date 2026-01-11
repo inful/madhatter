@@ -1,131 +1,77 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Report Leave</title>
-    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <style>
-        body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }
-        .hero { background: rgba(255, 255, 255, 0.95); border-radius: 12px; margin: 2rem auto; max-width: 900px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
-        .card { border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin-bottom: 1.5rem; border: none; }
-        .card-header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 8px 8px 0 0; }
-        .card-header-title { color: white !important; }
-        .back-btn { transition: transform 0.2s; }
-        .back-btn:hover { transform: translateX(-2px); }
-        .submit-btn { transition: transform 0.2s; }
-        .submit-btn:hover { transform: translateY(-2px); }
-    </style>
-</head>
-<body>
-    <section class="section">
-        <div class="hero">
-            <div class="hero-body">
-                <div class="container">
-                    <!-- User Info -->
-                    {{if .User}}
-                    <div class="card">
-                        <div class="card-content">
-                            <div class="columns is-vcentered is-mobile">
-                                <div class="column">
-                                    <p class="has-text-weight-semibold">
-                                        <i class="fas fa-user-circle mr-2"></i>{{.User.Name}}
-                                    </p>
-                                    <p class="is-size-7 has-text-grey">{{.User.Email}}</p>
-                                    {{if .IsAdmin}}
-                                        <span class="tag is-danger is-light mt-1">
-                                            <i class="fas fa-shield-alt mr-1"></i> Admin
-                                        </span>
-                                    {{end}}
-                                </div>
-                                <div class="column is-narrow">
-                                    <a href="/auth/logout" class="button is-small is-danger is-light">
-                                        <i class="fas fa-sign-out-alt mr-1"></i> Logout
-                                    </a>
-                                </div>
-                            </div>
-                        </div>
+{{define "leave_report.html"}}
+{{template "base" .}}
+{{end}}
+
+{{define "leave_report_title"}}Report Leave{{end}}
+
+{{define "leave_report_content"}}
+{{template "user_card" .}}
+{{template "page_header" (dict "Title" "Report Leave" "Icon" "fas fa-user-clock" "BackHref" "/" "BackLabel" "Dashboard")}}
+
+<div class="card">
+    <header class="card-header">
+        <p class="card-header-title">
+            <i class="fas fa-calendar-times mr-2"></i> Leave Details
+        </p>
+    </header>
+    <div class="card-content">
+        <form method="POST" action="/leave/report">
+            <div class="field">
+                <label class="label">Team Member</label>
+                <div class="control has-icons-left">
+                    <div class="select is-fullwidth">
+                        <select name="member_id" required>
+                            <option value="">Select Team Member</option>
+                            {{range .Members}}
+                                <option value="{{.ID}}">{{.Name}} - {{.Email}}</option>
+                            {{end}}
+                        </select>
                     </div>
-                    {{end}}
-
-                    <div class="level is-mobile">
-                        <div class="level-left">
-                            <div class="level-item">
-                                <h1 class="title is-2 has-text-primary">
-                                    <i class="fas fa-user-clock"></i> Report Leave
-                                </h1>
-                            </div>
-                        </div>
-                        <div class="level-right">
-                            <a href="/" class="button is-light back-btn">
-                                <i class="fas fa-arrow-left mr-2"></i> Dashboard
-                            </a>
-                        </div>
-                    </div>
-
-                    <div class="card">
-                        <header class="card-header">
-                            <p class="card-header-title">
-                                <i class="fas fa-calendar-times mr-2"></i> Leave Details
-                            </p>
-                        </header>
-                        <div class="card-content">
-                            <form method="POST" action="/leave/report">
-                                <div class="field">
-                                    <label class="label">Team Member</label>
-                                    <div class="control has-icons-left">
-                                        <div class="select is-fullwidth">
-                                            <select name="member_id" required>
-                                                <option value="">Select Team Member</option>
-                                                {{range .Members}}
-                                                    <option value="{{.ID}}">{{.Name}} - {{.Email}}</option>
-                                                {{end}}
-                                            </select>
-                                        </div>
-                                        <span class="icon is-small is-left">
-                                            <i class="fas fa-user"></i>
-                                        </span>
-                                    </div>
-                                </div>
-
-                                <div class="field">
-                                    <label class="label">Start Date</label>
-                                    <div class="control has-icons-left">
-                                        <input class="input" type="date" name="start_date" required>
-                                        <span class="icon is-small is-left">
-                                            <i class="fas fa-calendar-day"></i>
-                                        </span>
-                                    </div>
-                                </div>
-
-                                <div class="field">
-                                    <label class="label">End Date</label>
-                                    <div class="control has-icons-left">
-                                        <input class="input" type="date" name="end_date" required>
-                                        <span class="icon is-small is-left">
-                                            <i class="fas fa-calendar-day"></i>
-                                        </span>
-                                    </div>
-                                </div>
-
-                                <div class="field">
-                                    <div class="control">
-                                        <button type="submit" class="button is-primary is-fullwidth submit-btn">
-                                            <i class="fas fa-paper-plane mr-2"></i> Report Leave
-                                        </button>
-                                    </div>
-                                </div>
-
-                                <div class="notification is-info is-light mt-4">
-                                    <i class="fas fa-info-circle mr-2"></i>
-                                    <strong>How it works:</strong> When you report leave, the system automatically creates cover assignments to ensure your support days are covered.
-                                </div>
-                            </form>
-                        </div>
-                    </div>
+                    <span class="icon is-small is-left">
+                        <i class="fas fa-user"></i>
+                    </span>
                 </div>
             </div>
-        </div>
-    </section>
-</body>
-</html>
+
+            <div class="field">
+                <label class="label">Start Date</label>
+                <div class="control has-icons-left">
+                    <input class="input" type="date" name="start_date" required>
+                    <span class="icon is-small is-left">
+                        <i class="fas fa-calendar-day"></i>
+                    </span>
+                </div>
+            </div>
+
+            <div class="field">
+                <label class="label">End Date</label>
+                <div class="control has-icons-left">
+                    <input class="input" type="date" name="end_date" required>
+                    <span class="icon is-small is-left">
+                        <i class="fas fa-calendar-day"></i>
+                    </span>
+                </div>
+            </div>
+
+            <div class="field">
+                <div class="control">
+                    <button type="submit" class="button is-primary is-fullwidth submit-btn">
+                        <i class="fas fa-paper-plane mr-2"></i> Report Leave
+                    </button>
+                </div>
+            </div>
+
+            <div class="notification is-info is-light mt-4">
+                <i class="fas fa-info-circle mr-2"></i>
+                <strong>How it works:</strong> When you report leave, the system automatically creates cover assignments to ensure your support days are covered.
+            </div>
+        </form>
+    </div>
+</div>
+{{end}}
+
+{{define "leave_report_styles"}}
+{{end}}
+
+{{define "leave_report_scripts"}}
+{{end}}

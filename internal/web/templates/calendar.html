@@ -13,10 +13,18 @@
         <h3 class="title is-4 has-text-success mb-3">
             <i class="fas fa-check-circle"></i> Calendar Subscription Created
         </h3>
-        <p class="has-text-weight-semibold mb-2">Calendar URL:</p>
+        <p class="has-text-weight-semibold mb-2">Support rota calendar URL:</p>
         <div class="url-box" id="calendar-url-box">
             {{.CalendarURL}}
-            <button class="button is-success is-small copy-btn" onclick="copyCalendarURL()">
+            <button class="button is-success is-small copy-btn" onclick="copyTextFromBox('calendar-url-box')">
+                <i class="fas fa-copy"></i> Copy
+            </button>
+        </div>
+
+        <p class="has-text-weight-semibold mb-2 mt-4">Meetings calendar URL:</p>
+        <div class="url-box" id="meetings-calendar-url-box">
+            {{.MeetingsCalendarURL}}
+            <button class="button is-success is-small copy-btn" onclick="copyTextFromBox('meetings-calendar-url-box')">
                 <i class="fas fa-copy"></i> Copy
             </button>
         </div>
@@ -116,8 +124,8 @@
 
 {{define "calendar_scripts"}}
 <script>
-    function copyCalendarURL() {
-        const urlBox = document.getElementById('calendar-url-box');
+    function copyTextFromBox(boxId) {
+        const urlBox = document.getElementById(boxId);
         let urlText = '';
         urlBox.childNodes.forEach(node => {
             if (node.nodeType === Node.TEXT_NODE) {

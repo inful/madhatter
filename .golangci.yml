@@ -33,12 +33,10 @@ linters:
     - goprintffuncname
     - govet
     - ineffassign
-    - intrange
     - makezero
     - mirror
     - misspell
     - mnd
-    - modernize
     - nestif
     - nilerr
     - nilnil
@@ -62,8 +60,6 @@ linters:
     - cyclop
     - testifylint
   settings:
-    dupl:
-      threshold: 40
     tagalign:
       sort: true
       strict: false

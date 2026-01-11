@@ -3,9 +3,12 @@ package web
 import (
 	"context"
 	"embed"
+	"errors"
 	"html/template"
 	"net/http"
+	"net/mail"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -25,6 +28,7 @@ const (
 	defaultCalendarLookaheadDays = 90
 	weekDaysInWeek               = 7
 	defaultHolidayLookaheadDays  = 30
+	maxStringLength              = 255
 )
 
 type Handler struct {
@@ -770,6 +774,47 @@ func (h *Handler) handleCalendarICS(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(icsContent))
 }
 
+// validateTeamMemberInput validates name and email inputs.
+func validateTeamMemberInput(name, email string) error {
+	if name == "" {
+		return errors.New("name cannot be empty")
+	}
+	if email == "" {
+		return errors.New("email cannot be empty")
+	}
+	if len(name) > maxStringLength {
+		return errors.New("name is too long (max 255 characters)")
+	}
+	if len(email) > maxStringLength {
+		return errors.New("email is too long (max 255 characters)")
+	}
+	// Validate email format
+	if _, err := mail.ParseAddress(email); err != nil {
+		return errors.New("invalid email format")
+	}
+	return nil
+}
+
+// validateLeaveDates validates and parses leave dates.
+func validateLeaveDates(startDate, endDate string) (time.Time, time.Time, error) {
+	const dateLayout = "2006-01-02"
+	startTime, err := time.Parse(dateLayout, startDate)
+	if err != nil {
+		return time.Time{}, time.Time{}, errors.New("invalid start_date format, expected YYYY-MM-DD")
+	}
+
+	endTime, err := time.Parse(dateLayout, endDate)
+	if err != nil {
+		return time.Time{}, time.Time{}, errors.New("invalid end_date format, expected YYYY-MM-DD")
+	}
+
+	if endTime.Before(startTime) {
+		return time.Time{}, time.Time{}, errors.New("end_date must be on or after start_date")
+	}
+
+	return startTime, endTime, nil
+}
+
 func (h *Handler) handleTeamMemberEdit(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	memberID := chi.URLParam(r, "id")
@@ -784,8 +829,14 @@ func (h *Handler) handleTeamMemberEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	name := r.FormValue("name")
-	email := r.FormValue("email")
+	name := strings.TrimSpace(r.FormValue("name"))
+	email := strings.TrimSpace(r.FormValue("email"))
+
+	// Validate input at handler level
+	if err := validateTeamMemberInput(name, email); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	if err := h.db.UpdateTeamMember(ctx, memberID, name, email); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -888,10 +939,34 @@ func (h *Handler) handleLeaveEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	memberID := r.FormValue("member_id")
-	startDate := r.FormValue("start_date")
-	endDate := r.FormValue("end_date")
-	status := r.FormValue("status")
+	memberID := strings.TrimSpace(r.FormValue("member_id"))
+	startDate := strings.TrimSpace(r.FormValue("start_date"))
+	endDate := strings.TrimSpace(r.FormValue("end_date"))
+	status := strings.TrimSpace(r.FormValue("status"))
+
+	// Validate input at handler level
+	if memberID == "" {
+		http.Error(w, "member_id cannot be empty", http.StatusBadRequest)
+		return
+	}
+	if startDate == "" {
+		http.Error(w, "start_date cannot be empty", http.StatusBadRequest)
+		return
+	}
+	if endDate == "" {
+		http.Error(w, "end_date cannot be empty", http.StatusBadRequest)
+		return
+	}
+	if status == "" {
+		http.Error(w, "status cannot be empty", http.StatusBadRequest)
+		return
+	}
+
+	// Validate date format and ordering
+	if _, _, err := validateLeaveDates(startDate, endDate); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	if err := h.db.UpdateLeaveRecord(ctx, leaveID, memberID, startDate, endDate, status); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

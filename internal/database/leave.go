@@ -9,6 +9,20 @@ import (
 	"github.com/inful/madhatter/internal/database/sqlc"
 )
 
+// validateLeaveStatus checks if the status is valid.
+func validateLeaveStatus(status string) error {
+	validStatuses := map[string]bool{
+		"pending":   true,
+		"approved":  true,
+		"rejected":  true,
+		"cancelled": true,
+	}
+	if !validStatuses[status] {
+		return errors.New("invalid status, must be one of: pending, approved, rejected, cancelled")
+	}
+	return nil
+}
+
 func (db *DB) CreateLeaveRecord(ctx context.Context, memberID, startDate, endDate string) (string, error) {
 	if memberID == "" || startDate == "" || endDate == "" {
 		return "", errors.New("memberID, startDate, and endDate are required")
@@ -144,9 +158,33 @@ func (db *DB) GetLeaveRecords(ctx context.Context, statusFilter ...string) ([]Le
 	return result, nil
 }
 
+// parseLeaveDates parses and validates leave date strings.
+func parseLeaveDates(startDate, endDate string) (time.Time, time.Time, error) {
+	startTime, err := time.Parse("2006-01-02", startDate)
+	if err != nil {
+		return time.Time{}, time.Time{}, err
+	}
+	endTime, err := time.Parse("2006-01-02", endDate)
+	if err != nil {
+		return time.Time{}, time.Time{}, err
+	}
+
+	// Validate date ordering
+	if endTime.Before(startTime) {
+		return time.Time{}, time.Time{}, errors.New("endDate must be on or after startDate")
+	}
+
+	return startTime, endTime, nil
+}
+
 func (db *DB) UpdateLeaveRecord(ctx context.Context, leaveID, memberID, startDate, endDate, status string) error {
 	if leaveID == "" || memberID == "" || startDate == "" || endDate == "" || status == "" {
 		return errors.New("leaveID, memberID, startDate, endDate, and status are required")
+	}
+
+	// Validate status enum
+	if err := validateLeaveStatus(status); err != nil {
+		return err
 	}
 
 	// Verify member exists
@@ -155,11 +193,8 @@ func (db *DB) UpdateLeaveRecord(ctx context.Context, leaveID, memberID, startDat
 		return errors.New("member not found")
 	}
 
-	startTime, err := time.Parse("2006-01-02", startDate)
-	if err != nil {
-		return err
-	}
-	endTime, err := time.Parse("2006-01-02", endDate)
+	// Parse and validate dates
+	startTime, endTime, err := parseLeaveDates(startDate, endDate)
 	if err != nil {
 		return err
 	}

@@ -215,7 +215,7 @@ func TestScheduleMaintenance_HandleTeamChange(t *testing.T) {
 	})
 }
 
-func TestScheduleMaintenance_HandleLeaveChange(t *testing.T) {
+func TestScheduleMaintenance_HandleLeaveChange_LeaveCreatesCover(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -238,39 +238,107 @@ func TestScheduleMaintenance_HandleLeaveChange(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, members)
 
-	t.Run("LeaveCreatesCover", func(t *testing.T) {
-		// Find a weekday in the schedule (skip weekends)
-		targetDate := time.Now()
-		for targetDate.Weekday() == time.Saturday || targetDate.Weekday() == time.Sunday {
-			targetDate = targetDate.AddDate(0, 0, 1)
+	// Find a weekday in the schedule (skip weekends)
+	targetDate := time.Now()
+	for targetDate.Weekday() == time.Saturday || targetDate.Weekday() == time.Sunday {
+		targetDate = targetDate.AddDate(0, 0, 1)
+	}
+	targetDateStr := targetDate.Format("2006-01-02")
+
+	// Create leave for the target date
+	leaveID, err := db.CreateLeaveRecord(ctx, members[0].ID, targetDateStr, targetDateStr)
+	require.NoError(t, err)
+
+	// Handle leave change
+	err = maintenance.HandleLeaveChange(ctx, leaveID)
+	require.NoError(t, err)
+
+	// Verify cover assignment exists
+	assignments, err := db.GetAssignmentsByDate(ctx, targetDateStr)
+	require.NoError(t, err)
+
+	// Should have at least one assignment
+	assert.NotEmpty(t, assignments, "Should have assignments for leave day")
+
+	// Check if there's a cover assignment
+	hasCover := false
+	for _, a := range assignments {
+		if a.IsCover {
+			hasCover = true
+			break
 		}
-		targetDateStr := targetDate.Format("2006-01-02")
+	}
+	assert.True(t, hasCover, "Should have a cover assignment")
+}
 
-		// Create leave for the target date
-		leaveID, err := db.CreateLeaveRecord(ctx, members[0].ID, targetDateStr, targetDateStr)
-		require.NoError(t, err)
+func TestScheduleMaintenance_HandleLeaveChange_DeleteRemovesCover(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
 
-		// Handle leave change
-		err = maintenance.HandleLeaveChange(ctx, leaveID)
-		require.NoError(t, err)
+	ctx := context.Background()
 
-		// Verify cover assignment exists
-		assignments, err := db.GetAssignmentsByDate(ctx, targetDateStr)
-		require.NoError(t, err)
+	// Add team members first
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
 
-		// Should have at least one assignment
-		assert.NotEmpty(t, assignments, "Should have assignments for leave day")
+	maintenance := NewScheduleMaintenance(db)
 
-		// Check if there's a cover assignment
-		hasCover := false
-		for _, a := range assignments {
-			if a.IsCover {
-				hasCover = true
-				break
-			}
+	// Create initial schedule
+	_, err = maintenance.EnsureSchedule(ctx)
+	require.NoError(t, err)
+
+	// Get a team member
+	members, err := db.GetActiveTeamMembers(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, members)
+
+	// Find a weekday in the schedule
+	targetDate := time.Now()
+	for targetDate.Weekday() == time.Saturday || targetDate.Weekday() == time.Sunday {
+		targetDate = targetDate.AddDate(0, 0, 1)
+	}
+	targetDateStr := targetDate.Format("2006-01-02")
+
+	// Create leave and get cover assignment
+	leaveID, err := db.CreateLeaveRecord(ctx, members[0].ID, targetDateStr, targetDateStr)
+	require.NoError(t, err)
+
+	err = maintenance.HandleLeaveChange(ctx, leaveID)
+	require.NoError(t, err)
+
+	// Verify cover exists
+	assignmentsBefore, err := db.GetAssignmentsByDate(ctx, targetDateStr)
+	require.NoError(t, err)
+	hasCoverBefore := false
+	for _, a := range assignmentsBefore {
+		if a.IsCover {
+			hasCoverBefore = true
+			break
 		}
-		assert.True(t, hasCover, "Should have a cover assignment")
-	})
+	}
+	require.True(t, hasCoverBefore, "Should have cover before deletion")
+
+	// Delete the leave (simulating the web handler flow)
+	err = db.DeleteLeaveRecord(ctx, leaveID)
+	require.NoError(t, err)
+
+	// Call HandleTeamChange like the handlers do
+	err = maintenance.HandleTeamChange(ctx)
+	require.NoError(t, err)
+
+	// Verify cover is removed
+	assignmentsAfter, err := db.GetAssignmentsByDate(ctx, targetDateStr)
+	require.NoError(t, err)
+	hasCoverAfter := false
+	for _, a := range assignmentsAfter {
+		if a.IsCover {
+			hasCoverAfter = true
+			break
+		}
+	}
+	assert.False(t, hasCoverAfter, "Should not have cover after deletion + HandleTeamChange")
 }
 
 func TestScheduleMaintenance_RotationPreservation(t *testing.T) {

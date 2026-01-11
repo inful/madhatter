@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/inful/madhatter/internal/database"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -310,6 +311,67 @@ func TestEngine_AssignCoversForLeave_MultiDayLeave(t *testing.T) {
 		}
 	}
 	require.True(t, thuCoverFound, "Should have a cover assignment on the day the leave member was scheduled")
+}
+
+func TestEngine_AssignCoversForLeave_CompletedLeaveRemovesCover(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Add team members
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	engine := NewEngine(db)
+
+	// Create a single-day schedule
+	date := time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)
+	require.NoError(t, engine.GenerateSchedule(ctx, date, date))
+
+	assignments, err := db.GetAssignmentsByDate(ctx, "2024-01-15")
+	require.NoError(t, err)
+	require.Len(t, assignments, 1)
+	require.Equal(t, aliceID, assignments[0].MemberID)
+
+	// Alice takes leave and gets a cover
+	leaveID, err := db.CreateLeaveRecord(ctx, aliceID, "2024-01-15", "2024-01-15")
+	require.NoError(t, err)
+	require.NoError(t, engine.AssignCoversForLeave(ctx, leaveID))
+
+	assignments, err = db.GetAssignmentsByDate(ctx, "2024-01-15")
+	require.NoError(t, err)
+	require.Len(t, assignments, 2)
+
+	var coverAssignment *database.RotaAssignment
+	for i := range assignments {
+		if assignments[i].IsCover {
+			coverAssignment = &assignments[i]
+			break
+		}
+	}
+	require.NotNil(t, coverAssignment)
+	assert.Equal(t, bobID, coverAssignment.MemberID)
+
+	// Cancel the leave
+	require.NoError(t, db.UpdateLeaveStatus(ctx, leaveID, "completed"))
+
+	// Re-run leave handling via maintenance to trigger reconciliation
+	maintenance := NewScheduleMaintenance(db)
+	require.NoError(t, maintenance.HandleLeaveChange(ctx, leaveID))
+
+	assignments, err = db.GetAssignmentsByDate(ctx, "2024-01-15")
+	require.NoError(t, err)
+	require.Len(t, assignments, 1)
+
+	assert.Equal(t, aliceID, assignments[0].MemberID)
+	assert.False(t, assignments[0].IsCover)
+
+	leave, err := db.GetLeaveByID(ctx, leaveID)
+	require.NoError(t, err)
+	assert.Equal(t, "completed", leave.Status)
 }
 
 func TestEngine_AssignCoversForLeave_LeaveOnWeekend(t *testing.T) {

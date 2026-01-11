@@ -24,6 +24,10 @@ This file provides guidance to agents when working with code in this repository.
 
 - When working with software libraries, API, third party tools, etc, first check with the context7 mcp for the most up to date documentations.
 - For anything that involves complex analysis, planning and designing, use sequential thinking mcp.
+- Always use conventional commits; amend if necessary to keep history clean.
+- Stage only relevant files for each commit (avoid `git add -A`).
+- Fix all `golangci-lint` issues before committing.
+- Run the full test suite (`go test ./...`) and ensure it passes before committing.
 
 ### Database
 - Uses `modernc.org/sqlite` (pure Go SQLite)

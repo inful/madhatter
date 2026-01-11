@@ -3,6 +3,7 @@ package rota
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/inful/madhatter/internal/database"
@@ -153,6 +154,11 @@ func (e *Engine) AssignCoversForLeave(ctx context.Context, leaveID string) error
 		return err
 	}
 
+	// If leave is not active, nothing to do (reconciliation handles cleanup)
+	if !isLeaveActive(leave.Status) {
+		return nil
+	}
+
 	members, err := e.db.GetActiveTeamMembers(ctx)
 	if err != nil {
 		return err
@@ -290,6 +296,12 @@ func (e *Engine) processLeaveDate(ctx context.Context, d time.Time, members []da
 
 	// Return the index of the cover member for next iteration
 	return e.findMemberIndex(members, cover.ID), nil
+}
+
+// isLeaveActive returns true if the status still requires cover assignments.
+func isLeaveActive(status string) bool {
+	s := strings.ToLower(strings.TrimSpace(status))
+	return s == "pending" || s == "assigned"
 }
 
 // ensureOriginalAssignment finds or creates the original assignment for the person on leave.

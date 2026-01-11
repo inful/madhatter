@@ -30,11 +30,14 @@ func NewScheduleMaintenance(db *database.DB) *ScheduleMaintenance {
 // Returns true if new assignments were created, false if schedule was already complete.
 func (sm *ScheduleMaintenance) EnsureSchedule(ctx context.Context) (bool, error) {
 	today := time.Now().Format("2006-01-02")
-	todayTime, _ := time.Parse("2006-01-02", today)
+	todayTime, err := time.Parse("2006-01-02", today)
+	if err != nil {
+		return false, fmt.Errorf("failed to parse today date: %w", err)
+	}
 	endDate := todayTime.AddDate(0, 0, scheduleDaysAhead)
 
 	// First reconcile stale covers in the 14-day window
-	if err := sm.reconcileCoversForDateRange(ctx, todayTime, endDate); err != nil {
+	if err = sm.reconcileCoversForDateRange(ctx, todayTime, endDate); err != nil {
 		return false, fmt.Errorf("failed to reconcile covers: %w", err)
 	}
 
@@ -68,53 +71,60 @@ func (sm *ScheduleMaintenance) EnsureSchedule(ctx context.Context) (bool, error)
 // Returns start and end dates for the gap, or empty strings if no gap exists.
 func (sm *ScheduleMaintenance) GetScheduleGap(ctx context.Context) (string, string, error) {
 	today := time.Now().Format("2006-01-02")
+	todayTime, err := time.Parse("2006-01-02", today)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to parse today date: %w", err)
+	}
 
 	latestAssignmentDate, err := sm.db.GetLatestAssignmentDate(ctx)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to get latest assignment date: %w", err)
 	}
 
-	var startDate time.Time
-	if latestAssignmentDate == "" {
-		startDate, _ = time.Parse("2006-01-02", today)
-	} else {
-		startDate, _ = time.Parse("2006-01-02", latestAssignmentDate)
+	startDate := todayTime
+	if latestAssignmentDate != "" {
+		startDate, err = time.Parse("2006-01-02", latestAssignmentDate)
+		if err != nil {
+			return "", "", fmt.Errorf("failed to parse latest assignment date %s: %w", latestAssignmentDate, err)
+		}
 		startDate = startDate.AddDate(0, 0, 1)
 	}
 
-	todayTime, _ := time.Parse("2006-01-02", today)
 	endDate := todayTime.AddDate(0, 0, scheduleDaysAhead)
 
-	// Check if start is already beyond end
 	if startDate.After(endDate) {
 		return "", "", nil
 	}
 
-	// Check if there are any business days in the range that need assignments
-	// by looking at what GenerateMissingDays would actually process
-	hasBusinessDays := false
-	currentDate := startDate
-	for currentDate.Before(endDate.AddDate(0, 0, 1)) {
-		// Check if this date already has an assignment
-		dateStr := currentDate.Format("2006-01-02")
-		assignments, err := sm.db.GetAssignmentsByDate(ctx, dateStr)
-		if err != nil {
-			return "", "", fmt.Errorf("failed to check assignments for %s: %w", dateStr, err)
-		}
-
-		// Skip if already has assignment or is weekend
-		if len(assignments) == 0 && currentDate.Weekday() != time.Saturday && currentDate.Weekday() != time.Sunday {
-			hasBusinessDays = true
-			break
-		}
-		currentDate = currentDate.AddDate(0, 0, 1)
+	hasBusinessDays, err := sm.hasBusinessGap(ctx, startDate, endDate)
+	if err != nil {
+		return "", "", err
 	}
-
 	if !hasBusinessDays {
 		return "", "", nil
 	}
 
 	return startDate.Format("2006-01-02"), endDate.Format("2006-01-02"), nil
+}
+
+func (sm *ScheduleMaintenance) hasBusinessGap(ctx context.Context, startDate, endDate time.Time) (bool, error) {
+	for currentDate := startDate; !currentDate.After(endDate); currentDate = currentDate.AddDate(0, 0, 1) {
+		if currentDate.Weekday() == time.Saturday || currentDate.Weekday() == time.Sunday {
+			continue
+		}
+
+		dateStr := currentDate.Format("2006-01-02")
+		assignments, err := sm.db.GetAssignmentsByDate(ctx, dateStr)
+		if err != nil {
+			return false, fmt.Errorf("failed to check assignments for %s: %w", dateStr, err)
+		}
+
+		if len(assignments) == 0 {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
 
 // GenerateMissingDays generates assignments for a date range.

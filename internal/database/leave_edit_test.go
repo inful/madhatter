@@ -24,7 +24,7 @@ func TestUpdateLeaveRecord(t *testing.T) {
 	require.NoError(t, err)
 
 	// Update the leave record
-	err = db.UpdateLeaveRecord(ctx, leaveID, memberID, "2026-02-10", "2026-02-15", "assigned")
+	err = db.UpdateLeaveRecord(ctx, leaveID, memberID, "2026-02-10", "2026-02-15", "approved")
 	require.NoError(t, err)
 
 	// Verify the update
@@ -36,7 +36,7 @@ func TestUpdateLeaveRecord(t *testing.T) {
 
 	assert.Equal(t, expectedStart, leave.StartDate)
 	assert.Equal(t, expectedEnd, leave.EndDate)
-	assert.Equal(t, "assigned", leave.Status)
+	assert.Equal(t, "approved", leave.Status)
 }
 
 func TestDeleteLeaveRecord(t *testing.T) {

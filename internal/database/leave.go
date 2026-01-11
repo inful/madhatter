@@ -144,6 +144,25 @@ func (db *DB) GetLeaveRecords(ctx context.Context, statusFilter ...string) ([]Le
 	return result, nil
 }
 
+// parseLeaveDates parses and validates leave date strings.
+func parseLeaveDates(startDate, endDate string) (time.Time, time.Time, error) {
+	startTime, err := time.Parse("2006-01-02", startDate)
+	if err != nil {
+		return time.Time{}, time.Time{}, err
+	}
+	endTime, err := time.Parse("2006-01-02", endDate)
+	if err != nil {
+		return time.Time{}, time.Time{}, err
+	}
+
+	// Validate date ordering
+	if endTime.Before(startTime) {
+		return time.Time{}, time.Time{}, errors.New("endDate must be on or after startDate")
+	}
+
+	return startTime, endTime, nil
+}
+
 func (db *DB) UpdateLeaveRecord(ctx context.Context, leaveID, memberID, startDate, endDate, status string) error {
 	if leaveID == "" || memberID == "" || startDate == "" || endDate == "" || status == "" {
 		return errors.New("leaveID, memberID, startDate, endDate, and status are required")
@@ -155,13 +174,13 @@ func (db *DB) UpdateLeaveRecord(ctx context.Context, leaveID, memberID, startDat
 		return errors.New("member not found")
 	}
 
-	startTime, err := time.Parse("2006-01-02", startDate)
+	// Parse and validate dates
+	startTime, endTime, err := parseLeaveDates(startDate, endDate)
 	if err != nil {
 		return err
 	}
-	endTime, err := time.Parse("2006-01-02", endDate)
-	if err != nil {
-		return err
+	if endTime.Before(startTime) {
+		return errors.New("endDate must be on or after startDate")
 	}
 
 	params := sqlc.UpdateLeaveRecordParams{

@@ -313,7 +313,7 @@ func TestEngine_AssignCoversForLeave_MultiDayLeave(t *testing.T) {
 	require.True(t, thuCoverFound, "Should have a cover assignment on the day the leave member was scheduled")
 }
 
-func TestEngine_AssignCoversForLeave_CancelledLeaveRemovesCover(t *testing.T) {
+func TestEngine_AssignCoversForLeave_CompletedLeaveRemovesCover(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 

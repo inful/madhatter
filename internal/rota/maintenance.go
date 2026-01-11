@@ -305,35 +305,13 @@ func (sm *ScheduleMaintenance) HandleLeaveChange(ctx context.Context, leaveID st
 	return sm.engine.AssignCoversForLeave(ctx, leaveID)
 }
 
-// findOriginalMemberID finds the member ID of the original assignment.
-func (sm *ScheduleMaintenance) findOriginalMemberID(assignments []database.RotaAssignment, originalAssignmentID *string) string {
-	if originalAssignmentID == nil {
-		return ""
-	}
-	for i := range assignments {
-		if assignments[i].ID == *originalAssignmentID {
-			return assignments[i].MemberID
-		}
-	}
-	return ""
-}
-
-// isMemberOnLeave checks if a member is on leave for a given date.
-func (sm *ScheduleMaintenance) isMemberOnLeave(ctx context.Context, date string, memberID string) (bool, error) {
-	leaves, err := sm.db.GetLeaveByDate(ctx, date)
-	if err != nil {
-		return false, err
-	}
-	for i := range leaves {
-		if leaves[i].MemberID == memberID {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
 // reconcileCoversForDateRange removes stale covers for a specific date range.
 func (sm *ScheduleMaintenance) reconcileCoversForDateRange(ctx context.Context, startDate, endDate time.Time) error {
+	leaveIndex, err := sm.buildLeaveIndex(ctx, startDate, endDate)
+	if err != nil {
+		return err
+	}
+
 	// Get all assignments in the specified range
 	assignments, err := sm.db.GetAssignmentsByDateRange(
 		ctx,
@@ -357,11 +335,9 @@ func (sm *ScheduleMaintenance) reconcileCoversForDateRange(ctx context.Context, 
 			continue
 		}
 
-		// Check if original person is still on leave for this date
-		onLeave, err := sm.isMemberOnLeave(ctx, assignment.Date, originalMemberID)
-		if err != nil {
-			return fmt.Errorf("failed to check leave for date %s: %w", assignment.Date, err)
-		}
+		// Check if original person is still on leave for this date using preloaded index
+		membersOnDate := leaveIndex[assignment.Date]
+		onLeave := membersOnDate != nil && membersOnDate[originalMemberID]
 
 		// If not on leave (or leave is completed/deleted), remove the cover
 		if !onLeave {
@@ -372,6 +348,44 @@ func (sm *ScheduleMaintenance) reconcileCoversForDateRange(ctx context.Context, 
 	}
 
 	return nil
+}
+
+func (sm *ScheduleMaintenance) buildLeaveIndex(ctx context.Context, startDate, endDate time.Time) (map[string]map[string]bool, error) {
+	leaveIndex := make(map[string]map[string]bool)
+
+	for current := startDate; !current.After(endDate); current = current.AddDate(0, 0, 1) {
+		dateStr := current.Format("2006-01-02")
+		leaves, err := sm.db.GetLeaveByDate(ctx, dateStr)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load leaves for %s: %w", dateStr, err)
+		}
+
+		if len(leaves) == 0 {
+			continue
+		}
+
+		membersOnDate := make(map[string]bool, len(leaves))
+		for i := range leaves {
+			membersOnDate[leaves[i].MemberID] = true
+		}
+
+		leaveIndex[dateStr] = membersOnDate
+	}
+
+	return leaveIndex, nil
+}
+
+// findOriginalMemberID finds the member ID of the original assignment.
+func (sm *ScheduleMaintenance) findOriginalMemberID(assignments []database.RotaAssignment, originalAssignmentID *string) string {
+	if originalAssignmentID == nil {
+		return ""
+	}
+	for i := range assignments {
+		if assignments[i].ID == *originalAssignmentID {
+			return assignments[i].MemberID
+		}
+	}
+	return ""
 }
 
 // findLastAssignedMember finds the last member who was assigned in the existing schedule.

@@ -64,17 +64,7 @@ func TestGetMigrationsPath(t *testing.T) {
 		require.NoError(t, err)
 
 		// Set environment variable
-		originalEnv := os.Getenv("MIGRATIONS_PATH")
-		defer func() {
-			if originalEnv != "" {
-				_ = os.Setenv("MIGRATIONS_PATH", originalEnv)
-			} else {
-				_ = os.Unsetenv("MIGRATIONS_PATH")
-			}
-		}()
-
-		err = os.Setenv("MIGRATIONS_PATH", migrationsDir)
-		require.NoError(t, err)
+		t.Setenv("MIGRATIONS_PATH", migrationsDir)
 
 		path, err := getMigrationsPath()
 		require.NoError(t, err)
@@ -86,23 +76,15 @@ func TestGetMigrationsPath(t *testing.T) {
 		// Save current directory
 		originalWd, err := os.Getwd()
 		require.NoError(t, err)
-		defer func() { _ = os.Chdir(originalWd) }()
 
 		// Change to project root (go up from internal/database)
 		projectRoot := filepath.Join(originalWd, "..", "..")
-		err = os.Chdir(projectRoot)
+		t.Chdir(projectRoot)
 		require.NoError(t, err)
 
 		// Unset environment variable to test directory search
-		originalEnv := os.Getenv("MIGRATIONS_PATH")
-		defer func() {
-			if originalEnv != "" {
-				_ = os.Setenv("MIGRATIONS_PATH", originalEnv)
-			} else {
-				_ = os.Unsetenv("MIGRATIONS_PATH")
-			}
-		}()
-		_ = os.Unsetenv("MIGRATIONS_PATH")
+		_ = os.Unsetenv("MIGRATIONS_PATH") // Clear any existing value first
+		t.Setenv("MIGRATIONS_PATH", "")    // t.Setenv handles cleanup automatically
 
 		path, err := getMigrationsPath()
 		require.NoError(t, err)
@@ -118,23 +100,15 @@ func TestGetMigrationsPath(t *testing.T) {
 		tmpDir := t.TempDir()
 
 		// Change to temp directory
-		originalWd, err := os.Getwd()
+		_, err := os.Getwd()
 		require.NoError(t, err)
-		defer func() { _ = os.Chdir(originalWd) }()
 
-		err = os.Chdir(tmpDir)
+		t.Chdir(tmpDir)
 		require.NoError(t, err)
 
 		// Unset environment variable
-		originalEnv := os.Getenv("MIGRATIONS_PATH")
-		defer func() {
-			if originalEnv != "" {
-				_ = os.Setenv("MIGRATIONS_PATH", originalEnv)
-			} else {
-				_ = os.Unsetenv("MIGRATIONS_PATH")
-			}
-		}()
-		_ = os.Unsetenv("MIGRATIONS_PATH")
+		_ = os.Unsetenv("MIGRATIONS_PATH") // Clear any existing value first
+		t.Setenv("MIGRATIONS_PATH", "")    // t.Setenv handles cleanup automatically
 
 		path, err := getMigrationsPath()
 		// Should either find the project migrations or error
@@ -163,16 +137,7 @@ func TestRunMigrations(t *testing.T) {
 		migrationsDir := setupTestMigrations(t)
 
 		// Set migrations path
-		originalEnv := os.Getenv("MIGRATIONS_PATH")
-		defer func() {
-			if originalEnv != "" {
-				_ = os.Setenv("MIGRATIONS_PATH", originalEnv)
-			} else {
-				_ = os.Unsetenv("MIGRATIONS_PATH")
-			}
-		}()
-		err = os.Setenv("MIGRATIONS_PATH", migrationsDir)
-		require.NoError(t, err)
+		t.Setenv("MIGRATIONS_PATH", migrationsDir)
 
 		// Run migrations
 		err = RunMigrations(db)
@@ -199,16 +164,7 @@ func TestRunMigrations(t *testing.T) {
 		migrationsDir := setupTestMigrations(t)
 
 		// Set migrations path
-		originalEnv := os.Getenv("MIGRATIONS_PATH")
-		defer func() {
-			if originalEnv != "" {
-				_ = os.Setenv("MIGRATIONS_PATH", originalEnv)
-			} else {
-				_ = os.Unsetenv("MIGRATIONS_PATH")
-			}
-		}()
-		err = os.Setenv("MIGRATIONS_PATH", migrationsDir)
-		require.NoError(t, err)
+		t.Setenv("MIGRATIONS_PATH", migrationsDir)
 
 		// Run migrations twice
 		err = RunMigrations(db)
@@ -226,16 +182,7 @@ func TestRunMigrations(t *testing.T) {
 		defer func() { _ = db.Close() }()
 
 		// Set invalid migrations path
-		originalEnv := os.Getenv("MIGRATIONS_PATH")
-		defer func() {
-			if originalEnv != "" {
-				_ = os.Setenv("MIGRATIONS_PATH", originalEnv)
-			} else {
-				_ = os.Unsetenv("MIGRATIONS_PATH")
-			}
-		}()
-		err = os.Setenv("MIGRATIONS_PATH", "/nonexistent/path")
-		require.NoError(t, err)
+		t.Setenv("MIGRATIONS_PATH", "/nonexistent/path")
 
 		// Run migrations should fail
 		err = RunMigrations(db)
@@ -260,16 +207,7 @@ func TestGetMigrationVersion(t *testing.T) {
 		migrationsDir := setupTestMigrations(t)
 
 		// Set migrations path
-		originalEnv := os.Getenv("MIGRATIONS_PATH")
-		defer func() {
-			if originalEnv != "" {
-				_ = os.Setenv("MIGRATIONS_PATH", originalEnv)
-			} else {
-				_ = os.Unsetenv("MIGRATIONS_PATH")
-			}
-		}()
-		err = os.Setenv("MIGRATIONS_PATH", migrationsDir)
-		require.NoError(t, err)
+		t.Setenv("MIGRATIONS_PATH", migrationsDir)
 
 		// Run migrations
 		err = RunMigrations(db)
@@ -292,16 +230,7 @@ func TestGetMigrationVersion(t *testing.T) {
 		migrationsDir := setupTestMigrations(t)
 
 		// Set migrations path
-		originalEnv := os.Getenv("MIGRATIONS_PATH")
-		defer func() {
-			if originalEnv != "" {
-				_ = os.Setenv("MIGRATIONS_PATH", originalEnv)
-			} else {
-				_ = os.Unsetenv("MIGRATIONS_PATH")
-			}
-		}()
-		err = os.Setenv("MIGRATIONS_PATH", migrationsDir)
-		require.NoError(t, err)
+		t.Setenv("MIGRATIONS_PATH", migrationsDir)
 
 		// Get version without running migrations
 		version, dirty, err := GetMigrationVersion(db)
@@ -327,16 +256,7 @@ func TestGetMigrationStatus(t *testing.T) {
 		migrationsDir := setupTestMigrations(t)
 
 		// Set migrations path
-		originalEnv := os.Getenv("MIGRATIONS_PATH")
-		defer func() {
-			if originalEnv != "" {
-				_ = os.Setenv("MIGRATIONS_PATH", originalEnv)
-			} else {
-				_ = os.Unsetenv("MIGRATIONS_PATH")
-			}
-		}()
-		err = os.Setenv("MIGRATIONS_PATH", migrationsDir)
-		require.NoError(t, err)
+		t.Setenv("MIGRATIONS_PATH", migrationsDir)
 
 		// Run migrations
 		err = RunMigrations(db)
@@ -361,16 +281,7 @@ func TestGetMigrationStatus(t *testing.T) {
 		migrationsDir := setupTestMigrations(t)
 
 		// Set migrations path
-		originalEnv := os.Getenv("MIGRATIONS_PATH")
-		defer func() {
-			if originalEnv != "" {
-				_ = os.Setenv("MIGRATIONS_PATH", originalEnv)
-			} else {
-				_ = os.Unsetenv("MIGRATIONS_PATH")
-			}
-		}()
-		err = os.Setenv("MIGRATIONS_PATH", migrationsDir)
-		require.NoError(t, err)
+		t.Setenv("MIGRATIONS_PATH", migrationsDir)
 
 		// Get status without running migrations
 		status, err := GetMigrationStatus(db)
@@ -399,16 +310,7 @@ func TestRollbackMigration(t *testing.T) {
 		migrationsDir := setupTestMigrations(t)
 
 		// Set migrations path
-		originalEnv := os.Getenv("MIGRATIONS_PATH")
-		defer func() {
-			if originalEnv != "" {
-				_ = os.Setenv("MIGRATIONS_PATH", originalEnv)
-			} else {
-				_ = os.Unsetenv("MIGRATIONS_PATH")
-			}
-		}()
-		err = os.Setenv("MIGRATIONS_PATH", migrationsDir)
-		require.NoError(t, err)
+		t.Setenv("MIGRATIONS_PATH", migrationsDir)
 
 		// Run migrations
 		err = RunMigrations(db)
@@ -451,16 +353,7 @@ func TestRollbackMigration(t *testing.T) {
 		migrationsDir := setupTestMigrations(t)
 
 		// Set migrations path
-		originalEnv := os.Getenv("MIGRATIONS_PATH")
-		defer func() {
-			if originalEnv != "" {
-				_ = os.Setenv("MIGRATIONS_PATH", originalEnv)
-			} else {
-				_ = os.Unsetenv("MIGRATIONS_PATH")
-			}
-		}()
-		err = os.Setenv("MIGRATIONS_PATH", migrationsDir)
-		require.NoError(t, err)
+		t.Setenv("MIGRATIONS_PATH", migrationsDir)
 
 		// Try to rollback without any migrations applied
 		err = RollbackMigration(db)
@@ -484,16 +377,7 @@ func TestMigrateToVersion(t *testing.T) {
 		migrationsDir := setupTestMigrations(t)
 
 		// Set migrations path
-		originalEnv := os.Getenv("MIGRATIONS_PATH")
-		defer func() {
-			if originalEnv != "" {
-				_ = os.Setenv("MIGRATIONS_PATH", originalEnv)
-			} else {
-				_ = os.Unsetenv("MIGRATIONS_PATH")
-			}
-		}()
-		err = os.Setenv("MIGRATIONS_PATH", migrationsDir)
-		require.NoError(t, err)
+		t.Setenv("MIGRATIONS_PATH", migrationsDir)
 
 		// Migrate to version 1
 		err = MigrateToVersion(db, 1)
@@ -530,16 +414,7 @@ func TestMigrateToVersion(t *testing.T) {
 		migrationsDir := setupTestMigrations(t)
 
 		// Set migrations path
-		originalEnv := os.Getenv("MIGRATIONS_PATH")
-		defer func() {
-			if originalEnv != "" {
-				_ = os.Setenv("MIGRATIONS_PATH", originalEnv)
-			} else {
-				_ = os.Unsetenv("MIGRATIONS_PATH")
-			}
-		}()
-		err = os.Setenv("MIGRATIONS_PATH", migrationsDir)
-		require.NoError(t, err)
+		t.Setenv("MIGRATIONS_PATH", migrationsDir)
 
 		// Migrate to version 2
 		err = MigrateToVersion(db, 2)
@@ -581,16 +456,7 @@ func TestMigrateToVersion(t *testing.T) {
 		migrationsDir := setupTestMigrations(t)
 
 		// Set migrations path
-		originalEnv := os.Getenv("MIGRATIONS_PATH")
-		defer func() {
-			if originalEnv != "" {
-				_ = os.Setenv("MIGRATIONS_PATH", originalEnv)
-			} else {
-				_ = os.Unsetenv("MIGRATIONS_PATH")
-			}
-		}()
-		err = os.Setenv("MIGRATIONS_PATH", migrationsDir)
-		require.NoError(t, err)
+		t.Setenv("MIGRATIONS_PATH", migrationsDir)
 
 		// Migrate to version 1
 		err = MigrateToVersion(db, 1)
@@ -617,16 +483,7 @@ func TestMigrateToVersion(t *testing.T) {
 		migrationsDir := setupTestMigrations(t)
 
 		// Set migrations path
-		originalEnv := os.Getenv("MIGRATIONS_PATH")
-		defer func() {
-			if originalEnv != "" {
-				_ = os.Setenv("MIGRATIONS_PATH", originalEnv)
-			} else {
-				_ = os.Unsetenv("MIGRATIONS_PATH")
-			}
-		}()
-		err = os.Setenv("MIGRATIONS_PATH", migrationsDir)
-		require.NoError(t, err)
+		t.Setenv("MIGRATIONS_PATH", migrationsDir)
 
 		// Try to migrate to non-existent version 999
 		err = MigrateToVersion(db, 999)
@@ -662,16 +519,7 @@ func TestMigrationEdgeCases(t *testing.T) {
 		require.NoError(t, err)
 
 		// Set migrations path
-		originalEnv := os.Getenv("MIGRATIONS_PATH")
-		defer func() {
-			if originalEnv != "" {
-				_ = os.Setenv("MIGRATIONS_PATH", originalEnv)
-			} else {
-				_ = os.Unsetenv("MIGRATIONS_PATH")
-			}
-		}()
-		err = os.Setenv("MIGRATIONS_PATH", migrationsDir)
-		require.NoError(t, err)
+		t.Setenv("MIGRATIONS_PATH", migrationsDir)
 
 		// Run migrations should fail
 		err = RunMigrations(db)
@@ -704,16 +552,7 @@ func TestMigrationEdgeCases(t *testing.T) {
 		require.NoError(t, err)
 
 		// Set migrations path
-		originalEnv := os.Getenv("MIGRATIONS_PATH")
-		defer func() {
-			if originalEnv != "" {
-				_ = os.Setenv("MIGRATIONS_PATH", originalEnv)
-			} else {
-				_ = os.Unsetenv("MIGRATIONS_PATH")
-			}
-		}()
-		err = os.Setenv("MIGRATIONS_PATH", migrationsDir)
-		require.NoError(t, err)
+		t.Setenv("MIGRATIONS_PATH", migrationsDir)
 
 		// Run migrations should succeed (no migrations to run)
 		// Note: golang-migrate requires at least one valid migration file
@@ -746,16 +585,7 @@ func TestMigrationConcurrency(t *testing.T) {
 		migrationsDir := setupTestMigrations(t)
 
 		// Set migrations path
-		originalEnv := os.Getenv("MIGRATIONS_PATH")
-		defer func() {
-			if originalEnv != "" {
-				_ = os.Setenv("MIGRATIONS_PATH", originalEnv)
-			} else {
-				_ = os.Unsetenv("MIGRATIONS_PATH")
-			}
-		}()
-		err = os.Setenv("MIGRATIONS_PATH", migrationsDir)
-		require.NoError(t, err)
+		t.Setenv("MIGRATIONS_PATH", migrationsDir)
 
 		// Run migrations
 		err = RunMigrations(db)
@@ -799,16 +629,7 @@ func TestGetMigrationVersionHandlesNilVersion(t *testing.T) {
 	migrationsDir := setupTestMigrations(t)
 
 	// Set migrations path
-	originalEnv := os.Getenv("MIGRATIONS_PATH")
-	defer func() {
-		if originalEnv != "" {
-			_ = os.Setenv("MIGRATIONS_PATH", originalEnv)
-		} else {
-			_ = os.Unsetenv("MIGRATIONS_PATH")
-		}
-	}()
-	err = os.Setenv("MIGRATIONS_PATH", migrationsDir)
-	require.NoError(t, err)
+	t.Setenv("MIGRATIONS_PATH", migrationsDir)
 
 	// Get version should return 0, false, nil for a fresh database
 	version, dirty, err := GetMigrationVersion(db)
@@ -828,16 +649,7 @@ func TestGetMigrationStatusHandlesNilVersion(t *testing.T) {
 	migrationsDir := setupTestMigrations(t)
 
 	// Set migrations path
-	originalEnv := os.Getenv("MIGRATIONS_PATH")
-	defer func() {
-		if originalEnv != "" {
-			_ = os.Setenv("MIGRATIONS_PATH", originalEnv)
-		} else {
-			_ = os.Unsetenv("MIGRATIONS_PATH")
-		}
-	}()
-	err = os.Setenv("MIGRATIONS_PATH", migrationsDir)
-	require.NoError(t, err)
+	t.Setenv("MIGRATIONS_PATH", migrationsDir)
 
 	// Get status should return version 0 for a fresh database
 	// Note: Applied is true because creating the migration instance creates schema_migrations table

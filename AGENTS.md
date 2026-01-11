@@ -16,7 +16,7 @@ This file provides guidance to agents when working with code in this repository.
 - **Authentication**: OAuth2 (Forgejo, GitLab)
 - **Calendar Format**: ICS (iCalendar)
 - **SQL Generation**: sqlc for type-safe SQL
-- **Linter**: golangci-lint version 2.8.0
+- **Linter**: golangci-lint version v2.8.0
 
 ## Non-Obvious Project-Specific Information
 
@@ -115,6 +115,11 @@ The system automatically maintains a 14-day rolling schedule using `ScheduleMain
 - Tests are co-located with source files (e.g., `db_test.go` next to `db.go`)
 - All tests use testify assertions
 - Testifylint compliant
+- **Use testing package helpers**: Always use `t.Setenv()` instead of `os.Setenv()` and `t.Chdir()` instead of `os.Chdir()` in tests
+  - These helpers automatically clean up after tests
+  - No need for manual defer cleanup functions
+  - Prevents environment pollution between tests
+  - Enforced by golangci-lint's `usetesting` rule
 
 ### SQLC Migration
 **Key files:**

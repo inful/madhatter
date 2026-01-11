@@ -179,6 +179,9 @@ func (db *DB) UpdateLeaveRecord(ctx context.Context, leaveID, memberID, startDat
 	if err != nil {
 		return err
 	}
+	if endTime.Before(startTime) {
+		return errors.New("endDate must be on or after startDate")
+	}
 
 	params := sqlc.UpdateLeaveRecordParams{
 		MemberID:  memberID,

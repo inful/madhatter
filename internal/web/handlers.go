@@ -253,13 +253,19 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		data["IsAdmin"] = user.IsAdmin.Valid && user.IsAdmin.Int64 == 1
 	}
 
-	// Check team members and handle no-team case
-	if !h.checkTeamMembers(ctx, w, data) {
+	// Check team members - show message if none exist, but always load schedule
+	members, err := h.db.GetActiveTeamMembers(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// Maintain schedule (ignore return value, just check error)
-	_, err := h.maintenance.EnsureSchedule(ctx)
+	if len(members) == 0 {
+		data["NoTeamMessage"] = "No team members found. Please add team members to get started."
+	}
+
+	// Always maintain and load schedule, even if no team members
+	_, err = h.maintenance.EnsureSchedule(ctx)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -272,25 +278,6 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	if err := h.tmpl.ExecuteTemplate(w, "dashboard.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
-}
-
-// checkTeamMembers validates team exists and handles no-team case.
-func (h *Handler) checkTeamMembers(ctx context.Context, w http.ResponseWriter, data map[string]any) bool {
-	members, err := h.db.GetActiveTeamMembers(ctx)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return false
-	}
-
-	if len(members) == 0 {
-		data["NoTeamMessage"] = "No team members found. Please add team members to get started."
-		if execErr := h.tmpl.ExecuteTemplate(w, "dashboard.html", data); execErr != nil {
-			http.Error(w, execErr.Error(), http.StatusInternalServerError)
-		}
-		return false
-	}
-
-	return true
 }
 
 // loadDashboardData populates the dashboard with today's and week's assignments.

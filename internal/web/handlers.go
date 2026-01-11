@@ -29,6 +29,7 @@ const (
 	weekDaysInWeek               = 7
 	defaultHolidayLookaheadDays  = 30
 	maxStringLength              = 255
+	dictKeyValuePairs            = 2
 )
 
 type Handler struct {
@@ -39,6 +40,7 @@ type Handler struct {
 	authManager    *auth.AuthManager
 	authMiddleware *auth.Middleware
 	holidayChecker func(time.Time) bool
+	development    bool
 }
 
 type presenceDay struct {
@@ -72,6 +74,7 @@ func NewHandler(db *database.DB, authManager *auth.AuthManager, authMiddleware *
 		authManager:    authManager,
 		authMiddleware: authMiddleware,
 		holidayChecker: holidayChecker,
+		development:    development,
 	}
 
 	h.registerRoutes()
@@ -124,14 +127,36 @@ func (h *Handler) safeRequireAdmin(next http.Handler) http.Handler {
 }
 
 func parseTemplates() (*template.Template, error) {
-	// Parse templates from embedded filesystem
-	return template.ParseFS(templateFS, "templates/*.html")
+	funcMap := template.FuncMap{
+		"dict": func(values ...any) map[string]any {
+			if len(values)%dictKeyValuePairs != 0 {
+				panic("dict requires an even number of arguments")
+			}
+
+			dict := make(map[string]any, len(values)/dictKeyValuePairs)
+			for i := 0; i < len(values); i += dictKeyValuePairs {
+				key, ok := values[i].(string)
+				if !ok {
+					panic("dict keys must be strings")
+				}
+				dict[key] = values[i+1]
+			}
+
+			return dict
+		},
+	}
+
+	return template.New("base").Funcs(funcMap).ParseFS(templateFS, "templates/*.html")
 }
 
 func (h *Handler) registerRoutes() {
 	// Auth routes (no authentication required) - only if auth is configured
 	if h.authManager != nil {
-		h.router.HandleFunc("/login", h.authManager.HandleLoginView)
+		// In development mode, skip registering the production login handler
+		// The development handler will be registered later in registerDevelopmentRoutes()
+		if !h.development {
+			h.router.HandleFunc("/login", h.authManager.HandleLoginView)
+		}
 		h.router.HandleFunc("/auth/login/{provider}", h.authManager.HandleLogin)
 		h.router.HandleFunc("/auth/callback", h.authManager.HandleCallback)
 		h.router.HandleFunc("/auth/logout", h.authManager.HandleLogout)
@@ -218,7 +243,8 @@ func (h *Handler) Router() *chi.Mux {
 func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	data := map[string]any{
-		"Today": time.Now().Format("Monday, Jan 2, 2006"),
+		"Today":    time.Now().Format("Monday, Jan 2, 2006"),
+		"Template": "dashboard",
 	}
 
 	// Add user info to data
@@ -509,7 +535,9 @@ func (h *Handler) getFullWeeks(ctx context.Context) (map[string][]database.RotaA
 
 func (h *Handler) handleTeam(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	data := make(map[string]any)
+	data := map[string]any{
+		"Template": "team",
+	}
 
 	// Add user info to data
 	if user, ok := auth.GetUserFromContext(ctx); ok {
@@ -556,7 +584,9 @@ func (h *Handler) handleTeam(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleLeaveReport(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	data := make(map[string]any)
+	data := map[string]any{
+		"Template": "leave_report",
+	}
 
 	// Add user info to data
 	if user, ok := auth.GetUserFromContext(ctx); ok {
@@ -654,7 +684,9 @@ func (h *Handler) handleScheduleGenerateGet(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	data := make(map[string]any)
+	data := map[string]any{
+		"Template": "schedule_generate",
+	}
 
 	// Add user info to data
 	if user, ok := auth.GetUserFromContext(ctx); ok {
@@ -705,7 +737,9 @@ func (h *Handler) parseDateRange(w http.ResponseWriter, r *http.Request) (time.T
 
 func (h *Handler) handleCalendar(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	data := make(map[string]any)
+	data := map[string]any{
+		"Template": "calendar",
+	}
 
 	// Add user info to data
 	if user, ok := auth.GetUserFromContext(ctx); ok {
@@ -871,7 +905,9 @@ func (h *Handler) handleTeamMemberDelete(w http.ResponseWriter, r *http.Request)
 
 func (h *Handler) handleLeaveManagement(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	data := make(map[string]any)
+	data := map[string]any{
+		"Template": "leave_management",
+	}
 
 	// Add user info to data
 	if user, ok := auth.GetUserFromContext(ctx); ok {

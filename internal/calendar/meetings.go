@@ -27,6 +27,13 @@ const (
 	morningMeetingMinutes   = 15
 	projectMeetingMinutes   = 30
 	defaultMeetingsTimezone = "Europe/Oslo"
+
+	morningMeetingSummary = "Morning Shuffle"
+	projectMeetingSummary = "Project shuffle"
+
+	// Keep the shuffle seed stable even if display names change.
+	morningMeetingSeedKey = "Morning meeting"
+	projectMeetingSeedKey = "Project meeting"
 )
 
 type MeetingsOptions struct {
@@ -225,7 +232,7 @@ func addMorningMeetingEvent(ctx context.Context, db *database.DB, g *ICalGenerat
 	endAt := startAt.Add(morningMeetingMinutes * time.Minute)
 
 	setTimedEventWithTZID(event, startAt, endAt, opts.Timezone)
-	event.SetSummary("Morning meeting")
+	event.SetSummary(morningMeetingSummary)
 	event.SetStatus(ics.ObjectStatusConfirmed)
 	event.SetSequence(0)
 	event.SetModifiedAt(time.Now().UTC())
@@ -235,13 +242,13 @@ func addMorningMeetingEvent(ctx context.Context, db *database.DB, g *ICalGenerat
 		event.SetURL(opts.TeamsURL)
 	}
 
-	description, err := buildMeetingDescription(ctx, db, dateStr, "Morning meeting", true, opts)
+	description, err := buildMeetingDescription(ctx, db, dateStr, morningMeetingSummary, morningMeetingSeedKey, true, opts)
 	if err != nil {
 		return err
 	}
 	event.SetDescription(description)
 
-	htmlDesc, err := buildMeetingDescriptionHTML(ctx, db, dateStr, "Morning meeting", true, opts)
+	htmlDesc, err := buildMeetingDescriptionHTML(ctx, db, dateStr, morningMeetingSummary, morningMeetingSeedKey, true, opts)
 	if err != nil {
 		return err
 	}
@@ -258,7 +265,7 @@ func addProjectMeetingEvent(ctx context.Context, db *database.DB, g *ICalGenerat
 	endAt := startAt.Add(projectMeetingMinutes * time.Minute)
 
 	setTimedEventWithTZID(event, startAt, endAt, opts.Timezone)
-	event.SetSummary("Project meeting")
+	event.SetSummary(projectMeetingSummary)
 	event.SetStatus(ics.ObjectStatusConfirmed)
 	event.SetSequence(0)
 	event.SetModifiedAt(time.Now().UTC())
@@ -268,13 +275,13 @@ func addProjectMeetingEvent(ctx context.Context, db *database.DB, g *ICalGenerat
 		event.SetURL(opts.TeamsURL)
 	}
 
-	description, err := buildMeetingDescription(ctx, db, dateStr, "Project meeting", false, opts)
+	description, err := buildMeetingDescription(ctx, db, dateStr, projectMeetingSummary, projectMeetingSeedKey, false, opts)
 	if err != nil {
 		return err
 	}
 	event.SetDescription(description)
 
-	htmlDesc, err := buildMeetingDescriptionHTML(ctx, db, dateStr, "Project meeting", false, opts)
+	htmlDesc, err := buildMeetingDescriptionHTML(ctx, db, dateStr, projectMeetingSummary, projectMeetingSeedKey, false, opts)
 	if err != nil {
 		return err
 	}
@@ -287,10 +294,11 @@ func buildMeetingDescriptionHTML(
 	db *database.DB,
 	dateStr string,
 	meetingName string,
+	meetingSeedKey string,
 	includeJazzHands bool,
 	opts MeetingsOptions,
 ) (string, error) {
-	data, err := buildMeetingDescriptionData(ctx, db, dateStr, meetingName, includeJazzHands, opts)
+	data, err := buildMeetingDescriptionData(ctx, db, dateStr, meetingName, meetingSeedKey, includeJazzHands, opts)
 	if err != nil {
 		return "", err
 	}
@@ -367,10 +375,11 @@ func buildMeetingDescription(
 	db *database.DB,
 	dateStr string,
 	meetingName string,
+	meetingSeedKey string,
 	includeJazzHands bool,
 	opts MeetingsOptions,
 ) (string, error) {
-	data, err := buildMeetingDescriptionData(ctx, db, dateStr, meetingName, includeJazzHands, opts)
+	data, err := buildMeetingDescriptionData(ctx, db, dateStr, meetingName, meetingSeedKey, includeJazzHands, opts)
 	if err != nil {
 		return "", err
 	}
@@ -391,6 +400,7 @@ func buildMeetingDescriptionData(
 	db *database.DB,
 	dateStr string,
 	meetingName string,
+	meetingSeedKey string,
 	includeJazzHands bool,
 	opts MeetingsOptions,
 ) (meetingDescriptionData, error) {
@@ -404,7 +414,11 @@ func buildMeetingDescriptionData(
 		return meetingDescriptionData{}, err
 	}
 
-	order := shuffledOrder(present, opts.SeedSalt+"|"+dateStr+"|"+meetingName)
+	seedKey := meetingSeedKey
+	if strings.TrimSpace(seedKey) == "" {
+		seedKey = meetingName
+	}
+	order := shuffledOrder(present, opts.SeedSalt+"|"+dateStr+"|"+seedKey)
 
 	return meetingDescriptionData{
 		MeetingName: meetingName,

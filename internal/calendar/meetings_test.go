@@ -75,7 +75,7 @@ func TestGenerateMeetingsICalForToken_IncludesDeterministicShuffle(t *testing.T)
 
 	require.Equal(t, ics1, ics2, "meeting calendar should be deterministic for a given day+team")
 	require.NoError(t, ValidateICal(ics1), "generated meetings calendar must be valid iCalendar")
-	require.Contains(t, ics1, "SUMMARY:Morning meeting")
+	require.Contains(t, ics1, "SUMMARY:Morning Shuffle")
 	require.Contains(t, ics1, "Shuffle order")
 	require.Contains(t, ics1, "JazzHands")
 	require.Contains(t, ics1, "X-ALT-DESC;FMTTYPE=text/html")
@@ -162,7 +162,7 @@ func TestGenerateMeetingsICalForToken_AllowsTemplateOverrides(t *testing.T) {
 	require.NoError(t, err)
 
 	unfolded := unfoldICalLines(ical)
-	require.Contains(t, unfolded, "CUSTOM TEXT: Project meeting")
+	require.Contains(t, unfolded, "CUSTOM TEXT: Project shuffle")
 	require.Contains(t, unfolded, "X-ALT-DESC;FMTTYPE=text/html")
-	require.Contains(t, unfolded, "CUSTOM HTML: Project meeting")
+	require.Contains(t, unfolded, "CUSTOM HTML: Project shuffle")
 }

@@ -64,13 +64,6 @@ var (
 	defaultMeetingDescriptionTextTemplate = texttemplate.Must(texttemplate.New("meetingText").Parse(
 		`{{.MeetingName}}
 
-Present:
-{{- if .Present }}
-{{- range .Present }}- {{.}}
-{{- end }}
-{{- else }}- (none)
-{{- end }}
-
 Away:
 {{- if .Away }}
 {{- range .Away }}- {{.}}
@@ -78,10 +71,7 @@ Away:
 {{- else }}- (none)
 {{- end }}
 
-Support:
-- {{.Support}}
-
-Shuffle order:
+Present:
 {{- if .Shuffle }}
 {{- range .Shuffle }}{{.}}
 {{- end }}
@@ -95,10 +85,8 @@ Agenda:
 
 	defaultMeetingDescriptionHTMLTemplate = template.Must(template.New("meetingHTML").Parse(
 		`<h3>{{.MeetingName}}</h3>{{if .TeamsURL}}<p><a href="{{.TeamsURL}}">Join Teams meeting</a></p>{{end}}` +
-			`<h4>Present</h4><ul>{{if .Present}}{{range .Present}}<li>{{.}}</li>{{end}}{{else}}<li>(none)</li>{{end}}</ul>` +
 			`<h4>Away</h4><ul>{{if .Away}}{{range .Away}}<li>{{.}}</li>{{end}}{{else}}<li>(none)</li>{{end}}</ul>` +
-			`<h4>Support</h4><ul><li>{{.Support}}</li></ul>` +
-			`<h4>Shuffle order</h4><ul>{{if .Shuffle}}{{range .Shuffle}}<li>{{.}}</li>{{end}}{{else}}<li>(no attendees)</li>{{end}}</ul>` +
+			`<h4>Present</h4><ul>{{if .Shuffle}}{{range .Shuffle}}<li>{{.}}</li>{{end}}{{else}}<li>(no attendees)</li>{{end}}</ul>` +
 			`<h4>Agenda</h4><ul>{{range .Agenda}}<li>{{.}}</li>{{end}}</ul>`,
 	))
 

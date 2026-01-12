@@ -72,26 +72,31 @@ func (g *ICalGenerator) AddAssignment(assignment database.RotaAssignment, member
 		return fmt.Errorf("invalid date format %s: %w", assignment.Date, err)
 	}
 
-	// Set event times (9 AM to 5 PM on the assignment date)
-	startTime := time.Date(eventDate.Year(), eventDate.Month(), eventDate.Day(), 9, 0, 0, 0, time.UTC)
-	endTime := time.Date(eventDate.Year(), eventDate.Month(), eventDate.Day(), 17, 0, 0, 0, time.UTC)
+	// Set event as all-day.
+	// DTEND is exclusive in iCalendar, so end is the next day.
+	startDate := time.Date(eventDate.Year(), eventDate.Month(), eventDate.Day(), 0, 0, 0, 0, time.UTC)
+	event.SetAllDayStartAt(startDate)
+	event.SetAllDayEndAt(startDate.Add(hoursPerDay * time.Hour))
 
-	event.SetStartAt(startTime)
-	event.SetEndAt(endTime)
-
-	// Set summary
-	summary := fmt.Sprintf("Support Duty - %s", memberName)
+	// Set summary.
+	summary := fmt.Sprintf("HAT day (%s)", memberName)
 	if assignment.IsCover {
 		summary += " (COVER)"
 	}
 	event.SetSummary(summary)
 
-	// Set description
-	description := "Support duty assignment"
-	if assignment.IsCover && assignment.OriginalAssignmentID != nil {
-		description += " - Cover assignment for leave"
+	// Set description.
+	description := "Support duty"
+	if assignment.IsCover {
+		description += " (cover)"
+		if assignment.OriginalAssignmentID != nil {
+			description += " for leave"
+		}
 	}
 	event.SetDescription(description)
+
+	// Do not mark as busy.
+	event.SetTimeTransparency(ics.TransparencyTransparent)
 
 	// Set status
 	event.SetStatus(ics.ObjectStatusConfirmed)

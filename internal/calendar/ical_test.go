@@ -36,9 +36,10 @@ func TestICalGenerator_AddAssignment(t *testing.T) {
 	icalStr, err := generator.Serialize()
 	require.NoError(t, err)
 
-	assert.Contains(t, icalStr, "Support Duty - John Doe")
-	assert.Contains(t, icalStr, "20260115T090000Z") // Start time
-	assert.Contains(t, icalStr, "20260115T170000Z") // End time
+	assert.Contains(t, icalStr, "HAT day (John Doe)")
+	assert.Contains(t, icalStr, "DTSTART;VALUE=DATE:20260115")
+	assert.Contains(t, icalStr, "DTEND;VALUE=DATE:20260116")
+	assert.Contains(t, icalStr, "TRANSP:TRANSPARENT")
 }
 
 func TestICalGenerator_AddCoverAssignment(t *testing.T) {
@@ -60,8 +61,11 @@ func TestICalGenerator_AddCoverAssignment(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify cover indicator in summary
-	assert.Contains(t, icalStr, "Support Duty - Jane Smith (COVER)")
-	assert.Contains(t, icalStr, "Cover assignment for leave")
+	assert.Contains(t, icalStr, "HAT day (Jane Smith) (COVER)")
+	assert.Contains(t, icalStr, "DTSTART;VALUE=DATE:20260115")
+	assert.Contains(t, icalStr, "DTEND;VALUE=DATE:20260116")
+	assert.Contains(t, icalStr, "TRANSP:TRANSPARENT")
+	assert.Contains(t, icalStr, "Support duty (cover)")
 }
 
 func TestICalGenerator_AddLeaveEvent(t *testing.T) {
@@ -143,8 +147,8 @@ func TestGenerateICalFromAssignments(t *testing.T) {
 	assert.NotEmpty(t, icalStr)
 
 	// Should contain both events
-	assert.Contains(t, icalStr, "20260115T090000Z")
-	assert.Contains(t, icalStr, "20260116T090000Z")
+	assert.Contains(t, icalStr, "DTSTART;VALUE=DATE:20260115")
+	assert.Contains(t, icalStr, "DTSTART;VALUE=DATE:20260116")
 }
 
 func TestParseICal(t *testing.T) {
@@ -260,9 +264,9 @@ func TestICalGenerator_MultipleEvents(t *testing.T) {
 	require.NoError(t, err)
 
 	// Should contain all three dates
-	assert.Contains(t, icalStr, "20260111T090000Z")
-	assert.Contains(t, icalStr, "20260112T090000Z")
-	assert.Contains(t, icalStr, "20260113T090000Z")
+	assert.Contains(t, icalStr, "DTSTART;VALUE=DATE:20260111")
+	assert.Contains(t, icalStr, "DTSTART;VALUE=DATE:20260112")
+	assert.Contains(t, icalStr, "DTSTART;VALUE=DATE:20260113")
 }
 
 func TestICalGenerator_InvalidDate(t *testing.T) {
@@ -351,7 +355,7 @@ func TestICalGenerator_ComplexScenario(t *testing.T) {
 	assert.Contains(t, icalStr, "Alice")
 	assert.Contains(t, icalStr, "Bob")
 	assert.Contains(t, icalStr, "Charlie")
-	assert.Contains(t, icalStr, "COVER")
+	assert.Contains(t, icalStr, "HAT day")
 	assert.Contains(t, icalStr, "Sick")
 	assert.Contains(t, icalStr, "Company Holiday")
 	assert.Contains(t, icalStr, "CANCELLED")

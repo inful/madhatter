@@ -78,13 +78,22 @@ func (s *Server) handleCalendarICS(w http.ResponseWriter, r *http.Request) {
 	var icsSb strings.Builder
 	for _, a := range assignments {
 		eventDate, _ := time.Parse("2006-01-02", a.Date)
+		endDate := eventDate.AddDate(0, 0, 1)
 		icsSb.WriteString("BEGIN:VEVENT\r\n")
 		icsSb.WriteString("UID:" + a.ID + "@supportrota\r\n")
 		icsSb.WriteString("DTSTAMP:" + time.Now().Format("20060102T150405Z") + "\r\n")
 		icsSb.WriteString("DTSTART;VALUE=DATE:" + eventDate.Format("20060102") + "\r\n")
-		icsSb.WriteString("SUMMARY:Support Duty\r\n")
+		icsSb.WriteString("DTEND;VALUE=DATE:" + endDate.Format("20060102") + "\r\n")
+		summary := "HAT day (" + member.Name + ")"
 		if a.IsCover {
-			icsSb.WriteString("DESCRIPTION:Cover assignment\r\n")
+			summary += " (COVER)"
+		}
+		icsSb.WriteString("SUMMARY:" + summary + "\r\n")
+		icsSb.WriteString("TRANSP:TRANSPARENT\r\n")
+		if a.IsCover {
+			icsSb.WriteString("DESCRIPTION:Support duty (cover)\r\n")
+		} else {
+			icsSb.WriteString("DESCRIPTION:Support duty\r\n")
 		}
 		icsSb.WriteString("END:VEVENT\r\n")
 	}

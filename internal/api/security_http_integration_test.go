@@ -172,6 +172,130 @@ type requestSpec struct {
 	RequiresAdmin bool
 }
 
+func buildRequestBuilders(
+	memberA, memberToUpdate, memberToDelete, leaveToUpdate, leaveToDelete, calToken, revokeTokenID string,
+) map[string]func() requestSpec {
+	return map[string]func() requestSpec{
+		"add-team-member": func() requestSpec {
+			return requestSpec{Method: http.MethodPost, Path: "/api/v1/team", Body: map[string]any{"name": "New Person", "email": "new@example.com"}, RequiresAdmin: true}
+		},
+		"list-team-members": func() requestSpec {
+			return requestSpec{Method: http.MethodGet, Path: "/api/v1/team"}
+		},
+		"update-team-member": func() requestSpec {
+			return requestSpec{Method: http.MethodPut, Path: "/api/v1/team/" + memberToUpdate, Body: map[string]any{"name": "Updated", "email": "updated@example.com"}, RequiresAdmin: true}
+		},
+		"delete-team-member": func() requestSpec {
+			return requestSpec{Method: http.MethodDelete, Path: "/api/v1/team/" + memberToDelete, RequiresAdmin: true}
+		},
+		"report-leave": func() requestSpec {
+			return requestSpec{Method: http.MethodPost, Path: "/api/v1/leave", Body: map[string]any{"member_id": memberA, "start_date": "2024-01-17", "end_date": "2024-01-17"}}
+		},
+		"list-leave": func() requestSpec {
+			return requestSpec{Method: http.MethodGet, Path: "/api/v1/leave"}
+		},
+		"update-leave": func() requestSpec {
+			return requestSpec{Method: http.MethodPut, Path: "/api/v1/leave/" + leaveToUpdate, Body: map[string]any{"member_id": memberA, "start_date": "2024-01-17", "end_date": "2024-01-17", "status": "assigned"}, RequiresAdmin: true}
+		},
+		"delete-leave": func() requestSpec {
+			return requestSpec{Method: http.MethodDelete, Path: "/api/v1/leave/" + leaveToDelete, RequiresAdmin: true}
+		},
+		"generate-schedule": func() requestSpec {
+			return requestSpec{Method: http.MethodPost, Path: "/api/v1/schedule/generate", Body: map[string]any{"start_date": "2024-02-01", "end_date": "2024-02-07"}, RequiresAdmin: true}
+		},
+		"subscribe-calendar": func() requestSpec {
+			return requestSpec{Method: http.MethodPost, Path: "/api/v1/calendar/subscribe", Body: map[string]any{"member_id": memberA}}
+		},
+		"get-holidays": func() requestSpec {
+			return requestSpec{Method: http.MethodGet, Path: "/api/v1/holidays"}
+		},
+		"get-holiday-status": func() requestSpec {
+			return requestSpec{Method: http.MethodGet, Path: "/api/v1/holidays/status"}
+		},
+		"refresh-holidays": func() requestSpec {
+			return requestSpec{Method: http.MethodPost, Path: "/api/v1/holidays/refresh", RequiresAdmin: true}
+		},
+		"generate-api-token": func() requestSpec {
+			return requestSpec{Method: http.MethodPost, Path: "/api/v1/tokens/generate", Body: map[string]any{"name": "extra"}}
+		},
+		"list-api-tokens": func() requestSpec {
+			return requestSpec{Method: http.MethodGet, Path: "/api/v1/tokens"}
+		},
+		"revoke-api-token": func() requestSpec {
+			return requestSpec{Method: http.MethodDelete, Path: "/api/v1/tokens/" + revokeTokenID}
+		},
+		"cleanup-expired-tokens": func() requestSpec {
+			return requestSpec{Method: http.MethodPost, Path: "/api/v1/tokens/cleanup", RequiresAdmin: true}
+		},
+		// Non-Huma token-based ICS feed is tested separately.
+		"calendar-ics-public": func() requestSpec {
+			return requestSpec{Method: http.MethodGet, Path: "/api/v1/calendar/" + calToken + "/ics"}
+		},
+	}
+}
+
+func assertOperationHasBuilder(t *testing.T, ops []openAPIOperation, builders map[string]func() requestSpec) {
+	t.Helper()
+	for _, op := range ops {
+		_, ok := builders[op.ID]
+		require.True(t, ok, "missing request builder for operationId %q (%s %s)", op.ID, op.Method, op.Path)
+	}
+}
+
+func assertOperationAuthBehavior(
+	t *testing.T,
+	server *Server,
+	op openAPIOperation,
+	spec requestSpec,
+	admin actorCreds,
+	user actorCreds,
+) {
+	t.Helper()
+
+	hasSecurity := len(op.Security) > 0
+	hasBearer := securityDeclaresScheme(op.Security, "apiTokenAuth")
+	hasSession := securityDeclaresScheme(op.Security, "sessionAuth")
+
+	w := doJSONRequest(t, server, spec.Method, spec.Path, spec.Body, nil, nil)
+	if hasSecurity {
+		assert.Equal(t, http.StatusUnauthorized, w.Code, "%s %s should be 401 when unauthenticated", spec.Method, spec.Path)
+	} else {
+		assert.NotEqual(t, http.StatusUnauthorized, w.Code, "%s %s should not require auth", spec.Method, spec.Path)
+		return
+	}
+
+	if spec.RequiresAdmin {
+		w = doJSONRequest(t, server, spec.Method, spec.Path, spec.Body, nil, []*http.Cookie{user.Cookie})
+		assert.Equal(t, http.StatusForbidden, w.Code)
+
+		if hasBearer {
+			w = doJSONRequest(t, server, spec.Method, spec.Path, spec.Body, map[string]string{"Authorization": "Bearer " + user.Bearer}, nil)
+			assert.Equal(t, http.StatusForbidden, w.Code)
+		}
+
+		if hasSession {
+			w = doJSONRequest(t, server, spec.Method, spec.Path, spec.Body, nil, []*http.Cookie{admin.Cookie})
+			assert.NotEqual(t, http.StatusUnauthorized, w.Code)
+			assert.NotEqual(t, http.StatusForbidden, w.Code)
+		}
+		if hasBearer {
+			w = doJSONRequest(t, server, spec.Method, spec.Path, spec.Body, map[string]string{"Authorization": "Bearer " + admin.Bearer}, nil)
+			assert.NotEqual(t, http.StatusUnauthorized, w.Code)
+			assert.NotEqual(t, http.StatusForbidden, w.Code)
+		}
+		return
+	}
+
+	if hasSession {
+		w = doJSONRequest(t, server, spec.Method, spec.Path, spec.Body, nil, []*http.Cookie{user.Cookie})
+		assert.NotEqual(t, http.StatusUnauthorized, w.Code)
+	}
+	if hasBearer {
+		w = doJSONRequest(t, server, spec.Method, spec.Path, spec.Body, map[string]string{"Authorization": "Bearer " + user.Bearer}, nil)
+		assert.NotEqual(t, http.StatusUnauthorized, w.Code)
+	}
+}
+
 func TestAPIAuth_AllOperations(t *testing.T) {
 	server, cleanup := setupTestServer(t)
 	defer cleanup()
@@ -234,59 +358,7 @@ func TestAPIAuth_AllOperations(t *testing.T) {
 	require.NotEmpty(t, tokens)
 	revokeTokenID := tokens[0].ID
 
-	builders := map[string]func() requestSpec{
-		"add-team-member": func() requestSpec {
-			return requestSpec{Method: http.MethodPost, Path: "/api/v1/team", Body: map[string]any{"name": "New Person", "email": "new@example.com"}, RequiresAdmin: true}
-		},
-		"list-team-members": func() requestSpec {
-			return requestSpec{Method: http.MethodGet, Path: "/api/v1/team"}
-		},
-		"update-team-member": func() requestSpec {
-			return requestSpec{Method: http.MethodPut, Path: "/api/v1/team/" + memberToUpdate, Body: map[string]any{"name": "Updated", "email": "updated@example.com"}, RequiresAdmin: true}
-		},
-		"delete-team-member": func() requestSpec {
-			return requestSpec{Method: http.MethodDelete, Path: "/api/v1/team/" + memberToDelete, RequiresAdmin: true}
-		},
-		"report-leave": func() requestSpec {
-			return requestSpec{Method: http.MethodPost, Path: "/api/v1/leave", Body: map[string]any{"member_id": memberA, "start_date": "2024-01-17", "end_date": "2024-01-17"}}
-		},
-		"list-leave": func() requestSpec {
-			return requestSpec{Method: http.MethodGet, Path: "/api/v1/leave"}
-		},
-		"update-leave": func() requestSpec {
-			return requestSpec{Method: http.MethodPut, Path: "/api/v1/leave/" + leaveToUpdate, Body: map[string]any{"member_id": memberA, "start_date": "2024-01-17", "end_date": "2024-01-17", "status": "assigned"}, RequiresAdmin: true}
-		},
-		"delete-leave": func() requestSpec {
-			return requestSpec{Method: http.MethodDelete, Path: "/api/v1/leave/" + leaveToDelete, RequiresAdmin: true}
-		},
-		"generate-schedule": func() requestSpec {
-			return requestSpec{Method: http.MethodPost, Path: "/api/v1/schedule/generate", Body: map[string]any{"start_date": "2024-02-01", "end_date": "2024-02-07"}, RequiresAdmin: true}
-		},
-		"subscribe-calendar": func() requestSpec {
-			return requestSpec{Method: http.MethodPost, Path: "/api/v1/calendar/subscribe", Body: map[string]any{"member_id": memberA}}
-		},
-		"get-holidays": func() requestSpec {
-			return requestSpec{Method: http.MethodGet, Path: "/api/v1/holidays"}
-		},
-		"get-holiday-status": func() requestSpec {
-			return requestSpec{Method: http.MethodGet, Path: "/api/v1/holidays/status"}
-		},
-		"refresh-holidays": func() requestSpec {
-			return requestSpec{Method: http.MethodPost, Path: "/api/v1/holidays/refresh", RequiresAdmin: true}
-		},
-		"generate-api-token": func() requestSpec {
-			return requestSpec{Method: http.MethodPost, Path: "/api/v1/tokens/generate", Body: map[string]any{"name": "extra"}}
-		},
-		"list-api-tokens": func() requestSpec {
-			return requestSpec{Method: http.MethodGet, Path: "/api/v1/tokens"}
-		},
-		"revoke-api-token": func() requestSpec {
-			return requestSpec{Method: http.MethodDelete, Path: "/api/v1/tokens/" + revokeTokenID}
-		},
-		"cleanup-expired-tokens": func() requestSpec {
-			return requestSpec{Method: http.MethodPost, Path: "/api/v1/tokens/cleanup", RequiresAdmin: true}
-		},
-	}
+	builders := buildRequestBuilders(memberA, memberToUpdate, memberToDelete, leaveToUpdate, leaveToDelete, calToken, revokeTokenID)
 
 	ops := listOpenAPIOperations(t, doc)
 	var apiOps []openAPIOperation
@@ -296,74 +368,18 @@ func TestAPIAuth_AllOperations(t *testing.T) {
 		}
 	}
 	require.NotEmpty(t, apiOps, "expected OpenAPI to include /api/v1 operations")
-
-	// Ensure every /api/v1 OpenAPI operation has a corresponding request builder.
-	for _, op := range apiOps {
-		_, ok := builders[op.ID]
-		require.True(t, ok, "missing request builder for operationId %q (%s %s)", op.ID, op.Method, op.Path)
-	}
+	assertOperationHasBuilder(t, apiOps, builders)
 
 	for _, op := range apiOps {
-		op := op
 		spec := builders[op.ID]()
-
-		hasSecurity := len(op.Security) > 0
-		hasBearer := securityDeclaresScheme(op.Security, "apiTokenAuth")
-		hasSession := securityDeclaresScheme(op.Security, "sessionAuth")
-
 		t.Run(op.ID, func(t *testing.T) {
-			// 1) Unauthenticated behavior.
-			w := doJSONRequest(t, server, spec.Method, spec.Path, spec.Body, nil, nil)
-			if hasSecurity {
-				assert.Equal(t, http.StatusUnauthorized, w.Code, "%s %s should be 401 when unauthenticated", spec.Method, spec.Path)
-			} else {
-				assert.NotEqual(t, http.StatusUnauthorized, w.Code, "%s %s should not require auth", spec.Method, spec.Path)
-			}
-
-			// 2) Authenticated behavior.
-			if !hasSecurity {
-				return
-			}
-
-			if spec.RequiresAdmin {
-				// Non-admin should be forbidden.
-				w = doJSONRequest(t, server, spec.Method, spec.Path, spec.Body, nil, []*http.Cookie{user.Cookie})
-				assert.Equal(t, http.StatusForbidden, w.Code)
-
-				if hasBearer {
-					w = doJSONRequest(t, server, spec.Method, spec.Path, spec.Body, map[string]string{"Authorization": "Bearer " + user.Bearer}, nil)
-					assert.Equal(t, http.StatusForbidden, w.Code)
-				}
-
-				// Admin should not get auth failures.
-				if hasSession {
-					w = doJSONRequest(t, server, spec.Method, spec.Path, spec.Body, nil, []*http.Cookie{admin.Cookie})
-					assert.NotEqual(t, http.StatusUnauthorized, w.Code)
-					assert.NotEqual(t, http.StatusForbidden, w.Code)
-				}
-				if hasBearer {
-					w = doJSONRequest(t, server, spec.Method, spec.Path, spec.Body, map[string]string{"Authorization": "Bearer " + admin.Bearer}, nil)
-					assert.NotEqual(t, http.StatusUnauthorized, w.Code)
-					assert.NotEqual(t, http.StatusForbidden, w.Code)
-				}
-				return
-			}
-
-			// Non-admin authenticated user should not get 401.
-			if hasSession {
-				w = doJSONRequest(t, server, spec.Method, spec.Path, spec.Body, nil, []*http.Cookie{user.Cookie})
-				assert.NotEqual(t, http.StatusUnauthorized, w.Code)
-			}
-			if hasBearer {
-				w = doJSONRequest(t, server, spec.Method, spec.Path, spec.Body, map[string]string{"Authorization": "Bearer " + user.Bearer}, nil)
-				assert.NotEqual(t, http.StatusUnauthorized, w.Code)
-			}
+			assertOperationAuthBehavior(t, server, op, spec, admin, user)
 		})
 	}
 
-	// Non-Huma token-based calendar ICS feed should remain public (token in URL).
+	spec := builders["calendar-ics-public"]()
 	t.Run("calendar-ics-public", func(t *testing.T) {
-		w := doJSONRequest(t, server, http.MethodGet, "/api/v1/calendar/"+calToken+"/ics", nil, nil, nil)
+		w := doJSONRequest(t, server, spec.Method, spec.Path, spec.Body, nil, nil)
 		assert.NotEqual(t, http.StatusUnauthorized, w.Code)
 		assert.Equal(t, http.StatusOK, w.Code)
 	})

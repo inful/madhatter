@@ -195,7 +195,7 @@ func (db *DB) GetUpcomingAssignments(ctx context.Context, memberID string, days 
 			MemberID:             a.MemberID,
 			IsCover:              a.IsCover.Valid && a.IsCover.Int64 == 1,
 			OriginalAssignmentID: getNullString(a.OriginalAssignmentID),
-			CreatedAt:            time.Now(),
+			CreatedAt:            time.Time{},
 		}
 	}
 	return result, nil

@@ -64,7 +64,7 @@ func (db *DB) GetAssignmentsByDate(ctx context.Context, date string) ([]RotaAssi
 			MemberID:             a.MemberID,
 			IsCover:              a.IsCover.Valid && a.IsCover.Int64 == 1,
 			OriginalAssignmentID: getNullString(a.OriginalAssignmentID),
-			CreatedAt:            time.Now(),
+			CreatedAt:            time.Time{},
 			MemberName:           a.MemberName,
 			MemberEmail:          a.MemberEmail,
 		}
@@ -103,7 +103,7 @@ func (db *DB) GetAssignmentsByDateRange(ctx context.Context, startDate, endDate 
 			MemberID:             a.MemberID,
 			IsCover:              a.IsCover.Valid && a.IsCover.Int64 == 1,
 			OriginalAssignmentID: getNullString(a.OriginalAssignmentID),
-			CreatedAt:            time.Now(),
+			CreatedAt:            time.Time{},
 			MemberName:           a.MemberName,
 			MemberEmail:          a.MemberEmail,
 		}

@@ -152,6 +152,58 @@ func TestTeamEndpoints(t *testing.T) {
 	})
 }
 
+func TestPresenceTodayEndpoint(t *testing.T) {
+	server, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	ctx := createTestContext(t, server)
+
+	// Create a few team members.
+	aliceID, err := server.db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := server.db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+	_, err = server.db.AddTeamMember(ctx, "Charlie", "charlie@example.com")
+	require.NoError(t, err)
+
+	today := time.Now().Format("2006-01-02")
+
+	// Bob is away today.
+	_, err = server.db.CreateLeaveRecord(ctx, bobID, today, today)
+	require.NoError(t, err)
+
+	// Alice is on support today.
+	_, err = server.db.CreateRotaAssignment(ctx, today, aliceID, false, nil)
+	require.NoError(t, err)
+
+	resp, err := server.handleGetPresenceToday(ctx, &struct{}{})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+
+	assert.Equal(t, today, resp.Body.Date)
+	require.NotNil(t, resp.Body.Support)
+	assert.Equal(t, aliceID, resp.Body.Support.ID)
+	assert.False(t, resp.Body.SupportIsCover)
+
+	// Bob must be in away list.
+	awayIDs := make(map[string]struct{}, len(resp.Body.Away))
+	for i := range resp.Body.Away {
+		awayIDs[resp.Body.Away[i].ID] = struct{}{}
+	}
+	_, ok := awayIDs[bobID]
+	assert.True(t, ok)
+
+	// Alice and Charlie must be present.
+	presentIDs := make(map[string]struct{}, len(resp.Body.Present))
+	for i := range resp.Body.Present {
+		presentIDs[resp.Body.Present[i].ID] = struct{}{}
+	}
+	_, ok = presentIDs[aliceID]
+	assert.True(t, ok)
+	_, ok = presentIDs[bobID]
+	assert.False(t, ok)
+}
+
 func TestScheduleEndpoints(t *testing.T) {
 	server, cleanup := setupTestServer(t)
 	defer cleanup()

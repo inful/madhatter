@@ -176,6 +176,9 @@ func buildRequestBuilders(
 	memberA, memberToUpdate, memberToDelete, leaveToUpdate, leaveToDelete, calToken, revokeTokenID string,
 ) map[string]func() requestSpec {
 	return map[string]func() requestSpec{
+		"get-presence-today": func() requestSpec {
+			return requestSpec{Method: http.MethodGet, Path: "/api/v1/presence/today"}
+		},
 		"add-team-member": func() requestSpec {
 			return requestSpec{Method: http.MethodPost, Path: "/api/v1/team", Body: map[string]any{"name": "New Person", "email": "new@example.com"}, RequiresAdmin: true}
 		},

@@ -57,6 +57,19 @@ func (s *Server) registerOperations(development bool) {
 		},
 	}, s.handleDeleteTeam)
 
+	// Presence Operations
+	huma.Register(s.api, huma.Operation{
+		OperationID: "get-presence-today",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/presence/today",
+		Summary:     "Get today's present/away/support status",
+		Tags:        []string{"Presence"},
+		Security: []map[string][]string{
+			{"sessionAuth": {}},
+			{"apiTokenAuth": {}},
+		},
+	}, s.handleGetPresenceToday)
+
 	// Leave Operations
 	huma.Register(s.api, huma.Operation{
 		OperationID: "report-leave",

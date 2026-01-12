@@ -1,13 +1,17 @@
 package calendar
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"hash/fnv"
+	"html/template"
 	"math"
 	"math/rand"
+	"net/url"
 	"sort"
 	"strings"
+	texttemplate "text/template"
 	"time"
 
 	ics "github.com/arran4/golang-ical"
@@ -31,6 +35,59 @@ type MeetingsOptions struct {
 	// If empty, a default salt is used.
 	SeedSalt string
 }
+
+type meetingDescriptionData struct {
+	MeetingName string
+	TeamsURL    string
+	Present     []string
+	Away        []string
+	Support     string
+	Shuffle     []string
+	Agenda      []string
+}
+
+var (
+	meetingDescriptionTextTemplate = texttemplate.Must(texttemplate.New("meetingText").Parse(
+		`{{.MeetingName}}
+
+Present:
+{{- if .Present }}
+{{- range .Present }}- {{.}}
+{{- end }}
+{{- else }}- (none)
+{{- end }}
+
+Away:
+{{- if .Away }}
+{{- range .Away }}- {{.}}
+{{- end }}
+{{- else }}- (none)
+{{- end }}
+
+Support:
+- {{.Support}}
+
+Shuffle order:
+{{- if .Shuffle }}
+{{- range .Shuffle }}{{.}}
+{{- end }}
+{{- else }}- (no attendees)
+{{- end }}
+
+Agenda:
+{{- range .Agenda }}- {{.}}
+{{- end }}`,
+	))
+
+	meetingDescriptionHTMLTemplate = template.Must(template.New("meetingHTML").Parse(
+		`<h3>{{.MeetingName}}</h3>{{if .TeamsURL}}<p><a href="{{.TeamsURL}}">Join Teams meeting</a></p>{{end}}` +
+			`<h4>Present</h4><ul>{{if .Present}}{{range .Present}}<li>{{.}}</li>{{end}}{{else}}<li>(none)</li>{{end}}</ul>` +
+			`<h4>Away</h4><ul>{{if .Away}}{{range .Away}}<li>{{.}}</li>{{end}}{{else}}<li>(none)</li>{{end}}</ul>` +
+			`<h4>Support</h4><ul><li>{{.Support}}</li></ul>` +
+			`<h4>Shuffle order</h4><ul>{{if .Shuffle}}{{range .Shuffle}}<li>{{.}}</li>{{end}}{{else}}<li>(no attendees)</li>{{end}}</ul>` +
+			`<h4>Agenda</h4><ul>{{range .Agenda}}<li>{{.}}</li>{{end}}</ul>`,
+	))
+)
 
 func (o MeetingsOptions) normalized() MeetingsOptions {
 	out := o
@@ -185,27 +242,16 @@ func buildMeetingDescriptionHTML(
 	includeJazzHands bool,
 	opts MeetingsOptions,
 ) (string, error) {
-	present, away, err := getPresenceForDate(ctx, db, dateStr)
+	data, err := buildMeetingDescriptionData(ctx, db, dateStr, meetingName, includeJazzHands, opts)
 	if err != nil {
 		return "", err
 	}
 
-	supportName, supportIsCover, err := getSupportForDate(ctx, db, dateStr)
-	if err != nil {
+	var b bytes.Buffer
+	if err := meetingDescriptionHTMLTemplate.Execute(&b, data); err != nil {
 		return "", err
 	}
-
-	order := shuffledOrder(present, opts.SeedSalt+"|"+dateStr+"|"+meetingName)
-
-	return renderMeetingHTML(
-		meetingName,
-		opts.TeamsURL,
-		memberNames(present),
-		memberNames(away),
-		supportLine(supportName, supportIsCover),
-		shuffleOrderLines(order, supportName),
-		agendaLines(includeJazzHands),
-	), nil
+	return b.String(), nil
 }
 
 func memberNames(members []database.TeamMember) []string {
@@ -214,6 +260,23 @@ func memberNames(members []database.TeamMember) []string {
 		out = append(out, m.Name)
 	}
 	return out
+}
+
+func safeHTTPURL(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return ""
+	}
+	if u.Host == "" {
+		return ""
+	}
+	return raw
 }
 
 func supportLine(supportName string, supportIsCover bool) string {
@@ -247,28 +310,6 @@ func agendaLines(includeJazzHands bool) []string {
 	return agenda
 }
 
-func renderMeetingHTML(
-	meetingName string,
-	teamsURL string,
-	present []string,
-	away []string,
-	support string,
-	shuffle []string,
-	agenda []string,
-) string {
-	var b strings.Builder
-	b.WriteString(htmlHeading(meetingName))
-	if link := htmlLink(teamsURL, "Join Teams meeting"); link != "" {
-		b.WriteString(link)
-	}
-	b.WriteString(htmlList("Present", present))
-	b.WriteString(htmlList("Away", away))
-	b.WriteString(htmlList("Support", []string{support}))
-	b.WriteString(htmlList("Shuffle order", shuffle))
-	b.WriteString(htmlList("Agenda", agenda))
-	return b.String()
-}
-
 func buildMeetingDescription(
 	ctx context.Context,
 	db *database.DB,
@@ -277,33 +318,47 @@ func buildMeetingDescription(
 	includeJazzHands bool,
 	opts MeetingsOptions,
 ) (string, error) {
-	present, away, err := getPresenceForDate(ctx, db, dateStr)
+	data, err := buildMeetingDescriptionData(ctx, db, dateStr, meetingName, includeJazzHands, opts)
 	if err != nil {
 		return "", err
+	}
+
+	var b bytes.Buffer
+	if err := meetingDescriptionTextTemplate.Execute(&b, data); err != nil {
+		return "", err
+	}
+	return b.String(), nil
+}
+
+func buildMeetingDescriptionData(
+	ctx context.Context,
+	db *database.DB,
+	dateStr string,
+	meetingName string,
+	includeJazzHands bool,
+	opts MeetingsOptions,
+) (meetingDescriptionData, error) {
+	present, away, err := getPresenceForDate(ctx, db, dateStr)
+	if err != nil {
+		return meetingDescriptionData{}, err
 	}
 
 	supportName, supportIsCover, err := getSupportForDate(ctx, db, dateStr)
 	if err != nil {
-		return "", err
+		return meetingDescriptionData{}, err
 	}
 
 	order := shuffledOrder(present, opts.SeedSalt+"|"+dateStr+"|"+meetingName)
 
-	var b strings.Builder
-	b.WriteString(meetingName)
-	b.WriteString("\n\n")
-
-	writeMemberList(&b, "Present", present)
-	b.WriteString("\n")
-	writeMemberList(&b, "Away", away)
-	b.WriteString("\n")
-	writeSupport(&b, supportName, supportIsCover)
-	b.WriteString("\n")
-	writeShuffleOrder(&b, order, supportName)
-	b.WriteString("\n")
-	writeAgenda(&b, includeJazzHands)
-
-	return b.String(), nil
+	return meetingDescriptionData{
+		MeetingName: meetingName,
+		TeamsURL:    safeHTTPURL(opts.TeamsURL),
+		Present:     memberNames(present),
+		Away:        memberNames(away),
+		Support:     supportLine(supportName, supportIsCover),
+		Shuffle:     shuffleOrderLines(order, supportName),
+		Agenda:      agendaLines(includeJazzHands),
+	}, nil
 }
 
 func setTimedEventWithTZID(event *ics.VEvent, startAt, endAt time.Time, timezone string) {
@@ -318,57 +373,6 @@ func setTimedEventWithTZID(event *ics.VEvent, startAt, endAt time.Time, timezone
 	// We intentionally do not append 'Z' (UTC) here.
 	event.AddProperty(ics.ComponentPropertyDtStart, startAt.Format("20060102T150405"), ics.WithTZID(timezone))
 	event.AddProperty(ics.ComponentPropertyDtEnd, endAt.Format("20060102T150405"), ics.WithTZID(timezone))
-}
-
-func writeMemberList(b *strings.Builder, title string, members []database.TeamMember) {
-	b.WriteString(title)
-	b.WriteString(":\n")
-	if len(members) == 0 {
-		b.WriteString("- (none)\n")
-		return
-	}
-	for _, m := range members {
-		b.WriteString("- ")
-		b.WriteString(m.Name)
-		b.WriteString("\n")
-	}
-}
-
-func writeSupport(b *strings.Builder, supportName string, supportIsCover bool) {
-	b.WriteString("Support:\n")
-	if supportName == "" {
-		b.WriteString("- Unassigned\n")
-		return
-	}
-	b.WriteString("- ")
-	b.WriteString(supportName)
-	if supportIsCover {
-		b.WriteString(" (COVER)")
-	}
-	b.WriteString("\n")
-}
-
-func writeShuffleOrder(b *strings.Builder, order []database.TeamMember, supportName string) {
-	b.WriteString("Shuffle order:\n")
-	if len(order) == 0 {
-		b.WriteString("- (no attendees)\n")
-		return
-	}
-	for i, m := range order {
-		name := m.Name
-		if supportName != "" && strings.EqualFold(m.Name, supportName) {
-			name += " (Support)"
-		}
-		_, _ = fmt.Fprintf(b, "%d. %s\n", i+1, name)
-	}
-}
-
-func writeAgenda(b *strings.Builder, includeJazzHands bool) {
-	b.WriteString("Agenda:\n")
-	b.WriteString("- Shuffle: what you're doing today.\n")
-	if includeJazzHands {
-		b.WriteString("- JazzHands: say anything.\n")
-	}
 }
 
 func getPresenceForDate(ctx context.Context, db *database.DB, dateStr string) ([]database.TeamMember, []database.TeamMember, error) {

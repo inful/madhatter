@@ -81,6 +81,19 @@ CREATE TABLE IF NOT EXISTS oauth_tokens (
     UNIQUE(user_id, provider)
 );
 
+CREATE TABLE IF NOT EXISTS notification_logs (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    date DATE NOT NULL,
+    member_id TEXT,
+    assignment_id TEXT,
+    message TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (member_id) REFERENCES team_members(id) ON DELETE SET NULL,
+    FOREIGN KEY (assignment_id) REFERENCES rota_assignments(id) ON DELETE SET NULL,
+    UNIQUE(kind, date)
+);
+
 -- Indexes for better query performance
 CREATE INDEX IF NOT EXISTS idx_leave_records_date ON leave_records(start_date, end_date);
 CREATE INDEX IF NOT EXISTS idx_rota_assignments_date ON rota_assignments(date);
@@ -91,6 +104,7 @@ CREATE INDEX IF NOT EXISTS idx_users_provider ON users(provider, provider_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
 CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
 CREATE INDEX IF NOT EXISTS idx_oauth_tokens_user_provider ON oauth_tokens(user_id, provider);
+CREATE INDEX IF NOT EXISTS idx_notification_logs_kind_date ON notification_logs(kind, date);
 
 -- API Token Authentication Tables
 CREATE TABLE IF NOT EXISTS api_tokens (

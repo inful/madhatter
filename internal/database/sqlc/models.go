@@ -37,6 +37,16 @@ type LeaveRecord struct {
 	CreatedAt     sql.NullTime   `json:"created_at"`
 }
 
+type NotificationLog struct {
+	ID           string         `json:"id"`
+	Kind         string         `json:"kind"`
+	Date         time.Time      `json:"date"`
+	MemberID     sql.NullString `json:"member_id"`
+	AssignmentID sql.NullString `json:"assignment_id"`
+	Message      sql.NullString `json:"message"`
+	CreatedAt    sql.NullTime   `json:"created_at"`
+}
+
 type OauthToken struct {
 	ID           string         `json:"id"`
 	UserID       string         `json:"user_id"`

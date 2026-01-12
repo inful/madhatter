@@ -158,6 +158,15 @@ SESSION_SECRET=generate-a-random-secret-key
 
 #### Optional Configuration
 ```bash
+# Meetings calendar
+MEETINGS_TIMEZONE=Europe/Oslo
+MEETINGS_TEAMS_URL=https://teams.example.com/meet
+
+# Optional: override meeting descriptions using Go templates.
+# The files are read by the server process at runtime.
+MEETINGS_TEMPLATE_TEXT_PATH=/etc/support-rota/templates/meeting_description.txt.tmpl
+MEETINGS_TEMPLATE_HTML_PATH=/etc/support-rota/templates/meeting_description.html.tmpl
+
 # Holiday Service
 HOLIDAY_URLS=https://www.officeholidays.com/subscribe/norway,https://www.officeholidays.com/subscribe/uk
 HOLIDAY_FETCH_INTERVAL=24  # hours
@@ -173,6 +182,58 @@ GITLAB_AUTH_URL=https://gitlab.com/oauth/authorize
 GITLAB_TOKEN_URL=https://gitlab.com/oauth/token
 GITLAB_USERINFO_URL=https://gitlab.com/api/v4/user
 GITLAB_SCOPE=read_user
+```
+
+### Meeting template overrides
+
+The meetings calendar feed supports overriding the per-event descriptions via Go templates.
+
+- Text description: `MEETINGS_TEMPLATE_TEXT_PATH` (uses `text/template`).
+- HTML alternative description (Outlook-friendly): `MEETINGS_TEMPLATE_HTML_PATH` (uses `html/template`).
+
+Both templates receive the same data:
+
+- `MeetingName` (string)
+- `TeamsURL` (string; only `http`/`https` URLs are passed through, otherwise empty)
+- `Present` ([]string)
+- `Away` ([]string)
+- `Support` (string)
+- `Shuffle` ([]string)
+- `Agenda` ([]string)
+
+Notes:
+
+- The HTML template should output a HTML fragment (it will be wrapped in `<html><body>...</body></html>` in the ICS).
+- Long lines in ICS files may be folded (RFC 5545). This is normal.
+
+Example text template (`meeting_description.txt.tmpl`):
+
+```gotemplate
+{{.MeetingName}}
+
+Present:
+{{- if .Present }}
+{{- range .Present }}- {{.}}
+{{- end }}
+{{- else }}- (none)
+{{- end }}
+```
+
+Example HTML template (`meeting_description.html.tmpl`):
+
+```gotemplate
+<h3>{{.MeetingName}}</h3>
+{{- if .TeamsURL }}
+<p><a href="{{.TeamsURL}}">Join Teams meeting</a></p>
+{{- end }}
+<h4>Present</h4>
+<ul>
+	{{- if .Present }}
+	{{- range .Present }}<li>{{.}}</li>{{end}}
+	{{- else }}
+	<li>(none)</li>
+	{{- end }}
+</ul>
 ```
 
 ### Development Mode

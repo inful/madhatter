@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"html/template"
 	"time"
 
@@ -71,6 +72,8 @@ func NewHandler(db *database.DB, authManager *auth.AuthManager, authMiddleware *
 	if development {
 		h.registerDevelopmentRoutes()
 	}
+
+	h.startTeamsOnCallNotifier(context.Background())
 
 	return h, nil
 }

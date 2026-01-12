@@ -5,11 +5,16 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
 const teamsWebhookDefaultTimeout = 10 * time.Second
+
+const teamsWebhookErrorBodyLimitBytes int64 = 4096
 
 type TeamsWebhookNotifier struct {
 	WebhookURL string
@@ -21,20 +26,11 @@ type teamsWebhookPayload struct {
 }
 
 func (n *TeamsWebhookNotifier) Send(ctx context.Context, message string) error {
-	if n == nil {
-		return errors.New("notifier is nil")
-	}
-	if n.WebhookURL == "" {
-		return errors.New("webhook url is empty")
-	}
-	if message == "" {
-		return errors.New("message is empty")
+	if err := n.validate(message); err != nil {
+		return err
 	}
 
-	client := n.Client
-	if client == nil {
-		client = &http.Client{Timeout: teamsWebhookDefaultTimeout}
-	}
+	client := n.httpClient()
 
 	body, err := json.Marshal(teamsWebhookPayload{Text: message})
 	if err != nil {
@@ -54,8 +50,37 @@ func (n *TeamsWebhookNotifier) Send(ctx context.Context, message string) error {
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return errors.New("teams webhook request failed")
+		return teamsWebhookHTTPError(resp)
 	}
 
 	return nil
+}
+
+func (n *TeamsWebhookNotifier) validate(message string) error {
+	if n == nil {
+		return errors.New("notifier is nil")
+	}
+	if n.WebhookURL == "" {
+		return errors.New("webhook url is empty")
+	}
+	if message == "" {
+		return errors.New("message is empty")
+	}
+	return nil
+}
+
+func (n *TeamsWebhookNotifier) httpClient() *http.Client {
+	if n.Client != nil {
+		return n.Client
+	}
+	return &http.Client{Timeout: teamsWebhookDefaultTimeout}
+}
+
+func teamsWebhookHTTPError(resp *http.Response) error {
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, teamsWebhookErrorBodyLimitBytes))
+	bodyText := strings.TrimSpace(string(respBody))
+	if bodyText == "" {
+		return fmt.Errorf("teams webhook request failed: status %d", resp.StatusCode)
+	}
+	return fmt.Errorf("teams webhook request failed: status %d: %s", resp.StatusCode, bodyText)
 }

@@ -43,9 +43,6 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Opportunistic Teams notification (deduplicated).
-	h.notifyTeamsTomorrowOnCall(ctx)
-
 	// Load dashboard data.
 	h.loadDashboardData(ctx, data)
 

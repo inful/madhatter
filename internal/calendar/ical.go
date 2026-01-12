@@ -239,10 +239,20 @@ func ValidateICal(icalContent string) error {
 
 // AddTimezoneSupport adds timezone information to the calendar.
 func (g *ICalGenerator) AddTimezoneSupport(timezone string) {
-	// Add VTIMEZONE component
-	// Note: For full timezone support, we'd need to add VTIMEZONE components
-	// For now, we use UTC which is universally supported
+	if timezone == "" {
+		return
+	}
+
+	// Set X-WR-TIMEZONE for client compatibility.
 	g.calendar.SetXWRTimezone(timezone)
+
+	// Include a VTIMEZONE block. Many clients can resolve TZID without it,
+	// but including it improves interoperability.
+	//
+	// Note: golang-ical's built-in timezone support is intentionally minimal;
+	// clients will generally apply correct DST rules from their tz database
+	// as long as events use DTSTART/DTEND with TZID.
+	g.calendar.AddTimezone(timezone)
 }
 
 // AddCustomProperty adds a custom property to the calendar.

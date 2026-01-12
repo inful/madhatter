@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/inful/madhatter/internal/database"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -65,4 +66,41 @@ func TestGenerateMeetingsICalForToken_IncludesDeterministicShuffle(t *testing.T)
 	require.Contains(t, ics1, "SUMMARY:Morning meeting")
 	require.Contains(t, ics1, "Shuffle order")
 	require.Contains(t, ics1, "JazzHands")
+}
+
+func TestGenerateMeetingsICalForToken_UsesTZIDForEventTimes(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	require.True(t, ok)
+	// internal/calendar -> internal -> repo root.
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	t.Setenv("MIGRATIONS_PATH", filepath.Join(repoRoot, "migrations"))
+
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	db, err := database.New(filepath.Join(tmpDir, "test.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	memberID, err := db.AddTeamMember(ctx, "Token Owner", "token@example.com")
+	require.NoError(t, err)
+	token, err := db.CreateCalendarSubscription(ctx, memberID)
+	require.NoError(t, err)
+
+	from := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC) // Monday (summer time in Norway).
+
+	ical, err := GenerateMeetingsICalForTokenFrom(
+		ctx,
+		db,
+		token,
+		from,
+		2,
+		MeetingsOptions{Timezone: "Europe/Oslo", SeedSalt: "test-salt"},
+		func(t time.Time) bool { return t.Weekday() != time.Saturday && t.Weekday() != time.Sunday },
+	)
+	require.NoError(t, err)
+
+	assert.Contains(t, ical, "X-WR-TIMEZONE:Europe/Oslo")
+	assert.Contains(t, ical, "DTSTART;TZID=Europe/Oslo:")
+	assert.Contains(t, ical, "DTEND;TZID=Europe/Oslo:")
+	assert.NotContains(t, ical, "DTSTART:20260601T093000Z")
 }

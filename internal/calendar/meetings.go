@@ -20,7 +20,7 @@ const (
 	meetingStartMinute      = 30
 	morningMeetingMinutes   = 15
 	projectMeetingMinutes   = 30
-	defaultMeetingsTimezone = "UTC"
+	defaultMeetingsTimezone = "Europe/Oslo"
 )
 
 type MeetingsOptions struct {
@@ -119,8 +119,7 @@ func addMorningMeetingEvent(ctx context.Context, db *database.DB, g *ICalGenerat
 	startAt := time.Date(day.Year(), day.Month(), day.Day(), meetingStartHour, meetingStartMinute, 0, 0, loc)
 	endAt := startAt.Add(morningMeetingMinutes * time.Minute)
 
-	event.SetStartAt(startAt)
-	event.SetEndAt(endAt)
+	setTimedEventWithTZID(event, startAt, endAt, opts.Timezone)
 	event.SetSummary("Morning meeting")
 	event.SetStatus(ics.ObjectStatusConfirmed)
 	event.SetSequence(0)
@@ -147,8 +146,7 @@ func addProjectMeetingEvent(ctx context.Context, db *database.DB, g *ICalGenerat
 	startAt := time.Date(day.Year(), day.Month(), day.Day(), meetingStartHour, meetingStartMinute, 0, 0, loc)
 	endAt := startAt.Add(projectMeetingMinutes * time.Minute)
 
-	event.SetStartAt(startAt)
-	event.SetEndAt(endAt)
+	setTimedEventWithTZID(event, startAt, endAt, opts.Timezone)
 	event.SetSummary("Project meeting")
 	event.SetStatus(ics.ObjectStatusConfirmed)
 	event.SetSequence(0)
@@ -202,6 +200,20 @@ func buildMeetingDescription(
 	writeAgenda(&b, includeJazzHands)
 
 	return b.String(), nil
+}
+
+func setTimedEventWithTZID(event *ics.VEvent, startAt, endAt time.Time, timezone string) {
+	if timezone == "" {
+		// Fall back to the library's default behavior.
+		event.SetStartAt(startAt)
+		event.SetEndAt(endAt)
+		return
+	}
+
+	// Use TZID so clients render the time in the given zone (including DST).
+	// We intentionally do not append 'Z' (UTC) here.
+	event.AddProperty(ics.ComponentPropertyDtStart, startAt.Format("20060102T150405"), ics.WithTZID(timezone))
+	event.AddProperty(ics.ComponentPropertyDtEnd, endAt.Format("20060102T150405"), ics.WithTZID(timezone))
 }
 
 func writeMemberList(b *strings.Builder, title string, members []database.TeamMember) {

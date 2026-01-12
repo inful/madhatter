@@ -134,6 +134,21 @@ func LoadConfigFromEnv() *AuthConfig {
 		}
 	}
 
+	// Load Microsoft Entra ID config from env
+	if clientID := os.Getenv("ENTRA_CLIENT_ID"); clientID != "" {
+		tenantID := os.Getenv("ENTRA_TENANT_ID")
+		base := "https://login.microsoftonline.com/" + tenantID + "/oauth2/v2.0"
+		config.Providers["entra"] = ProviderConfig{
+			ClientID:     clientID,
+			ClientSecret: os.Getenv("ENTRA_CLIENT_SECRET"),
+			RedirectURL:  os.Getenv("ENTRA_REDIRECT_URL"),
+			AuthURL:      getEnvOrDefault("ENTRA_AUTH_URL", base+"/authorize"),
+			TokenURL:     getEnvOrDefault("ENTRA_TOKEN_URL", base+"/token"),
+			UserInfoURL:  getEnvOrDefault("ENTRA_USERINFO_URL", "https://graph.microsoft.com/v1.0/me"),
+			Scope:        getEnvOrDefault("ENTRA_SCOPE", "openid profile email offline_access User.Read"),
+		}
+	}
+
 	return config
 }
 

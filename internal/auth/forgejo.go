@@ -30,7 +30,7 @@ func NewForgejoProvider(config ProviderConfig) *ForgejoProvider {
 				AuthURL:  config.AuthURL,
 				TokenURL: config.TokenURL,
 			},
-			Scopes: []string{config.Scope},
+			Scopes: parseScopes(config.Scope),
 		},
 	}
 }

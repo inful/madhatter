@@ -94,13 +94,20 @@ func (h *Handler) handleMeetingsCalendarICS(w http.ResponseWriter, r *http.Reque
 
 	teamsURL := os.Getenv("MEETINGS_TEAMS_URL")
 	tz := os.Getenv("MEETINGS_TIMEZONE")
+	textTemplatePath := os.Getenv("MEETINGS_TEMPLATE_TEXT_PATH")
+	htmlTemplatePath := os.Getenv("MEETINGS_TEMPLATE_HTML_PATH")
 
 	icsContent, err := calendar.GenerateMeetingsICalForToken(
 		r.Context(),
 		h.db,
 		token,
 		defaultCalendarLookaheadDays,
-		calendar.MeetingsOptions{Timezone: tz, TeamsURL: teamsURL},
+		calendar.MeetingsOptions{
+			Timezone:         tz,
+			TeamsURL:         teamsURL,
+			TemplateTextPath: textTemplatePath,
+			TemplateHTMLPath: htmlTemplatePath,
+		},
 		h.isBusinessDay,
 	)
 	if err != nil {

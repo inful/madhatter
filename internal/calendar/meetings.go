@@ -9,8 +9,10 @@ import (
 	"math"
 	"math/rand"
 	"net/url"
+	"os"
 	"sort"
 	"strings"
+	"sync"
 	texttemplate "text/template"
 	"time"
 
@@ -31,6 +33,11 @@ type MeetingsOptions struct {
 	Timezone string
 	TeamsURL string
 
+	// TemplateTextPath and TemplateHTMLPath allow overriding meeting description templates at deployment.
+	// If empty, built-in defaults are used.
+	TemplateTextPath string
+	TemplateHTMLPath string
+
 	// SeedSalt lets you stabilize shuffles across deployments.
 	// If empty, a default salt is used.
 	SeedSalt string
@@ -47,7 +54,7 @@ type meetingDescriptionData struct {
 }
 
 var (
-	meetingDescriptionTextTemplate = texttemplate.Must(texttemplate.New("meetingText").Parse(
+	defaultMeetingDescriptionTextTemplate = texttemplate.Must(texttemplate.New("meetingText").Parse(
 		`{{.MeetingName}}
 
 Present:
@@ -79,7 +86,7 @@ Agenda:
 {{- end }}`,
 	))
 
-	meetingDescriptionHTMLTemplate = template.Must(template.New("meetingHTML").Parse(
+	defaultMeetingDescriptionHTMLTemplate = template.Must(template.New("meetingHTML").Parse(
 		`<h3>{{.MeetingName}}</h3>{{if .TeamsURL}}<p><a href="{{.TeamsURL}}">Join Teams meeting</a></p>{{end}}` +
 			`<h4>Present</h4><ul>{{if .Present}}{{range .Present}}<li>{{.}}</li>{{end}}{{else}}<li>(none)</li>{{end}}</ul>` +
 			`<h4>Away</h4><ul>{{if .Away}}{{range .Away}}<li>{{.}}</li>{{end}}{{else}}<li>(none)</li>{{end}}</ul>` +
@@ -87,7 +94,48 @@ Agenda:
 			`<h4>Shuffle order</h4><ul>{{if .Shuffle}}{{range .Shuffle}}<li>{{.}}</li>{{end}}{{else}}<li>(no attendees)</li>{{end}}</ul>` +
 			`<h4>Agenda</h4><ul>{{range .Agenda}}<li>{{.}}</li>{{end}}</ul>`,
 	))
+
+	meetingTextTemplateCache sync.Map // map[string]*texttemplate.Template
+	meetingHTMLTemplateCache sync.Map // map[string]*template.Template
 )
+
+func loadMeetingTextTemplate(path string) (*texttemplate.Template, error) {
+	if strings.TrimSpace(path) == "" {
+		return defaultMeetingDescriptionTextTemplate, nil
+	}
+	if cached, ok := meetingTextTemplateCache.Load(path); ok {
+		return cached.(*texttemplate.Template), nil
+	}
+	contents, err := os.ReadFile(path) //nolint:gosec // Template path is deployment-configured; reading it is intended.
+	if err != nil {
+		return nil, fmt.Errorf("read meeting text template: %w", err)
+	}
+	tmpl, err := texttemplate.New("meetingTextOverride").Parse(string(contents))
+	if err != nil {
+		return nil, fmt.Errorf("parse meeting text template: %w", err)
+	}
+	meetingTextTemplateCache.Store(path, tmpl)
+	return tmpl, nil
+}
+
+func loadMeetingHTMLTemplate(path string) (*template.Template, error) {
+	if strings.TrimSpace(path) == "" {
+		return defaultMeetingDescriptionHTMLTemplate, nil
+	}
+	if cached, ok := meetingHTMLTemplateCache.Load(path); ok {
+		return cached.(*template.Template), nil
+	}
+	contents, err := os.ReadFile(path) //nolint:gosec // Template path is deployment-configured; reading it is intended.
+	if err != nil {
+		return nil, fmt.Errorf("read meeting html template: %w", err)
+	}
+	tmpl, err := template.New("meetingHTMLOverride").Parse(string(contents))
+	if err != nil {
+		return nil, fmt.Errorf("parse meeting html template: %w", err)
+	}
+	meetingHTMLTemplateCache.Store(path, tmpl)
+	return tmpl, nil
+}
 
 func (o MeetingsOptions) normalized() MeetingsOptions {
 	out := o
@@ -248,7 +296,11 @@ func buildMeetingDescriptionHTML(
 	}
 
 	var b bytes.Buffer
-	if err := meetingDescriptionHTMLTemplate.Execute(&b, data); err != nil {
+	tmpl, err := loadMeetingHTMLTemplate(opts.TemplateHTMLPath)
+	if err != nil {
+		return "", err
+	}
+	if err := tmpl.Execute(&b, data); err != nil {
 		return "", err
 	}
 	return b.String(), nil
@@ -324,7 +376,11 @@ func buildMeetingDescription(
 	}
 
 	var b bytes.Buffer
-	if err := meetingDescriptionTextTemplate.Execute(&b, data); err != nil {
+	tmpl, err := loadMeetingTextTemplate(opts.TemplateTextPath)
+	if err != nil {
+		return "", err
+	}
+	if err := tmpl.Execute(&b, data); err != nil {
 		return "", err
 	}
 	return b.String(), nil

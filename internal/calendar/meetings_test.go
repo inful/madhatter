@@ -2,6 +2,7 @@ package calendar
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -116,4 +117,52 @@ func TestGenerateMeetingsICalForToken_UsesTZIDForEventTimes(t *testing.T) {
 	assert.Contains(t, ical, "DTSTART;TZID=Europe/Oslo:")
 	assert.Contains(t, ical, "DTEND;TZID=Europe/Oslo:")
 	assert.NotContains(t, ical, "DTSTART:20260601T093000Z")
+}
+
+func TestGenerateMeetingsICalForToken_AllowsTemplateOverrides(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	require.True(t, ok)
+	// internal/calendar -> internal -> repo root.
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	t.Setenv("MIGRATIONS_PATH", filepath.Join(repoRoot, "migrations"))
+
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	db, err := database.New(filepath.Join(tmpDir, "test.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	memberID, err := db.AddTeamMember(ctx, "Token Owner", "token@example.com")
+	require.NoError(t, err)
+	token, err := db.CreateCalendarSubscription(ctx, memberID)
+	require.NoError(t, err)
+
+	tmplDir := t.TempDir()
+	textPath := filepath.Join(tmplDir, "meeting.txt.tmpl")
+	htmlPath := filepath.Join(tmplDir, "meeting.html.tmpl")
+
+	require.NoError(t, os.WriteFile(textPath, []byte("CUSTOM TEXT: {{.MeetingName}}"), 0o600))
+	require.NoError(t, os.WriteFile(htmlPath, []byte("<p>CUSTOM HTML: {{.MeetingName}}</p>"), 0o600))
+
+	from := time.Date(2026, 1, 12, 12, 0, 0, 0, time.UTC) // Monday
+	ical, err := GenerateMeetingsICalForTokenFrom(
+		ctx,
+		db,
+		token,
+		from,
+		1,
+		MeetingsOptions{
+			Timezone:         "UTC",
+			SeedSalt:         "test-salt",
+			TemplateTextPath: textPath,
+			TemplateHTMLPath: htmlPath,
+		},
+		func(t time.Time) bool { return t.Weekday() != time.Saturday && t.Weekday() != time.Sunday },
+	)
+	require.NoError(t, err)
+
+	unfolded := unfoldICalLines(ical)
+	require.Contains(t, unfolded, "CUSTOM TEXT: Project meeting")
+	require.Contains(t, unfolded, "X-ALT-DESC;FMTTYPE=text/html")
+	require.Contains(t, unfolded, "CUSTOM HTML: Project meeting")
 }

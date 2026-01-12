@@ -3,6 +3,7 @@ package web
 import (
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/inful/madhatter/internal/auth"
@@ -34,7 +35,7 @@ func (h *Handler) handleCalendar(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		baseURL := "http://" + r.Host
+		baseURL := baseURLFromRequest(r)
 		data["Token"] = token
 		data["CalendarURL"] = baseURL + "/calendar/" + token + "/ics"
 		data["MeetingsCalendarURL"] = baseURL + "/calendar/" + token + "/meetings.ics"
@@ -113,4 +114,70 @@ func (h *Handler) handleMeetingsCalendarICS(w http.ResponseWriter, r *http.Reque
 	w.Header().Set("Cache-Control", "no-cache")
 
 	_, _ = w.Write([]byte(icsContent))
+}
+
+func baseURLFromRequest(r *http.Request) string {
+	const maxSplitParts = 2
+
+	host := strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
+	if host == "" {
+		host = r.Host
+	}
+
+	scheme := schemeFromRequestTLS(r)
+
+	// Reverse proxies typically forward the original scheme.
+	if forwarded := strings.TrimSpace(r.Header.Get("Forwarded")); forwarded != "" {
+		forwardedProto, forwardedHost := parseForwardedHeader(forwarded)
+		if forwardedProto != "" {
+			scheme = forwardedProto
+		}
+		if forwardedHost != "" {
+			host = forwardedHost
+		}
+	} else if xfProto := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")); xfProto != "" {
+		// Example: X-Forwarded-Proto: https
+		scheme = strings.TrimSpace(strings.SplitN(xfProto, ",", maxSplitParts)[0])
+	}
+
+	if host == "" {
+		// Best-effort fallback; should be rare.
+		host = "localhost"
+	}
+
+	return scheme + "://" + host
+}
+
+func schemeFromRequestTLS(r *http.Request) string {
+	if r.TLS != nil {
+		return "https"
+	}
+	return "http"
+}
+
+func parseForwardedHeader(headerValue string) (proto string, host string) {
+	const maxSplitParts = 2
+
+	// Example: Forwarded: for=1.2.3.4;proto=https;host=example.com
+	first := strings.SplitN(headerValue, ",", maxSplitParts)[0]
+	for part := range strings.SplitSeq(first, ";") {
+		kv := strings.SplitN(strings.TrimSpace(part), "=", maxSplitParts)
+		if len(kv) != maxSplitParts {
+			continue
+		}
+		key := strings.ToLower(strings.TrimSpace(kv[0]))
+		value := strings.Trim(strings.TrimSpace(kv[1]), "\"")
+		switch key {
+		case "proto":
+			if value != "" {
+				proto = value
+			}
+		case "host":
+			if value != "" {
+				host = value
+			}
+		}
+	}
+
+	return proto, host
 }

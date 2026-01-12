@@ -1,6 +1,7 @@
 package web
 
 import (
+	"html/template"
 	"net/http"
 	"net/url"
 	"os"
@@ -37,12 +38,11 @@ func (h *Handler) handleCalendar(w http.ResponseWriter, r *http.Request) {
 		}
 
 		baseURL := baseURLFromRequest(r)
-		webcalBaseURL := webcalBaseURLFromRequest(r)
 		data["Token"] = token
 		data["CalendarURL"] = baseURL + "/calendar/" + token + "/ics"
 		data["MeetingsCalendarURL"] = baseURL + "/calendar/" + token + "/meetings.ics"
-		data["CalendarWebcalURL"] = webcalBaseURL + "/calendar/" + token + "/ics"
-		data["MeetingsCalendarWebcalURL"] = webcalBaseURL + "/calendar/" + token + "/meetings.ics"
+		data["CalendarWebcalURL"] = webcalSubscriptionURL(r, "/calendar/"+token+"/ics")
+		data["MeetingsCalendarWebcalURL"] = webcalSubscriptionURL(r, "/calendar/"+token+"/meetings.ics")
 		data["ShowResult"] = true
 
 		if err := h.tmpl.ExecuteTemplate(w, "calendar.html", data); err != nil {
@@ -62,6 +62,31 @@ func (h *Handler) handleCalendar(w http.ResponseWriter, r *http.Request) {
 	if err := h.tmpl.ExecuteTemplate(w, "calendar.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+func webcalSubscriptionURL(r *http.Request, path string) template.URL {
+	webcalBaseURL := webcalBaseURLFromRequest(r)
+	webcalBase, err := url.Parse(webcalBaseURL)
+	if err != nil || webcalBase.Scheme != "webcal" || webcalBase.Host == "" || webcalBase.User != nil {
+		// Fall back to the normal base URL rather than emitting a broken link.
+		fallbackBase, err := url.Parse(baseURLFromRequest(r))
+		if err != nil {
+			return ""
+		}
+		fallbackBase.Path = path
+		fallbackBase.RawQuery = ""
+		fallbackBase.Fragment = ""
+
+		//nolint:gosec // Constructed from validated/derived base URL and internal path.
+		return template.URL(fallbackBase.String())
+	}
+
+	webcalBase.Path = path
+	webcalBase.RawQuery = ""
+	webcalBase.Fragment = ""
+
+	//nolint:gosec // Constructed from validated scheme+host and internal path.
+	return template.URL(webcalBase.String())
 }
 
 func (h *Handler) handleCalendarICS(w http.ResponseWriter, r *http.Request) {

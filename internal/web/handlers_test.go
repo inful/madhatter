@@ -1,6 +1,7 @@
 package web
 
 import (
+	"html/template"
 	"net/http/httptest"
 	"testing"
 
@@ -165,8 +166,27 @@ func TestAllTemplatesWithData(t *testing.T) {
 	}
 
 	calendarData := map[string]any{
+		"Template": "calendar",
 		"Subscriptions": []map[string]any{
 			{"Token": "test-token", "Name": "Test Calendar", "CreatedAt": "2026-01-08"},
+		},
+		"Members": []map[string]any{
+			{"ID": 1, "Name": "Test User", "Email": "test@example.com"},
+		},
+		"User":    map[string]any{"Email": "test@example.com", "IsAdmin": true},
+		"IsAdmin": true,
+	}
+
+	calendarShowResultData := map[string]any{
+		"Template":                  "calendar",
+		"Token":                     "test-token",
+		"CalendarURL":               "https://example.com/calendar/test-token/ics",
+		"MeetingsCalendarURL":       "https://example.com/calendar/test-token/meetings.ics",
+		"CalendarWebcalURL":         template.URL("webcal://example.com/calendar/test-token/ics"),
+		"MeetingsCalendarWebcalURL": template.URL("webcal://example.com/calendar/test-token/meetings.ics"),
+		"ShowResult":                true,
+		"Members": []map[string]any{
+			{"ID": 1, "Name": "Test User", "Email": "test@example.com"},
 		},
 		"User":    map[string]any{"Email": "test@example.com", "IsAdmin": true},
 		"IsAdmin": true,
@@ -188,6 +208,7 @@ func TestAllTemplatesWithData(t *testing.T) {
 		{"LeaveReport", "leave_report.html", leaveData},
 		{"ScheduleGenerate", "schedule_generate.html", generateData},
 		{"Calendar", "calendar.html", calendarData},
+		{"CalendarShowResult", "calendar.html", calendarShowResultData},
 		{"Login", "login.html", loginData},
 	}
 
@@ -198,6 +219,10 @@ func TestAllTemplatesWithData(t *testing.T) {
 			require.NoError(t, err, "Template %s should execute with data", tc.template)
 			assert.Equal(t, 200, w.Code, "Template %s should return 200", tc.template)
 			assert.NotEmpty(t, w.Body.String(), "Template %s should produce output", tc.template)
+			if tc.name == "CalendarShowResult" {
+				assert.Contains(t, w.Body.String(), "webcal://")
+				assert.NotContains(t, w.Body.String(), "#ZgotmplZ")
+			}
 		})
 	}
 }

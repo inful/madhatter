@@ -58,6 +58,8 @@ func (f *ProviderFactory) Create(name string) (Provider, error) {
 		return NewForgejoProvider(config), nil
 	case "gitlab":
 		return NewGitLabProvider(config), nil
+	case "entra":
+		return NewEntraProvider(config), nil
 	default:
 		return nil, ErrProviderNotFound
 	}

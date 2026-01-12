@@ -30,7 +30,7 @@ func NewGitLabProvider(config ProviderConfig) *GitLabProvider {
 				AuthURL:  config.AuthURL,
 				TokenURL: config.TokenURL,
 			},
-			Scopes: []string{config.Scope},
+			Scopes: parseScopes(config.Scope),
 		},
 	}
 }

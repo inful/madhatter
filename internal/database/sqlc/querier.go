@@ -18,6 +18,8 @@ type Querier interface {
 	CreateAPIToken(ctx context.Context, arg CreateAPITokenParams) (sql.Result, error)
 	CreateCalendarSubscription(ctx context.Context, arg CreateCalendarSubscriptionParams) (sql.Result, error)
 	CreateLeaveRecord(ctx context.Context, arg CreateLeaveRecordParams) (sql.Result, error)
+	// Notification logs
+	CreateNotificationLog(ctx context.Context, arg CreateNotificationLogParams) (int64, error)
 	CreateOAuthToken(ctx context.Context, arg CreateOAuthTokenParams) (OauthToken, error)
 	CreateRotaAssignment(ctx context.Context, arg CreateRotaAssignmentParams) (sql.Result, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
@@ -32,6 +34,7 @@ type Querier interface {
 	DeleteExpiredSessions(ctx context.Context) error
 	DeleteLeaveRecord(ctx context.Context, id string) error
 	DeleteMemberSubscriptions(ctx context.Context, memberID string) error
+	DeleteNotificationLog(ctx context.Context, id string) error
 	DeleteOAuthToken(ctx context.Context, arg DeleteOAuthTokenParams) error
 	DeleteRotaAssignment(ctx context.Context, id string) error
 	DeleteSession(ctx context.Context, token string) error

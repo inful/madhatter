@@ -201,6 +201,64 @@ func (db *DB) GetUpcomingAssignments(ctx context.Context, memberID string, days 
 	return result, nil
 }
 
+// TryCreateNotificationLog reserves a notification slot for a given kind+date.
+// Returns true if a new record was created, false if it already existed.
+func (db *DB) TryCreateNotificationLog(ctx context.Context, kind, date string, memberID, assignmentID, message string) (string, bool, error) {
+	if kind == "" {
+		return "", false, errors.New("kind cannot be empty")
+	}
+	if date == "" {
+		return "", false, errors.New("date cannot be empty")
+	}
+
+	id := uuid.New().String()
+
+	dateTime, err := time.Parse("2006-01-02", date)
+	if err != nil {
+		return "", false, err
+	}
+
+	var memberIDNull sql.NullString
+	if memberID != "" {
+		memberIDNull = sql.NullString{String: memberID, Valid: true}
+	}
+
+	var assignmentIDNull sql.NullString
+	if assignmentID != "" {
+		assignmentIDNull = sql.NullString{String: assignmentID, Valid: true}
+	}
+
+	var messageNull sql.NullString
+	if message != "" {
+		messageNull = sql.NullString{String: message, Valid: true}
+	}
+
+	rows, err := db.queries.CreateNotificationLog(ctx, sqlc.CreateNotificationLogParams{
+		ID:           id,
+		Kind:         kind,
+		Date:         dateTime,
+		MemberID:     memberIDNull,
+		AssignmentID: assignmentIDNull,
+		Message:      messageNull,
+	})
+	if err != nil {
+		return "", false, err
+	}
+
+	if rows == 0 {
+		return "", false, nil
+	}
+	return id, true, nil
+}
+
+// DeleteNotificationLog deletes a notification log by id.
+func (db *DB) DeleteNotificationLog(ctx context.Context, id string) error {
+	if id == "" {
+		return errors.New("id cannot be empty")
+	}
+	return db.queries.DeleteNotificationLog(ctx, id)
+}
+
 // DeleteRotaAssignment deletes a rota assignment by ID.
 func (db *DB) DeleteRotaAssignment(ctx context.Context, id string) error {
 	return db.queries.DeleteRotaAssignment(ctx, id)

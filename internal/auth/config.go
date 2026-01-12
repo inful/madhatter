@@ -3,6 +3,7 @@ package auth
 import (
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -131,6 +132,25 @@ func LoadConfigFromEnv() *AuthConfig {
 			TokenURL:     getEnvOrDefault("GITLAB_TOKEN_URL", "https://gitlab.com/oauth/token"),
 			UserInfoURL:  getEnvOrDefault("GITLAB_USERINFO_URL", "https://gitlab.com/api/v4/user"),
 			Scope:        getEnvOrDefault("GITLAB_SCOPE", "read_user"),
+		}
+	}
+
+	// Load Microsoft Entra ID config from env
+	if clientID := os.Getenv("ENTRA_CLIENT_ID"); clientID != "" {
+		tenantID := os.Getenv("ENTRA_TENANT_ID")
+		if tenantID == "" {
+			log.Printf("Warning: ENTRA_CLIENT_ID is set but ENTRA_TENANT_ID is missing; skipping Entra provider configuration")
+		} else {
+			base := "https://login.microsoftonline.com/" + tenantID + "/oauth2/v2.0"
+			config.Providers["entra"] = ProviderConfig{
+				ClientID:     clientID,
+				ClientSecret: os.Getenv("ENTRA_CLIENT_SECRET"),
+				RedirectURL:  os.Getenv("ENTRA_REDIRECT_URL"),
+				AuthURL:      getEnvOrDefault("ENTRA_AUTH_URL", base+"/authorize"),
+				TokenURL:     getEnvOrDefault("ENTRA_TOKEN_URL", base+"/token"),
+				UserInfoURL:  getEnvOrDefault("ENTRA_USERINFO_URL", "https://graph.microsoft.com/v1.0/me"),
+				Scope:        getEnvOrDefault("ENTRA_SCOPE", "openid profile email offline_access User.Read"),
+			}
 		}
 	}
 

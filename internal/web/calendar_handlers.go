@@ -2,6 +2,7 @@ package web
 
 import (
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 
@@ -36,9 +37,12 @@ func (h *Handler) handleCalendar(w http.ResponseWriter, r *http.Request) {
 		}
 
 		baseURL := baseURLFromRequest(r)
+		webcalBaseURL := webcalBaseURLFromRequest(r)
 		data["Token"] = token
 		data["CalendarURL"] = baseURL + "/calendar/" + token + "/ics"
 		data["MeetingsCalendarURL"] = baseURL + "/calendar/" + token + "/meetings.ics"
+		data["CalendarWebcalURL"] = webcalBaseURL + "/calendar/" + token + "/ics"
+		data["MeetingsCalendarWebcalURL"] = webcalBaseURL + "/calendar/" + token + "/meetings.ics"
 		data["ShowResult"] = true
 
 		if err := h.tmpl.ExecuteTemplate(w, "calendar.html", data); err != nil {
@@ -167,6 +171,18 @@ func baseURLFromRequest(r *http.Request) string {
 	}
 
 	return scheme + "://" + host
+}
+
+func webcalBaseURLFromRequest(r *http.Request) string {
+	baseURL := baseURLFromRequest(r)
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		return "webcal://" + strings.TrimPrefix(strings.TrimPrefix(baseURL, "https://"), "http://")
+	}
+	if u.Host == "" {
+		return "webcal://" + strings.TrimPrefix(strings.TrimPrefix(baseURL, "https://"), "http://")
+	}
+	return "webcal://" + u.Host
 }
 
 func schemeFromRequestTLS(r *http.Request) string {

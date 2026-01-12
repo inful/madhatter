@@ -111,6 +111,20 @@ func (db *DB) GetAssignmentsByDateRange(ctx context.Context, startDate, endDate 
 	return result, nil
 }
 
+// GetMostRecentCoverMemberID returns the member ID of the most recent cover assignment.
+// The second return value is false if no cover assignments exist.
+func (db *DB) GetMostRecentCoverMemberID(ctx context.Context) (string, bool, error) {
+	row, err := db.queries.GetMostRecentCoverAssignment(ctx)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", false, nil
+		}
+		return "", false, err
+	}
+
+	return row.MemberID, true, nil
+}
+
 // GetLatestAssignmentDate returns the latest date that has any assignments.
 // Returns empty string if no assignments exist.
 func (db *DB) GetLatestAssignmentDate(ctx context.Context) (string, error) {

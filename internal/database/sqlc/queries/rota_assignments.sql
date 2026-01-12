@@ -21,6 +21,13 @@ JOIN team_members tm ON ra.member_id = tm.id
 WHERE ra.date >= ? AND ra.date <= ?
 ORDER BY ra.date;
 
+-- name: GetMostRecentCoverAssignment :one
+SELECT id, date, member_id
+FROM rota_assignments
+WHERE is_cover = 1
+ORDER BY date DESC, created_at DESC
+LIMIT 1;
+
 -- name: DeleteRotaAssignment :exec
 DELETE FROM rota_assignments
 WHERE id = ?;

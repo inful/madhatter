@@ -189,42 +189,21 @@ func (e *Engine) findMemberIndex(members []database.TeamMember, memberID string)
 // Note: findCover will start checking from (startIndex + 1), so we return (lastCoverIndex)
 // to make it check (lastCoverIndex + 1) which is the next person after the last cover.
 func (e *Engine) getNextCoverIndex(ctx context.Context, members []database.TeamMember, referenceDate time.Time) int {
-	// Look through ALL assignments to find the most recent cover assignment
-	// Use reference date to query the right time range (important for tests with old dates)
-	endDate := referenceDate.AddDate(1, 0, 0).Format("2006-01-02")    // Look forward 1 year from reference
-	startDate := referenceDate.AddDate(-1, 0, 0).Format("2006-01-02") // Look back 1 year from reference
+	_ = referenceDate
 
-	assignments, err := e.db.GetAssignmentsByDateRange(ctx, startDate, endDate)
-	if err != nil || len(assignments) == 0 {
+	mostRecentCoverMemberID, ok, err := e.db.GetMostRecentCoverMemberID(ctx)
+	if err != nil || !ok {
 		// No previous covers found, start R2 from the beginning (index -1)
-		// so findCover will check from index 0
+		// so findCover will check from index 0.
 		return -1
 	}
 
-	// Find the absolute most recent cover assignment by date
-	var lastCoverMemberID string
-	var lastCoverDate string
-
-	for i := range assignments {
-		if assignments[i].IsCover {
-			// Find the most recent cover by date (including future assigned dates)
-			if lastCoverDate == "" || assignments[i].Date > lastCoverDate {
-				lastCoverDate = assignments[i].Date
-				lastCoverMemberID = assignments[i].MemberID
-			}
-		}
+	lastCoverIndex := e.findMemberIndex(members, mostRecentCoverMemberID)
+	if lastCoverIndex != -1 {
+		return lastCoverIndex
 	}
 
-	// If we found a cover assignment, continue R2 from that person's index
-	// findCover will add 1 to this, so it will check the next person in R2
-	if lastCoverMemberID != "" {
-		lastCoverIndex := e.findMemberIndex(members, lastCoverMemberID)
-		if lastCoverIndex != -1 {
-			return lastCoverIndex
-		}
-	}
-
-	// Fallback: start R2 from index -1 so findCover checks from index 0
+	// Fallback: start R2 from index -1 so findCover checks from index 0.
 	return -1
 }
 

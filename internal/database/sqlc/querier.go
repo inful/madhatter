@@ -52,6 +52,7 @@ type Querier interface {
 	GetMemberByEmail(ctx context.Context, email string) (TeamMember, error)
 	GetMemberByID(ctx context.Context, id string) (TeamMember, error)
 	GetMemberByToken(ctx context.Context, token string) (TeamMember, error)
+	GetMostRecentCoverAssignment(ctx context.Context) (GetMostRecentCoverAssignmentRow, error)
 	GetOAuthToken(ctx context.Context, arg GetOAuthTokenParams) (OauthToken, error)
 	GetSessionByToken(ctx context.Context, token string) (GetSessionByTokenRow, error)
 	GetSubscriptionByToken(ctx context.Context, token string) (CalendarSubscription, error)

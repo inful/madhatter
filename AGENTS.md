@@ -11,7 +11,7 @@ This file provides guidance to agents when working with code in this repository.
 - **Language**: Go 1.25
 - **API Framework**: HUMA v2 with go-chi/chi router
 - **Web Framework**: HTMX (server-side rendering)
-- **Database**: SQLite (modernc.org/sqlite)
+- **Database**: SQLite (github.com/ncruces/go-sqlite3)
 - **CLI Framework**: Kong
 - **Authentication**: OAuth2 (Forgejo, GitLab)
 - **Calendar Format**: ICS (iCalendar)
@@ -30,7 +30,7 @@ This file provides guidance to agents when working with code in this repository.
 - Run the full test suite (`go test ./...`) and ensure it passes before committing.
 
 ### Database
-- Uses `modernc.org/sqlite` (pure Go SQLite)
+- Uses `github.com/ncruces/go-sqlite3` (`sqlite3` driver with embedded SQLite)
 - Database file: `support_rota.db`
 - **Critical**: Foreign keys must be enabled manually with `PRAGMA foreign_keys = ON`
 - All dates stored as DATE strings in format `"2006-01-02"`
@@ -45,7 +45,7 @@ This file provides guidance to agents when working with code in this repository.
   1. `MIGRATIONS_PATH` environment variable
   2. Search up to 3 directories from working directory
   3. Relative to source file location (internal/database -> root)
-- Compatible with `modernc.org/sqlite` via generic `database/sqlite` driver
+- Compatible with `github.com/golang-migrate/migrate/v4/database/sqlite` via the `sqlite3` database/sql driver
 
 **Migration Commands:**
 ```bash

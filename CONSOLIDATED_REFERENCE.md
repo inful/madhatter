@@ -65,7 +65,7 @@ github.com/danielgtaylor/huma/v2
 github.com/danielgtaylor/huma/v2/adapters/humachi
 github.com/go-chi/chi/v5
 github.com/alecthomas/kong
-modernc.org/sqlite
+github.com/ncruces/go-sqlite3
 github.com/google/uuid
 ```
 
@@ -288,7 +288,7 @@ go get github.com/danielgtaylor/huma/v2
 go get github.com/danielgtaylor/huma/v2/adapters/humachi
 go get github.com/go-chi/chi/v5
 go get github.com/alecthomas/kong
-go get modernc.org/sqlite
+go get github.com/ncruces/go-sqlite3
 go get github.com/google/uuid
 ```
 

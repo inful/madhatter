@@ -33,7 +33,7 @@ A comprehensive support duty management system with automatic scheduling, leave 
 
 ### Prerequisites
 - Go 1.25 or later
-- SQLite3 (included via modernc.org/sqlite)
+- SQLite3 (included via github.com/ncruces/go-sqlite3)
 
 ### Installation
 ```bash
@@ -94,7 +94,7 @@ go test ./...
 - **Language**: Go 1.25
 - **API Framework**: HUMA v2 with go-chi/chi router
 - **Web Framework**: HTMX (server-side rendering)
-- **Database**: SQLite (modernc.org/sqlite)
+- **Database**: SQLite (github.com/ncruces/go-sqlite3)
 - **CLI Framework**: Kong
 - **Authentication**: OAuth2 (Forgejo, GitLab)
 - **Calendar Format**: ICS (iCalendar)

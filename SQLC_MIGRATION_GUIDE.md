@@ -10,7 +10,7 @@ The migration is designed to be gradual and maintain backward compatibility thro
 
 ### Existing Database Layer
 - **Files**: `db.go`, `leave.go`, `rota.go`, `models.go`
-- **Database**: modernc.org/sqlite (pure Go SQLite)
+- **Database**: github.com/ncruces/go-sqlite3 (embedded SQLite)
 - **Pattern**: Manual SQL queries with `db.QueryContext()` and `rows.Scan()`
 - **Issues**: 
   - No compile-time SQL validation

@@ -43,6 +43,26 @@ func TestICalGenerator_AddAssignment(t *testing.T) {
 	assert.Contains(t, icalStr, "X-ALT-DESC;FMTTYPE=text/html")
 }
 
+func TestICalGenerator_AddAssignment_IncludesSupportDayLinks(t *testing.T) {
+	generator := NewICalGenerator().WithSupportDayLinks(ParseMeetingLinks("Runbook|https://example.com/runbook"))
+
+	assignment := database.RotaAssignment{
+		ID:       "test-123",
+		Date:     "2026-01-15",
+		MemberID: "member-1",
+		IsCover:  false,
+	}
+
+	err := generator.AddAssignment(assignment, "John Doe")
+	require.NoError(t, err)
+
+	icalStr, err := generator.Serialize()
+	require.NoError(t, err)
+
+	assert.Contains(t, icalStr, "Links:")
+	assert.Contains(t, icalStr, "https://example.com/runbook")
+}
+
 func TestICalGenerator_AddCoverAssignment(t *testing.T) {
 	generator := NewICalGenerator()
 

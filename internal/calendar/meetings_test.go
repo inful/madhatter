@@ -206,3 +206,66 @@ func TestGenerateMeetingsICalForToken_DefaultTemplatesIncludeLinks(t *testing.T)
 	require.Contains(t, unfolded, "https://example.com/runbook")
 	require.Contains(t, unfolded, "https://example.com/raw")
 }
+
+func TestGenerateMeetingsICalForToken_UsesDifferentLinksPerMeetingType(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	require.True(t, ok)
+	// internal/calendar -> internal -> repo root.
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	t.Setenv("MIGRATIONS_PATH", filepath.Join(repoRoot, "migrations"))
+
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	db, err := database.New(filepath.Join(tmpDir, "test.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	memberID, err := db.AddTeamMember(ctx, "Token Owner", "token@example.com")
+	require.NoError(t, err)
+	token, err := db.CreateCalendarSubscription(ctx, memberID)
+	require.NoError(t, err)
+
+	from := time.Date(2026, 1, 12, 12, 0, 0, 0, time.UTC) // Monday
+	ical, err := GenerateMeetingsICalForTokenFrom(
+		ctx,
+		db,
+		token,
+		from,
+		2, // Monday + Tuesday
+		MeetingsOptions{
+			Timezone:         "UTC",
+			SeedSalt:         "test-salt",
+			ProjectLinks:     ParseMeetingLinks("Project|https://example.com/project"),
+			MorningLinks:     ParseMeetingLinks("Morning|https://example.com/morning"),
+			Links:            ParseMeetingLinks("Fallback|https://example.com/fallback"),
+			TemplateTextPath: "",
+			TemplateHTMLPath: "",
+		},
+		func(t time.Time) bool { return t.Weekday() != time.Saturday && t.Weekday() != time.Sunday },
+	)
+	require.NoError(t, err)
+
+	unfolded := unfoldICalLines(ical)
+
+	// Extract per-event blocks and ensure the right links are in the right meeting.
+	projectIdx := strings.Index(unfolded, "UID:meeting-project-20260112@supportrota")
+	require.Positive(t, projectIdx)
+	morningIdx := strings.Index(unfolded, "UID:meeting-morning-20260113@supportrota")
+	require.Positive(t, morningIdx)
+
+	projectBlock := unfolded[projectIdx:]
+	if next := strings.Index(projectBlock, "END:VEVENT"); next != -1 {
+		projectBlock = projectBlock[:next]
+	}
+
+	morningBlock := unfolded[morningIdx:]
+	if next := strings.Index(morningBlock, "END:VEVENT"); next != -1 {
+		morningBlock = morningBlock[:next]
+	}
+
+	require.Contains(t, projectBlock, "https://example.com/project")
+	require.NotContains(t, projectBlock, "https://example.com/morning")
+
+	require.Contains(t, morningBlock, "https://example.com/morning")
+	require.NotContains(t, morningBlock, "https://example.com/project")
+}

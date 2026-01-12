@@ -68,8 +68,16 @@ func (h *Handler) handleCalendarICS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	supportDayLinks := calendar.ParseMeetingLinks(os.Getenv("SUPPORT_DAY_LINKS"))
+
 	// Generate ICS content using new calendar library.
-	icsContent, err := calendar.GenerateICalForToken(r.Context(), h.db, token, defaultCalendarLookaheadDays)
+	icsContent, err := calendar.GenerateICalForTokenWithOptions(
+		r.Context(),
+		h.db,
+		token,
+		defaultCalendarLookaheadDays,
+		calendar.SupportCalendarOptions{SupportDayLinks: supportDayLinks},
+	)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
@@ -97,6 +105,8 @@ func (h *Handler) handleMeetingsCalendarICS(w http.ResponseWriter, r *http.Reque
 	textTemplatePath := os.Getenv("MEETINGS_TEMPLATE_TEXT_PATH")
 	htmlTemplatePath := os.Getenv("MEETINGS_TEMPLATE_HTML_PATH")
 	linksRaw := os.Getenv("MEETINGS_LINKS")
+	morningLinksRaw := os.Getenv("MEETINGS_LINKS_MORNING")
+	projectLinksRaw := os.Getenv("MEETINGS_LINKS_PROJECT")
 
 	icsContent, err := calendar.GenerateMeetingsICalForToken(
 		r.Context(),
@@ -107,6 +117,8 @@ func (h *Handler) handleMeetingsCalendarICS(w http.ResponseWriter, r *http.Reque
 			Timezone:         tz,
 			TeamsURL:         teamsURL,
 			Links:            calendar.ParseMeetingLinks(linksRaw),
+			MorningLinks:     calendar.ParseMeetingLinks(morningLinksRaw),
+			ProjectLinks:     calendar.ParseMeetingLinks(projectLinksRaw),
 			TemplateTextPath: textTemplatePath,
 			TemplateHTMLPath: htmlTemplatePath,
 		},

@@ -41,7 +41,13 @@ type MeetingsOptions struct {
 	TeamsURL string
 
 	// Links are additional resources rendered into meeting descriptions.
+	// If meeting-specific links are set, they take precedence.
 	Links []MeetingLink
+
+	// MorningLinks are used for Tue–Fri "Morning Shuffle" events.
+	MorningLinks []MeetingLink
+	// ProjectLinks are used for Mon "Project shuffle" events.
+	ProjectLinks []MeetingLink
 
 	// TemplateTextPath and TemplateHTMLPath allow overriding meeting description templates at deployment.
 	// If empty, built-in defaults are used.
@@ -467,25 +473,9 @@ func buildMeetingDescriptionData(
 		return meetingDescriptionData{}, err
 	}
 
-	seedKey := meetingSeedKey
-	if strings.TrimSpace(seedKey) == "" {
-		seedKey = meetingName
-	}
+	seedKey := normalizeSeedKey(meetingSeedKey, meetingName)
 	order := shuffledOrder(present, opts.SeedSalt+"|"+dateStr+"|"+seedKey)
-
-	linkData := make([]meetingLinkTemplateData, 0, len(opts.Links))
-	for _, l := range opts.Links {
-		if strings.TrimSpace(string(l.HTML)) != "" {
-			linkData = append(linkData, meetingLinkTemplateData{HTML: l.HTML, Text: "(HTML link)"})
-			continue
-		}
-		label := strings.TrimSpace(l.Label)
-		linkURL := safeHTTPURL(strings.TrimSpace(l.URL))
-		if label == "" || linkURL == "" {
-			continue
-		}
-		linkData = append(linkData, meetingLinkTemplateData{Label: label, URL: linkURL, Text: label + ": " + linkURL})
-	}
+	linkData := buildMeetingLinkTemplateData(selectMeetingLinks(meetingSeedKey, opts))
 
 	return meetingDescriptionData{
 		MeetingName: meetingName,
@@ -497,6 +487,48 @@ func buildMeetingDescriptionData(
 		Shuffle:     shuffleOrderLines(order, supportName),
 		Agenda:      agendaLines(includeJazzHands),
 	}, nil
+}
+
+func normalizeSeedKey(seedKey string, fallback string) string {
+	if strings.TrimSpace(seedKey) == "" {
+		return fallback
+	}
+	return seedKey
+}
+
+func selectMeetingLinks(meetingSeedKey string, opts MeetingsOptions) []MeetingLink {
+	// Default.
+	links := opts.Links
+
+	switch meetingSeedKey {
+	case morningMeetingSeedKey:
+		if len(opts.MorningLinks) > 0 {
+			return opts.MorningLinks
+		}
+	case projectMeetingSeedKey:
+		if len(opts.ProjectLinks) > 0 {
+			return opts.ProjectLinks
+		}
+	}
+
+	return links
+}
+
+func buildMeetingLinkTemplateData(links []MeetingLink) []meetingLinkTemplateData {
+	out := make([]meetingLinkTemplateData, 0, len(links))
+	for _, l := range links {
+		if strings.TrimSpace(string(l.HTML)) != "" {
+			out = append(out, meetingLinkTemplateData{HTML: l.HTML, Text: "(HTML link)"})
+			continue
+		}
+		label := strings.TrimSpace(l.Label)
+		linkURL := safeHTTPURL(strings.TrimSpace(l.URL))
+		if label == "" || linkURL == "" {
+			continue
+		}
+		out = append(out, meetingLinkTemplateData{Label: label, URL: linkURL, Text: label + ": " + linkURL})
+	}
+	return out
 }
 
 func setTimedEventWithTZID(event *ics.VEvent, startAt, endAt time.Time, timezone string) {

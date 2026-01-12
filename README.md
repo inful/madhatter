@@ -171,6 +171,14 @@ MEETINGS_TEMPLATE_HTML_PATH=/etc/support-rota/templates/meeting_description.html
 # Comma-separated; each item is either a raw HTML <a ...>...</a> or a Label|URL pair.
 MEETINGS_LINKS='Runbook|https://example.com/runbook, <a href="https://example.com/raw">Raw link</a>'
 
+# Optional: different links for each meeting type.
+# If set, these take precedence over MEETINGS_LINKS for their respective events.
+MEETINGS_LINKS_PROJECT='Project doc|https://example.com/project'
+MEETINGS_LINKS_MORNING='Standup board|https://example.com/morning'
+
+# Optional: extra links for support duty (HAT day) events in the support rota calendar.
+SUPPORT_DAY_LINKS='Runbook|https://example.com/runbook'
+
 # Holiday Service
 HOLIDAY_URLS=https://www.officeholidays.com/subscribe/norway,https://www.officeholidays.com/subscribe/uk
 HOLIDAY_FETCH_INTERVAL=24  # hours
@@ -215,6 +223,7 @@ Notes:
 - The HTML template should output a HTML fragment (it will be wrapped in `<html><body>...</body></html>` in the ICS).
 - Long lines in ICS files may be folded (RFC 5545). This is normal.
 - `MEETINGS_LINKS` is treated as trusted deployment input; if you use raw HTML anchors, they are included as-is.
+- If `MEETINGS_LINKS_PROJECT` / `MEETINGS_LINKS_MORNING` are set, they override `MEETINGS_LINKS` for their respective events.
 
 Example text template (`meeting_description.txt.tmpl`):
 

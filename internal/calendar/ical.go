@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"html/template"
 	"strings"
 	"time"
 	"unicode"
@@ -39,6 +40,12 @@ func titleCase(s string) string {
 // ICalGenerator handles iCalendar (.ics) file generation using golang-ical library.
 type ICalGenerator struct {
 	calendar *ics.Calendar
+
+	supportDayLinks []MeetingLink
+}
+
+type SupportCalendarOptions struct {
+	SupportDayLinks []MeetingLink
 }
 
 // NewICalGeneratorWithMetadata creates a new iCalendar generator with custom metadata.
@@ -60,6 +67,11 @@ func NewICalGenerator() *ICalGenerator {
 		"Support Rota Calendar",
 		"Automated support rota assignments",
 	)
+}
+
+func (g *ICalGenerator) WithSupportDayLinks(links []MeetingLink) *ICalGenerator {
+	g.supportDayLinks = links
+	return g
 }
 
 // AddAssignment adds a rota assignment as a calendar event.
@@ -86,15 +98,25 @@ func (g *ICalGenerator) AddAssignment(assignment database.RotaAssignment, member
 	event.SetSummary(summary)
 
 	// Set description.
-	description := "Support duty"
+	baseDescription := "Support duty"
 	if assignment.IsCover {
-		description += " (cover)"
+		baseDescription += " (cover)"
 		if assignment.OriginalAssignmentID != nil {
-			description += " for leave"
+			baseDescription += " for leave"
 		}
 	}
-	event.SetDescription(description)
-	setAltDescHTML(event, htmlHeading(summary)+htmlParagraph(description))
+
+	textDescription := baseDescription
+	if len(g.supportDayLinks) > 0 {
+		textDescription += formatLinksText(g.supportDayLinks)
+	}
+	event.SetDescription(textDescription)
+
+	htmlDesc := htmlHeading(summary) + htmlParagraph(baseDescription)
+	if len(g.supportDayLinks) > 0 {
+		htmlDesc += formatLinksHTML(g.supportDayLinks)
+	}
+	setAltDescHTML(event, htmlDesc)
 
 	// Do not mark as busy.
 	event.SetTimeTransparency(ics.TransparencyTransparent)
@@ -109,6 +131,152 @@ func (g *ICalGenerator) AddAssignment(assignment database.RotaAssignment, member
 	event.SetModifiedAt(time.Now().UTC())
 
 	return nil
+}
+
+func formatLinksText(links []MeetingLink) string {
+	var b strings.Builder
+	first := true
+	for _, l := range links {
+		label, urlStr := meetingLinkLabelAndURL(l)
+		if label == "" {
+			continue
+		}
+		if first {
+			b.WriteString("\n\nLinks:\n")
+			first = false
+		}
+		b.WriteString("- ")
+		b.WriteString(label)
+		if urlStr != "" {
+			b.WriteString(": ")
+			b.WriteString(urlStr)
+		}
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+func meetingLinkLabelAndURL(link MeetingLink) (label string, urlStr string) {
+	label = strings.TrimSpace(link.Label)
+	urlStr = safeHTTPURL(strings.TrimSpace(link.URL))
+	if label != "" {
+		return label, urlStr
+	}
+
+	if strings.TrimSpace(string(link.HTML)) == "" {
+		return "", ""
+	}
+
+	extractedLabel, extractedURL := extractAnchorLabelAndURL(string(link.HTML))
+	if extractedLabel == "" {
+		extractedLabel = "(HTML link)"
+	}
+	if extractedURL != "" {
+		extractedURL = safeHTTPURL(extractedURL)
+	}
+	return extractedLabel, extractedURL
+}
+
+func extractAnchorLabelAndURL(htmlAnchor string) (label string, urlStr string) {
+	// Best-effort extraction for plain-text description.
+	// We intentionally keep this simple and dependency-free.
+
+	urlStr = extractHrefFromAnchor(htmlAnchor)
+
+	start := strings.Index(htmlAnchor, ">")
+	if start != -1 {
+		end := strings.Index(strings.ToLower(htmlAnchor[start+1:]), "</a")
+		if end != -1 {
+			label = strings.TrimSpace(stripHTMLTags(htmlAnchor[start+1 : start+1+end]))
+		}
+	}
+
+	return label, urlStr
+}
+
+func extractHrefFromAnchor(htmlAnchor string) string {
+	lower := strings.ToLower(htmlAnchor)
+	hrefIdx := strings.Index(lower, "href=")
+	if hrefIdx < 0 {
+		return ""
+	}
+
+	rest := strings.TrimSpace(htmlAnchor[hrefIdx+len("href="):])
+	if rest == "" {
+		return ""
+	}
+
+	quote := rest[0]
+	if quote == '\'' || quote == '"' {
+		rest = rest[1:]
+		before, _, ok := strings.Cut(rest, string(quote))
+		if !ok {
+			return ""
+		}
+		return before
+	}
+
+	// Unquoted value; stop at space or '>':
+	end := len(rest)
+	if i := strings.IndexAny(rest, " >"); i != -1 {
+		end = i
+	}
+	return rest[:end]
+}
+
+func stripHTMLTags(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	inTag := false
+	for _, r := range s {
+		switch {
+		case r == '<':
+			inTag = true
+		case r == '>':
+			inTag = false
+		case !inTag:
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func formatLinksHTML(links []MeetingLink) string {
+	var b strings.Builder
+	builtAny := false
+
+	for _, l := range links {
+		if strings.TrimSpace(string(l.HTML)) != "" {
+			if !builtAny {
+				b.WriteString("<h4>Links</h4><ul>")
+				builtAny = true
+			}
+			b.WriteString("<li>")
+			b.WriteString(string(l.HTML))
+			b.WriteString("</li>")
+			continue
+		}
+
+		label := strings.TrimSpace(l.Label)
+		urlStr := safeHTTPURL(strings.TrimSpace(l.URL))
+		if label == "" || urlStr == "" {
+			continue
+		}
+		if !builtAny {
+			b.WriteString("<h4>Links</h4><ul>")
+			builtAny = true
+		}
+		b.WriteString("<li><a href=\"")
+		b.WriteString(template.HTMLEscapeString(urlStr))
+		b.WriteString("\">")
+		b.WriteString(template.HTMLEscapeString(label))
+		b.WriteString("</a></li>")
+	}
+
+	if builtAny {
+		b.WriteString("</ul>")
+	}
+	return b.String()
 }
 
 // AddLeaveEvent adds a leave/absence event to the calendar.
@@ -179,9 +347,9 @@ func (g *ICalGenerator) SerializeBytes() ([]byte, error) {
 	return []byte(content), nil
 }
 
-// GenerateICalFromAssignments creates a complete iCalendar file from rota assignments.
-func GenerateICalFromAssignments(assignments []database.RotaAssignment, memberName string) (string, error) {
-	generator := NewICalGenerator()
+// GenerateICalFromAssignmentsWithOptions creates a complete iCalendar file from rota assignments.
+func GenerateICalFromAssignmentsWithOptions(assignments []database.RotaAssignment, memberName string, opts SupportCalendarOptions) (string, error) {
+	generator := NewICalGenerator().WithSupportDayLinks(opts.SupportDayLinks)
 
 	for _, assignment := range assignments {
 		if err := generator.AddAssignment(assignment, memberName); err != nil {
@@ -192,8 +360,16 @@ func GenerateICalFromAssignments(assignments []database.RotaAssignment, memberNa
 	return generator.Serialize()
 }
 
+func GenerateICalFromAssignments(assignments []database.RotaAssignment, memberName string) (string, error) {
+	return GenerateICalFromAssignmentsWithOptions(assignments, memberName, SupportCalendarOptions{})
+}
+
 // GenerateICalForToken generates iCalendar content for a subscription token.
 func GenerateICalForToken(ctx context.Context, db *database.DB, token string, lookaheadDays int) (string, error) {
+	return GenerateICalForTokenWithOptions(ctx, db, token, lookaheadDays, SupportCalendarOptions{})
+}
+
+func GenerateICalForTokenWithOptions(ctx context.Context, db *database.DB, token string, lookaheadDays int, opts SupportCalendarOptions) (string, error) {
 	// Get member by token
 	member, err := db.GetMemberByToken(ctx, token)
 	if err != nil {
@@ -207,7 +383,7 @@ func GenerateICalForToken(ctx context.Context, db *database.DB, token string, lo
 	}
 
 	// Generate iCalendar
-	icalContent, err := GenerateICalFromAssignments(assignments, member.Name)
+	icalContent, err := GenerateICalFromAssignmentsWithOptions(assignments, member.Name, opts)
 	if err != nil {
 		return "", fmt.Errorf("failed to generate iCalendar: %w", err)
 	}

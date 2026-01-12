@@ -96,6 +96,7 @@ func (h *Handler) handleMeetingsCalendarICS(w http.ResponseWriter, r *http.Reque
 	tz := os.Getenv("MEETINGS_TIMEZONE")
 	textTemplatePath := os.Getenv("MEETINGS_TEMPLATE_TEXT_PATH")
 	htmlTemplatePath := os.Getenv("MEETINGS_TEMPLATE_HTML_PATH")
+	linksRaw := os.Getenv("MEETINGS_LINKS")
 
 	icsContent, err := calendar.GenerateMeetingsICalForToken(
 		r.Context(),
@@ -105,6 +106,7 @@ func (h *Handler) handleMeetingsCalendarICS(w http.ResponseWriter, r *http.Reque
 		calendar.MeetingsOptions{
 			Timezone:         tz,
 			TeamsURL:         teamsURL,
+			Links:            calendar.ParseMeetingLinks(linksRaw),
 			TemplateTextPath: textTemplatePath,
 			TemplateHTMLPath: htmlTemplatePath,
 		},

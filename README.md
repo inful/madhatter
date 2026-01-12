@@ -167,6 +167,10 @@ MEETINGS_TEAMS_URL=https://teams.example.com/meet
 MEETINGS_TEMPLATE_TEXT_PATH=/etc/support-rota/templates/meeting_description.txt.tmpl
 MEETINGS_TEMPLATE_HTML_PATH=/etc/support-rota/templates/meeting_description.html.tmpl
 
+# Optional: extra links to include in meeting event descriptions.
+# Comma-separated; each item is either a raw HTML <a ...>...</a> or a Label|URL pair.
+MEETINGS_LINKS='Runbook|https://example.com/runbook, <a href="https://example.com/raw">Raw link</a>'
+
 # Holiday Service
 HOLIDAY_URLS=https://www.officeholidays.com/subscribe/norway,https://www.officeholidays.com/subscribe/uk
 HOLIDAY_FETCH_INTERVAL=24  # hours
@@ -195,6 +199,11 @@ Both templates receive the same data:
 
 - `MeetingName` (string)
 - `TeamsURL` (string; only `http`/`https` URLs are passed through, otherwise empty)
+- `Links` ([]struct)
+	- `Label` (string)
+	- `URL` (string)
+	- `HTML` (HTML; only set when provided as raw `<a ...>`)
+	- `Text` (string; suitable for plain-text output)
 - `Present` ([]string)
 - `Away` ([]string)
 - `Support` (string)
@@ -205,6 +214,7 @@ Notes:
 
 - The HTML template should output a HTML fragment (it will be wrapped in `<html><body>...</body></html>` in the ICS).
 - Long lines in ICS files may be folded (RFC 5545). This is normal.
+- `MEETINGS_LINKS` is treated as trusted deployment input; if you use raw HTML anchors, they are included as-is.
 
 Example text template (`meeting_description.txt.tmpl`):
 
@@ -234,6 +244,15 @@ Example HTML template (`meeting_description.html.tmpl`):
 	<li>(none)</li>
 	{{- end }}
 </ul>
+
+{{- if .Links }}
+<h4>Links</h4>
+<ul>
+	{{- range .Links }}
+	{{- if .HTML }}<li>{{.HTML}}</li>{{else}}<li><a href="{{.URL}}">{{.Label}}</a></li>{{end}}
+	{{- end }}
+</ul>
+{{- end }}
 ```
 
 ### Development Mode

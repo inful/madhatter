@@ -40,6 +40,9 @@ type MeetingsOptions struct {
 	Timezone string
 	TeamsURL string
 
+	// Links are additional resources rendered into meeting descriptions.
+	Links []MeetingLink
+
 	// TemplateTextPath and TemplateHTMLPath allow overriding meeting description templates at deployment.
 	// If empty, built-in defaults are used.
 	TemplateTextPath string
@@ -50,9 +53,57 @@ type MeetingsOptions struct {
 	SeedSalt string
 }
 
+// MeetingLink represents an extra resource link to attach to meeting events.
+// If HTML is set, it will be rendered as-is in HTML descriptions.
+// If Label+URL are set, the HTML renderer will generate an <a> tag.
+type MeetingLink struct {
+	Label string
+	URL   string
+	HTML  template.HTML
+}
+
+// ParseMeetingLinks parses a comma-separated list of links.
+// Each entry may be either:
+// - a raw HTML anchor (e.g. <a href="https://example.com">Runbook</a>)
+// - a label+URL pair separated by '|' (e.g. Runbook|https://example.com)
+// Whitespace is trimmed. Invalid entries are ignored.
+func ParseMeetingLinks(raw string) []MeetingLink {
+	parts := strings.Split(raw, ",")
+	out := make([]MeetingLink, 0, len(parts))
+	for _, p := range parts {
+		item := strings.TrimSpace(p)
+		if item == "" {
+			continue
+		}
+
+		// Raw HTML anchor (trusted deployment input).
+		if strings.Contains(item, "<") {
+			if strings.Contains(strings.ToLower(item), "<a") {
+				out = append(out, MeetingLink{HTML: template.HTML(item)}) //nolint:gosec // Trusted deployment input.
+			}
+			continue
+		}
+
+		label, rawURL, ok := strings.Cut(item, "|")
+		if !ok {
+			continue
+		}
+		label = strings.TrimSpace(label)
+		rawURL = strings.TrimSpace(rawURL)
+		if label == "" {
+			continue
+		}
+		if safe := safeHTTPURL(rawURL); safe != "" {
+			out = append(out, MeetingLink{Label: label, URL: safe})
+		}
+	}
+	return out
+}
+
 type meetingDescriptionData struct {
 	MeetingName string
 	TeamsURL    string
+	Links       []meetingLinkTemplateData
 	Present     []string
 	Away        []string
 	Support     string
@@ -60,9 +111,22 @@ type meetingDescriptionData struct {
 	Agenda      []string
 }
 
+type meetingLinkTemplateData struct {
+	Label string
+	URL   string
+	HTML  template.HTML
+	Text  string
+}
+
 var (
 	defaultMeetingDescriptionTextTemplate = texttemplate.Must(texttemplate.New("meetingText").Parse(
 		`{{.MeetingName}}
+
+{{- if .Links }}
+Links:
+{{- range .Links }}- {{.Text}}
+{{- end }}
+{{ end }}
 
 Away:
 {{- if .Away }}
@@ -85,6 +149,7 @@ Agenda:
 
 	defaultMeetingDescriptionHTMLTemplate = template.Must(template.New("meetingHTML").Parse(
 		`<h3>{{.MeetingName}}</h3>{{if .TeamsURL}}<p><a href="{{.TeamsURL}}">Join Teams meeting</a></p>{{end}}` +
+			`{{if .Links}}<h4>Links</h4><ul>{{range .Links}}{{if .HTML}}<li>{{.HTML}}</li>{{else}}<li><a href="{{.URL}}">{{.Label}}</a></li>{{end}}{{end}}</ul>{{end}}` +
 			`<h4>Away</h4><ul>{{if .Away}}{{range .Away}}<li>{{.}}</li>{{end}}{{else}}<li>(none)</li>{{end}}</ul>` +
 			`<h4>Present</h4><ul>{{if .Shuffle}}{{range .Shuffle}}<li>{{.}}</li>{{end}}{{else}}<li>(no attendees)</li>{{end}}</ul>` +
 			`<h4>Agenda</h4><ul>{{range .Agenda}}<li>{{.}}</li>{{end}}</ul>`,
@@ -408,9 +473,24 @@ func buildMeetingDescriptionData(
 	}
 	order := shuffledOrder(present, opts.SeedSalt+"|"+dateStr+"|"+seedKey)
 
+	linkData := make([]meetingLinkTemplateData, 0, len(opts.Links))
+	for _, l := range opts.Links {
+		if strings.TrimSpace(string(l.HTML)) != "" {
+			linkData = append(linkData, meetingLinkTemplateData{HTML: l.HTML, Text: "(HTML link)"})
+			continue
+		}
+		label := strings.TrimSpace(l.Label)
+		linkURL := safeHTTPURL(strings.TrimSpace(l.URL))
+		if label == "" || linkURL == "" {
+			continue
+		}
+		linkData = append(linkData, meetingLinkTemplateData{Label: label, URL: linkURL, Text: label + ": " + linkURL})
+	}
+
 	return meetingDescriptionData{
 		MeetingName: meetingName,
 		TeamsURL:    safeHTTPURL(opts.TeamsURL),
+		Links:       linkData,
 		Present:     memberNames(present),
 		Away:        memberNames(away),
 		Support:     supportLine(supportName, supportIsCover),

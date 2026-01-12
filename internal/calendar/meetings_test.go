@@ -154,6 +154,7 @@ func TestGenerateMeetingsICalForToken_AllowsTemplateOverrides(t *testing.T) {
 		MeetingsOptions{
 			Timezone:         "UTC",
 			SeedSalt:         "test-salt",
+			Links:            ParseMeetingLinks(`Runbook|https://example.com/runbook, <a href="https://example.com/raw">Raw</a>`),
 			TemplateTextPath: textPath,
 			TemplateHTMLPath: htmlPath,
 		},
@@ -165,4 +166,43 @@ func TestGenerateMeetingsICalForToken_AllowsTemplateOverrides(t *testing.T) {
 	require.Contains(t, unfolded, "CUSTOM TEXT: Project shuffle")
 	require.Contains(t, unfolded, "X-ALT-DESC;FMTTYPE=text/html")
 	require.Contains(t, unfolded, "CUSTOM HTML: Project shuffle")
+}
+
+func TestGenerateMeetingsICalForToken_DefaultTemplatesIncludeLinks(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	require.True(t, ok)
+	// internal/calendar -> internal -> repo root.
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	t.Setenv("MIGRATIONS_PATH", filepath.Join(repoRoot, "migrations"))
+
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	db, err := database.New(filepath.Join(tmpDir, "test.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	memberID, err := db.AddTeamMember(ctx, "Token Owner", "token@example.com")
+	require.NoError(t, err)
+	token, err := db.CreateCalendarSubscription(ctx, memberID)
+	require.NoError(t, err)
+
+	from := time.Date(2026, 1, 12, 12, 0, 0, 0, time.UTC) // Monday
+	ical, err := GenerateMeetingsICalForTokenFrom(
+		ctx,
+		db,
+		token,
+		from,
+		1,
+		MeetingsOptions{
+			Timezone: "UTC",
+			SeedSalt: "test-salt",
+			Links:    ParseMeetingLinks(`Runbook|https://example.com/runbook, <a href="https://example.com/raw">Raw</a>`),
+		},
+		func(t time.Time) bool { return t.Weekday() != time.Saturday && t.Weekday() != time.Sunday },
+	)
+	require.NoError(t, err)
+
+	unfolded := unfoldICalLines(ical)
+	require.Contains(t, unfolded, "https://example.com/runbook")
+	require.Contains(t, unfolded, "https://example.com/raw")
 }

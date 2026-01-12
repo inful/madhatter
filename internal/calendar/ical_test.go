@@ -40,6 +40,7 @@ func TestICalGenerator_AddAssignment(t *testing.T) {
 	assert.Contains(t, icalStr, "DTSTART;VALUE=DATE:20260115")
 	assert.Contains(t, icalStr, "DTEND;VALUE=DATE:20260116")
 	assert.Contains(t, icalStr, "TRANSP:TRANSPARENT")
+	assert.Contains(t, icalStr, "X-ALT-DESC;FMTTYPE=text/html")
 }
 
 func TestICalGenerator_AddCoverAssignment(t *testing.T) {

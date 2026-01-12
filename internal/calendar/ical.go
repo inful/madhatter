@@ -94,6 +94,7 @@ func (g *ICalGenerator) AddAssignment(assignment database.RotaAssignment, member
 		}
 	}
 	event.SetDescription(description)
+	setAltDescHTML(event, htmlHeading(summary)+htmlParagraph(description))
 
 	// Do not mark as busy.
 	event.SetTimeTransparency(ics.TransparencyTransparent)
@@ -123,6 +124,10 @@ func (g *ICalGenerator) AddLeaveEvent(memberName string, leaveType string, start
 
 	// Set description
 	event.SetDescription(fmt.Sprintf("%s leave for %s", titleCase(leaveType), memberName))
+	setAltDescHTML(
+		event,
+		htmlHeading(fmt.Sprintf("%s - %s", memberName, titleCase(leaveType)))+htmlParagraph(fmt.Sprintf("%s leave for %s", titleCase(leaveType), memberName)),
+	)
 
 	// Set status to tentative for leave
 	event.SetStatus(ics.ObjectStatusTentative)
@@ -146,6 +151,10 @@ func (g *ICalGenerator) AddHoliday(name string, date time.Time) error {
 
 	// Set description
 	event.SetDescription("Support rota is not scheduled on this day")
+	setAltDescHTML(
+		event,
+		htmlHeading(fmt.Sprintf("Office Closed - %s", name))+htmlParagraph("Support rota is not scheduled on this day"),
+	)
 
 	// Set status to canceled
 	event.SetStatus(ics.ObjectStatusCancelled)

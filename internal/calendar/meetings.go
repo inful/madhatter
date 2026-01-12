@@ -135,6 +135,12 @@ func addMorningMeetingEvent(ctx context.Context, db *database.DB, g *ICalGenerat
 		return err
 	}
 	event.SetDescription(description)
+
+	htmlDesc, err := buildMeetingDescriptionHTML(ctx, db, dateStr, "Morning meeting", true, opts)
+	if err != nil {
+		return err
+	}
+	setAltDescHTML(event, htmlDesc)
 	return nil
 }
 
@@ -162,7 +168,105 @@ func addProjectMeetingEvent(ctx context.Context, db *database.DB, g *ICalGenerat
 		return err
 	}
 	event.SetDescription(description)
+
+	htmlDesc, err := buildMeetingDescriptionHTML(ctx, db, dateStr, "Project meeting", false, opts)
+	if err != nil {
+		return err
+	}
+	setAltDescHTML(event, htmlDesc)
 	return nil
+}
+
+func buildMeetingDescriptionHTML(
+	ctx context.Context,
+	db *database.DB,
+	dateStr string,
+	meetingName string,
+	includeJazzHands bool,
+	opts MeetingsOptions,
+) (string, error) {
+	present, away, err := getPresenceForDate(ctx, db, dateStr)
+	if err != nil {
+		return "", err
+	}
+
+	supportName, supportIsCover, err := getSupportForDate(ctx, db, dateStr)
+	if err != nil {
+		return "", err
+	}
+
+	order := shuffledOrder(present, opts.SeedSalt+"|"+dateStr+"|"+meetingName)
+
+	return renderMeetingHTML(
+		meetingName,
+		opts.TeamsURL,
+		memberNames(present),
+		memberNames(away),
+		supportLine(supportName, supportIsCover),
+		shuffleOrderLines(order, supportName),
+		agendaLines(includeJazzHands),
+	), nil
+}
+
+func memberNames(members []database.TeamMember) []string {
+	out := make([]string, 0, len(members))
+	for _, m := range members {
+		out = append(out, m.Name)
+	}
+	return out
+}
+
+func supportLine(supportName string, supportIsCover bool) string {
+	if supportName == "" {
+		return "Unassigned"
+	}
+	line := supportName
+	if supportIsCover {
+		line += " (COVER)"
+	}
+	return line
+}
+
+func shuffleOrderLines(order []database.TeamMember, supportName string) []string {
+	out := make([]string, 0, len(order))
+	for i, m := range order {
+		name := m.Name
+		if supportName != "" && strings.EqualFold(m.Name, supportName) {
+			name += " (Support)"
+		}
+		out = append(out, fmt.Sprintf("%d. %s", i+1, name))
+	}
+	return out
+}
+
+func agendaLines(includeJazzHands bool) []string {
+	agenda := []string{"Shuffle: what you're doing today."}
+	if includeJazzHands {
+		agenda = append(agenda, "JazzHands: say anything.")
+	}
+	return agenda
+}
+
+func renderMeetingHTML(
+	meetingName string,
+	teamsURL string,
+	present []string,
+	away []string,
+	support string,
+	shuffle []string,
+	agenda []string,
+) string {
+	var b strings.Builder
+	b.WriteString(htmlHeading(meetingName))
+	if link := htmlLink(teamsURL, "Join Teams meeting"); link != "" {
+		b.WriteString(link)
+	}
+	b.WriteString(htmlList("Present", present))
+	b.WriteString(htmlList("Away", away))
+	b.WriteString(htmlList("Support", []string{support}))
+	b.WriteString(htmlList("Shuffle order", shuffle))
+	b.WriteString(htmlList("Agenda", agenda))
+	return b.String()
 }
 
 func buildMeetingDescription(

@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,6 +12,16 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func unfoldICalLines(s string) string {
+	// RFC 5545 line unfolding: remove CRLF + (SP / HTAB).
+	return strings.NewReplacer(
+		"\r\n ", "",
+		"\n ", "",
+		"\r\n\t", "",
+		"\n\t", "",
+	).Replace(s)
+}
 
 func TestGenerateMeetingsICalForToken_IncludesDeterministicShuffle(t *testing.T) {
 	_, filename, _, ok := runtime.Caller(0)
@@ -45,7 +56,7 @@ func TestGenerateMeetingsICalForToken_IncludesDeterministicShuffle(t *testing.T)
 		token,
 		from,
 		7,
-		MeetingsOptions{Timezone: "UTC", SeedSalt: "test-salt"},
+		MeetingsOptions{Timezone: "UTC", SeedSalt: "test-salt", TeamsURL: "https://teams.example.com/meet"},
 		func(t time.Time) bool { return t.Weekday() != time.Saturday && t.Weekday() != time.Sunday },
 	)
 	require.NoError(t, err)
@@ -56,7 +67,7 @@ func TestGenerateMeetingsICalForToken_IncludesDeterministicShuffle(t *testing.T)
 		token,
 		from,
 		7,
-		MeetingsOptions{Timezone: "UTC", SeedSalt: "test-salt"},
+		MeetingsOptions{Timezone: "UTC", SeedSalt: "test-salt", TeamsURL: "https://teams.example.com/meet"},
 		func(t time.Time) bool { return t.Weekday() != time.Saturday && t.Weekday() != time.Sunday },
 	)
 	require.NoError(t, err)
@@ -66,6 +77,8 @@ func TestGenerateMeetingsICalForToken_IncludesDeterministicShuffle(t *testing.T)
 	require.Contains(t, ics1, "SUMMARY:Morning meeting")
 	require.Contains(t, ics1, "Shuffle order")
 	require.Contains(t, ics1, "JazzHands")
+	require.Contains(t, ics1, "X-ALT-DESC;FMTTYPE=text/html")
+	require.Contains(t, unfoldICalLines(ics1), "<a href=\"https://teams.example.com/meet\"")
 }
 
 func TestGenerateMeetingsICalForToken_UsesTZIDForEventTimes(t *testing.T) {

@@ -135,8 +135,8 @@ func (p *GitLabProvider) checkGroupMembership(ctx context.Context, client *http.
 	}
 
 	// GitLab API endpoint to get user's groups
-	// URL-encode the group path for the API call
-	groupsURL := fmt.Sprintf("%s/groups?search=%s", baseURL, groupPath)
+	// This returns all groups the user is a member of
+	groupsURL := fmt.Sprintf("%s/groups?min_access_level=10", baseURL)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, groupsURL, nil)
 	if err != nil {
@@ -171,6 +171,7 @@ func (p *GitLabProvider) checkGroupMembership(ctx context.Context, client *http.
 	}
 
 	// Check if any of the returned groups match the allowed group path
+	// Use exact match for security
 	for i := range groups {
 		if groups[i].FullPath == groupPath {
 			return true, nil

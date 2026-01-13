@@ -124,6 +124,11 @@ func LoadConfigFromEnv() *AuthConfig {
 
 	// Load GitLab config from env
 	if clientID := os.Getenv("GITLAB_CLIENT_ID"); clientID != "" {
+		// Default scope is read_user, but if group restriction is used, read_api is also needed
+		defaultScope := "read_user"
+		if os.Getenv("GITLAB_ALLOWED_GROUP") != "" {
+			defaultScope = "read_api read_user"
+		}
 		config.Providers["gitlab"] = ProviderConfig{
 			ClientID:     clientID,
 			ClientSecret: os.Getenv("GITLAB_CLIENT_SECRET"),
@@ -131,7 +136,7 @@ func LoadConfigFromEnv() *AuthConfig {
 			AuthURL:      getEnvOrDefault("GITLAB_AUTH_URL", "https://gitlab.com/oauth/authorize"),
 			TokenURL:     getEnvOrDefault("GITLAB_TOKEN_URL", "https://gitlab.com/oauth/token"),
 			UserInfoURL:  getEnvOrDefault("GITLAB_USERINFO_URL", "https://gitlab.com/api/v4/user"),
-			Scope:        getEnvOrDefault("GITLAB_SCOPE", "read_user"),
+			Scope:        getEnvOrDefault("GITLAB_SCOPE", defaultScope),
 			AllowedGroup: os.Getenv("GITLAB_ALLOWED_GROUP"),
 		}
 	}
@@ -167,7 +172,7 @@ func (c *AuthConfig) Validate() error {
 				"  - GITLAB_AUTH_URL (default: https://gitlab.com/oauth/authorize)\n" +
 				"  - GITLAB_TOKEN_URL (default: https://gitlab.com/oauth/token)\n" +
 				"  - GITLAB_USERINFO_URL (default: https://gitlab.com/api/v4/user)\n" +
-				"  - GITLAB_SCOPE (default: read_user)\n" +
+				"  - GITLAB_SCOPE (default: read_user, or read_api read_user if GITLAB_ALLOWED_GROUP is set)\n" +
 				"  - GITLAB_ALLOWED_GROUP (optional: restrict to group members, e.g., myorg/mygroup)\n\n" +
 				"See AUTH_SETUP.md for detailed configuration instructions",
 		)
@@ -210,7 +215,7 @@ providers:
     auth_url: "https://gitlab.com/oauth/authorize"
     token_url: "https://gitlab.com/oauth/token"
     user_info_url: "https://gitlab.com/api/v4/user"
-    scope: "read_user"
+    scope: "read_api read_user"  # read_api required for group membership validation
     allowed_group: ""  # Optional: Restrict authentication to members of a specific GitLab group (e.g., "myorg/mygroup")
 
 sessions:

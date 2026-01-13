@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"golang.org/x/oauth2"
 )
@@ -20,6 +21,8 @@ type GitLabProvider struct {
 
 // NewGitLabProvider creates a new GitLab OAuth provider.
 func NewGitLabProvider(config ProviderConfig) *GitLabProvider {
+	// Split space-separated scopes into array
+	scopes := strings.Fields(config.Scope)
 	return &GitLabProvider{
 		config: config,
 		oauth: &oauth2.Config{
@@ -30,7 +33,7 @@ func NewGitLabProvider(config ProviderConfig) *GitLabProvider {
 				AuthURL:  config.AuthURL,
 				TokenURL: config.TokenURL,
 			},
-			Scopes: []string{config.Scope},
+			Scopes: scopes,
 		},
 	}
 }
@@ -98,6 +101,17 @@ func (p *GitLabProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) (
 		return nil, fmt.Errorf("%w: %w", ErrUserInfo, err)
 	}
 
+	// Check group membership if AllowedGroup is configured
+	if p.config.AllowedGroup != "" {
+		isMember, err := p.checkGroupMembership(ctx, client, p.config.AllowedGroup)
+		if err != nil {
+			return nil, fmt.Errorf("%w: failed to check group membership: %w", ErrUserInfo, err)
+		}
+		if !isMember {
+			return nil, fmt.Errorf("%w: group %q", ErrGroupMembershipDenied, p.config.AllowedGroup)
+		}
+	}
+
 	return &UserInfo{
 		ID:        strconv.FormatInt(gitlabUser.ID, 10),
 		Email:     gitlabUser.Email,
@@ -110,4 +124,62 @@ func (p *GitLabProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) (
 // GetOAuthConfig returns the OAuth2 configuration.
 func (p *GitLabProvider) GetOAuthConfig() *oauth2.Config {
 	return p.oauth
+}
+
+// checkGroupMembership verifies if a user is a member of the specified GitLab group.
+// The groupPath should be in the format "group" or "parent/subgroup".
+func (p *GitLabProvider) checkGroupMembership(ctx context.Context, client *http.Client, groupPath string) (bool, error) {
+	// Construct the base URL from the user info URL.
+	// Typically "https://gitlab.com/api/v4/user".
+	// We need "https://gitlab.com/api/v4".
+	baseURL := p.config.UserInfoURL
+	if idx := len(baseURL) - len("/user"); idx > 0 && baseURL[idx:] == "/user" {
+		baseURL = baseURL[:idx]
+	}
+
+	// GitLab API endpoint to get user's groups
+	// This returns all groups the user is a member of
+	groupsURL := fmt.Sprintf("%s/groups?min_access_level=10", baseURL)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, groupsURL, nil)
+	if err != nil {
+		return false, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("failed to fetch groups: %w", err)
+	}
+	defer func() {
+		_ = resp.Body.Close()
+	}()
+
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("API returned status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return false, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	// Parse the groups response
+	var groups []struct {
+		ID       int64  `json:"id"`
+		FullPath string `json:"full_path"`
+	}
+
+	if err := json.Unmarshal(body, &groups); err != nil {
+		return false, fmt.Errorf("failed to parse groups: %w", err)
+	}
+
+	// Check if any of the returned groups match the allowed group path
+	// Use exact match for security
+	for i := range groups {
+		if groups[i].FullPath == groupPath {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }

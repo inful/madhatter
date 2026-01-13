@@ -18,6 +18,7 @@ A comprehensive support duty management system with automatic scheduling, leave 
 
 ### Authentication & Security
 - **OAuth2 authentication**: Support for Forgejo and GitLab providers
+- **Group-based access control**: Optional GitLab group membership validation
 - **Session management**: Secure token hashing (SHA-256) and encryption (AES-256-GCM)
 - **Role-based access**: Admin and Regular user roles
 - **Development mode**: Fake OAuth provider for local testing
@@ -194,6 +195,7 @@ GITLAB_AUTH_URL=https://gitlab.com/oauth/authorize
 GITLAB_TOKEN_URL=https://gitlab.com/oauth/token
 GITLAB_USERINFO_URL=https://gitlab.com/api/v4/user
 GITLAB_SCOPE=read_user
+GITLAB_ALLOWED_GROUP=myorg/myteam  # Optional: restrict to group members
 ```
 
 ### Meeting template overrides

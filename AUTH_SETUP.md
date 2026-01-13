@@ -68,9 +68,54 @@ oauth:
 4. Configure:
    - **Name**: MadHatter Rota
    - **Redirect URI**: `http://your-domain:8080/auth/callback/gitlab`
-   - **Scopes**: `read_api`, `read_user`
+   - **Scopes**: `read_api`, `read_user` (both required when using group restrictions)
 5. Click **Save application**
 6. Copy the **Application ID** and **Secret** to your config
+
+#### Restricting Access to GitLab Group Members
+
+You can optionally restrict authentication to members of a specific GitLab group or subgroup. This is useful when you want to ensure only authorized team members can access the application.
+
+**Required OAuth Scopes**:
+- `read_user` - To read user profile information
+- `read_api` - Required for group membership validation (automatically included when `allowed_group` is set)
+
+**Configuration via Environment Variables**:
+```bash
+export GITLAB_CLIENT_ID="your-application-id"
+export GITLAB_CLIENT_SECRET="your-secret"
+export GITLAB_REDIRECT_URL="http://your-domain:8080/auth/callback?provider=gitlab"
+export GITLAB_ALLOWED_GROUP="myorg/myteam"  # Optional: restrict to group members
+# Note: When GITLAB_ALLOWED_GROUP is set, scope automatically includes "read_api read_user"
+```
+
+**Configuration via YAML**:
+```yaml
+oauth:
+  gitlab:
+    enabled: true
+    client_id: "your-gitlab-client-id"
+    client_secret: "your-gitlab-client-secret"
+    base_url: "https://gitlab.com"
+    scope: "read_api read_user"  # Required when using group restrictions
+    allowed_group: "myorg/myteam"  # Optional: restrict to group members
+```
+
+**Group Path Format**:
+- Top-level group: `myorg`
+- Subgroup: `myorg/myteam`
+- Nested subgroup: `myorg/division/team`
+
+**Behavior**:
+- If `allowed_group` is **not set** (empty string): All users who can authenticate with GitLab are allowed
+- If `allowed_group` **is set**: Only users who are members of the specified group can authenticate
+- Users not in the group will see an authentication error message
+
+**Important Notes**:
+- The user must be a **direct member** of the specified group (minimum access level: Guest/10)
+- Group membership is checked at authentication time via the GitLab API
+- The OAuth application must have both `read_user` and `read_api` scopes when using group restrictions
+- Group path is case-sensitive and must exactly match the group's full path in GitLab
 
 ## Database Setup
 
@@ -246,7 +291,9 @@ The system implements several security measures to protect sensitive data:
 
 ### "User not authorized" Error
 - Check if your user is in the allowed organizations/groups
-- Verify the OAuth2 application has correct scopes
+- Verify the OAuth2 application has correct scopes (for GitLab: `read_api`, `read_user`)
+- For GitLab group restrictions: Ensure the user is a direct member of the specified group
+- Verify the `allowed_group` path matches the group's full path in GitLab (case-sensitive)
 
 ### Session Issues
 - Clear browser cookies and try again

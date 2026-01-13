@@ -12,13 +12,18 @@ import (
 	"golang.org/x/oauth2"
 )
 
+const (
+	testAPIV4User   = "/api/v4/user"
+	testAPIV4Groups = "/api/v4/groups"
+)
+
 // TestGitLabProvider_GetUserInfo_WithoutGroupRestriction tests user info retrieval without group validation.
 func TestGitLabProvider_GetUserInfo_WithoutGroupRestriction(t *testing.T) {
 	// Setup mock server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/v4/user" {
+		if r.URL.Path == testAPIV4User {
 			w.Header().Set("Content-Type", "application/json")
-			user := map[string]interface{}{
+			user := map[string]any{
 				"id":         int64(123),
 				"username":   "testuser",
 				"name":       "Test User",
@@ -39,7 +44,7 @@ func TestGitLabProvider_GetUserInfo_WithoutGroupRestriction(t *testing.T) {
 		RedirectURL:  "http://localhost/callback",
 		AuthURL:      server.URL + "/oauth/authorize",
 		TokenURL:     server.URL + "/oauth/token",
-		UserInfoURL:  server.URL + "/api/v4/user",
+		UserInfoURL:  server.URL + testAPIV4User,
 		Scope:        "read_user",
 		AllowedGroup: "", // No group restriction
 	}
@@ -63,9 +68,10 @@ func TestGitLabProvider_GetUserInfo_WithoutGroupRestriction(t *testing.T) {
 func TestGitLabProvider_GetUserInfo_WithGroupRestriction_Success(t *testing.T) {
 	// Setup mock server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/v4/user" {
+		switch r.URL.Path {
+		case testAPIV4User:
 			w.Header().Set("Content-Type", "application/json")
-			user := map[string]interface{}{
+			user := map[string]any{
 				"id":         int64(123),
 				"username":   "testuser",
 				"name":       "Test User",
@@ -75,10 +81,10 @@ func TestGitLabProvider_GetUserInfo_WithGroupRestriction_Success(t *testing.T) {
 			if err := json.NewEncoder(w).Encode(user); err != nil {
 				t.Fatalf("Failed to encode response: %v", err)
 			}
-		} else if r.URL.Path == "/api/v4/groups" {
+		case testAPIV4Groups:
 			// Mock groups endpoint - user is member of allowed group
 			w.Header().Set("Content-Type", "application/json")
-			groups := []map[string]interface{}{
+			groups := []map[string]any{
 				{
 					"id":        int64(456),
 					"full_path": "myorg/myteam",
@@ -98,7 +104,7 @@ func TestGitLabProvider_GetUserInfo_WithGroupRestriction_Success(t *testing.T) {
 		RedirectURL:  "http://localhost/callback",
 		AuthURL:      server.URL + "/oauth/authorize",
 		TokenURL:     server.URL + "/oauth/token",
-		UserInfoURL:  server.URL + "/api/v4/user",
+		UserInfoURL:  server.URL + testAPIV4User,
 		Scope:        "read_user",
 		AllowedGroup: "myorg/myteam",
 	}
@@ -120,9 +126,10 @@ func TestGitLabProvider_GetUserInfo_WithGroupRestriction_Success(t *testing.T) {
 func TestGitLabProvider_GetUserInfo_WithGroupRestriction_Denied(t *testing.T) {
 	// Setup mock server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/v4/user" {
+		switch r.URL.Path {
+		case testAPIV4User:
 			w.Header().Set("Content-Type", "application/json")
-			user := map[string]interface{}{
+			user := map[string]any{
 				"id":         int64(123),
 				"username":   "testuser",
 				"name":       "Test User",
@@ -132,10 +139,10 @@ func TestGitLabProvider_GetUserInfo_WithGroupRestriction_Denied(t *testing.T) {
 			if err := json.NewEncoder(w).Encode(user); err != nil {
 				t.Fatalf("Failed to encode response: %v", err)
 			}
-		} else if r.URL.Path == "/api/v4/groups" {
+		case testAPIV4Groups:
 			// Mock groups endpoint - user is NOT member of allowed group
 			w.Header().Set("Content-Type", "application/json")
-			groups := []map[string]interface{}{
+			groups := []map[string]any{
 				{
 					"id":        int64(789),
 					"full_path": "otherorg/otherteam",
@@ -155,7 +162,7 @@ func TestGitLabProvider_GetUserInfo_WithGroupRestriction_Denied(t *testing.T) {
 		RedirectURL:  "http://localhost/callback",
 		AuthURL:      server.URL + "/oauth/authorize",
 		TokenURL:     server.URL + "/oauth/token",
-		UserInfoURL:  server.URL + "/api/v4/user",
+		UserInfoURL:  server.URL + testAPIV4User,
 		Scope:        "read_user",
 		AllowedGroup: "myorg/myteam",
 	}
@@ -167,9 +174,9 @@ func TestGitLabProvider_GetUserInfo_WithGroupRestriction_Denied(t *testing.T) {
 	userInfo, err := provider.GetUserInfo(ctx, token)
 
 	// Assert
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, userInfo)
-	assert.ErrorIs(t, err, ErrGroupMembershipDenied)
+	require.ErrorIs(t, err, ErrGroupMembershipDenied)
 	assert.Contains(t, err.Error(), "myorg/myteam")
 }
 
@@ -177,9 +184,10 @@ func TestGitLabProvider_GetUserInfo_WithGroupRestriction_Denied(t *testing.T) {
 func TestGitLabProvider_GetUserInfo_WithGroupRestriction_EmptyGroups(t *testing.T) {
 	// Setup mock server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/v4/user" {
+		switch r.URL.Path {
+		case testAPIV4User:
 			w.Header().Set("Content-Type", "application/json")
-			user := map[string]interface{}{
+			user := map[string]any{
 				"id":         int64(123),
 				"username":   "testuser",
 				"name":       "Test User",
@@ -189,10 +197,10 @@ func TestGitLabProvider_GetUserInfo_WithGroupRestriction_EmptyGroups(t *testing.
 			if err := json.NewEncoder(w).Encode(user); err != nil {
 				t.Fatalf("Failed to encode response: %v", err)
 			}
-		} else if r.URL.Path == "/api/v4/groups" {
+		case testAPIV4Groups:
 			// Mock groups endpoint - user has no groups
 			w.Header().Set("Content-Type", "application/json")
-			groups := []map[string]interface{}{}
+			groups := []map[string]any{}
 			if err := json.NewEncoder(w).Encode(groups); err != nil {
 				t.Fatalf("Failed to encode response: %v", err)
 			}
@@ -207,7 +215,7 @@ func TestGitLabProvider_GetUserInfo_WithGroupRestriction_EmptyGroups(t *testing.
 		RedirectURL:  "http://localhost/callback",
 		AuthURL:      server.URL + "/oauth/authorize",
 		TokenURL:     server.URL + "/oauth/token",
-		UserInfoURL:  server.URL + "/api/v4/user",
+		UserInfoURL:  server.URL + testAPIV4User,
 		Scope:        "read_user",
 		AllowedGroup: "myorg/myteam",
 	}
@@ -219,9 +227,9 @@ func TestGitLabProvider_GetUserInfo_WithGroupRestriction_EmptyGroups(t *testing.
 	userInfo, err := provider.GetUserInfo(ctx, token)
 
 	// Assert
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Nil(t, userInfo)
-	assert.ErrorIs(t, err, ErrGroupMembershipDenied)
+	require.ErrorIs(t, err, ErrGroupMembershipDenied)
 }
 
 // TestGitLabProvider_checkGroupMembership tests the group membership checking logic directly.
@@ -229,13 +237,13 @@ func TestGitLabProvider_checkGroupMembership(t *testing.T) {
 	tests := []struct {
 		name           string
 		allowedGroup   string
-		returnedGroups []map[string]interface{}
+		returnedGroups []map[string]any
 		expectedResult bool
 	}{
 		{
 			name:         "User is member of allowed group",
 			allowedGroup: "myorg/myteam",
-			returnedGroups: []map[string]interface{}{
+			returnedGroups: []map[string]any{
 				{"id": int64(1), "full_path": "myorg/myteam"},
 				{"id": int64(2), "full_path": "otherorg/team"},
 			},
@@ -244,7 +252,7 @@ func TestGitLabProvider_checkGroupMembership(t *testing.T) {
 		{
 			name:         "User is not member of allowed group",
 			allowedGroup: "myorg/myteam",
-			returnedGroups: []map[string]interface{}{
+			returnedGroups: []map[string]any{
 				{"id": int64(1), "full_path": "otherorg/team"},
 			},
 			expectedResult: false,
@@ -252,7 +260,7 @@ func TestGitLabProvider_checkGroupMembership(t *testing.T) {
 		{
 			name:           "User has no groups",
 			allowedGroup:   "myorg/myteam",
-			returnedGroups: []map[string]interface{}{},
+			returnedGroups: []map[string]any{},
 			expectedResult: false,
 		},
 	}
@@ -261,7 +269,7 @@ func TestGitLabProvider_checkGroupMembership(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Setup mock server
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Path == "/api/v4/groups" {
+				if r.URL.Path == testAPIV4Groups {
 					w.Header().Set("Content-Type", "application/json")
 					if err := json.NewEncoder(w).Encode(tt.returnedGroups); err != nil {
 						t.Fatalf("Failed to encode response: %v", err)
@@ -274,7 +282,7 @@ func TestGitLabProvider_checkGroupMembership(t *testing.T) {
 			config := ProviderConfig{
 				ClientID:     "test-client",
 				ClientSecret: "test-secret",
-				UserInfoURL:  server.URL + "/api/v4/user",
+				UserInfoURL:  server.URL + testAPIV4User,
 				AllowedGroup: tt.allowedGroup,
 			}
 			provider := NewGitLabProvider(config)
@@ -283,7 +291,7 @@ func TestGitLabProvider_checkGroupMembership(t *testing.T) {
 			ctx := context.Background()
 			token := &oauth2.Token{AccessToken: "test-token"}
 			client := provider.oauth.Client(ctx, token)
-			isMember, err := provider.checkGroupMembership(ctx, client, 123, tt.allowedGroup)
+			isMember, err := provider.checkGroupMembership(ctx, client, tt.allowedGroup)
 
 			// Assert
 			require.NoError(t, err)

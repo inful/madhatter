@@ -103,7 +103,7 @@ func (p *GitLabProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) (
 
 	// Check group membership if AllowedGroup is configured
 	if p.config.AllowedGroup != "" {
-		isMember, err := p.checkGroupMembership(ctx, client, gitlabUser.ID, p.config.AllowedGroup)
+		isMember, err := p.checkGroupMembership(ctx, client, p.config.AllowedGroup)
 		if err != nil {
 			return nil, fmt.Errorf("%w: failed to check group membership: %w", ErrUserInfo, err)
 		}
@@ -128,10 +128,10 @@ func (p *GitLabProvider) GetOAuthConfig() *oauth2.Config {
 
 // checkGroupMembership verifies if a user is a member of the specified GitLab group.
 // The groupPath should be in the format "group" or "parent/subgroup".
-func (p *GitLabProvider) checkGroupMembership(ctx context.Context, client *http.Client, userID int64, groupPath string) (bool, error) {
-	// Construct the base URL from the UserInfoURL
-	// UserInfoURL is typically "https://gitlab.com/api/v4/user"
-	// We need "https://gitlab.com/api/v4"
+func (p *GitLabProvider) checkGroupMembership(ctx context.Context, client *http.Client, groupPath string) (bool, error) {
+	// Construct the base URL from the user info URL.
+	// Typically "https://gitlab.com/api/v4/user".
+	// We need "https://gitlab.com/api/v4".
 	baseURL := p.config.UserInfoURL
 	if idx := len(baseURL) - len("/user"); idx > 0 && baseURL[idx:] == "/user" {
 		baseURL = baseURL[:idx]

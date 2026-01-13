@@ -178,7 +178,8 @@ func (c *AuthConfig) Validate() error {
 		)
 	}
 
-	for name, provider := range c.Providers {
+	for name := range c.Providers {
+		provider := c.Providers[name]
 		if provider.ClientID == "" {
 			return fmt.Errorf("provider %s: client_id is required", name)
 		}

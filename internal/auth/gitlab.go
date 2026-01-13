@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"golang.org/x/oauth2"
 )
@@ -20,6 +21,8 @@ type GitLabProvider struct {
 
 // NewGitLabProvider creates a new GitLab OAuth provider.
 func NewGitLabProvider(config ProviderConfig) *GitLabProvider {
+	// Split space-separated scopes into array
+	scopes := strings.Fields(config.Scope)
 	return &GitLabProvider{
 		config: config,
 		oauth: &oauth2.Config{
@@ -30,7 +33,7 @@ func NewGitLabProvider(config ProviderConfig) *GitLabProvider {
 				AuthURL:  config.AuthURL,
 				TokenURL: config.TokenURL,
 			},
-			Scopes: []string{config.Scope},
+			Scopes: scopes,
 		},
 	}
 }

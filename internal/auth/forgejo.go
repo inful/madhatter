@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"golang.org/x/oauth2"
 )
@@ -20,6 +21,8 @@ type ForgejoProvider struct {
 
 // NewForgejoProvider creates a new Forgejo OAuth provider.
 func NewForgejoProvider(config ProviderConfig) *ForgejoProvider {
+	// Split space-separated scopes into array
+	scopes := strings.Fields(config.Scope)
 	return &ForgejoProvider{
 		config: config,
 		oauth: &oauth2.Config{
@@ -30,7 +33,7 @@ func NewForgejoProvider(config ProviderConfig) *ForgejoProvider {
 				AuthURL:  config.AuthURL,
 				TokenURL: config.TokenURL,
 			},
-			Scopes: []string{config.Scope},
+			Scopes: scopes,
 		},
 	}
 }

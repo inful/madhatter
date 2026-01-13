@@ -422,3 +422,120 @@ func TestScheduleMaintenance_RotationPreservation(t *testing.T) {
 		}
 	})
 }
+
+func TestScheduleMaintenance_HandleTeamChange_DeleteMemberReschedulesRota(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Add three team members
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+	charlieID, err := db.AddTeamMember(ctx, "Charlie", "charlie@example.com")
+	require.NoError(t, err)
+
+	maintenance := NewScheduleMaintenance(db)
+
+	// Create initial schedule for 14 days
+	_, err = maintenance.EnsureSchedule(ctx)
+	require.NoError(t, err)
+
+	// Get all assignments to verify initial state
+	today := time.Now()
+	endDate := today.AddDate(0, 0, 14)
+	assignmentsBefore, err := db.GetAssignmentsByDateRange(
+		ctx,
+		today.Format("2006-01-02"),
+		endDate.Format("2006-01-02"),
+	)
+	require.NoError(t, err)
+	require.NotEmpty(t, assignmentsBefore, "Should have assignments before deletion")
+
+	// Find assignments for Bob (middle member) - he should have some assignments scattered throughout
+	bobAssignmentCount := 0
+	bobAssignmentDates := make([]string, 0)
+	for _, a := range assignmentsBefore {
+		if a.MemberID == bobID {
+			bobAssignmentCount++
+			bobAssignmentDates = append(bobAssignmentDates, a.Date)
+		}
+	}
+	require.Greater(t, bobAssignmentCount, 0, "Bob should have assignments before deletion")
+
+	// Delete Bob - this will CASCADE delete all his assignments
+	err = db.DeleteTeamMember(ctx, bobID)
+	require.NoError(t, err)
+
+	// Get assignments after deletion but before HandleTeamChange
+	assignmentsAfterDelete, err := db.GetAssignmentsByDateRange(
+		ctx,
+		today.Format("2006-01-02"),
+		endDate.Format("2006-01-02"),
+	)
+	require.NoError(t, err)
+
+	// Verify Bob's assignments were deleted (CASCADE)
+	bobStillHasAssignments := false
+	for _, a := range assignmentsAfterDelete {
+		if a.MemberID == bobID {
+			bobStillHasAssignments = true
+			break
+		}
+	}
+	assert.False(t, bobStillHasAssignments, "Bob's assignments should be cascade deleted")
+
+	// The number of assignments should be less than before (Bob's assignments deleted)
+	assert.Less(t, len(assignmentsAfterDelete), len(assignmentsBefore),
+		"Should have fewer assignments after Bob is deleted")
+
+	// Now call HandleTeamChange to fix the schedule
+	err = maintenance.HandleTeamChange(ctx)
+	require.NoError(t, err)
+
+	// Get assignments after HandleTeamChange
+	assignmentsAfterFix, err := db.GetAssignmentsByDateRange(
+		ctx,
+		today.Format("2006-01-02"),
+		endDate.Format("2006-01-02"),
+	)
+	require.NoError(t, err)
+
+	// Count business days in the 14-day window (excluding weekends)
+	expectedBusinessDays := 0
+	for current := today; !current.After(endDate); current = current.AddDate(0, 0, 1) {
+		if current.Weekday() != time.Saturday && current.Weekday() != time.Sunday {
+			expectedBusinessDays++
+		}
+	}
+
+	// After HandleTeamChange, all business days should have assignments again
+	// (Bob's old days should be reassigned to Alice and Charlie)
+	assert.GreaterOrEqual(t, len(assignmentsAfterFix), expectedBusinessDays-1,
+		"Should have assignments for all business days after HandleTeamChange. Expected ~%d, got %d",
+		expectedBusinessDays, len(assignmentsAfterFix))
+
+	// Verify that all of Bob's old assignment dates now have assignments from remaining members
+	remainingMembers := map[string]bool{aliceID: true, charlieID: true}
+	for _, date := range bobAssignmentDates {
+		assignments, err := db.GetAssignmentsByDate(ctx, date)
+		require.NoError(t, err)
+		assert.NotEmpty(t, assignments,
+			"Date %s (previously Bob's) should have an assignment after HandleTeamChange", date)
+
+		if len(assignments) > 0 {
+			// Verify the assignment is for a remaining member
+			assert.True(t, remainingMembers[assignments[0].MemberID],
+				"Date %s should be assigned to Alice or Charlie, got member %s",
+				date, assignments[0].MemberID)
+		}
+	}
+
+	// Verify schedule is complete (no gaps)
+	start, end, err := maintenance.GetScheduleGap(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, start, "Schedule should be complete after team member deletion")
+	assert.Empty(t, end, "Schedule should be complete after team member deletion")
+}

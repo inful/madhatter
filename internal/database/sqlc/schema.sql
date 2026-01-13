@@ -20,8 +20,8 @@ CREATE TABLE IF NOT EXISTS leave_records (
     cover_member_id TEXT,
     status TEXT NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (member_id) REFERENCES team_members(id),
-    FOREIGN KEY (cover_member_id) REFERENCES team_members(id)
+    FOREIGN KEY (member_id) REFERENCES team_members(id) ON DELETE CASCADE,
+    FOREIGN KEY (cover_member_id) REFERENCES team_members(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS rota_assignments (
@@ -31,8 +31,8 @@ CREATE TABLE IF NOT EXISTS rota_assignments (
     is_cover INTEGER DEFAULT 0,
     original_assignment_id TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (member_id) REFERENCES team_members(id),
-    FOREIGN KEY (original_assignment_id) REFERENCES rota_assignments(id),
+    FOREIGN KEY (member_id) REFERENCES team_members(id) ON DELETE CASCADE,
+    FOREIGN KEY (original_assignment_id) REFERENCES rota_assignments(id) ON DELETE SET NULL,
     UNIQUE(date, is_cover)
 );
 
@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS calendar_subscriptions (
     member_id TEXT NOT NULL,
     token TEXT UNIQUE NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (member_id) REFERENCES team_members(id)
+    FOREIGN KEY (member_id) REFERENCES team_members(id) ON DELETE CASCADE
 );
 
 -- OAuth2 Authentication Tables

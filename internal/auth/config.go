@@ -36,6 +36,7 @@ type ProviderConfig struct {
 	TokenURL     string `yaml:"token_url"`
 	UserInfoURL  string `yaml:"user_info_url"`
 	Scope        string `yaml:"scope"`
+	AllowedGroup string `yaml:"allowed_group"` // Optional: For GitLab, restrict to group members
 }
 
 // LoadConfig loads authentication configuration from a YAML file.
@@ -131,6 +132,7 @@ func LoadConfigFromEnv() *AuthConfig {
 			TokenURL:     getEnvOrDefault("GITLAB_TOKEN_URL", "https://gitlab.com/oauth/token"),
 			UserInfoURL:  getEnvOrDefault("GITLAB_USERINFO_URL", "https://gitlab.com/api/v4/user"),
 			Scope:        getEnvOrDefault("GITLAB_SCOPE", "read_user"),
+			AllowedGroup: os.Getenv("GITLAB_ALLOWED_GROUP"),
 		}
 	}
 
@@ -165,7 +167,8 @@ func (c *AuthConfig) Validate() error {
 				"  - GITLAB_AUTH_URL (default: https://gitlab.com/oauth/authorize)\n" +
 				"  - GITLAB_TOKEN_URL (default: https://gitlab.com/oauth/token)\n" +
 				"  - GITLAB_USERINFO_URL (default: https://gitlab.com/api/v4/user)\n" +
-				"  - GITLAB_SCOPE (default: read_user)\n\n" +
+				"  - GITLAB_SCOPE (default: read_user)\n" +
+				"  - GITLAB_ALLOWED_GROUP (optional: restrict to group members, e.g., myorg/mygroup)\n\n" +
 				"See AUTH_SETUP.md for detailed configuration instructions",
 		)
 	}
@@ -208,6 +211,7 @@ providers:
     token_url: "https://gitlab.com/oauth/token"
     user_info_url: "https://gitlab.com/api/v4/user"
     scope: "read_user"
+    allowed_group: ""  # Optional: Restrict authentication to members of a specific GitLab group (e.g., "myorg/mygroup")
 
 sessions:
   duration_hours: 24

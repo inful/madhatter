@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/inful/madhatter/internal/database"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -463,7 +464,7 @@ func TestScheduleMaintenance_HandleTeamChange_DeleteMemberReschedulesRota(t *tes
 			bobAssignmentDates = append(bobAssignmentDates, a.Date)
 		}
 	}
-	require.Greater(t, bobAssignmentCount, 0, "Bob should have assignments before deletion")
+	require.Positive(t, bobAssignmentCount, "Bob should have assignments before deletion")
 
 	// Delete Bob - this will CASCADE delete all his assignments
 	err = db.DeleteTeamMember(ctx, bobID)
@@ -520,16 +521,17 @@ func TestScheduleMaintenance_HandleTeamChange_DeleteMemberReschedulesRota(t *tes
 	// Verify that all of Bob's old assignment dates now have assignments from remaining members
 	remainingMembers := map[string]bool{aliceID: true, charlieID: true}
 	for _, date := range bobAssignmentDates {
-		assignments, err := db.GetAssignmentsByDate(ctx, date)
+		var dateAssignments []database.RotaAssignment
+		dateAssignments, err = db.GetAssignmentsByDate(ctx, date)
 		require.NoError(t, err)
-		assert.NotEmpty(t, assignments,
+		assert.NotEmpty(t, dateAssignments,
 			"Date %s (previously Bob's) should have an assignment after HandleTeamChange", date)
 
-		if len(assignments) > 0 {
+		if len(dateAssignments) > 0 {
 			// Verify the assignment is for a remaining member
-			assert.True(t, remainingMembers[assignments[0].MemberID],
+			assert.True(t, remainingMembers[dateAssignments[0].MemberID],
 				"Date %s should be assigned to Alice or Charlie, got member %s",
-				date, assignments[0].MemberID)
+				date, dateAssignments[0].MemberID)
 		}
 	}
 

@@ -43,6 +43,8 @@ func (h *Handler) handleCalendar(w http.ResponseWriter, r *http.Request) {
 		data["MeetingsCalendarURL"] = baseURL + "/calendar/" + token + "/meetings.ics"
 		data["CalendarWebcalURL"] = webcalSubscriptionURL(r, "/calendar/"+token+"/ics")
 		data["MeetingsCalendarWebcalURL"] = webcalSubscriptionURL(r, "/calendar/"+token+"/meetings.ics")
+		data["CalendarOutlookURL"] = outlookSubscriptionURL(r, "/calendar/"+token+"/ics", "Support rota")
+		data["MeetingsCalendarOutlookURL"] = outlookSubscriptionURL(r, "/calendar/"+token+"/meetings.ics", "Support meetings")
 		data["ShowResult"] = true
 
 		if err := h.tmpl.ExecuteTemplate(w, "calendar.html", data); err != nil {
@@ -87,6 +89,33 @@ func webcalSubscriptionURL(r *http.Request, path string) template.URL {
 
 	//nolint:gosec // Constructed from validated scheme+host and internal path.
 	return template.URL(webcalBase.String())
+}
+
+func outlookSubscriptionURL(r *http.Request, path string, calendarName string) template.URL {
+	base, err := url.Parse(baseURLFromRequest(r))
+	if err != nil || base.Host == "" || base.User != nil {
+		return ""
+	}
+
+	base.Scheme = "https"
+	base.Path = path
+	base.RawQuery = ""
+	base.Fragment = ""
+
+	outlookURL, err := url.Parse("https://outlook.office.com/calendar/0/deeplink/compose")
+	if err != nil {
+		return ""
+	}
+
+	query := outlookURL.Query()
+	query.Set("path", "/calendar/action/compose")
+	query.Set("rru", "addsubscription")
+	query.Set("url", base.String())
+	query.Set("name", calendarName)
+	outlookURL.RawQuery = query.Encode()
+
+	//nolint:gosec // Constructed from trusted URL parts and encoded query values.
+	return template.URL(outlookURL.String())
 }
 
 func (h *Handler) handleCalendarICS(w http.ResponseWriter, r *http.Request) {

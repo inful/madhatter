@@ -184,9 +184,9 @@ func TestAllTemplatesWithData(t *testing.T) {
 		"MeetingsCalendarURL":       "https://example.com/calendar/test-token/meetings.ics",
 		"CalendarWebcalURL":         template.URL("webcal://example.com/calendar/test-token/ics"),
 		"MeetingsCalendarWebcalURL": template.URL("webcal://example.com/calendar/test-token/meetings.ics"),
-		"CalendarOutlookURL":        template.URL("https://outlook.office.com/calendar/0/deeplink/compose?path=%2Fcalendar%2Faction%2Fcompose&rru=addsubscription&url=https%3A%2F%2Fexample.com%2Fcalendar%2Ftest-token%2Fics&name=Support+rota"),
+		"CalendarOutlookURL":        template.URL("https://outlook.office.com/calendar/0/addfromweb?url=https%3A%2F%2Fexample.com%2Fcalendar%2Ftest-token%2Fics&name=Support+rota"),
 		"MeetingsCalendarOutlookURL": template.URL(
-			"https://outlook.office.com/calendar/0/deeplink/compose?path=%2Fcalendar%2Faction%2Fcompose&rru=addsubscription&url=https%3A%2F%2Fexample.com%2Fcalendar%2Ftest-token%2Fmeetings.ics&name=Support+meetings",
+			"https://outlook.office.com/calendar/0/addfromweb?url=https%3A%2F%2Fexample.com%2Fcalendar%2Ftest-token%2Fmeetings.ics&name=Support+meetings",
 		),
 		"ShowResult": true,
 		"Members": []map[string]any{
@@ -224,7 +224,7 @@ func TestAllTemplatesWithData(t *testing.T) {
 			assert.Equal(t, 200, w.Code, "Template %s should return 200", tc.template)
 			assert.NotEmpty(t, w.Body.String(), "Template %s should produce output", tc.template)
 			if tc.name == "CalendarShowResult" {
-				assert.Contains(t, w.Body.String(), "addsubscription")
+				assert.Contains(t, w.Body.String(), "addfromweb")
 				assert.NotContains(t, w.Body.String(), "#ZgotmplZ")
 			}
 		})

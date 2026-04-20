@@ -26,7 +26,8 @@ func NewScheduleMaintenance(db *database.DB) *ScheduleMaintenance {
 }
 
 // EnsureSchedule guarantees that a schedule exists for the next 14 days from today.
-// It only generates assignments for dates beyond the latest existing assignment.
+// It scans the entire 14-day window and fills any gaps, not just at the end.
+// This handles cases where assignments were deleted (e.g., team member removed).
 // Returns true if new assignments were created, false if schedule was already complete.
 func (sm *ScheduleMaintenance) EnsureSchedule(ctx context.Context) (bool, error) {
 	today := time.Now().Format("2006-01-02")
@@ -41,30 +42,9 @@ func (sm *ScheduleMaintenance) EnsureSchedule(ctx context.Context) (bool, error)
 		return false, fmt.Errorf("failed to reconcile covers: %w", err)
 	}
 
-	// Get the latest date that has any assignments
-	latestAssignmentDate, err := sm.db.GetLatestAssignmentDate(ctx)
-	if err != nil {
-		return false, fmt.Errorf("failed to get latest assignment date: %w", err)
-	}
-
-	// Determine the start date for new assignments
-	var startDate time.Time
-	if latestAssignmentDate == "" {
-		// No assignments exist, start from today
-		startDate = todayTime
-	} else {
-		// Start from the day after the latest existing assignment
-		latestDate, _ := time.Parse("2006-01-02", latestAssignmentDate)
-		startDate = latestDate.AddDate(0, 0, 1)
-	}
-
-	// If start date is already beyond the 14-day window, nothing to do
-	if startDate.After(endDate) {
-		return false, nil
-	}
-
-	// Generate assignments for the gap
-	return sm.GenerateMissingDays(ctx, startDate, endDate)
+	// Generate assignments for the entire 14-day window, filling any gaps
+	// This ensures that deleted assignments (e.g., from removed team members) are replaced
+	return sm.GenerateMissingDays(ctx, todayTime, endDate)
 }
 
 // GetScheduleGap calculates the date range that needs assignments.

@@ -330,6 +330,8 @@ func TestICalGenerator_CalendarProperties(t *testing.T) {
 	assert.Contains(t, icalStr, "X-WR-CALNAME:Support Rota Calendar")
 	// The library uses NAME and DESCRIPTION properties instead of X-WR-CALDESC
 	assert.Contains(t, icalStr, "DESCRIPTION:Automated support rota assignments")
+	assert.Contains(t, icalStr, "REFRESH-INTERVAL;VALUE=DURATION:PT1H")
+	assert.Contains(t, icalStr, "X-PUBLISHED-TTL:PT1H")
 }
 
 func TestICalGenerator_ComplexScenario(t *testing.T) {

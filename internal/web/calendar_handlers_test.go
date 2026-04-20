@@ -40,11 +40,11 @@ func TestOutlookSubscriptionURL_UsesHTTPSAndName(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "https", parsed.Scheme)
 	assert.Equal(t, "outlook.office.com", parsed.Host)
-	assert.Equal(t, "/calendar/0/deeplink/compose", parsed.Path)
+	assert.Equal(t, "/calendar/0/addfromweb", parsed.Path)
 
 	query := parsed.Query()
-	assert.Equal(t, "/calendar/action/compose", query.Get("path"))
-	assert.Equal(t, "addsubscription", query.Get("rru"))
 	assert.Equal(t, "Support rota", query.Get("name"))
 	assert.Equal(t, "https://example.com/calendar/test-token/ics", query.Get("url"))
+	assert.Empty(t, query.Get("path"))
+	assert.Empty(t, query.Get("rru"))
 }

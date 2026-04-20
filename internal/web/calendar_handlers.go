@@ -102,14 +102,15 @@ func outlookSubscriptionURL(r *http.Request, path string, calendarName string) t
 	base.RawQuery = ""
 	base.Fragment = ""
 
-	outlookURL, err := url.Parse("https://outlook.office.com/calendar/0/deeplink/compose")
+	// Use the addfromweb endpoint to trigger a calendar subscription rather than
+	// event creation. The deeplink/compose?rru=addsubscription format is no longer
+	// reliable and may open the event composer instead.
+	outlookURL, err := url.Parse("https://outlook.office.com/calendar/0/addfromweb")
 	if err != nil {
 		return ""
 	}
 
 	query := outlookURL.Query()
-	query.Set("path", "/calendar/action/compose")
-	query.Set("rru", "addsubscription")
 	query.Set("url", base.String())
 	query.Set("name", calendarName)
 	outlookURL.RawQuery = query.Encode()

@@ -57,6 +57,8 @@ func NewICalGeneratorWithMetadata(name, description string) *ICalGenerator {
 	cal.SetVersion("2.0")
 	cal.SetCalscale("GREGORIAN")
 	cal.SetMethod(ics.MethodPublish)
+	cal.SetRefreshInterval("PT1H")
+	cal.SetXPublishedTTL("PT1H")
 
 	return &ICalGenerator{calendar: cal}
 }

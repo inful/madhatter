@@ -186,3 +186,39 @@ func TestGetLeaveByID_NotFound(t *testing.T) {
 	// Assert
 	require.Error(t, err)
 }
+
+func TestDeleteExpiredLeaveRecords(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	memberID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	now := time.Now().UTC()
+
+	// Create an expired leave record (ended yesterday).
+	pastStart := now.AddDate(0, 0, -5).Format("2006-01-02")
+	pastEnd := now.AddDate(0, 0, -1).Format("2006-01-02")
+	expiredID, err := db.CreateLeaveRecord(ctx, memberID, pastStart, pastEnd)
+	require.NoError(t, err)
+
+	// Create a current / future leave record.
+	futureStart := now.AddDate(0, 0, 1).Format("2006-01-02")
+	futureEnd := now.AddDate(0, 0, 3).Format("2006-01-02")
+	futureID, err := db.CreateLeaveRecord(ctx, memberID, futureStart, futureEnd)
+	require.NoError(t, err)
+
+	// Act.
+	err = db.DeleteExpiredLeaveRecords(ctx)
+	require.NoError(t, err)
+
+	// Expired record should be gone.
+	_, err = db.GetLeaveByID(ctx, expiredID)
+	require.Error(t, err)
+
+	// Future record should still exist.
+	future, err := db.GetLeaveByID(ctx, futureID)
+	require.NoError(t, err)
+	require.Equal(t, futureID, future.ID)
+}

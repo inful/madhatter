@@ -36,3 +36,7 @@ WHERE id = ?;
 -- name: DeleteLeaveRecord :exec
 DELETE FROM leave_records
 WHERE id = ?;
+
+-- name: DeleteExpiredLeaveRecords :exec
+DELETE FROM leave_records
+WHERE end_date < ?;

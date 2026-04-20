@@ -32,7 +32,8 @@ const (
 	serverReadTimeout      = 15 * time.Second
 	serverWriteTimeout     = 15 * time.Second
 	serverIdleTimeout      = 60 * time.Second
-	sessionCleanupInterval = 1 * time.Hour // Clean up expired sessions every hour
+	sessionCleanupInterval = 1 * time.Hour  // Clean up expired sessions every hour.
+	leaveCleanupInterval   = 24 * time.Hour // Clean up expired leave records once a day.
 	shutdownTimeout        = 30 * time.Second
 )
 
@@ -123,17 +124,41 @@ func NewServer(db *database.DB, development bool) (*Server, error) {
 }
 
 func (s *Server) setupSessionCleanup(ctx context.Context) {
+	cleanupCtx, cleanupCancel := context.WithCancel(ctx)
+	s.cleanupCtx = cleanupCtx
+	s.cleanupCancel = cleanupCancel
+
 	// Start session cleanup background task (only if auth is enabled)
 	if s.sessionManager != nil {
 		log.Println("Starting session cleanup task...")
-		cleanupCtx, cleanupCancel := context.WithCancel(ctx)
-		s.cleanupCtx = cleanupCtx
-		s.cleanupCancel = cleanupCancel
 		//nolint:contextcheck // Cleanup context is properly managed and canceled in StopCleanup
 		s.sessionManager.StartCleanup(s.cleanupCtx)
 	} else {
 		log.Println("Authentication disabled - skipping session cleanup")
 	}
+}
+
+// startLeaveCleanup starts a background goroutine that deletes expired leave records daily.
+func (s *Server) startLeaveCleanup() {
+	log.Println("Starting leave record cleanup task...")
+	ticker := time.NewTicker(leaveCleanupInterval)
+	go func() {
+		defer ticker.Stop()
+		// Run immediately on start.
+		if err := s.db.DeleteExpiredLeaveRecords(s.cleanupCtx); err != nil {
+			log.Printf("Leave cleanup error: %v\n", err)
+		}
+		for {
+			select {
+			case <-ticker.C:
+				if err := s.db.DeleteExpiredLeaveRecords(s.cleanupCtx); err != nil {
+					log.Printf("Leave cleanup error: %v\n", err)
+				}
+			case <-s.cleanupCtx.Done():
+				return
+			}
+		}
+	}()
 }
 
 func (s *Server) handleShutdownSignals(parentCtx context.Context, srv *http.Server) {
@@ -167,6 +192,8 @@ func (s *Server) stopCleanup() {
 
 func (s *Server) Start(ctx context.Context, port string) error {
 	s.setupSessionCleanup(ctx)
+	s.startLeaveCleanup()
+	defer s.stopCleanup()
 
 	// Use http.Server with timeouts for production
 	srv := &http.Server{

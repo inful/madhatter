@@ -32,6 +32,16 @@ func (q *Queries) CreateLeaveRecord(ctx context.Context, arg CreateLeaveRecordPa
 	)
 }
 
+const deleteExpiredLeaveRecords = `-- name: DeleteExpiredLeaveRecords :exec
+DELETE FROM leave_records
+WHERE end_date < ?
+`
+
+func (q *Queries) DeleteExpiredLeaveRecords(ctx context.Context, endDate time.Time) error {
+	_, err := q.db.ExecContext(ctx, deleteExpiredLeaveRecords, endDate)
+	return err
+}
+
 const deleteLeaveRecord = `-- name: DeleteLeaveRecord :exec
 DELETE FROM leave_records
 WHERE id = ?

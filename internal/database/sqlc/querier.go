@@ -29,6 +29,7 @@ type Querier interface {
 	DeleteAPIToken(ctx context.Context, id string) (sql.Result, error)
 	DeleteAssignmentsByDateRange(ctx context.Context, arg DeleteAssignmentsByDateRangeParams) error
 	DeleteCalendarSubscription(ctx context.Context, token string) error
+	DeleteExpiredLeaveRecords(ctx context.Context, endDate time.Time) error
 	DeleteExpiredSessions(ctx context.Context) error
 	DeleteLeaveRecord(ctx context.Context, id string) error
 	DeleteMemberSubscriptions(ctx context.Context, memberID string) error

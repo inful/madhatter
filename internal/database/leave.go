@@ -201,3 +201,12 @@ func (db *DB) DeleteLeaveRecord(ctx context.Context, leaveID string) error {
 
 	return db.queries.DeleteLeaveRecord(ctx, leaveID)
 }
+
+// hoursPerDay is the number of hours in a day.
+const hoursPerDay = 24
+
+// DeleteExpiredLeaveRecords removes leave records whose end date is before today.
+func (db *DB) DeleteExpiredLeaveRecords(ctx context.Context) error {
+	today := time.Now().UTC().Truncate(hoursPerDay * time.Hour)
+	return db.queries.DeleteExpiredLeaveRecords(ctx, today)
+}

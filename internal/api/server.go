@@ -32,7 +32,8 @@ const (
 	serverReadTimeout      = 15 * time.Second
 	serverWriteTimeout     = 15 * time.Second
 	serverIdleTimeout      = 60 * time.Second
-	sessionCleanupInterval = 1 * time.Hour // Clean up expired sessions every hour
+	sessionCleanupInterval = 1 * time.Hour  // Clean up expired sessions every hour.
+	leaveCleanupInterval   = 24 * time.Hour // Clean up expired leave records once a day.
 	shutdownTimeout        = 30 * time.Second
 )
 
@@ -136,6 +137,29 @@ func (s *Server) setupSessionCleanup(ctx context.Context) {
 	}
 }
 
+// startLeaveCleanup starts a background goroutine that deletes expired leave records daily.
+func (s *Server) startLeaveCleanup(ctx context.Context) {
+	log.Println("Starting leave record cleanup task...")
+	ticker := time.NewTicker(leaveCleanupInterval)
+	go func() {
+		defer ticker.Stop()
+		// Run immediately on start.
+		if err := s.db.DeleteExpiredLeaveRecords(ctx); err != nil {
+			log.Printf("Leave cleanup error: %v\n", err)
+		}
+		for {
+			select {
+			case <-ticker.C:
+				if err := s.db.DeleteExpiredLeaveRecords(ctx); err != nil {
+					log.Printf("Leave cleanup error: %v\n", err)
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+}
+
 func (s *Server) handleShutdownSignals(parentCtx context.Context, srv *http.Server) {
 	sigint := make(chan os.Signal, 1)
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
@@ -167,6 +191,7 @@ func (s *Server) stopCleanup() {
 
 func (s *Server) Start(ctx context.Context, port string) error {
 	s.setupSessionCleanup(ctx)
+	s.startLeaveCleanup(ctx)
 
 	// Use http.Server with timeouts for production
 	srv := &http.Server{

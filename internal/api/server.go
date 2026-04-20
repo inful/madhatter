@@ -124,12 +124,13 @@ func NewServer(db *database.DB, development bool) (*Server, error) {
 }
 
 func (s *Server) setupSessionCleanup(ctx context.Context) {
+	cleanupCtx, cleanupCancel := context.WithCancel(ctx)
+	s.cleanupCtx = cleanupCtx
+	s.cleanupCancel = cleanupCancel
+
 	// Start session cleanup background task (only if auth is enabled)
 	if s.sessionManager != nil {
 		log.Println("Starting session cleanup task...")
-		cleanupCtx, cleanupCancel := context.WithCancel(ctx)
-		s.cleanupCtx = cleanupCtx
-		s.cleanupCancel = cleanupCancel
 		//nolint:contextcheck // Cleanup context is properly managed and canceled in StopCleanup
 		s.sessionManager.StartCleanup(s.cleanupCtx)
 	} else {
@@ -138,22 +139,22 @@ func (s *Server) setupSessionCleanup(ctx context.Context) {
 }
 
 // startLeaveCleanup starts a background goroutine that deletes expired leave records daily.
-func (s *Server) startLeaveCleanup(ctx context.Context) {
+func (s *Server) startLeaveCleanup() {
 	log.Println("Starting leave record cleanup task...")
 	ticker := time.NewTicker(leaveCleanupInterval)
 	go func() {
 		defer ticker.Stop()
 		// Run immediately on start.
-		if err := s.db.DeleteExpiredLeaveRecords(ctx); err != nil {
+		if err := s.db.DeleteExpiredLeaveRecords(s.cleanupCtx); err != nil {
 			log.Printf("Leave cleanup error: %v\n", err)
 		}
 		for {
 			select {
 			case <-ticker.C:
-				if err := s.db.DeleteExpiredLeaveRecords(ctx); err != nil {
+				if err := s.db.DeleteExpiredLeaveRecords(s.cleanupCtx); err != nil {
 					log.Printf("Leave cleanup error: %v\n", err)
 				}
-			case <-ctx.Done():
+			case <-s.cleanupCtx.Done():
 				return
 			}
 		}
@@ -191,7 +192,8 @@ func (s *Server) stopCleanup() {
 
 func (s *Server) Start(ctx context.Context, port string) error {
 	s.setupSessionCleanup(ctx)
-	s.startLeaveCleanup(ctx)
+	s.startLeaveCleanup()
+	defer s.stopCleanup()
 
 	// Use http.Server with timeouts for production
 	srv := &http.Server{

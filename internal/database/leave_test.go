@@ -195,15 +195,17 @@ func TestDeleteExpiredLeaveRecords(t *testing.T) {
 	memberID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
 	require.NoError(t, err)
 
+	now := time.Now().UTC()
+
 	// Create an expired leave record (ended yesterday).
-	pastStart := time.Now().AddDate(0, 0, -5).Format("2006-01-02")
-	pastEnd := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	pastStart := now.AddDate(0, 0, -5).Format("2006-01-02")
+	pastEnd := now.AddDate(0, 0, -1).Format("2006-01-02")
 	expiredID, err := db.CreateLeaveRecord(ctx, memberID, pastStart, pastEnd)
 	require.NoError(t, err)
 
 	// Create a current / future leave record.
-	futureStart := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
-	futureEnd := time.Now().AddDate(0, 0, 3).Format("2006-01-02")
+	futureStart := now.AddDate(0, 0, 1).Format("2006-01-02")
+	futureEnd := now.AddDate(0, 0, 3).Format("2006-01-02")
 	futureID, err := db.CreateLeaveRecord(ctx, memberID, futureStart, futureEnd)
 	require.NoError(t, err)
 

@@ -16,7 +16,7 @@
         <p class="has-text-weight-semibold mb-2">Support rota calendar URL:</p>
         <div class="url-box" id="calendar-url-box">
             {{.CalendarURL}}
-            <a class="button is-link is-small copy-btn" href="{{.CalendarOutlookURL}}">
+            <a class="button is-link is-small copy-btn" href="{{.CalendarOutlookURL}}" target="_blank" rel="noopener noreferrer">
                 <i class="fas fa-rss"></i> Subscribe (Outlook)
             </a>
             <button class="button is-success is-small copy-btn" onclick="copyTextFromBox('calendar-url-box')">
@@ -27,7 +27,7 @@
         <p class="has-text-weight-semibold mb-2 mt-4">Meetings calendar URL:</p>
         <div class="url-box" id="meetings-calendar-url-box">
             {{.MeetingsCalendarURL}}
-            <a class="button is-link is-small copy-btn" href="{{.MeetingsCalendarOutlookURL}}">
+            <a class="button is-link is-small copy-btn" href="{{.MeetingsCalendarOutlookURL}}" target="_blank" rel="noopener noreferrer">
                 <i class="fas fa-rss"></i> Subscribe (Outlook)
             </a>
             <button class="button is-success is-small copy-btn" onclick="copyTextFromBox('meetings-calendar-url-box')">

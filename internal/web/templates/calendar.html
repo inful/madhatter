@@ -14,8 +14,7 @@
             <i class="fas fa-check-circle"></i> Calendar Subscription Created
         </h3>
         <p class="has-text-weight-semibold mb-2">Support rota calendar URL:</p>
-        <div class="url-box" id="calendar-url-box">
-            {{.CalendarURL}}
+        <div class="url-box" id="calendar-url-box" data-url="{{.CalendarURL}}">
             <a class="button is-link is-small copy-btn" href="{{.CalendarOutlookURL}}" target="_blank" rel="noopener noreferrer">
                 <i class="fas fa-rss"></i> Outlook
             </a>
@@ -31,8 +30,7 @@
         </div>
 
         <p class="has-text-weight-semibold mb-2 mt-4">Meetings calendar URL:</p>
-        <div class="url-box" id="meetings-calendar-url-box">
-            {{.MeetingsCalendarURL}}
+        <div class="url-box" id="meetings-calendar-url-box" data-url="{{.MeetingsCalendarURL}}">
             <a class="button is-link is-small copy-btn" href="{{.MeetingsCalendarOutlookURL}}" target="_blank" rel="noopener noreferrer">
                 <i class="fas fa-rss"></i> Outlook
             </a>
@@ -144,13 +142,7 @@
 <script>
     function copyTextFromBox(boxId) {
         const urlBox = document.getElementById(boxId);
-        let urlText = '';
-        urlBox.childNodes.forEach(node => {
-            if (node.nodeType === Node.TEXT_NODE) {
-                urlText += node.textContent;
-            }
-        });
-        urlText = urlText.trim();
+        const urlText = urlBox.dataset.url || '';
         const textarea = document.createElement('textarea');
         textarea.value = urlText;
         textarea.style.position = 'fixed';

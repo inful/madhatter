@@ -82,6 +82,59 @@ func TestGenerateMeetingsICalForToken_IncludesDeterministicShuffle(t *testing.T)
 	require.Contains(t, unfoldICalLines(ics1), "<a href=\"https://teams.example.com/meet\"")
 }
 
+func TestGenerateMeetingsICalForToken_IsIdenticalAcrossDifferentSubscriptions(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	require.True(t, ok)
+	// internal/calendar -> internal -> repo root.
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	t.Setenv("MIGRATIONS_PATH", filepath.Join(repoRoot, "migrations"))
+
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	db, err := database.New(filepath.Join(tmpDir, "test.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	memberAID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	memberBID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+	_, err = db.AddTeamMember(ctx, "Charlie", "charlie@example.com")
+	require.NoError(t, err)
+
+	tokenA, err := db.CreateCalendarSubscription(ctx, memberAID)
+	require.NoError(t, err)
+	tokenB, err := db.CreateCalendarSubscription(ctx, memberBID)
+	require.NoError(t, err)
+
+	from := time.Date(2026, 1, 12, 12, 0, 0, 0, time.UTC) // Monday
+
+	icsA, err := GenerateMeetingsICalForTokenFrom(
+		ctx,
+		db,
+		tokenA,
+		from,
+		7,
+		MeetingsOptions{Timezone: "UTC", SeedSalt: "test-salt", TeamsURL: "https://teams.example.com/meet"},
+		func(t time.Time) bool { return t.Weekday() != time.Saturday && t.Weekday() != time.Sunday },
+	)
+	require.NoError(t, err)
+
+	icsB, err := GenerateMeetingsICalForTokenFrom(
+		ctx,
+		db,
+		tokenB,
+		from,
+		7,
+		MeetingsOptions{Timezone: "UTC", SeedSalt: "test-salt", TeamsURL: "https://teams.example.com/meet"},
+		func(t time.Time) bool { return t.Weekday() != time.Saturday && t.Weekday() != time.Sunday },
+	)
+	require.NoError(t, err)
+
+	require.Contains(t, icsA, "LAST-MODIFIED:20260112T000000Z")
+	require.Equal(t, icsA, icsB, "meeting calendar content must be identical across subscriptions")
+}
+
 func TestGenerateMeetingsICalForToken_UsesTZIDForEventTimes(t *testing.T) {
 	_, filename, _, ok := runtime.Caller(0)
 	require.True(t, ok)

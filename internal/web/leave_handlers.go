@@ -24,30 +24,47 @@ func (h *Handler) handleLeaveReport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.Method == http.MethodPost {
-		if err := r.ParseForm(); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		memberID := r.FormValue("member_id")
-		startDate := r.FormValue("start_date")
-		endDate := r.FormValue("end_date")
-
-		leaveID, err := h.db.CreateLeaveRecord(ctx, memberID, startDate, endDate)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		// Handle leave change using maintenance service.
-		err = h.maintenance.HandleLeaveChange(ctx, leaveID)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		http.Redirect(w, r, "/", http.StatusSeeOther)
+		h.handleLeaveReportPost(w, r, data)
 		return
 	}
+
+	h.renderLeaveReportForm(w, r, data, "", "", "", "")
+}
+
+func (h *Handler) handleLeaveReportPost(w http.ResponseWriter, r *http.Request, data map[string]any) {
+	ctx := r.Context()
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	memberID := r.FormValue("member_id")
+	startDate := r.FormValue("start_date")
+	endDate := r.FormValue("end_date")
+
+	// Validate dates before hitting the database.
+	if err := validateLeaveDates(startDate, endDate); err != nil {
+		h.renderLeaveReportForm(w, r, data, err.Error(), memberID, startDate, endDate)
+		return
+	}
+
+	leaveID, err := h.db.CreateLeaveRecord(ctx, memberID, startDate, endDate)
+	if err != nil {
+		h.renderLeaveReportForm(w, r, data, err.Error(), memberID, startDate, endDate)
+		return
+	}
+
+	if err := h.maintenance.HandleLeaveChange(ctx, leaveID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (h *Handler) renderLeaveReportForm(w http.ResponseWriter, r *http.Request, data map[string]any, errMsg, memberID, startDate, endDate string) {
+	ctx := r.Context()
 
 	members, err := h.db.GetActiveTeamMembers(ctx)
 	if err != nil {
@@ -57,29 +74,37 @@ func (h *Handler) handleLeaveReport(w http.ResponseWriter, r *http.Request) {
 
 	data["Members"] = members
 
+	if errMsg != "" {
+		data["Error"] = errMsg
+		data["SelectedMemberID"] = memberID
+		data["StartDate"] = startDate
+		data["EndDate"] = endDate
+	}
+
 	if err := h.tmpl.ExecuteTemplate(w, "leave_report.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
 
-// validateLeaveDates validates and parses leave dates.
-func validateLeaveDates(startDate, endDate string) (time.Time, time.Time, error) {
+// validateLeaveDates validates leave date strings and their ordering.
+func validateLeaveDates(startDate, endDate string) error {
 	const dateLayout = "2006-01-02"
+
 	startTime, err := time.Parse(dateLayout, startDate)
 	if err != nil {
-		return time.Time{}, time.Time{}, errors.New("invalid start_date format, expected YYYY-MM-DD")
+		return errors.New("invalid start_date format, expected YYYY-MM-DD")
 	}
 
 	endTime, err := time.Parse(dateLayout, endDate)
 	if err != nil {
-		return time.Time{}, time.Time{}, errors.New("invalid end_date format, expected YYYY-MM-DD")
+		return errors.New("invalid end_date format, expected YYYY-MM-DD")
 	}
 
 	if endTime.Before(startTime) {
-		return time.Time{}, time.Time{}, errors.New("end_date must be on or after start_date")
+		return errors.New("end_date must be on or after start_date")
 	}
 
-	return startTime, endTime, nil
+	return nil
 }
 
 func (h *Handler) handleLeaveManagement(w http.ResponseWriter, r *http.Request) {
@@ -173,7 +198,7 @@ func (h *Handler) handleLeaveEdit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate date format and ordering.
-	if _, _, err := validateLeaveDates(startDate, endDate); err != nil {
+	if err := validateLeaveDates(startDate, endDate); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}

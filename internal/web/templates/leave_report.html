@@ -16,6 +16,11 @@
     </header>
     <div class="card-content">
         <form method="POST" action="/leave/report">
+            {{if .Error}}
+            <div class="notification is-danger is-light mb-4">
+                <i class="fas fa-exclamation-triangle mr-2"></i> {{.Error}}
+            </div>
+            {{end}}
             <div class="field">
                 <label class="label">Team Member</label>
                 <div class="control has-icons-left">
@@ -23,7 +28,7 @@
                         <select name="member_id" required>
                             <option value="">Select Team Member</option>
                             {{range .Members}}
-                                <option value="{{.ID}}">{{.Name}} - {{.Email}}</option>
+                                <option value="{{.ID}}" {{if eq .ID $.SelectedMemberID}}selected{{end}}>{{.Name}} - {{.Email}}</option>
                             {{end}}
                         </select>
                     </div>
@@ -36,7 +41,7 @@
             <div class="field">
                 <label class="label">Start Date</label>
                 <div class="control has-icons-left">
-                    <input class="input" type="date" name="start_date" required>
+                    <input class="input {{if .Error}}is-danger{{end}}" type="date" name="start_date" value="{{.StartDate}}" required>
                     <span class="icon is-small is-left">
                         <i class="fas fa-calendar-day"></i>
                     </span>
@@ -46,7 +51,7 @@
             <div class="field">
                 <label class="label">End Date</label>
                 <div class="control has-icons-left">
-                    <input class="input" type="date" name="end_date" required>
+                    <input class="input {{if .Error}}is-danger{{end}}" type="date" name="end_date" value="{{.EndDate}}" required>
                     <span class="icon is-small is-left">
                         <i class="fas fa-calendar-day"></i>
                     </span>

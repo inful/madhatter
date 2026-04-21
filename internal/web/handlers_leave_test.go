@@ -91,9 +91,10 @@ func TestLeaveCreationWithInvalidData(t *testing.T) {
 	require.NoError(t, err)
 
 	testCases := []struct {
-		name           string
-		formData       url.Values
-		expectedStatus int
+		name             string
+		formData         url.Values
+		expectedStatus   int
+		wantBodyContains string
 	}{
 		{
 			name: "Missing member ID",
@@ -101,7 +102,8 @@ func TestLeaveCreationWithInvalidData(t *testing.T) {
 				"start_date": {time.Now().Format("2006-01-02")},
 				"end_date":   {time.Now().AddDate(0, 0, 5).Format("2006-01-02")},
 			},
-			expectedStatus: http.StatusInternalServerError,
+			expectedStatus:   http.StatusOK,
+			wantBodyContains: "memberID, startDate, and endDate are required",
 		},
 		{
 			name: "Missing start date",
@@ -109,7 +111,8 @@ func TestLeaveCreationWithInvalidData(t *testing.T) {
 				"member_id": {"test-member-id"},
 				"end_date":  {time.Now().AddDate(0, 0, 5).Format("2006-01-02")},
 			},
-			expectedStatus: http.StatusInternalServerError,
+			expectedStatus:   http.StatusOK,
+			wantBodyContains: "invalid start_date format",
 		},
 		{
 			name: "Missing end date",
@@ -117,7 +120,8 @@ func TestLeaveCreationWithInvalidData(t *testing.T) {
 				"member_id":  {"test-member-id"},
 				"start_date": {time.Now().Format("2006-01-02")},
 			},
-			expectedStatus: http.StatusInternalServerError,
+			expectedStatus:   http.StatusOK,
+			wantBodyContains: "invalid end_date format",
 		},
 		{
 			name: "Non-existent member",
@@ -126,7 +130,18 @@ func TestLeaveCreationWithInvalidData(t *testing.T) {
 				"start_date": {time.Now().Format("2006-01-02")},
 				"end_date":   {time.Now().AddDate(0, 0, 5).Format("2006-01-02")},
 			},
-			expectedStatus: http.StatusInternalServerError,
+			expectedStatus:   http.StatusOK,
+			wantBodyContains: "member not found",
+		},
+		{
+			name: "End date before start date",
+			formData: url.Values{
+				"member_id":  {"test-member-id"},
+				"start_date": {time.Now().AddDate(0, 0, 5).Format("2006-01-02")},
+				"end_date":   {time.Now().Format("2006-01-02")},
+			},
+			expectedStatus:   http.StatusOK,
+			wantBodyContains: "end_date must be on or after start_date",
 		},
 	}
 
@@ -144,6 +159,9 @@ func TestLeaveCreationWithInvalidData(t *testing.T) {
 
 			// Verify error response
 			assert.Equal(t, tc.expectedStatus, w.Code, "Should return error status for %s", tc.name)
+			if tc.wantBodyContains != "" {
+				assert.Contains(t, w.Body.String(), tc.wantBodyContains, "Response body should contain error message")
+			}
 		})
 	}
 }

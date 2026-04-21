@@ -120,8 +120,6 @@ func TestGenerateMeetingsICalForToken_IsIdenticalAcrossDifferentSubscriptions(t 
 	)
 	require.NoError(t, err)
 
-	time.Sleep(1100 * time.Millisecond)
-
 	icsB, err := GenerateMeetingsICalForTokenFrom(
 		ctx,
 		db,
@@ -133,6 +131,7 @@ func TestGenerateMeetingsICalForToken_IsIdenticalAcrossDifferentSubscriptions(t 
 	)
 	require.NoError(t, err)
 
+	require.Contains(t, icsA, "LAST-MODIFIED:20260112T000000Z")
 	require.Equal(t, icsA, icsB, "meeting calendar content must be identical across subscriptions")
 }
 

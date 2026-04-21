@@ -36,12 +36,14 @@ type Querier interface {
 	DeleteOAuthToken(ctx context.Context, arg DeleteOAuthTokenParams) error
 	DeleteRotaAssignment(ctx context.Context, id string) error
 	DeleteSession(ctx context.Context, token string) error
+	DeleteStaleSubscriptions(ctx context.Context, arg DeleteStaleSubscriptionsParams) (sql.Result, error)
 	DeleteTeamMember(ctx context.Context, id string) error
 	DeleteUserSessions(ctx context.Context, userID string) error
 	GetAPITokenByHash(ctx context.Context, tokenHash string) (ApiToken, error)
 	GetAPITokenByID(ctx context.Context, id string) (ApiToken, error)
 	GetAPITokensByUser(ctx context.Context, userID string) ([]ApiToken, error)
 	GetActiveTeamMembers(ctx context.Context) ([]TeamMember, error)
+	GetAllSubscriptions(ctx context.Context) ([]CalendarSubscription, error)
 	GetAssignmentByID(ctx context.Context, id string) (GetAssignmentByIDRow, error)
 	GetAssignmentsByDate(ctx context.Context, date time.Time) ([]GetAssignmentsByDateRow, error)
 	GetAssignmentsByDateRange(ctx context.Context, arg GetAssignmentsByDateRangeParams) ([]GetAssignmentsByDateRangeRow, error)
@@ -64,6 +66,7 @@ type Querier interface {
 	GetUserByProvider(ctx context.Context, arg GetUserByProviderParams) (User, error)
 	ListActiveUsers(ctx context.Context) ([]User, error)
 	ListAdminUsers(ctx context.Context) ([]User, error)
+	TouchSubscription(ctx context.Context, token string) error
 	UpdateAPITokenLastUsed(ctx context.Context, id string) (sql.Result, error)
 	UpdateCoverMember(ctx context.Context, arg UpdateCoverMemberParams) error
 	UpdateLeaveCoverMember(ctx context.Context, arg UpdateLeaveCoverMemberParams) error

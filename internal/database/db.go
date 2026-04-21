@@ -176,6 +176,51 @@ func (db *DB) GetMemberByToken(ctx context.Context, token string) (*TeamMember, 
 	}, nil
 }
 
+// TouchSubscription updates the last_used_at timestamp for a subscription token.
+func (db *DB) TouchSubscription(ctx context.Context, token string) error {
+	return db.queries.TouchSubscription(ctx, token)
+}
+
+// GetAllSubscriptions returns all calendar subscriptions ordered by last_used_at ascending.
+func (db *DB) GetAllSubscriptions(ctx context.Context) ([]CalendarSubscription, error) {
+	rows, err := db.queries.GetAllSubscriptions(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]CalendarSubscription, len(rows))
+	for i, r := range rows {
+		sub := CalendarSubscription{
+			ID:       r.ID,
+			MemberID: r.MemberID,
+			Token:    r.Token,
+		}
+		if r.CreatedAt.Valid {
+			sub.CreatedAt = r.CreatedAt.Time
+		}
+		if r.LastUsedAt.Valid {
+			t := r.LastUsedAt.Time
+			sub.LastUsedAt = &t
+		}
+		result[i] = sub
+	}
+	return result, nil
+}
+
+// DeleteStaleSubscriptions deletes subscriptions that have not been used since the given cutoff time.
+// Subscriptions that have never been used are considered stale if created before the cutoff.
+func (db *DB) DeleteStaleSubscriptions(ctx context.Context, cutoff time.Time) (int64, error) {
+	cutoffNull := sql.NullTime{Time: cutoff, Valid: true}
+	result, err := db.queries.DeleteStaleSubscriptions(ctx, sqlc.DeleteStaleSubscriptionsParams{
+		LastUsedAt: cutoffNull,
+		CreatedAt:  cutoffNull,
+	})
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 func (db *DB) GetUpcomingAssignments(ctx context.Context, memberID string, days int) ([]RotaAssignment, error) {
 	params := sqlc.GetUpcomingAssignmentsParams{
 		MemberID: memberID,

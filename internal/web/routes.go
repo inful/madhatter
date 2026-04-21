@@ -60,6 +60,8 @@ func (h *Handler) registerRoutes() {
 		r.HandleFunc("/leave/{id}/edit", h.handleLeaveEdit)
 		r.HandleFunc("/leave/{id}/delete", h.handleLeaveDelete)
 		r.HandleFunc("/schedule/generate", h.handleScheduleGenerate)
+		r.HandleFunc("/calendar/subscriptions", h.handleCalendarSubscriptions)
+		r.HandleFunc("/calendar/subscriptions/cleanup", h.handleCalendarSubscriptionsCleanup)
 	})
 }
 

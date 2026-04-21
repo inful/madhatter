@@ -45,8 +45,58 @@ func (q *Queries) DeleteMemberSubscriptions(ctx context.Context, memberID string
 	return err
 }
 
+const deleteStaleSubscriptions = `-- name: DeleteStaleSubscriptions :execresult
+DELETE FROM calendar_subscriptions
+WHERE last_used_at < ?
+   OR (last_used_at IS NULL AND created_at < ?)
+`
+
+type DeleteStaleSubscriptionsParams struct {
+	LastUsedAt sql.NullTime `json:"last_used_at"`
+	CreatedAt  sql.NullTime `json:"created_at"`
+}
+
+func (q *Queries) DeleteStaleSubscriptions(ctx context.Context, arg DeleteStaleSubscriptionsParams) (sql.Result, error) {
+	return q.db.ExecContext(ctx, deleteStaleSubscriptions, arg.LastUsedAt, arg.CreatedAt)
+}
+
+const getAllSubscriptions = `-- name: GetAllSubscriptions :many
+SELECT id, member_id, token, created_at, last_used_at
+FROM calendar_subscriptions
+ORDER BY last_used_at ASC NULLS FIRST
+`
+
+func (q *Queries) GetAllSubscriptions(ctx context.Context) ([]CalendarSubscription, error) {
+	rows, err := q.db.QueryContext(ctx, getAllSubscriptions)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CalendarSubscription{}
+	for rows.Next() {
+		var i CalendarSubscription
+		if err := rows.Scan(
+			&i.ID,
+			&i.MemberID,
+			&i.Token,
+			&i.CreatedAt,
+			&i.LastUsedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getSubscriptionByToken = `-- name: GetSubscriptionByToken :one
-SELECT id, member_id, token, created_at
+SELECT id, member_id, token, created_at, last_used_at
 FROM calendar_subscriptions
 WHERE token = ?
 `
@@ -59,12 +109,13 @@ func (q *Queries) GetSubscriptionByToken(ctx context.Context, token string) (Cal
 		&i.MemberID,
 		&i.Token,
 		&i.CreatedAt,
+		&i.LastUsedAt,
 	)
 	return i, err
 }
 
 const getSubscriptionsByMemberID = `-- name: GetSubscriptionsByMemberID :many
-SELECT id, member_id, token, created_at
+SELECT id, member_id, token, created_at, last_used_at
 FROM calendar_subscriptions
 WHERE member_id = ?
 `
@@ -83,6 +134,7 @@ func (q *Queries) GetSubscriptionsByMemberID(ctx context.Context, memberID strin
 			&i.MemberID,
 			&i.Token,
 			&i.CreatedAt,
+			&i.LastUsedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -95,4 +147,15 @@ func (q *Queries) GetSubscriptionsByMemberID(ctx context.Context, memberID strin
 		return nil, err
 	}
 	return items, nil
+}
+
+const touchSubscription = `-- name: TouchSubscription :exec
+UPDATE calendar_subscriptions
+SET last_used_at = CURRENT_TIMESTAMP
+WHERE token = ?
+`
+
+func (q *Queries) TouchSubscription(ctx context.Context, token string) error {
+	_, err := q.db.ExecContext(ctx, touchSubscription, token)
+	return err
 }

@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/inful/madhatter/internal/auth"
@@ -142,6 +144,9 @@ func (h *Handler) handleCalendarICS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Record that this subscription was used.
+	_ = h.db.TouchSubscription(r.Context(), token)
+
 	// Set headers for calendar download.
 	w.Header().Set("Content-Type", "text/calendar")
 	w.Header().Set("Content-Disposition", "attachment; filename=\"support-rota.ics\"")
@@ -187,6 +192,9 @@ func (h *Handler) handleMeetingsCalendarICS(w http.ResponseWriter, r *http.Reque
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
+
+	// Record that this subscription was used.
+	_ = h.db.TouchSubscription(r.Context(), token)
 
 	// Set headers for calendar download.
 	w.Header().Set("Content-Type", "text/calendar")
@@ -272,4 +280,72 @@ func parseForwardedHeader(headerValue string) (proto string, host string) {
 	}
 
 	return proto, host
+}
+
+// defaultStaleSubscriptionDays is the default number of days of inactivity before a
+// subscription is considered stale. Admins can override via the cleanup form.
+const defaultStaleSubscriptionDays = 90
+
+func (h *Handler) renderCalendarSubscriptionsPage(w http.ResponseWriter, r *http.Request, staleDays int, deleted int64) {
+	ctx := r.Context()
+
+	data := map[string]any{
+		"Template":         "calendar_subscriptions",
+		"DefaultStaleDays": staleDays,
+	}
+
+	if deleted > 0 {
+		data["Deleted"] = deleted
+	}
+
+	if user, ok := auth.GetUserFromContext(ctx); ok {
+		data["User"] = user
+		data["IsAdmin"] = user.IsAdmin.Valid && user.IsAdmin.Int64 == 1
+	}
+
+	subs, err := h.db.GetAllSubscriptions(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	data["Subscriptions"] = subs
+
+	if err := h.tmpl.ExecuteTemplate(w, "calendar_subscriptions.html", data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func (h *Handler) handleCalendarSubscriptions(w http.ResponseWriter, r *http.Request) {
+	h.renderCalendarSubscriptionsPage(w, r, defaultStaleSubscriptionDays, 0)
+}
+
+func (h *Handler) handleCalendarSubscriptionsCleanup(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	days := defaultStaleSubscriptionDays
+	if v := strings.TrimSpace(r.FormValue("days")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			days = n
+		}
+	}
+
+	cutoff := time.Now().AddDate(0, 0, -days)
+	deleted, err := h.db.DeleteStaleSubscriptions(ctx, cutoff)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	h.renderCalendarSubscriptionsPage(w, r, days, deleted)
 }

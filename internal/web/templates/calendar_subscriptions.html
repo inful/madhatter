@@ -1,0 +1,99 @@
+{{define "calendar_subscriptions.html"}}
+{{template "base" .}}
+{{end}}
+
+{{define "calendar_subscriptions_title"}}Calendar Subscriptions{{end}}
+
+{{define "calendar_subscriptions_content"}}
+{{template "user_card" .}}
+{{template "page_header" (dict "Title" "Calendar Subscriptions" "Icon" "fas fa-calendar-alt" "BackHref" "/" "BackLabel" "Dashboard")}}
+
+{{if .Deleted}}
+<div class="notification is-success is-light mb-4">
+    <i class="fas fa-check-circle mr-2"></i>
+    Removed <strong>{{.Deleted}}</strong> stale subscription{{if ne .Deleted 1}}s{{end}}.
+</div>
+{{end}}
+
+<div class="card mb-5">
+    <header class="card-header">
+        <p class="card-header-title">
+            <i class="fas fa-broom mr-2"></i> Clean Up Stale Subscriptions
+        </p>
+    </header>
+    <div class="card-content">
+        <p class="mb-4">
+            Subscriptions that have not fetched a calendar in the specified number of days will be deleted.
+            Subscriptions that have never been used are treated as stale based on their creation date.
+        </p>
+        <form method="POST" action="/calendar/subscriptions/cleanup">
+            <div class="field is-grouped is-grouped-multiline">
+                <div class="control">
+                    <label class="label">Inactive for at least</label>
+                    <div class="field has-addons">
+                        <div class="control">
+                            <input class="input" type="number" name="days" value="{{.DefaultStaleDays}}" min="1" style="width: 6rem;">
+                        </div>
+                        <div class="control">
+                            <span class="button is-static">days</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="control mt-3">
+                <button type="submit" class="button is-danger is-light">
+                    <i class="fas fa-trash-alt mr-2"></i> Delete stale subscriptions
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <header class="card-header">
+        <p class="card-header-title">
+            <i class="fas fa-list mr-2"></i> All Subscriptions ({{len .Subscriptions}})
+        </p>
+    </header>
+    <div class="card-content">
+        {{if .Subscriptions}}
+        <div class="table-container">
+            <table class="table is-fullwidth is-hoverable">
+                <thead>
+                    <tr>
+                        <th>Member ID</th>
+                        <th>Token</th>
+                        <th>Created</th>
+                        <th>Last Used</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .Subscriptions}}
+                    <tr>
+                        <td><code>{{.MemberID}}</code></td>
+                        <td><code>{{slice .Token 0 8}}…</code></td>
+                        <td>{{.CreatedAt.Format "2006-01-02"}}</td>
+                        <td>
+                            {{if .LastUsedAt}}
+                                {{.LastUsedAt.Format "2006-01-02"}}
+                            {{else}}
+                                <span class="tag is-warning is-light">Never</span>
+                            {{end}}
+                        </td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+        {{else}}
+        <p class="has-text-grey">No subscriptions found.</p>
+        {{end}}
+    </div>
+</div>
+{{end}}
+
+{{define "calendar_subscriptions_styles"}}
+{{end}}
+
+{{define "calendar_subscriptions_scripts"}}
+{{end}}

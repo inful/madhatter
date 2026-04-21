@@ -32,8 +32,9 @@ type RotaAssignment struct {
 }
 
 type CalendarSubscription struct {
-	ID        string    `json:"id"`
-	MemberID  string    `json:"member_id"`
-	Token     string    `json:"token"`
-	CreatedAt time.Time `json:"created_at"`
+	ID         string     `json:"id"`
+	MemberID   string     `json:"member_id"`
+	Token      string     `json:"token"`
+	CreatedAt  time.Time  `json:"created_at"`
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
 }

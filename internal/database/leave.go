@@ -22,11 +22,7 @@ func (db *DB) CreateLeaveRecord(ctx context.Context, memberID, startDate, endDat
 
 	id := uuid.New().String()
 
-	startTime, err := time.Parse("2006-01-02", startDate)
-	if err != nil {
-		return "", err
-	}
-	endTime, err := time.Parse("2006-01-02", endDate)
+	startTime, endTime, err := parseLeaveDates(startDate, endDate)
 	if err != nil {
 		return "", err
 	}
@@ -178,9 +174,6 @@ func (db *DB) UpdateLeaveRecord(ctx context.Context, leaveID, memberID, startDat
 	startTime, endTime, err := parseLeaveDates(startDate, endDate)
 	if err != nil {
 		return err
-	}
-	if endTime.Before(startTime) {
-		return errors.New("endDate must be on or after startDate")
 	}
 
 	params := sqlc.UpdateLeaveRecordParams{

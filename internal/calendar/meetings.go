@@ -155,10 +155,10 @@ Agenda:
 
 	defaultMeetingDescriptionHTMLTemplate = template.Must(template.New("meetingHTML").Parse(
 		`<h3>{{.MeetingName}}</h3>{{if .TeamsURL}}<p><a href="{{.TeamsURL}}">Join Teams meeting</a></p>{{end}}` +
-			`{{if .Links}}<h4>Links</h4><ul>{{range .Links}}{{if .HTML}}<li>{{.HTML}}</li>{{else}}<li><a href="{{.URL}}">{{.Label}}</a></li>{{end}}{{end}}</ul>{{end}}` +
-			`<h4>Away</h4><ul>{{if .Away}}{{range .Away}}<li>{{.}}</li>{{end}}{{else}}<li>(none)</li>{{end}}</ul>` +
-			`<h4>Present</h4><ul>{{if .Shuffle}}{{range .Shuffle}}<li>{{.}}</li>{{end}}{{else}}<li>(no attendees)</li>{{end}}</ul>` +
-			`<h4>Agenda</h4><ul>{{range .Agenda}}<li>{{.}}</li>{{end}}</ul>`,
+			`{{if .Links}}<h4>Links</h4>{{range .Links}}{{if .HTML}}<p>{{.HTML}}</p>{{else}}<p><a href="{{.URL}}">{{.Label}}</a></p>{{end}}{{end}}{{end}}` +
+			`<h4>Away</h4>{{if .Away}}{{range .Away}}<p>&#8226; {{.}}</p>{{end}}{{else}}<p>(none)</p>{{end}}` +
+			`<h4>Present</h4>{{if .Shuffle}}{{range .Shuffle}}<p>&#8226; {{.}}</p>{{end}}{{else}}<p>(no attendees)</p>{{end}}` +
+			`<h4>Agenda</h4>{{range .Agenda}}<p>&#8226; {{.}}</p>{{end}}`,
 	))
 
 	meetingTextTemplateCache sync.Map // map[string]*texttemplate.Template

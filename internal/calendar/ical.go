@@ -250,12 +250,12 @@ func formatLinksHTML(links []MeetingLink) string {
 	for _, l := range links {
 		if strings.TrimSpace(string(l.HTML)) != "" {
 			if !builtAny {
-				b.WriteString("<h4>Links</h4><ul>")
+				b.WriteString("<h4>Links</h4>")
 				builtAny = true
 			}
-			b.WriteString("<li>")
+			b.WriteString("<p>")
 			b.WriteString(string(l.HTML))
-			b.WriteString("</li>")
+			b.WriteString("</p>")
 			continue
 		}
 
@@ -265,19 +265,16 @@ func formatLinksHTML(links []MeetingLink) string {
 			continue
 		}
 		if !builtAny {
-			b.WriteString("<h4>Links</h4><ul>")
+			b.WriteString("<h4>Links</h4>")
 			builtAny = true
 		}
-		b.WriteString("<li><a href=\"")
+		b.WriteString("<p><a href=\"")
 		b.WriteString(template.HTMLEscapeString(urlStr))
 		b.WriteString("\">")
 		b.WriteString(template.HTMLEscapeString(label))
-		b.WriteString("</a></li>")
+		b.WriteString("</a></p>")
 	}
 
-	if builtAny {
-		b.WriteString("</ul>")
-	}
 	return b.String()
 }
 

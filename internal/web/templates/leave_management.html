@@ -45,10 +45,6 @@
                                     <span class="tag is-success">
                                         <i class="fas fa-check mr-1"></i> Assigned
                                     </span>
-                                {{else if eq .Leave.Status "completed"}}
-                                    <span class="tag is-light">
-                                        <i class="fas fa-check-double mr-1"></i> Completed
-                                    </span>
                                 {{else}}
                                     <span class="tag is-info">{{.Leave.Status}}</span>
                                 {{end}}
@@ -57,7 +53,7 @@
                             <td>
                                 {{if $.IsAdmin}}
                                     <button class="button is-small is-info is-light mr-1" 
-                                            onclick='showEditModal("{{js .Leave.ID}}", "{{js .Leave.MemberID}}", "{{(.Leave.StartDate.Format "2006-01-02") | js}}", "{{(.Leave.EndDate.Format "2006-01-02") | js}}", "{{js .Leave.Status}}")'
+                                            onclick='showEditModal("{{js .Leave.ID}}", "{{js .Leave.MemberID}}", "{{(.Leave.StartDate.Format "2006-01-02") | js}}", "{{(.Leave.EndDate.Format "2006-01-02") | js}}")'
                                             aria-label="Edit leave record">
                                         <i class="fas fa-edit"></i>
                                     </button>
@@ -121,18 +117,6 @@
                         <input id="editEndDate" class="input" type="date" name="end_date" required>
                     </div>
                 </div>
-                <div class="field">
-                    <label class="label">Status</label>
-                    <div class="control">
-                        <div class="select is-fullwidth">
-                            <select id="editStatus" name="status" required>
-                                <option value="pending">Pending</option>
-                                <option value="assigned">Assigned</option>
-                                <option value="completed">Completed</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
             </section>
             <footer class="modal-card-foot">
                 <button type="submit" class="button is-success">
@@ -160,19 +144,17 @@
 
 {{define "leave_management_scripts"}}
 <script>
-    function showEditModal(id, memberID, startDate, endDate, status) {
+    function showEditModal(id, memberID, startDate, endDate) {
         const modal = document.getElementById('editModal');
         const form = document.getElementById('editForm');
         const memberSelect = document.getElementById('editMemberID');
         const startDateInput = document.getElementById('editStartDate');
         const endDateInput = document.getElementById('editEndDate');
-        const statusSelect = document.getElementById('editStatus');
 
         form.action = '/leave/' + id + '/edit';
         memberSelect.value = memberID;
         startDateInput.value = startDate;
         endDateInput.value = endDate;
-        statusSelect.value = status;
 
         modal.classList.add('is-active');
     }

@@ -157,7 +157,6 @@ func (h *Handler) handleLeaveEdit(w http.ResponseWriter, r *http.Request) {
 	memberID := strings.TrimSpace(r.FormValue("member_id"))
 	startDate := strings.TrimSpace(r.FormValue("start_date"))
 	endDate := strings.TrimSpace(r.FormValue("end_date"))
-	status := strings.TrimSpace(r.FormValue("status"))
 
 	// Validate input at handler level.
 	if memberID == "" {
@@ -172,10 +171,6 @@ func (h *Handler) handleLeaveEdit(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "end_date cannot be empty", http.StatusBadRequest)
 		return
 	}
-	if status == "" {
-		http.Error(w, "status cannot be empty", http.StatusBadRequest)
-		return
-	}
 
 	// Validate date format and ordering.
 	if _, _, err := validateLeaveDates(startDate, endDate); err != nil {
@@ -183,7 +178,14 @@ func (h *Handler) handleLeaveEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.db.UpdateLeaveRecord(ctx, leaveID, memberID, startDate, endDate, status); err != nil {
+	// Preserve the existing status — it is managed by the scheduling engine.
+	existing, err := h.db.GetLeaveByID(ctx, leaveID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := h.db.UpdateLeaveRecord(ctx, leaveID, memberID, startDate, endDate, existing.Status); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

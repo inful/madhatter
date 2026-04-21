@@ -198,7 +198,7 @@ func buildRequestBuilders(
 			return requestSpec{Method: http.MethodGet, Path: "/api/v1/leave"}
 		},
 		"update-leave": func() requestSpec {
-			return requestSpec{Method: http.MethodPut, Path: "/api/v1/leave/" + leaveToUpdate, Body: map[string]any{"member_id": memberA, "start_date": "2024-01-17", "end_date": "2024-01-17", "status": "assigned"}, RequiresAdmin: true}
+			return requestSpec{Method: http.MethodPut, Path: "/api/v1/leave/" + leaveToUpdate, Body: map[string]any{"member_id": memberA, "start_date": "2024-01-17", "end_date": "2024-01-17"}, RequiresAdmin: true}
 		},
 		"delete-leave": func() requestSpec {
 			return requestSpec{Method: http.MethodDelete, Path: "/api/v1/leave/" + leaveToDelete, RequiresAdmin: true}

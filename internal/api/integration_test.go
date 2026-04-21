@@ -294,7 +294,6 @@ func TestLeaveEndpoints(t *testing.T) {
 		updateInput.Body.MemberID = aliceID
 		updateInput.Body.StartDate = "2024-01-25"
 		updateInput.Body.EndDate = "2024-01-27"
-		updateInput.Body.Status = "assigned"
 
 		updateResp, err := server.handleUpdateLeave(ctx, updateInput)
 		require.NoError(t, err)

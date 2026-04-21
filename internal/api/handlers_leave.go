@@ -140,7 +140,6 @@ type UpdateLeaveInput struct {
 		MemberID  string `json:"member_id"`
 		StartDate string `format:"date" json:"start_date"`
 		EndDate   string `format:"date" json:"end_date"`
-		Status    string `enum:"pending,assigned,completed" json:"status"`
 	}
 }
 
@@ -167,8 +166,13 @@ func (s *Server) handleUpdateLeave(ctx context.Context, input *UpdateLeaveInput)
 		return nil, huma.Error403Forbidden("Admin privileges required")
 	}
 
-	err := s.db.UpdateLeaveRecord(ctx, input.ID, input.Body.MemberID, input.Body.StartDate, input.Body.EndDate, input.Body.Status)
+	// Preserve the existing status — it is managed by the scheduling engine.
+	existing, err := s.db.GetLeaveByID(ctx, input.ID)
 	if err != nil {
+		return nil, huma.Error500InternalServerError("Failed to fetch leave record", err)
+	}
+
+	if err := s.db.UpdateLeaveRecord(ctx, input.ID, input.Body.MemberID, input.Body.StartDate, input.Body.EndDate, existing.Status); err != nil {
 		return nil, huma.Error500InternalServerError("Failed to update leave record", err)
 	}
 

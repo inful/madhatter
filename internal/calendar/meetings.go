@@ -294,7 +294,7 @@ func addMorningMeetingEvent(ctx context.Context, db *database.DB, g *ICalGenerat
 	event.SetSummary(morningMeetingSummary)
 	event.SetStatus(ics.ObjectStatusConfirmed)
 	event.SetSequence(0)
-	event.SetModifiedAt(time.Now().UTC())
+	event.SetModifiedAt(time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, time.UTC))
 
 	if opts.TeamsURL != "" {
 		event.SetLocation(opts.TeamsURL)
@@ -327,7 +327,7 @@ func addProjectMeetingEvent(ctx context.Context, db *database.DB, g *ICalGenerat
 	event.SetSummary(projectMeetingSummary)
 	event.SetStatus(ics.ObjectStatusConfirmed)
 	event.SetSequence(0)
-	event.SetModifiedAt(time.Now().UTC())
+	event.SetModifiedAt(time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, time.UTC))
 
 	if opts.TeamsURL != "" {
 		event.SetLocation(opts.TeamsURL)

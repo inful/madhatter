@@ -126,30 +126,25 @@ type meetingLinkTemplateData struct {
 
 var (
 	defaultMeetingDescriptionTextTemplate = texttemplate.Must(texttemplate.New("meetingText").Parse(
-		`{{.MeetingName}}
+		`{{.MeetingName}}{{if .Links}}
 
-{{- if .Links }}
 Links:
-{{- range .Links }}- {{.Text}}
-{{- end }}
-{{ end }}
+{{- range .Links}}
+- {{.Text}}{{end}}{{end}}
 
-Present:
-{{- if .Shuffle }}
-{{- range .Shuffle }}{{.}}
-{{- end }}
-{{- else }}- (no attendees)
-{{- end }}
-{{- if .Away }}
+Present:{{if .Shuffle}}
+{{- range .Shuffle}}
+- {{.}}{{end}}{{else}}
+- (no attendees){{end}}{{if .Away}}
 
 Away:
-{{- range .Away }}- {{.}}
-{{- end }}
-{{- end }}
+{{- range .Away}}
+- {{.}}{{end}}{{end}}
 
 Agenda:
-{{- range .Agenda }}- {{.}}
-{{- end }}`,
+{{- range .Agenda}}
+- {{.}}{{end}}
+`,
 	))
 
 	defaultMeetingDescriptionHTMLTemplate = template.Must(template.New("meetingHTML").Parse(
@@ -410,12 +405,12 @@ func supportLine(supportName string, supportIsCover bool) string {
 
 func shuffleOrderLines(order []database.TeamMember, supportName string) []string {
 	out := make([]string, 0, len(order))
-	for i, m := range order {
+	for _, m := range order {
 		name := m.Name
 		if supportName != "" && strings.EqualFold(m.Name, supportName) {
 			name += " (Support)"
 		}
-		out = append(out, fmt.Sprintf("%d. %s", i+1, name))
+		out = append(out, name)
 	}
 	return out
 }

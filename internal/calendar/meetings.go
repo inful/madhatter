@@ -408,7 +408,7 @@ func shuffleOrderLines(order []database.TeamMember, supportName string) []string
 	for _, m := range order {
 		name := m.Name
 		if supportName != "" && strings.EqualFold(m.Name, supportName) {
-			name += " (Support)"
+			name += " (HAT)"
 		}
 		out = append(out, name)
 	}

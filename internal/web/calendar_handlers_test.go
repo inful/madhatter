@@ -49,7 +49,7 @@ func TestOutlookSubscriptionURL_UsesHTTPSAndName(t *testing.T) {
 	assert.Empty(t, query.Get("rru"))
 }
 
-func TestGoogleSubscriptionURL_UsesHTTPSAndAddByURL(t *testing.T) {
+func TestGoogleSubscriptionURL_UsesCIDWithWebcalURL(t *testing.T) {
 	req := &http.Request{Host: "example.com", Header: make(http.Header)}
 
 	result := googleSubscriptionURL(req, "/calendar/test-token/ics")
@@ -57,8 +57,8 @@ func TestGoogleSubscriptionURL_UsesHTTPSAndAddByURL(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "https", parsed.Scheme)
 	assert.Equal(t, "calendar.google.com", parsed.Host)
-	assert.Equal(t, "/calendar/r/settings/addbyurl", parsed.Path)
+	assert.Equal(t, "/calendar/render", parsed.Path)
 
 	query := parsed.Query()
-	assert.Equal(t, "https://example.com/calendar/test-token/ics", query.Get("url"))
+	assert.Equal(t, "webcal://example.com/calendar/test-token/ics", query.Get("cid"))
 }

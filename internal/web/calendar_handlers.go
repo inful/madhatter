@@ -124,23 +124,21 @@ func outlookSubscriptionURL(r *http.Request, path string, calendarName string) t
 }
 
 func googleSubscriptionURL(r *http.Request, path string) template.URL {
-	base, err := url.Parse(baseURLFromRequest(r))
-	if err != nil || base.Host == "" || base.User != nil {
+	// Google Calendar's render?cid= endpoint accepts a webcal:// or https:// URL and
+	// opens the "Add calendar" dialog with it prefilled. The /r/settings/addbyurl
+	// page does not support prefilling via query parameter.
+	webcalURL := webcalSubscriptionURL(r, path)
+	if webcalURL == "" {
 		return ""
 	}
 
-	base.Scheme = schemeHTTPS
-	base.Path = path
-	base.RawQuery = ""
-	base.Fragment = ""
-
-	googleURL, err := url.Parse("https://calendar.google.com/calendar/r/settings/addbyurl")
+	googleURL, err := url.Parse("https://calendar.google.com/calendar/render")
 	if err != nil {
 		return ""
 	}
 
 	query := googleURL.Query()
-	query.Set("url", base.String())
+	query.Set("cid", string(webcalURL))
 	googleURL.RawQuery = query.Encode()
 
 	//nolint:gosec // Constructed from trusted URL parts and encoded query values.

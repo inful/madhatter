@@ -45,8 +45,8 @@ func (h *Handler) handleCalendar(w http.ResponseWriter, r *http.Request) {
 		data["MeetingsCalendarURL"] = baseURL + "/calendar/" + token + "/meetings.ics"
 		data["CalendarWebcalURL"] = webcalSubscriptionURL(r, "/calendar/"+token+"/ics")
 		data["MeetingsCalendarWebcalURL"] = webcalSubscriptionURL(r, "/calendar/"+token+"/meetings.ics")
-		data["CalendarOutlookURL"] = outlookSubscriptionURL(r, "/calendar/"+token+"/ics", "Support rota")
-		data["MeetingsCalendarOutlookURL"] = outlookSubscriptionURL(r, "/calendar/"+token+"/meetings.ics", "Support meetings")
+		data["CalendarOutlookURL"] = outlookSubscriptionURL(r, "/calendar/"+token+"/ics", "HAT Days")
+		data["MeetingsCalendarOutlookURL"] = outlookSubscriptionURL(r, "/calendar/"+token+"/meetings.ics", "Shuffles")
 		data["ShowResult"] = true
 
 		if err := h.tmpl.ExecuteTemplate(w, "calendar.html", data); err != nil {

@@ -134,18 +134,17 @@ Links:
 {{- end }}
 {{ end }}
 
-Away:
-{{- if .Away }}
-{{- range .Away }}- {{.}}
-{{- end }}
-{{- else }}- (none)
-{{- end }}
-
 Present:
 {{- if .Shuffle }}
 {{- range .Shuffle }}{{.}}
 {{- end }}
 {{- else }}- (no attendees)
+{{- end }}
+{{- if .Away }}
+
+Away:
+{{- range .Away }}- {{.}}
+{{- end }}
 {{- end }}
 
 Agenda:
@@ -156,8 +155,8 @@ Agenda:
 	defaultMeetingDescriptionHTMLTemplate = template.Must(template.New("meetingHTML").Parse(
 		`<h3>{{.MeetingName}}</h3>{{if .TeamsURL}}<p><a href="{{.TeamsURL}}">Join Teams meeting</a></p>{{end}}` +
 			`{{if .Links}}<h4>Links</h4>{{range .Links}}{{if .HTML}}<p>{{.HTML}}</p>{{else}}<p><a href="{{.URL}}">{{.Label}}</a></p>{{end}}{{end}}{{end}}` +
-			`<h4>Away</h4>{{if .Away}}{{range .Away}}<p>&#8226; {{.}}</p>{{end}}{{else}}<p>(none)</p>{{end}}` +
 			`<h4>Present</h4>{{if .Shuffle}}{{range .Shuffle}}<p>&#8226; {{.}}</p>{{end}}{{else}}<p>(no attendees)</p>{{end}}` +
+			`{{if .Away}}<h4>Away</h4>{{range .Away}}<p>&#8226; {{.}}</p>{{end}}{{end}}` +
 			`<h4>Agenda</h4>{{range .Agenda}}<p>&#8226; {{.}}</p>{{end}}`,
 	))
 

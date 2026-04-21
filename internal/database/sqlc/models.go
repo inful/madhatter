@@ -21,11 +21,13 @@ type ApiToken struct {
 }
 
 type CalendarSubscription struct {
-	ID         string       `json:"id"`
-	MemberID   string       `json:"member_id"`
-	Token      string       `json:"token"`
-	CreatedAt  sql.NullTime `json:"created_at"`
-	LastUsedAt sql.NullTime `json:"last_used_at"`
+	ID                 string       `json:"id"`
+	MemberID           string       `json:"member_id"`
+	Token              string       `json:"token"`
+	CreatedAt          sql.NullTime `json:"created_at"`
+	LastUsedAt         sql.NullTime `json:"last_used_at"`
+	LastUsedRotaAt     sql.NullTime `json:"last_used_rota_at"`
+	LastUsedMeetingsAt sql.NullTime `json:"last_used_meetings_at"`
 }
 
 type LeaveRecord struct {

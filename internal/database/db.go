@@ -176,9 +176,14 @@ func (db *DB) GetMemberByToken(ctx context.Context, token string) (*TeamMember, 
 	}, nil
 }
 
-// TouchSubscription updates the last_used_at timestamp for a subscription token.
-func (db *DB) TouchSubscription(ctx context.Context, token string) error {
-	return db.queries.TouchSubscription(ctx, token)
+// TouchRotaSubscription records that the rota ICS calendar was fetched for the given token.
+func (db *DB) TouchRotaSubscription(ctx context.Context, token string) error {
+	return db.queries.TouchRotaSubscription(ctx, token)
+}
+
+// TouchMeetingsSubscription records that the meetings ICS calendar was fetched for the given token.
+func (db *DB) TouchMeetingsSubscription(ctx context.Context, token string) error {
+	return db.queries.TouchMeetingsSubscription(ctx, token)
 }
 
 // GetAllSubscriptions returns all calendar subscriptions ordered by last_used_at ascending.
@@ -189,7 +194,8 @@ func (db *DB) GetAllSubscriptions(ctx context.Context) ([]CalendarSubscription, 
 	}
 
 	result := make([]CalendarSubscription, len(rows))
-	for i, r := range rows {
+	for i := range rows {
+		r := &rows[i]
 		sub := CalendarSubscription{
 			ID:       r.ID,
 			MemberID: r.MemberID,
@@ -201,6 +207,14 @@ func (db *DB) GetAllSubscriptions(ctx context.Context) ([]CalendarSubscription, 
 		if r.LastUsedAt.Valid {
 			t := r.LastUsedAt.Time
 			sub.LastUsedAt = &t
+		}
+		if r.LastUsedRotaAt.Valid {
+			t := r.LastUsedRotaAt.Time
+			sub.LastUsedRotaAt = &t
+		}
+		if r.LastUsedMeetingsAt.Valid {
+			t := r.LastUsedMeetingsAt.Time
+			sub.LastUsedMeetingsAt = &t
 		}
 		result[i] = sub
 	}
@@ -219,6 +233,37 @@ func (db *DB) DeleteStaleSubscriptions(ctx context.Context, cutoff time.Time) (i
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+// MemberSubscriptionActivity records whether a member's subscriptions have been
+// actively used for the rota and/or meetings calendars recently.
+type MemberSubscriptionActivity struct {
+	RotaActive     bool
+	MeetingsActive bool
+}
+
+// GetSubscriptionActivityByMember returns a map of member ID → subscription
+// activity for all members who have at least one subscription active since
+// the given cutoff time.
+func (db *DB) GetSubscriptionActivityByMember(ctx context.Context, since time.Time) (map[string]MemberSubscriptionActivity, error) {
+	rows, err := db.queries.GetAllSubscriptions(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make(map[string]MemberSubscriptionActivity)
+	for i := range rows {
+		r := &rows[i]
+		act := result[r.MemberID]
+		if r.LastUsedRotaAt.Valid && r.LastUsedRotaAt.Time.After(since) {
+			act.RotaActive = true
+		}
+		if r.LastUsedMeetingsAt.Valid && r.LastUsedMeetingsAt.Time.After(since) {
+			act.MeetingsActive = true
+		}
+		result[r.MemberID] = act
+	}
+	return result, nil
 }
 
 func (db *DB) GetUpcomingAssignments(ctx context.Context, memberID string, days int) ([]RotaAssignment, error) {

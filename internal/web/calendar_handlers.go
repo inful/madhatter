@@ -144,8 +144,8 @@ func (h *Handler) handleCalendarICS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Record that this subscription was used.
-	_ = h.db.TouchSubscription(r.Context(), token)
+	// Record that this subscription was used for the rota calendar.
+	_ = h.db.TouchRotaSubscription(r.Context(), token)
 
 	// Set headers for calendar download.
 	w.Header().Set("Content-Type", "text/calendar")
@@ -193,8 +193,8 @@ func (h *Handler) handleMeetingsCalendarICS(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Record that this subscription was used.
-	_ = h.db.TouchSubscription(r.Context(), token)
+	// Record that this subscription was used for the meetings calendar.
+	_ = h.db.TouchMeetingsSubscription(r.Context(), token)
 
 	// Set headers for calendar download.
 	w.Header().Set("Content-Type", "text/calendar")

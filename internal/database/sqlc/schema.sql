@@ -42,6 +42,8 @@ CREATE TABLE IF NOT EXISTS calendar_subscriptions (
     token TEXT UNIQUE NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     last_used_at DATETIME,
+    last_used_rota_at DATETIME,
+    last_used_meetings_at DATETIME,
     FOREIGN KEY (member_id) REFERENCES team_members(id) ON DELETE CASCADE
 );
 

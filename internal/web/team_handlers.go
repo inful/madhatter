@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/mail"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/inful/madhatter/internal/auth"
@@ -53,6 +54,18 @@ func (h *Handler) handleTeam(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data["Members"] = members
+
+	// Build subscription activity map: member ID → {RotaActive, MeetingsActive}.
+	// A subscription is "active" if it was used in the last 7 days.
+	const activeSubscriptionDays = 7
+	since := time.Now().AddDate(0, 0, -activeSubscriptionDays)
+	activity, err := h.db.GetSubscriptionActivityByMember(ctx, since)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	data["SubscriptionActivity"] = activity
 
 	if err := h.tmpl.ExecuteTemplate(w, "team.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

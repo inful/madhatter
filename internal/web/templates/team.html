@@ -69,6 +69,33 @@
                                 <span class="tag is-success is-light mr-2">
                                     <i class="fas fa-check-circle mr-1"></i> Active
                                 </span>
+                                {{with index $.SubscriptionActivity .ID}}
+                                    {{if .RotaActive}}
+                                        <span class="tag is-info is-light mr-1" title="Rota calendar fetched in the last 7 days">
+                                            <i class="fas fa-calendar-check mr-1"></i> Rota
+                                        </span>
+                                    {{else}}
+                                        <span class="tag is-light mr-1" title="Rota calendar not fetched recently">
+                                            <i class="fas fa-calendar-times mr-1"></i> Rota
+                                        </span>
+                                    {{end}}
+                                    {{if .MeetingsActive}}
+                                        <span class="tag is-info is-light mr-1" title="Meetings calendar fetched in the last 7 days">
+                                            <i class="fas fa-calendar-check mr-1"></i> Meetings
+                                        </span>
+                                    {{else}}
+                                        <span class="tag is-light mr-1" title="Meetings calendar not fetched recently">
+                                            <i class="fas fa-calendar-times mr-1"></i> Meetings
+                                        </span>
+                                    {{end}}
+                                {{else}}
+                                    <span class="tag is-light mr-1" title="Rota calendar not fetched recently">
+                                        <i class="fas fa-calendar-times mr-1"></i> Rota
+                                    </span>
+                                    <span class="tag is-light mr-1" title="Meetings calendar not fetched recently">
+                                        <i class="fas fa-calendar-times mr-1"></i> Meetings
+                                    </span>
+                                {{end}}
                                 {{if $.IsAdmin}}
                                     <button class="button is-small is-info is-light mr-1" onclick='showEditModal("{{js .ID}}", "{{js .Name}}", "{{js .Email}}")' aria-label="Edit team member">
                                         <i class="fas fa-edit"></i>

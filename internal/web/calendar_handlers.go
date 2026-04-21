@@ -47,6 +47,8 @@ func (h *Handler) handleCalendar(w http.ResponseWriter, r *http.Request) {
 		data["MeetingsCalendarWebcalURL"] = webcalSubscriptionURL(r, "/calendar/"+token+"/meetings.ics")
 		data["CalendarOutlookURL"] = outlookSubscriptionURL(r, "/calendar/"+token+"/ics", "HAT Days")
 		data["MeetingsCalendarOutlookURL"] = outlookSubscriptionURL(r, "/calendar/"+token+"/meetings.ics", "Shuffles")
+		data["CalendarGoogleURL"] = googleSubscriptionURL(r, "/calendar/"+token+"/ics")
+		data["MeetingsCalendarGoogleURL"] = googleSubscriptionURL(r, "/calendar/"+token+"/meetings.ics")
 		data["ShowResult"] = true
 
 		if err := h.tmpl.ExecuteTemplate(w, "calendar.html", data); err != nil {
@@ -99,7 +101,7 @@ func outlookSubscriptionURL(r *http.Request, path string, calendarName string) t
 		return ""
 	}
 
-	base.Scheme = "https"
+	base.Scheme = schemeHTTPS
 	base.Path = path
 	base.RawQuery = ""
 	base.Fragment = ""
@@ -119,6 +121,30 @@ func outlookSubscriptionURL(r *http.Request, path string, calendarName string) t
 
 	//nolint:gosec // Constructed from trusted URL parts and encoded query values.
 	return template.URL(outlookURL.String())
+}
+
+func googleSubscriptionURL(r *http.Request, path string) template.URL {
+	base, err := url.Parse(baseURLFromRequest(r))
+	if err != nil || base.Host == "" || base.User != nil {
+		return ""
+	}
+
+	base.Scheme = schemeHTTPS
+	base.Path = path
+	base.RawQuery = ""
+	base.Fragment = ""
+
+	googleURL, err := url.Parse("https://calendar.google.com/calendar/r/settings/addbyurl")
+	if err != nil {
+		return ""
+	}
+
+	query := googleURL.Query()
+	query.Set("url", base.String())
+	googleURL.RawQuery = query.Encode()
+
+	//nolint:gosec // Constructed from trusted URL parts and encoded query values.
+	return template.URL(googleURL.String())
 }
 
 func (h *Handler) handleCalendarICS(w http.ResponseWriter, r *http.Request) {

@@ -48,3 +48,17 @@ func TestOutlookSubscriptionURL_UsesHTTPSAndName(t *testing.T) {
 	assert.Empty(t, query.Get("path"))
 	assert.Empty(t, query.Get("rru"))
 }
+
+func TestGoogleSubscriptionURL_UsesHTTPSAndAddByURL(t *testing.T) {
+	req := &http.Request{Host: "example.com", Header: make(http.Header)}
+
+	result := googleSubscriptionURL(req, "/calendar/test-token/ics")
+	parsed, err := url.Parse(string(result))
+	require.NoError(t, err)
+	assert.Equal(t, "https", parsed.Scheme)
+	assert.Equal(t, "calendar.google.com", parsed.Host)
+	assert.Equal(t, "/calendar/r/settings/addbyurl", parsed.Path)
+
+	query := parsed.Query()
+	assert.Equal(t, "https://example.com/calendar/test-token/ics", query.Get("url"))
+}

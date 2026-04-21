@@ -17,7 +17,13 @@
         <div class="url-box" id="calendar-url-box">
             {{.CalendarURL}}
             <a class="button is-link is-small copy-btn" href="{{.CalendarOutlookURL}}" target="_blank" rel="noopener noreferrer">
-                <i class="fas fa-rss"></i> Subscribe (Outlook)
+                <i class="fas fa-rss"></i> Outlook
+            </a>
+            <a class="button is-danger is-small copy-btn" href="{{.CalendarGoogleURL}}" target="_blank" rel="noopener noreferrer">
+                <i class="fas fa-rss"></i> Google
+            </a>
+            <a class="button is-dark is-small copy-btn" href="{{.CalendarWebcalURL}}">
+                <i class="fas fa-rss"></i> Apple
             </a>
             <button class="button is-success is-small copy-btn" onclick="copyTextFromBox('calendar-url-box')">
                 <i class="fas fa-copy"></i> Copy
@@ -28,14 +34,20 @@
         <div class="url-box" id="meetings-calendar-url-box">
             {{.MeetingsCalendarURL}}
             <a class="button is-link is-small copy-btn" href="{{.MeetingsCalendarOutlookURL}}" target="_blank" rel="noopener noreferrer">
-                <i class="fas fa-rss"></i> Subscribe (Outlook)
+                <i class="fas fa-rss"></i> Outlook
+            </a>
+            <a class="button is-danger is-small copy-btn" href="{{.MeetingsCalendarGoogleURL}}" target="_blank" rel="noopener noreferrer">
+                <i class="fas fa-rss"></i> Google
+            </a>
+            <a class="button is-dark is-small copy-btn" href="{{.MeetingsCalendarWebcalURL}}">
+                <i class="fas fa-rss"></i> Apple
             </a>
             <button class="button is-success is-small copy-btn" onclick="copyTextFromBox('meetings-calendar-url-box')">
                 <i class="fas fa-copy"></i> Copy
             </button>
         </div>
         <p class="mt-3"><strong>Token:</strong> <code>{{.Token}}</code></p>
-        <p class="mt-3 is-size-6">Copy this URL and add it to your calendar app (Google Calendar, Outlook, Apple Calendar, etc.)</p>
+        <p class="mt-3 is-size-6">Use the buttons to subscribe directly, or copy the URL and paste it into any other calendar app.</p>
     </div>
 {{end}}
 

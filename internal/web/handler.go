@@ -19,6 +19,7 @@ const (
 	defaultHolidayLookaheadDays  = 30
 	maxStringLength              = 255
 	dictKeyValuePairs            = 2
+	schemeHTTPS                  = "https"
 )
 
 type Handler struct {

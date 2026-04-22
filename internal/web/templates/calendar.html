@@ -8,63 +8,90 @@
 {{template "user_card" .}}
 {{template "page_header" (dict "Title" "Calendar Subscriptions" "Icon" "fas fa-calendar-star" "BackHref" "/" "BackLabel" "Dashboard")}}
 
-{{if .ShowResult}}
-    <div class="result-box">
-        <h3 class="title is-4 has-text-success mb-3">
-            <i class="fas fa-check-circle"></i> Calendar Subscription Created
-        </h3>
-        <p class="has-text-weight-semibold mb-2">Support rota calendar URL:</p>
-        <div class="url-box" id="calendar-url-box" data-url="{{.CalendarURL}}">
-            <a class="button is-link is-small copy-btn" href="{{.CalendarOutlookURL}}" target="_blank" rel="noopener noreferrer">
-                <i class="fas fa-rss"></i> Outlook
-            </a>
-            <a class="button is-danger is-small copy-btn" href="{{.CalendarGoogleURL}}" target="_blank" rel="noopener noreferrer">
-                <i class="fas fa-rss"></i> Google
-            </a>
-            <a class="button is-dark is-small copy-btn" href="{{.CalendarWebcalURL}}">
-                <i class="fas fa-rss"></i> Apple
-            </a>
-            <button class="button is-success is-small copy-btn" onclick="copyTextFromBox('calendar-url-box')">
-                <i class="fas fa-copy"></i> Copy
-            </button>
-        </div>
+{{if .Token}}
+    {{if .AdminCreated}}
+    <div class="notification is-success is-light mb-4">
+        <i class="fas fa-check-circle mr-2"></i> Subscription created successfully.
+    </div>
+    {{end}}
 
-        <p class="has-text-weight-semibold mb-2 mt-4">Meetings calendar URL:</p>
-        <div class="url-box" id="meetings-calendar-url-box" data-url="{{.MeetingsCalendarURL}}">
-            <a class="button is-link is-small copy-btn" href="{{.MeetingsCalendarOutlookURL}}" target="_blank" rel="noopener noreferrer">
-                <i class="fas fa-rss"></i> Outlook
-            </a>
-            <a class="button is-danger is-small copy-btn" href="{{.MeetingsCalendarGoogleURL}}" target="_blank" rel="noopener noreferrer">
-                <i class="fas fa-rss"></i> Google
-            </a>
-            <a class="button is-dark is-small copy-btn" href="{{.MeetingsCalendarWebcalURL}}">
-                <i class="fas fa-rss"></i> Apple
-            </a>
-            <button class="button is-success is-small copy-btn" onclick="copyTextFromBox('meetings-calendar-url-box')">
-                <i class="fas fa-copy"></i> Copy
-            </button>
+    <div class="card mb-4">
+        <header class="card-header">
+            <p class="card-header-title">
+                <i class="fas fa-calendar-day mr-2"></i> HAT Days
+            </p>
+        </header>
+        <div class="card-content">
+            <p class="mb-3">Your support duty days.</p>
+            <div class="url-box" id="calendar-url-box" data-url="{{.CalendarURL}}">
+                <a class="button is-link is-small copy-btn" href="{{.CalendarOutlookURL}}" target="_blank" rel="noopener noreferrer">
+                    <i class="fas fa-rss mr-1"></i> Outlook
+                </a>
+                <a class="button is-danger is-small copy-btn" href="{{.CalendarGoogleURL}}" target="_blank" rel="noopener noreferrer">
+                    <i class="fas fa-rss mr-1"></i> Google
+                </a>
+                <a class="button is-dark is-small copy-btn" href="{{.CalendarWebcalURL}}">
+                    <i class="fas fa-rss mr-1"></i> Apple
+                </a>
+                <button class="button is-success is-small copy-btn" onclick="copyTextFromBox('calendar-url-box')">
+                    <i class="fas fa-copy mr-1"></i> Copy URL
+                </button>
+            </div>
         </div>
-        <p class="mt-3"><strong>Token:</strong> <code>{{.Token}}</code></p>
-        <p class="mt-3 is-size-6">Use the buttons to subscribe directly, or copy the URL and paste it into any other calendar app.</p>
+    </div>
+
+    <div class="card mb-4">
+        <header class="card-header">
+            <p class="card-header-title">
+                <i class="fas fa-calendar-week mr-2"></i> Shuffles
+            </p>
+        </header>
+        <div class="card-content">
+            <p class="mb-3">Daily shuffle meetings.</p>
+            <div class="url-box" id="meetings-calendar-url-box" data-url="{{.MeetingsCalendarURL}}">
+                <a class="button is-link is-small copy-btn" href="{{.MeetingsCalendarOutlookURL}}" target="_blank" rel="noopener noreferrer">
+                    <i class="fas fa-rss mr-1"></i> Outlook
+                </a>
+                <a class="button is-danger is-small copy-btn" href="{{.MeetingsCalendarGoogleURL}}" target="_blank" rel="noopener noreferrer">
+                    <i class="fas fa-rss mr-1"></i> Google
+                </a>
+                <a class="button is-dark is-small copy-btn" href="{{.MeetingsCalendarWebcalURL}}">
+                    <i class="fas fa-rss mr-1"></i> Apple
+                </a>
+                <button class="button is-success is-small copy-btn" onclick="copyTextFromBox('meetings-calendar-url-box')">
+                    <i class="fas fa-copy mr-1"></i> Copy URL
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <p class="is-size-7 has-text-grey mt-2">Use the buttons to subscribe directly, or copy the URL and paste it into any other calendar app. Calendars update automatically when your schedule changes.</p>
+{{else}}
+    <div class="notification is-warning is-light">
+        <i class="fas fa-exclamation-triangle mr-2"></i>
+        Your account is not linked to a team member. Please ask an administrator to add your email to the team.
     </div>
 {{end}}
 
-<div class="card">
+{{if .IsAdmin}}
+<div class="card mt-5">
     <header class="card-header">
         <p class="card-header-title">
-            <i class="fas fa-plus-circle mr-2"></i> Create New Subscription
+            <i class="fas fa-user-shield mr-2"></i> Admin: Create Subscription for Another Member
         </p>
     </header>
     <div class="card-content">
+        {{if .AdminCreated}}
+        <p class="mb-3 has-text-success"><i class="fas fa-check-circle mr-1"></i> Subscription shown above.</p>
+        {{end}}
         <form method="POST" action="/calendar">
-            <div class="field">
-                <label class="label">Select Team Member</label>
-                <div class="control has-icons-left">
+            <div class="field has-addons">
+                <div class="control is-expanded has-icons-left">
                     <div class="select is-fullwidth">
                         <select name="member_id" required>
                             <option value="">Select Team Member</option>
                             {{range .Members}}
-                                <option value="{{.ID}}">{{.Name}} - {{.Email}}</option>
+                                <option value="{{.ID}}">{{.Name}} ({{.Email}})</option>
                             {{end}}
                         </select>
                     </div>
@@ -72,55 +99,16 @@
                         <i class="fas fa-user"></i>
                     </span>
                 </div>
-            </div>
-
-            <div class="field">
                 <div class="control">
-                    <button type="submit" class="button is-primary is-fullwidth submit-btn">
-                        <i class="fas fa-calendar-plus mr-2"></i> Create Subscription
+                    <button type="submit" class="button is-primary">
+                        <i class="fas fa-calendar-plus mr-1"></i> Create
                     </button>
                 </div>
             </div>
         </form>
     </div>
 </div>
-
-<div class="card">
-    <header class="card-header">
-        <p class="card-header-title">
-            <i class="fas fa-question-circle mr-2"></i> How to Subscribe
-        </p>
-    </header>
-    <div class="card-content">
-        <div class="content">
-            <div class="step">
-                <span class="step-number">1</span>
-                <strong>Copy your calendar URL</strong> from the result above
-            </div>
-            <div class="step">
-                <span class="step-number">2</span>
-                Open your calendar app (Google Calendar, Outlook, Apple Calendar, etc.)
-            </div>
-            <div class="step">
-                <span class="step-number">3</span>
-                Add new calendar by URL
-            </div>
-            <div class="step">
-                <span class="step-number">4</span>
-                Paste the URL
-            </div>
-            <div class="step">
-                <span class="step-number">5</span>
-                Your support days will appear automatically and stay up-to-date
-            </div>
-        </div>
-
-        <div class="notification is-info is-light mt-4">
-            <i class="fas fa-info-circle mr-2"></i>
-            <strong>Tip:</strong> Calendar subscriptions automatically update when your schedule changes. No need to re-subscribe!
-        </div>
-    </div>
-</div>
+{{end}}
 
 <div id="copy-notification" class="copy-notification">
     <i class="fas fa-check mr-2"></i> URL copied to clipboard!
@@ -129,10 +117,7 @@
 
 {{define "calendar_styles"}}
 <style>
-    .result-box { background: #d4edda; border: 2px solid #28a745; border-radius: 8px; padding: 1.5rem; margin: 1rem 0; }
-    .url-box { background: #f8f9fa; padding: 1rem; border-radius: 6px; word-break: break-all; font-family: monospace; border: 1px solid #dee2e6; display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
-    .step { background: #f8f9fa; padding: 1rem; border-radius: 6px; margin-bottom: 0.5rem; }
-    .step-number { background: #667eea; color: white; width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: bold; margin-right: 0.5rem; }
+    .url-box { background: #f8f9fa; padding: 0.75rem 1rem; border-radius: 6px; border: 1px solid #dee2e6; display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
     .copy-btn { flex-shrink: 0; white-space: nowrap; }
     .copy-notification { background: #28a745; color: white; padding: 0.5rem 1rem; border-radius: 4px; position: fixed; top: 20px; right: 20px; display: none; z-index: 1000; }
 </style>

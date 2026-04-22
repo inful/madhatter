@@ -186,6 +186,41 @@ func (db *DB) TouchMeetingsSubscription(ctx context.Context, token string) error
 	return db.queries.TouchMeetingsSubscription(ctx, token)
 }
 
+// GetSubscriptionsByMemberID returns all calendar subscriptions for a given member.
+func (db *DB) GetSubscriptionsByMemberID(ctx context.Context, memberID string) ([]CalendarSubscription, error) {
+	rows, err := db.queries.GetSubscriptionsByMemberID(ctx, memberID)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]CalendarSubscription, len(rows))
+	for i := range rows {
+		r := &rows[i]
+		sub := CalendarSubscription{
+			ID:       r.ID,
+			MemberID: r.MemberID,
+			Token:    r.Token,
+		}
+		if r.CreatedAt.Valid {
+			sub.CreatedAt = r.CreatedAt.Time
+		}
+		if r.LastUsedAt.Valid {
+			t := r.LastUsedAt.Time
+			sub.LastUsedAt = &t
+		}
+		if r.LastUsedRotaAt.Valid {
+			t := r.LastUsedRotaAt.Time
+			sub.LastUsedRotaAt = &t
+		}
+		if r.LastUsedMeetingsAt.Valid {
+			t := r.LastUsedMeetingsAt.Time
+			sub.LastUsedMeetingsAt = &t
+		}
+		result[i] = sub
+	}
+	return result, nil
+}
+
 // GetAllSubscriptions returns all calendar subscriptions ordered by last_used_at ascending.
 func (db *DB) GetAllSubscriptions(ctx context.Context) ([]CalendarSubscription, error) {
 	rows, err := db.queries.GetAllSubscriptions(ctx)

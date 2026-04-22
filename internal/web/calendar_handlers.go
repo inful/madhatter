@@ -14,56 +14,106 @@ import (
 	"github.com/inful/madhatter/internal/calendar"
 )
 
-func (h *Handler) handleCalendar(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	data := map[string]any{
-		"Template": "calendar",
-	}
+// setSubscriptionURLs populates the calendar/meetings URL template data for a given token.
+func setSubscriptionURLs(r *http.Request, token string, data map[string]any) {
+	data["Token"] = token
+	data["CalendarURL"] = baseURLFromRequest(r) + "/calendar/" + token + "/ics"
+	data["MeetingsCalendarURL"] = baseURLFromRequest(r) + "/calendar/" + token + "/meetings.ics"
+	data["CalendarWebcalURL"] = webcalSubscriptionURL(r, "/calendar/"+token+"/ics")
+	data["MeetingsCalendarWebcalURL"] = webcalSubscriptionURL(r, "/calendar/"+token+"/meetings.ics")
+	data["CalendarOutlookURL"] = outlookSubscriptionURL(r, "/calendar/"+token+"/ics", "HAT Days")
+	data["MeetingsCalendarOutlookURL"] = outlookSubscriptionURL(r, "/calendar/"+token+"/meetings.ics", "Shuffles")
+	data["CalendarGoogleURL"] = googleSubscriptionURL(r, "/calendar/"+token+"/ics")
+	data["MeetingsCalendarGoogleURL"] = googleSubscriptionURL(r, "/calendar/"+token+"/meetings.ics")
+}
 
-	// Add user info to data.
-	if user, ok := auth.GetUserFromContext(ctx); ok {
-		data["User"] = user
-		data["IsAdmin"] = user.IsAdmin.Valid && user.IsAdmin.Int64 == 1
-	}
-
-	if r.Method == http.MethodPost {
-		if err := r.ParseForm(); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		memberID := r.FormValue("member_id")
-
-		token, err := h.db.CreateCalendarSubscription(ctx, memberID)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		baseURL := baseURLFromRequest(r)
-		data["Token"] = token
-		data["CalendarURL"] = baseURL + "/calendar/" + token + "/ics"
-		data["MeetingsCalendarURL"] = baseURL + "/calendar/" + token + "/meetings.ics"
-		data["CalendarWebcalURL"] = webcalSubscriptionURL(r, "/calendar/"+token+"/ics")
-		data["MeetingsCalendarWebcalURL"] = webcalSubscriptionURL(r, "/calendar/"+token+"/meetings.ics")
-		data["CalendarOutlookURL"] = outlookSubscriptionURL(r, "/calendar/"+token+"/ics", "HAT Days")
-		data["MeetingsCalendarOutlookURL"] = outlookSubscriptionURL(r, "/calendar/"+token+"/meetings.ics", "Shuffles")
-		data["CalendarGoogleURL"] = googleSubscriptionURL(r, "/calendar/"+token+"/ics")
-		data["MeetingsCalendarGoogleURL"] = googleSubscriptionURL(r, "/calendar/"+token+"/meetings.ics")
-		data["ShowResult"] = true
-
-		if err := h.tmpl.ExecuteTemplate(w, "calendar.html", data); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-		}
+// handleCalendarAdminPost handles the admin-only POST to create a subscription for another member.
+func (h *Handler) handleCalendarAdminPost(w http.ResponseWriter, r *http.Request, data map[string]any) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	members, err := h.db.GetActiveTeamMembers(ctx)
+	token, err := h.db.CreateCalendarSubscription(r.Context(), r.FormValue("member_id"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	setSubscriptionURLs(r, token, data)
+	data["AdminCreated"] = true
+
+	members, err := h.db.GetActiveTeamMembers(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	data["Members"] = members
+
+	if err := h.tmpl.ExecuteTemplate(w, "calendar.html", data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// loadUserSubscription resolves the logged-in user's team member record and populates
+// subscription URL data, auto-creating a subscription if none exists.
+func (h *Handler) loadUserSubscription(r *http.Request, email string, data map[string]any) {
+	member, err := h.db.GetMemberByEmail(r.Context(), email)
+	if err != nil {
+		return
+	}
+
+	subs, err := h.db.GetSubscriptionsByMemberID(r.Context(), member.ID)
+	if err != nil || len(subs) == 0 {
+		token, createErr := h.db.CreateCalendarSubscription(r.Context(), member.ID)
+		if createErr == nil {
+			setSubscriptionURLs(r, token, data)
+		}
+
+		return
+	}
+
+	setSubscriptionURLs(r, subs[0].Token, data)
+}
+
+func (h *Handler) handleCalendar(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	isAdmin := false
+	data := map[string]any{
+		"Template": "calendar",
+	}
+
+	user, loggedIn := auth.GetUserFromContext(ctx)
+	if loggedIn {
+		data["User"] = user
+		isAdmin = user.IsAdmin.Valid && user.IsAdmin.Int64 == 1
+		data["IsAdmin"] = isAdmin
+	}
+
+	if r.Method == http.MethodPost {
+		if !isAdmin {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+
+		h.handleCalendarAdminPost(w, r, data)
+		return
+	}
+
+	if loggedIn {
+		h.loadUserSubscription(r, user.Email, data)
+	}
+
+	if isAdmin {
+		members, err := h.db.GetActiveTeamMembers(ctx)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		data["Members"] = members
+	}
 
 	if err := h.tmpl.ExecuteTemplate(w, "calendar.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

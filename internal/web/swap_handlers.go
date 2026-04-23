@@ -9,7 +9,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/inful/madhatter/internal/auth"
 	"github.com/inful/madhatter/internal/database"
-	"github.com/inful/madhatter/internal/database/sqlc"
 )
 
 const (
@@ -19,6 +18,17 @@ const (
 	swapStatusCancelled = "cancelled"
 	hoursInDay          = 24
 )
+
+// resolveMemberID resolves the team member ID for the currently logged-in user.
+// Returns empty string if the user is not a team member.
+func (h *Handler) resolveMemberID(ctx context.Context, email string) string {
+	member, err := h.db.GetMemberByEmail(ctx, email)
+	if err != nil || member == nil {
+		return ""
+	}
+
+	return member.ID
+}
 
 func (h *Handler) handleSwaps(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -35,15 +45,24 @@ func (h *Handler) handleSwaps(w http.ResponseWriter, r *http.Request) {
 		"IsAdmin":  user.IsAdmin.Valid && user.IsAdmin.Int64 == 1,
 	}
 
-	if r.Method == http.MethodPost {
-		h.handleSwapRequestPost(w, r, data, user)
+	memberID := h.resolveMemberID(ctx, user.Email)
+	if memberID == "" {
+		data["Error"] = "You are not registered as a team member."
+		if err := h.tmpl.ExecuteTemplate(w, "swaps.html", data); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 		return
 	}
 
-	h.renderSwapsPage(w, r, data, user.ID, "")
+	if r.Method == http.MethodPost {
+		h.handleSwapRequestPost(w, r, data, memberID)
+		return
+	}
+
+	h.renderSwapsPage(w, r, data, memberID, "")
 }
 
-func (h *Handler) handleSwapRequestPost(w http.ResponseWriter, r *http.Request, data map[string]any, user *sqlc.GetSessionByTokenRow) {
+func (h *Handler) handleSwapRequestPost(w http.ResponseWriter, r *http.Request, data map[string]any, memberID string) {
 	ctx := r.Context()
 
 	if err := r.ParseForm(); err != nil {
@@ -54,8 +73,8 @@ func (h *Handler) handleSwapRequestPost(w http.ResponseWriter, r *http.Request, 
 	requesterAssignmentID := r.FormValue("requester_assignment_id")
 	targetAssignmentID := r.FormValue("target_assignment_id")
 
-	if errMsg := h.validateSwapRequest(ctx, requesterAssignmentID, targetAssignmentID, user.ID); errMsg != "" {
-		h.renderSwapsPage(w, r, data, user.ID, errMsg)
+	if errMsg := h.validateSwapRequest(ctx, requesterAssignmentID, targetAssignmentID, memberID); errMsg != "" {
+		h.renderSwapsPage(w, r, data, memberID, errMsg)
 		return
 	}
 
@@ -63,7 +82,7 @@ func (h *Handler) handleSwapRequestPost(w http.ResponseWriter, r *http.Request, 
 	tgtAssignment, _ := h.db.GetAssignmentByID(ctx, targetAssignmentID)
 
 	if _, err := h.db.CreateHatSwap(ctx, requesterAssignmentID, targetAssignmentID, reqAssignment.MemberID, tgtAssignment.MemberID); err != nil {
-		h.renderSwapsPage(w, r, data, user.ID, err.Error())
+		h.renderSwapsPage(w, r, data, memberID, err.Error())
 		return
 	}
 
@@ -138,6 +157,8 @@ func (h *Handler) handleSwapCancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	memberID := h.resolveMemberID(ctx, user.Email)
+
 	swapID := chi.URLParam(r, "id")
 
 	swap, err := h.db.GetHatSwapByID(ctx, swapID)
@@ -146,7 +167,7 @@ func (h *Handler) handleSwapCancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if swap.RequesterMemberID != user.ID {
+	if swap.RequesterMemberID != memberID {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -173,6 +194,8 @@ func (h *Handler) handleSwapAccept(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	memberID := h.resolveMemberID(ctx, user.Email)
+
 	swapID := chi.URLParam(r, "id")
 
 	swap, err := h.db.GetHatSwapByID(ctx, swapID)
@@ -181,7 +204,7 @@ func (h *Handler) handleSwapAccept(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if swap.TargetMemberID != user.ID {
+	if swap.TargetMemberID != memberID {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -208,6 +231,8 @@ func (h *Handler) handleSwapReject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	memberID := h.resolveMemberID(ctx, user.Email)
+
 	swapID := chi.URLParam(r, "id")
 
 	swap, err := h.db.GetHatSwapByID(ctx, swapID)
@@ -216,7 +241,7 @@ func (h *Handler) handleSwapReject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if swap.TargetMemberID != user.ID {
+	if swap.TargetMemberID != memberID {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}

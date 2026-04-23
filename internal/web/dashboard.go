@@ -61,7 +61,12 @@ func (h *Handler) loadPendingSwapCount(ctx context.Context, data map[string]any)
 		return
 	}
 
-	count, err := h.db.CountPendingSwapsForMember(ctx, user.ID)
+	member, err := h.db.GetMemberByEmail(ctx, user.Email)
+	if err != nil || member == nil {
+		return
+	}
+
+	count, err := h.db.CountPendingSwapsForMember(ctx, member.ID)
 	if err == nil && count > 0 {
 		data["PendingSwapCount"] = count
 	}

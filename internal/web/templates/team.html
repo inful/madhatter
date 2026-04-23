@@ -120,6 +120,57 @@
     </div>
 </div>
 
+<div class="card mt-4">
+    <header class="card-header">
+        <p class="card-header-title">
+            <i class="fas fa-user-shield mr-2"></i> Application Users
+        </p>
+    </header>
+    <div class="card-content">
+        {{if .Users}}
+            <div class="content">
+                {{range .Users}}
+                    <div class="box member-card">
+                        <div class="columns is-mobile is-vcentered">
+                            <div class="column">
+                                <strong class="is-size-5">{{.Name}}</strong><br>
+                                <span class="has-text-grey">{{.Email}}</span>
+                            </div>
+                            <div class="column is-narrow">
+                                {{if and .IsAdmin.Valid (eq .IsAdmin.Int64 1)}}
+                                    <span class="tag is-danger is-light mr-2">
+                                        <i class="fas fa-shield-alt mr-1"></i> Admin
+                                    </span>
+                                    <form method="POST" action="/team/users/{{.ID}}/admin" style="display: inline;">
+                                        <input type="hidden" name="is_admin" value="0">
+                                        <button type="submit" class="button is-small is-warning is-light" {{if le $.AdminCount 1}}disabled title="Cannot remove the last admin"{{end}}>
+                                            <i class="fas fa-user-minus mr-1"></i> Remove Admin
+                                        </button>
+                                    </form>
+                                {{else}}
+                                    <span class="tag is-light mr-2">
+                                        <i class="fas fa-user mr-1"></i> User
+                                    </span>
+                                    <form method="POST" action="/team/users/{{.ID}}/admin" style="display: inline;">
+                                        <input type="hidden" name="is_admin" value="1">
+                                        <button type="submit" class="button is-small is-primary is-light">
+                                            <i class="fas fa-user-shield mr-1"></i> Make Admin
+                                        </button>
+                                    </form>
+                                {{end}}
+                            </div>
+                        </div>
+                    </div>
+                {{end}}
+            </div>
+        {{else}}
+            <div class="empty-state">
+                <p class="has-text-grey mb-3">No users found</p>
+            </div>
+        {{end}}
+    </div>
+</div>
+
 <div id="editModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="editModalTitle">
     <div class="modal-background" onclick="closeEditModal()"></div>
     <div class="modal-card">

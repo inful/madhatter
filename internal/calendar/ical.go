@@ -390,6 +390,46 @@ func GenerateICalForTokenWithOptions(ctx context.Context, db *database.DB, token
 	return icalContent, nil
 }
 
+// GenerateOthersICalForToken generates iCalendar content for all upcoming
+// assignments except the token owner's.
+func GenerateOthersICalForToken(ctx context.Context, db *database.DB, token string, lookaheadDays int) (string, error) {
+	member, err := db.GetMemberByToken(ctx, token)
+	if err != nil {
+		return "", fmt.Errorf("invalid token: %w", err)
+	}
+
+	startDate := time.Now().Format("2006-01-02")
+	endDate := time.Now().AddDate(0, 0, lookaheadDays).Format("2006-01-02")
+	assignments, err := db.GetAssignmentsByDateRange(ctx, startDate, endDate)
+	if err != nil {
+		return "", fmt.Errorf("failed to get assignments: %w", err)
+	}
+
+	memberNames := make(map[string]string)
+	members, err := db.GetActiveTeamMembers(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get team members: %w", err)
+	}
+	for _, m := range members {
+		memberNames[m.ID] = m.Name
+	}
+
+	var others []database.RotaAssignment
+	for _, assignment := range assignments {
+		if assignment.MemberID == member.ID {
+			continue
+		}
+		others = append(others, assignment)
+	}
+
+	icalContent, err := GenerateTeamCalendar(others, memberNames)
+	if err != nil {
+		return "", fmt.Errorf("failed to generate iCalendar: %w", err)
+	}
+
+	return icalContent, nil
+}
+
 // GenerateTeamCalendar generates a calendar with all team members' assignments.
 func GenerateTeamCalendar(assignments []database.RotaAssignment, members map[string]string) (string, error) {
 	generator := NewICalGenerator()

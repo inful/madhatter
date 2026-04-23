@@ -1,6 +1,9 @@
 package calendar
 
 import (
+	"context"
+	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -259,6 +262,39 @@ func TestGenerateTeamCalendar(t *testing.T) {
 	// Should contain both members
 	assert.Contains(t, icalStr, "Alice")
 	assert.Contains(t, icalStr, "Bob")
+}
+
+func TestGenerateOthersICalForToken_ExcludesTokenOwnerAssignments(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	require.True(t, ok)
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	t.Setenv("MIGRATIONS_PATH", filepath.Join(repoRoot, "migrations"))
+
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	db, err := database.New(filepath.Join(tmpDir, "test.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	ownerID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	otherID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	today := time.Now().Format("2006-01-02")
+	tomorrow := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
+	_, err = db.CreateRotaAssignment(ctx, today, ownerID, false, nil)
+	require.NoError(t, err)
+	_, err = db.CreateRotaAssignment(ctx, tomorrow, otherID, false, nil)
+	require.NoError(t, err)
+
+	token, err := db.CreateCalendarSubscription(ctx, ownerID)
+	require.NoError(t, err)
+
+	icsStr, err := GenerateOthersICalForToken(ctx, db, token, 7)
+	require.NoError(t, err)
+	assert.Contains(t, icsStr, "HAT day (Bob)")
+	assert.NotContains(t, icsStr, "HAT day (Alice)")
 }
 
 func TestICalGenerator_MultipleEvents(t *testing.T) {

@@ -56,6 +56,7 @@ func (h *Handler) registerRoutes() {
 		r.HandleFunc("/team", h.handleTeam)
 		r.HandleFunc("/team/{id}/edit", h.handleTeamMemberEdit)
 		r.HandleFunc("/team/{id}/delete", h.handleTeamMemberDelete)
+		r.HandleFunc("/team/users/{id}/admin", h.handleUserAdminUpdate)
 		r.HandleFunc("/leave/manage", h.handleLeaveManagement)
 		r.HandleFunc("/leave/{id}/edit", h.handleLeaveEdit)
 		r.HandleFunc("/leave/{id}/delete", h.handleLeaveDelete)

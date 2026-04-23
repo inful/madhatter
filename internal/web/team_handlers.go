@@ -1,6 +1,7 @@
 package web
 
 import (
+	"database/sql"
 	"errors"
 	"net/http"
 	"net/mail"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/inful/madhatter/internal/auth"
+	"github.com/inful/madhatter/internal/database/sqlc"
 )
 
 func (h *Handler) handleTeam(w http.ResponseWriter, r *http.Request) {
@@ -52,8 +54,20 @@ func (h *Handler) handleTeam(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	users, err := h.db.GetQueries().ListActiveUsers(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	adminCount, err := h.db.GetQueries().CountAdmins(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	data["Members"] = members
+	data["Users"] = users
+	data["AdminCount"] = adminCount
 
 	// Build subscription activity map: member ID → {RotaActive, MeetingsActive}.
 	// A subscription is "active" if it was used in the last 7 days.
@@ -122,6 +136,63 @@ func (h *Handler) handleTeamMemberEdit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, "/team", http.StatusSeeOther)
+}
+
+func (h *Handler) handleUserAdminUpdate(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	userID := chi.URLParam(r, "id")
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	makeAdmin := r.FormValue("is_admin") == "1"
+	user, err := h.db.GetQueries().GetUserByID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "user not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	isAdmin := user.IsAdmin.Valid && user.IsAdmin.Int64 == 1
+	if isAdmin && !makeAdmin {
+		adminCount, countErr := h.db.GetQueries().CountAdmins(ctx)
+		if countErr != nil {
+			http.Error(w, countErr.Error(), http.StatusInternalServerError)
+			return
+		}
+		if adminCount <= 1 {
+			http.Error(w, "cannot remove the last admin", http.StatusBadRequest)
+			return
+		}
+	}
+
+	if updateErr := h.db.GetQueries().UpdateUser(ctx, sqlc.UpdateUserParams{
+		Name:     user.Name,
+		IsAdmin:  sql.NullInt64{Int64: adminInt(makeAdmin), Valid: true},
+		IsActive: user.IsActive,
+		ID:       user.ID,
+	}); updateErr != nil {
+		http.Error(w, updateErr.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, "/team", http.StatusSeeOther)
+}
+
+func adminInt(isAdmin bool) int64 {
+	if isAdmin {
+		return 1
+	}
+	return 0
 }
 
 func (h *Handler) handleTeamMemberDelete(w http.ResponseWriter, r *http.Request) {

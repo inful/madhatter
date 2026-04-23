@@ -43,6 +43,31 @@
     <div class="card mb-4">
         <header class="card-header">
             <p class="card-header-title">
+                <i class="fas fa-users mr-2"></i> HAT Days (Rest of Team)
+            </p>
+        </header>
+        <div class="card-content">
+            <p class="mb-3">Support duty days assigned to everyone except you.</p>
+            <div class="url-box" id="team-calendar-url-box" data-url="{{.TeamCalendarURL}}">
+                <a class="button is-link is-small copy-btn" href="{{.TeamCalendarOutlookURL}}" target="_blank" rel="noopener noreferrer">
+                    <i class="fas fa-rss mr-1"></i> Outlook
+                </a>
+                <a class="button is-danger is-small copy-btn" href="{{.TeamCalendarGoogleURL}}" target="_blank" rel="noopener noreferrer">
+                    <i class="fas fa-rss mr-1"></i> Google
+                </a>
+                <a class="button is-dark is-small copy-btn" href="{{.TeamCalendarWebcalURL}}">
+                    <i class="fas fa-rss mr-1"></i> Apple
+                </a>
+                <button class="button is-success is-small copy-btn" onclick="copyTextFromBox('team-calendar-url-box')">
+                    <i class="fas fa-copy mr-1"></i> Copy URL
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <header class="card-header">
+            <p class="card-header-title">
                 <i class="fas fa-calendar-week mr-2"></i> Shuffles
             </p>
         </header>

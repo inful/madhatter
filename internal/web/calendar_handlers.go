@@ -18,12 +18,16 @@ import (
 func setSubscriptionURLs(r *http.Request, token string, data map[string]any) {
 	data["Token"] = token
 	data["CalendarURL"] = baseURLFromRequest(r) + "/calendar/" + token + "/ics"
+	data["TeamCalendarURL"] = baseURLFromRequest(r) + "/calendar/" + token + "/team.ics"
 	data["MeetingsCalendarURL"] = baseURLFromRequest(r) + "/calendar/" + token + "/meetings.ics"
 	data["CalendarWebcalURL"] = webcalSubscriptionURL(r, "/calendar/"+token+"/ics")
+	data["TeamCalendarWebcalURL"] = webcalSubscriptionURL(r, "/calendar/"+token+"/team.ics")
 	data["MeetingsCalendarWebcalURL"] = webcalSubscriptionURL(r, "/calendar/"+token+"/meetings.ics")
 	data["CalendarOutlookURL"] = outlookSubscriptionURL(r, "/calendar/"+token+"/ics", "HAT Days")
+	data["TeamCalendarOutlookURL"] = outlookSubscriptionURL(r, "/calendar/"+token+"/team.ics", "HAT Days (Rest of Team)")
 	data["MeetingsCalendarOutlookURL"] = outlookSubscriptionURL(r, "/calendar/"+token+"/meetings.ics", "Shuffles")
 	data["CalendarGoogleURL"] = googleSubscriptionURL(r, "/calendar/"+token+"/ics")
+	data["TeamCalendarGoogleURL"] = googleSubscriptionURL(r, "/calendar/"+token+"/team.ics")
 	data["MeetingsCalendarGoogleURL"] = googleSubscriptionURL(r, "/calendar/"+token+"/meetings.ics")
 }
 
@@ -273,6 +277,33 @@ func (h *Handler) handleMeetingsCalendarICS(w http.ResponseWriter, r *http.Reque
 	// Set headers for calendar download.
 	w.Header().Set("Content-Type", "text/calendar")
 	w.Header().Set("Content-Disposition", "attachment; filename=\"support-meetings.ics\"")
+	w.Header().Set("Cache-Control", "no-cache")
+
+	_, _ = w.Write([]byte(icsContent))
+}
+
+func (h *Handler) handleTeamCalendarICS(w http.ResponseWriter, r *http.Request) {
+	token := chi.URLParam(r, "token")
+	if token == "" {
+		http.Error(w, "Token required", http.StatusBadRequest)
+		return
+	}
+
+	icsContent, err := calendar.GenerateOthersICalForToken(
+		r.Context(),
+		h.db,
+		token,
+		defaultCalendarLookaheadDays,
+	)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	_ = h.db.TouchRotaSubscription(r.Context(), token)
+
+	w.Header().Set("Content-Type", "text/calendar")
+	w.Header().Set("Content-Disposition", "attachment; filename=\"support-rota-team.ics\"")
 	w.Header().Set("Cache-Control", "no-cache")
 
 	_, _ = w.Write([]byte(icsContent))

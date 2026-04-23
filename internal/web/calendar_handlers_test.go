@@ -2,6 +2,7 @@ package web
 
 import (
 	"crypto/tls"
+	"html/template"
 	"net/http"
 	"net/url"
 	"testing"
@@ -9,6 +10,18 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestSetSubscriptionURLs_IncludesTeamCalendarLinks(t *testing.T) {
+	req := &http.Request{Host: "example.com", Header: make(http.Header)}
+	data := map[string]any{}
+
+	setSubscriptionURLs(req, "test-token", data)
+
+	assert.Equal(t, "http://example.com/calendar/test-token/team.ics", data["TeamCalendarURL"])
+	assert.Equal(t, "webcal://example.com/calendar/test-token/team.ics", string(data["TeamCalendarWebcalURL"].(template.URL)))
+	assert.Contains(t, string(data["TeamCalendarOutlookURL"].(template.URL)), "name=HAT+Days+%28Rest+of+Team%29")
+	assert.Contains(t, string(data["TeamCalendarGoogleURL"].(template.URL)), "cid=webcal%3A%2F%2Fexample.com%2Fcalendar%2Ftest-token%2Fteam.ics")
+}
 
 func TestBaseURLFromRequest_TLS(t *testing.T) {
 	req := &http.Request{Host: "example.com"}

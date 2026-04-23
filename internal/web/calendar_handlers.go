@@ -303,7 +303,7 @@ func (h *Handler) handleTeamCalendarICS(w http.ResponseWriter, r *http.Request) 
 	_ = h.db.TouchRotaSubscription(r.Context(), token)
 
 	w.Header().Set("Content-Type", "text/calendar")
-	w.Header().Set("Content-Disposition", "attachment; filename=\"support-rota-team.ics\"")
+	w.Header().Set("Content-Disposition", "attachment; filename=\"support-rota-others.ics\"")
 	w.Header().Set("Cache-Control", "no-cache")
 
 	_, _ = w.Write([]byte(icsContent))

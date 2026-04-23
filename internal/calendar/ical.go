@@ -414,7 +414,7 @@ func GenerateOthersICalForToken(ctx context.Context, db *database.DB, token stri
 		memberNames[m.ID] = m.Name
 	}
 
-	others := make([]database.RotaAssignment, 0, len(assignments))
+	var others []database.RotaAssignment
 	for _, assignment := range assignments {
 		if assignment.MemberID == member.ID {
 			continue

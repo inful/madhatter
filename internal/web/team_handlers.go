@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"net/http"
@@ -13,39 +14,41 @@ import (
 	"github.com/inful/madhatter/internal/database/sqlc"
 )
 
+func (h *Handler) handleTeamPost(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	_, err := h.db.AddTeamMember(ctx, r.FormValue("name"), r.FormValue("email"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := h.maintenance.HandleTeamChange(ctx); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, "/team", http.StatusSeeOther)
+}
+
 func (h *Handler) handleTeam(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	data := map[string]any{
 		"Template": "team",
 	}
 
-	// Add user info to data.
 	if user, ok := auth.GetUserFromContext(ctx); ok {
 		data["User"] = user
 		data["IsAdmin"] = user.IsAdmin.Valid && user.IsAdmin.Int64 == 1
 	}
 
 	if r.Method == http.MethodPost {
-		if err := r.ParseForm(); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		name := r.FormValue("name")
-		email := r.FormValue("email")
-
-		_, err := h.db.AddTeamMember(ctx, name, email)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		// Handle team change - update schedule.
-		if err := h.maintenance.HandleTeamChange(ctx); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-
-		http.Redirect(w, r, "/team", http.StatusSeeOther)
+		h.handleTeamPost(w, r)
 		return
 	}
 
@@ -138,6 +141,25 @@ func (h *Handler) handleTeamMemberEdit(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/team", http.StatusSeeOther)
 }
 
+// guardAdminDemotion returns a non-zero HTTP status and error when demoting isCurrentlyAdmin
+// to non-admin would violate the last-admin invariant.
+func (h *Handler) guardAdminDemotion(ctx context.Context, isCurrentlyAdmin, makeAdmin bool) (int, error) {
+	if !isCurrentlyAdmin || makeAdmin {
+		return 0, nil
+	}
+
+	adminCount, err := h.db.GetQueries().CountAdmins(ctx)
+	if err != nil {
+		return http.StatusInternalServerError, err
+	}
+
+	if adminCount <= 1 {
+		return http.StatusBadRequest, errors.New("cannot remove the last admin")
+	}
+
+	return 0, nil
+}
+
 func (h *Handler) handleUserAdminUpdate(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID := chi.URLParam(r, "id")
@@ -153,26 +175,20 @@ func (h *Handler) handleUserAdminUpdate(w http.ResponseWriter, r *http.Request) 
 
 	makeAdmin := r.FormValue("is_admin") == "1"
 	user, err := h.db.GetQueries().GetUserByID(ctx, userID)
+	if errors.Is(err, sql.ErrNoRows) {
+		http.Error(w, "user not found", http.StatusNotFound)
+		return
+	}
+
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			http.Error(w, "user not found", http.StatusNotFound)
-			return
-		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	isAdmin := user.IsAdmin.Valid && user.IsAdmin.Int64 == 1
-	if isAdmin && !makeAdmin {
-		adminCount, countErr := h.db.GetQueries().CountAdmins(ctx)
-		if countErr != nil {
-			http.Error(w, countErr.Error(), http.StatusInternalServerError)
-			return
-		}
-		if adminCount <= 1 {
-			http.Error(w, "cannot remove the last admin", http.StatusBadRequest)
-			return
-		}
+	if status, guardErr := h.guardAdminDemotion(ctx, isAdmin, makeAdmin); guardErr != nil {
+		http.Error(w, guardErr.Error(), status)
+		return
 	}
 
 	if err = h.db.GetQueries().UpdateUser(ctx, sqlc.UpdateUserParams{

@@ -26,8 +26,8 @@ func TestHandleUserAdminUpdatePromotesUser(t *testing.T) {
 	handler, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
 	require.NoError(t, err)
 
-	adminID := createTestUser(t, db, true)
-	targetID := createTestUser(t, db, false)
+	adminID := createActiveTestUser(t, db, true)
+	targetID := createActiveTestUser(t, db, false)
 	req := buildAdminUpdateRequest(targetID, "1")
 	req = withAdminContext(req, adminID)
 
@@ -49,7 +49,7 @@ func TestHandleUserAdminUpdatePreventsRemovingLastAdmin(t *testing.T) {
 	handler, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
 	require.NoError(t, err)
 
-	adminID := createTestUser(t, db, true)
+	adminID := createActiveTestUser(t, db, true)
 	req := buildAdminUpdateRequest(adminID, "0")
 	req = withAdminContext(req, adminID)
 
@@ -72,8 +72,8 @@ func TestHandleUserAdminUpdateDemotesWhenOtherAdminExists(t *testing.T) {
 	handler, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
 	require.NoError(t, err)
 
-	firstAdminID := createTestUser(t, db, true)
-	secondAdminID := createTestUser(t, db, true)
+	firstAdminID := createActiveTestUser(t, db, true)
+	secondAdminID := createActiveTestUser(t, db, true)
 	req := buildAdminUpdateRequest(secondAdminID, "0")
 	req = withAdminContext(req, firstAdminID)
 
@@ -87,7 +87,7 @@ func TestHandleUserAdminUpdateDemotesWhenOtherAdminExists(t *testing.T) {
 	assert.Equal(t, int64(1), adminCount)
 }
 
-func createTestUser(t *testing.T, db *database.DB, isAdmin bool) string {
+func createActiveTestUser(t *testing.T, db *database.DB, isAdmin bool) string {
 	t.Helper()
 
 	userID := uuid.NewString()
@@ -99,7 +99,7 @@ func createTestUser(t *testing.T, db *database.DB, isAdmin bool) string {
 	_, err := db.GetQueries().CreateUser(context.Background(), sqlc.CreateUserParams{
 		ID:         userID,
 		Email:      userID + "@example.com",
-		Name:       "User " + userID[:8],
+		Name:       "User " + userID,
 		Provider:   "fake",
 		ProviderID: userID,
 		IsAdmin:    sql.NullInt64{Int64: adminValue, Valid: true},
@@ -110,9 +110,9 @@ func createTestUser(t *testing.T, db *database.DB, isAdmin bool) string {
 	return userID
 }
 
-func buildAdminUpdateRequest(userID, isAdminValue string) *http.Request {
+func buildAdminUpdateRequest(userID, isAdminFormValue string) *http.Request {
 	form := url.Values{}
-	form.Set("is_admin", isAdminValue)
+	form.Set("is_admin", isAdminFormValue)
 
 	req := httptest.NewRequest(http.MethodPost, "/team/users/"+userID+"/admin", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")

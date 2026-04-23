@@ -175,20 +175,20 @@ func (h *Handler) handleUserAdminUpdate(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	if updateErr := h.db.GetQueries().UpdateUser(ctx, sqlc.UpdateUserParams{
+	if err = h.db.GetQueries().UpdateUser(ctx, sqlc.UpdateUserParams{
 		Name:     user.Name,
-		IsAdmin:  sql.NullInt64{Int64: adminInt(makeAdmin), Valid: true},
+		IsAdmin:  sql.NullInt64{Int64: boolToAdminInt(makeAdmin), Valid: true},
 		IsActive: user.IsActive,
 		ID:       user.ID,
-	}); updateErr != nil {
-		http.Error(w, updateErr.Error(), http.StatusInternalServerError)
+	}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	http.Redirect(w, r, "/team", http.StatusSeeOther)
 }
 
-func adminInt(isAdmin bool) int64 {
+func boolToAdminInt(isAdmin bool) int64 {
 	if isAdmin {
 		return 1
 	}

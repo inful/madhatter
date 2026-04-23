@@ -47,6 +47,7 @@ type ICalGenerator struct {
 
 type SupportCalendarOptions struct {
 	SupportDayLinks []MeetingLink
+	WithAlarm       bool
 }
 
 // NewICalGeneratorWithMetadata creates a new iCalendar generator with custom metadata.
@@ -77,7 +78,7 @@ func (g *ICalGenerator) WithSupportDayLinks(links []MeetingLink) *ICalGenerator 
 	return g
 }
 
-// WithAlarm enables a 1-day advance display notification on each event.
+// WithAlarm enables a 1-day advance display notification on each assignment event.
 func (g *ICalGenerator) WithAlarm() *ICalGenerator {
 	g.withAlarm = true
 	return g
@@ -363,7 +364,10 @@ func (g *ICalGenerator) SerializeBytes() ([]byte, error) {
 
 // GenerateICalFromAssignmentsWithOptions creates a complete iCalendar file from rota assignments.
 func GenerateICalFromAssignmentsWithOptions(assignments []database.RotaAssignment, memberName string, opts SupportCalendarOptions) (string, error) {
-	generator := NewICalGenerator().WithSupportDayLinks(opts.SupportDayLinks).WithAlarm()
+	generator := NewICalGenerator().WithSupportDayLinks(opts.SupportDayLinks)
+	if opts.WithAlarm {
+		generator = generator.WithAlarm()
+	}
 
 	for _, assignment := range assignments {
 		if err := generator.AddAssignment(assignment, memberName); err != nil {

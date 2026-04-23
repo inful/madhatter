@@ -51,7 +51,7 @@ type HatSwap struct {
 	Status                string    `json:"status"`
 	CreatedAt             time.Time `json:"created_at"`
 	UpdatedAt             time.Time `json:"updated_at"`
-	// Enriched fields (populated by GetEnrichedSwap).
+	// Enriched fields (populated by GetEnrichedSwaps).
 	RequesterName string `json:"requester_name,omitempty"`
 	TargetName    string `json:"target_name,omitempty"`
 	RequesterDate string `json:"requester_date,omitempty"`

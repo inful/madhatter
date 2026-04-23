@@ -36,10 +36,10 @@ WHERE (requester_assignment_id = ? OR target_assignment_id = ?)
   AND status = 'pending'
 LIMIT 1;
 
--- name: UpdateHatSwapStatus :exec
+-- name: UpdateHatSwapStatus :execresult
 UPDATE hat_swaps
 SET status = ?, updated_at = CURRENT_TIMESTAMP
-WHERE id = ?;
+WHERE id = ? AND status = 'pending';
 
 -- name: DeleteHatSwap :exec
 DELETE FROM hat_swaps

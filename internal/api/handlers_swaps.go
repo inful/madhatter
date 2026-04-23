@@ -12,7 +12,6 @@ import (
 
 const (
 	apiSwapStatusPending = "pending"
-	apiHoursInDay        = 24
 )
 
 // -- Input/Output types -------------------------------------------------------
@@ -100,7 +99,8 @@ func (s *Server) validateSwapAssignmentsAPI(
 		return nil, nil, huma.Error422UnprocessableEntity("Swap target must belong to another member", nil)
 	}
 
-	today := time.Now().Truncate(apiHoursInDay * time.Hour)
+	nowUTC := time.Now().UTC()
+	today := time.Date(nowUTC.Year(), nowUTC.Month(), nowUTC.Day(), 0, 0, 0, 0, time.UTC)
 
 	reqDate, parseErr := time.Parse("2006-01-02", reqAssignment.Date)
 	if parseErr != nil || reqDate.Before(today) {
@@ -274,6 +274,10 @@ func (s *Server) handleRejectSwap(ctx context.Context, input *SwapIDInput) (*Swa
 	}
 
 	if err := s.db.UpdateHatSwapStatus(ctx, input.ID, "rejected"); err != nil {
+		if errors.Is(err, database.ErrSwapNotPending) {
+			return nil, huma.Error409Conflict("Swap is no longer pending")
+		}
+
 		return nil, huma.Error500InternalServerError("Failed to reject swap", err)
 	}
 
@@ -307,6 +311,10 @@ func (s *Server) handleCancelSwap(ctx context.Context, input *SwapIDInput) (*Swa
 	}
 
 	if err := s.db.UpdateHatSwapStatus(ctx, input.ID, "cancelled"); err != nil {
+		if errors.Is(err, database.ErrSwapNotPending) {
+			return nil, huma.Error409Conflict("Swap is no longer pending")
+		}
+
 		return nil, huma.Error500InternalServerError("Failed to cancel swap", err)
 	}
 

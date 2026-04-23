@@ -3,11 +3,11 @@ package database
 import (
 	"context"
 	"errors"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/inful/madhatter/internal/database/sqlc"
+	"github.com/ncruces/go-sqlite3"
 )
 
 var (
@@ -16,8 +16,6 @@ var (
 	ErrSwapSameMember     = errors.New("swap target must belong to another member")
 	ErrSwapAssignmentBusy = errors.New("one of the assignments already has an open swap request")
 )
-
-const dbHoursInDay = 24
 
 // CreateHatSwap creates a new pending HAT day swap request.
 func (db *DB) CreateHatSwap(ctx context.Context, requesterAssignmentID, targetAssignmentID, requesterMemberID, targetMemberID string) (string, error) {
@@ -39,7 +37,8 @@ func (db *DB) CreateHatSwap(ctx context.Context, requesterAssignmentID, targetAs
 		TargetMemberID:        targetMemberID,
 	})
 	if err != nil {
-		if strings.Contains(err.Error(), "pending swap already exists") {
+		var sqliteErr *sqlite3.Error
+		if errors.As(err, &sqliteErr) && sqliteErr.ExtendedCode() == sqlite3.CONSTRAINT_TRIGGER {
 			return "", ErrSwapAssignmentBusy
 		}
 
@@ -95,12 +94,27 @@ func (db *DB) GetOpenSwapForAssignment(ctx context.Context, assignmentID string)
 	return hatSwapFromRow(row), nil
 }
 
-// UpdateHatSwapStatus updates the status of a swap request.
+// UpdateHatSwapStatus updates the status of a pending swap request.
+// Returns ErrSwapNotPending if the swap was not in pending state.
 func (db *DB) UpdateHatSwapStatus(ctx context.Context, id, status string) error {
-	return db.queries.UpdateHatSwapStatus(ctx, sqlc.UpdateHatSwapStatusParams{
+	result, err := db.queries.UpdateHatSwapStatus(ctx, sqlc.UpdateHatSwapStatusParams{
 		Status: status,
 		ID:     id,
 	})
+	if err != nil {
+		return err
+	}
+
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if n == 0 {
+		return ErrSwapNotPending
+	}
+
+	return nil
 }
 
 // DeleteHatSwap hard-deletes a swap record (admin only).
@@ -115,7 +129,7 @@ func (db *DB) CountPendingSwapsForMember(ctx context.Context, memberID string) (
 
 // ExecuteSwap accepts a swap: it swaps the member_id on both rota assignments and
 // marks the swap record as accepted. All changes run in a single transaction.
-func (db *DB) ExecuteSwap(ctx context.Context, swapID string) error {
+func (db *DB) ExecuteSwap(ctx context.Context, swapID string) (retErr error) {
 	swap, err := db.GetHatSwapByID(ctx, swapID)
 	if err != nil {
 		return err
@@ -136,32 +150,37 @@ func (db *DB) ExecuteSwap(ctx context.Context, swapID string) error {
 	}
 
 	defer func() {
-		if err != nil {
+		if retErr != nil {
 			_ = tx.Rollback()
 		}
 	}()
 
-	qtx := db.queries.WithTx(tx)
+	if retErr = db.executeSwapTx(ctx, db.queries.WithTx(tx), reqAssignment, tgtAssignment, swapID); retErr != nil {
+		return retErr
+	}
 
-	// Swap member_ids between the two assignments.
-	err = qtx.UpdateAssignmentMember(ctx, sqlc.UpdateAssignmentMemberParams{
+	retErr = tx.Commit()
+
+	return retErr
+}
+
+// executeSwapTx performs the transactional assignment swap and status update.
+func (db *DB) executeSwapTx(ctx context.Context, qtx *sqlc.Queries, reqAssignment, tgtAssignment sqlc.GetAssignmentByIDRow, swapID string) error {
+	if err := qtx.UpdateAssignmentMember(ctx, sqlc.UpdateAssignmentMemberParams{
 		MemberID: tgtAssignment.MemberID,
 		ID:       reqAssignment.ID,
-	})
-	if err != nil {
+	}); err != nil {
 		return err
 	}
 
-	err = qtx.UpdateAssignmentMember(ctx, sqlc.UpdateAssignmentMemberParams{
+	if err := qtx.UpdateAssignmentMember(ctx, sqlc.UpdateAssignmentMemberParams{
 		MemberID: reqAssignment.MemberID,
 		ID:       tgtAssignment.ID,
-	})
-	if err != nil {
+	}); err != nil {
 		return err
 	}
 
-	// Mark swap as accepted.
-	err = qtx.UpdateHatSwapStatus(ctx, sqlc.UpdateHatSwapStatusParams{
+	result, err := qtx.UpdateHatSwapStatus(ctx, sqlc.UpdateHatSwapStatusParams{
 		Status: "accepted",
 		ID:     swapID,
 	})
@@ -169,7 +188,16 @@ func (db *DB) ExecuteSwap(ctx context.Context, swapID string) error {
 		return err
 	}
 
-	return tx.Commit()
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+
+	if n == 0 {
+		return ErrSwapNotPending
+	}
+
+	return nil
 }
 
 func (db *DB) loadSwapAssignmentsForExecution(ctx context.Context, swap *HatSwap) (sqlc.GetAssignmentByIDRow, sqlc.GetAssignmentByIDRow, error) {
@@ -183,7 +211,8 @@ func (db *DB) loadSwapAssignmentsForExecution(ctx context.Context, swap *HatSwap
 		return sqlc.GetAssignmentByIDRow{}, sqlc.GetAssignmentByIDRow{}, err
 	}
 
-	today := time.Now().Truncate(dbHoursInDay * time.Hour)
+	nowUTC := time.Now().UTC()
+	today := time.Date(nowUTC.Year(), nowUTC.Month(), nowUTC.Day(), 0, 0, 0, 0, time.UTC)
 	if reqAssignment.Date.Before(today) || tgtAssignment.Date.Before(today) {
 		return sqlc.GetAssignmentByIDRow{}, sqlc.GetAssignmentByIDRow{}, ErrSwapDatePassed
 	}
@@ -192,32 +221,71 @@ func (db *DB) loadSwapAssignmentsForExecution(ctx context.Context, swap *HatSwap
 }
 
 // GetEnrichedSwaps enriches a slice of HatSwap with member names and assignment dates.
+// It batch-loads members and assignments to avoid N+1 queries.
 func (db *DB) GetEnrichedSwaps(ctx context.Context, swaps []HatSwap) ([]HatSwap, error) {
-	for i := range swaps {
-		s := &swaps[i]
+	if len(swaps) == 0 {
+		return swaps, nil
+	}
 
-		reqMember, err := db.queries.GetMemberByID(ctx, s.RequesterMemberID)
-		if err == nil {
-			s.RequesterName = reqMember.Name
-		}
+	memberIDSet, assignmentIDSet := collectSwapIDs(swaps)
 
-		tgtMember, err := db.queries.GetMemberByID(ctx, s.TargetMemberID)
-		if err == nil {
-			s.TargetName = tgtMember.Name
-		}
-
-		reqAssignment, err := db.queries.GetAssignmentByID(ctx, s.RequesterAssignmentID)
-		if err == nil {
-			s.RequesterDate = reqAssignment.Date.Format("2006-01-02")
-		}
-
-		tgtAssignment, err := db.queries.GetAssignmentByID(ctx, s.TargetAssignmentID)
-		if err == nil {
-			s.TargetDate = tgtAssignment.Date.Format("2006-01-02")
+	// Batch-load member names.
+	memberNames := make(map[string]string, len(memberIDSet))
+	for id := range memberIDSet {
+		if member, err := db.queries.GetMemberByID(ctx, id); err == nil {
+			memberNames[id] = member.Name
 		}
 	}
 
+	// Batch-load assignment dates.
+	assignmentDates := make(map[string]string, len(assignmentIDSet))
+	for id := range assignmentIDSet {
+		if assignment, err := db.queries.GetAssignmentByID(ctx, id); err == nil {
+			assignmentDates[id] = assignment.Date.Format("2006-01-02")
+		}
+	}
+
+	applySwapEnrichment(swaps, memberNames, assignmentDates)
+
 	return swaps, nil
+}
+
+// collectSwapIDs collects unique member and assignment IDs from a swap slice.
+func collectSwapIDs(swaps []HatSwap) (memberIDs, assignmentIDs map[string]struct{}) {
+	memberIDs = make(map[string]struct{})
+	assignmentIDs = make(map[string]struct{})
+
+	for i := range swaps {
+		memberIDs[swaps[i].RequesterMemberID] = struct{}{}
+		memberIDs[swaps[i].TargetMemberID] = struct{}{}
+		assignmentIDs[swaps[i].RequesterAssignmentID] = struct{}{}
+		assignmentIDs[swaps[i].TargetAssignmentID] = struct{}{}
+	}
+
+	return memberIDs, assignmentIDs
+}
+
+// applySwapEnrichment populates enriched name and date fields on each swap.
+func applySwapEnrichment(swaps []HatSwap, memberNames, assignmentDates map[string]string) {
+	for i := range swaps {
+		s := &swaps[i]
+
+		if name, ok := memberNames[s.RequesterMemberID]; ok {
+			s.RequesterName = name
+		}
+
+		if name, ok := memberNames[s.TargetMemberID]; ok {
+			s.TargetName = name
+		}
+
+		if date, ok := assignmentDates[s.RequesterAssignmentID]; ok {
+			s.RequesterDate = date
+		}
+
+		if date, ok := assignmentDates[s.TargetAssignmentID]; ok {
+			s.TargetDate = date
+		}
+	}
 }
 
 // hatSwapFromRow converts a sqlc.HatSwap to a database.HatSwap.

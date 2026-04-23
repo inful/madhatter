@@ -16,7 +16,6 @@ const (
 	swapStatusAccepted  = "accepted"
 	swapStatusRejected  = "rejected"
 	swapStatusCancelled = "cancelled"
-	hoursInDay          = 24
 )
 
 // resolveMemberID resolves the team member ID for the currently logged-in user.
@@ -81,8 +80,17 @@ func (h *Handler) handleSwapRequestPost(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	reqAssignment, _ := h.db.GetAssignmentByID(ctx, requesterAssignmentID)
-	tgtAssignment, _ := h.db.GetAssignmentByID(ctx, targetAssignmentID)
+	reqAssignment, err := h.db.GetAssignmentByID(ctx, requesterAssignmentID)
+	if err != nil || reqAssignment == nil {
+		h.renderSwapsPage(w, r, data, memberID, "The selected requester assignment is no longer available.")
+		return
+	}
+
+	tgtAssignment, err := h.db.GetAssignmentByID(ctx, targetAssignmentID)
+	if err != nil || tgtAssignment == nil {
+		h.renderSwapsPage(w, r, data, memberID, "The selected target assignment is no longer available.")
+		return
+	}
 
 	if _, err := h.db.CreateHatSwap(ctx, requesterAssignmentID, targetAssignmentID, reqAssignment.MemberID, tgtAssignment.MemberID); err != nil {
 		h.renderSwapsPage(w, r, data, memberID, err.Error())
@@ -136,7 +144,8 @@ func (h *Handler) validateSwapAssignments(ctx context.Context, requesterAssignme
 		return "You can only request swaps with another member."
 	}
 
-	today := time.Now().Truncate(hoursInDay * time.Hour)
+	nowUTC := time.Now().UTC()
+	today := time.Date(nowUTC.Year(), nowUTC.Month(), nowUTC.Day(), 0, 0, 0, 0, time.UTC)
 
 	reqDate, err := time.Parse("2006-01-02", reqAssignment.Date)
 	if err != nil {
@@ -185,6 +194,11 @@ func (h *Handler) handleSwapCancel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.db.UpdateHatSwapStatus(ctx, swapID, swapStatusCancelled); err != nil {
+		if errors.Is(err, database.ErrSwapNotPending) {
+			http.Error(w, "swap is no longer pending", http.StatusConflict)
+			return
+		}
+
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -264,6 +278,11 @@ func (h *Handler) handleSwapReject(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.db.UpdateHatSwapStatus(ctx, swapID, swapStatusRejected); err != nil {
+		if errors.Is(err, database.ErrSwapNotPending) {
+			http.Error(w, "swap is no longer pending", http.StatusConflict)
+			return
+		}
+
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

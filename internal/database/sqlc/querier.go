@@ -80,7 +80,7 @@ type Querier interface {
 	UpdateAPITokenLastUsed(ctx context.Context, id string) (sql.Result, error)
 	UpdateAssignmentMember(ctx context.Context, arg UpdateAssignmentMemberParams) error
 	UpdateCoverMember(ctx context.Context, arg UpdateCoverMemberParams) error
-	UpdateHatSwapStatus(ctx context.Context, arg UpdateHatSwapStatusParams) error
+	UpdateHatSwapStatus(ctx context.Context, arg UpdateHatSwapStatusParams) (sql.Result, error)
 	UpdateLeaveCoverMember(ctx context.Context, arg UpdateLeaveCoverMemberParams) error
 	UpdateLeaveRecord(ctx context.Context, arg UpdateLeaveRecordParams) error
 	UpdateLeaveStatus(ctx context.Context, arg UpdateLeaveStatusParams) error

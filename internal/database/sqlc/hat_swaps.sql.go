@@ -200,10 +200,10 @@ func (q *Queries) GetSwapsForMember(ctx context.Context, arg GetSwapsForMemberPa
 	return items, nil
 }
 
-const updateHatSwapStatus = `-- name: UpdateHatSwapStatus :exec
+const updateHatSwapStatus = `-- name: UpdateHatSwapStatus :execresult
 UPDATE hat_swaps
 SET status = ?, updated_at = CURRENT_TIMESTAMP
-WHERE id = ?
+WHERE id = ? AND status = 'pending'
 `
 
 type UpdateHatSwapStatusParams struct {
@@ -211,7 +211,6 @@ type UpdateHatSwapStatusParams struct {
 	ID     string `json:"id"`
 }
 
-func (q *Queries) UpdateHatSwapStatus(ctx context.Context, arg UpdateHatSwapStatusParams) error {
-	_, err := q.db.ExecContext(ctx, updateHatSwapStatus, arg.Status, arg.ID)
-	return err
+func (q *Queries) UpdateHatSwapStatus(ctx context.Context, arg UpdateHatSwapStatusParams) (sql.Result, error) {
+	return q.db.ExecContext(ctx, updateHatSwapStatus, arg.Status, arg.ID)
 }

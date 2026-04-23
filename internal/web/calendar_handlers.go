@@ -215,7 +215,7 @@ func (h *Handler) handleCalendarICS(w http.ResponseWriter, r *http.Request) {
 		h.db,
 		token,
 		defaultCalendarLookaheadDays,
-		calendar.SupportCalendarOptions{SupportDayLinks: supportDayLinks},
+		calendar.SupportCalendarOptions{SupportDayLinks: supportDayLinks, WithAlarm: true},
 	)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)

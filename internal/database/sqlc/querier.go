@@ -15,8 +15,10 @@ type Querier interface {
 	AddTeamMember(ctx context.Context, arg AddTeamMemberParams) (sql.Result, error)
 	CleanupExpiredTokens(ctx context.Context) (sql.Result, error)
 	CountAdmins(ctx context.Context) (int64, error)
+	CountPendingSwapsForMember(ctx context.Context, targetMemberID string) (int64, error)
 	CreateAPIToken(ctx context.Context, arg CreateAPITokenParams) (sql.Result, error)
 	CreateCalendarSubscription(ctx context.Context, arg CreateCalendarSubscriptionParams) (sql.Result, error)
+	CreateHatSwap(ctx context.Context, arg CreateHatSwapParams) (sql.Result, error)
 	CreateLeaveRecord(ctx context.Context, arg CreateLeaveRecordParams) (sql.Result, error)
 	CreateOAuthToken(ctx context.Context, arg CreateOAuthTokenParams) (OauthToken, error)
 	CreateRotaAssignment(ctx context.Context, arg CreateRotaAssignmentParams) (sql.Result, error)
@@ -31,6 +33,7 @@ type Querier interface {
 	DeleteCalendarSubscription(ctx context.Context, token string) error
 	DeleteExpiredLeaveRecords(ctx context.Context, endDate time.Time) error
 	DeleteExpiredSessions(ctx context.Context) error
+	DeleteHatSwap(ctx context.Context, id string) error
 	DeleteLeaveRecord(ctx context.Context, id string) error
 	DeleteMemberSubscriptions(ctx context.Context, memberID string) error
 	DeleteOAuthToken(ctx context.Context, arg DeleteOAuthTokenParams) error
@@ -48,6 +51,9 @@ type Querier interface {
 	GetAssignmentsByDate(ctx context.Context, date time.Time) ([]GetAssignmentsByDateRow, error)
 	GetAssignmentsByDateRange(ctx context.Context, arg GetAssignmentsByDateRangeParams) ([]GetAssignmentsByDateRangeRow, error)
 	GetCoverAssignmentByDate(ctx context.Context, date time.Time) (GetCoverAssignmentByDateRow, error)
+	GetFutureAssignments(ctx context.Context) ([]GetFutureAssignmentsRow, error)
+	GetFutureAssignmentsForMember(ctx context.Context, memberID string) ([]GetFutureAssignmentsForMemberRow, error)
+	GetHatSwapByID(ctx context.Context, id string) (HatSwap, error)
 	GetLatestAssignmentDate(ctx context.Context) (interface{}, error)
 	GetLeaveByDate(ctx context.Context, arg GetLeaveByDateParams) ([]LeaveRecord, error)
 	GetLeaveByID(ctx context.Context, id string) (LeaveRecord, error)
@@ -57,9 +63,12 @@ type Querier interface {
 	GetMemberByToken(ctx context.Context, token string) (TeamMember, error)
 	GetMostRecentCoverAssignment(ctx context.Context) (GetMostRecentCoverAssignmentRow, error)
 	GetOAuthToken(ctx context.Context, arg GetOAuthTokenParams) (OauthToken, error)
+	GetOpenSwapForAssignment(ctx context.Context, arg GetOpenSwapForAssignmentParams) (HatSwap, error)
+	GetPendingSwapsForMember(ctx context.Context, targetMemberID string) ([]HatSwap, error)
 	GetSessionByToken(ctx context.Context, token string) (GetSessionByTokenRow, error)
 	GetSubscriptionByToken(ctx context.Context, token string) (CalendarSubscription, error)
 	GetSubscriptionsByMemberID(ctx context.Context, memberID string) ([]CalendarSubscription, error)
+	GetSwapsForMember(ctx context.Context, arg GetSwapsForMemberParams) ([]HatSwap, error)
 	GetUpcomingAssignments(ctx context.Context, arg GetUpcomingAssignmentsParams) ([]GetUpcomingAssignmentsRow, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id string) (User, error)
@@ -69,7 +78,9 @@ type Querier interface {
 	TouchMeetingsSubscription(ctx context.Context, token string) error
 	TouchRotaSubscription(ctx context.Context, token string) error
 	UpdateAPITokenLastUsed(ctx context.Context, id string) (sql.Result, error)
+	UpdateAssignmentMember(ctx context.Context, arg UpdateAssignmentMemberParams) error
 	UpdateCoverMember(ctx context.Context, arg UpdateCoverMemberParams) error
+	UpdateHatSwapStatus(ctx context.Context, arg UpdateHatSwapStatusParams) error
 	UpdateLeaveCoverMember(ctx context.Context, arg UpdateLeaveCoverMemberParams) error
 	UpdateLeaveRecord(ctx context.Context, arg UpdateLeaveRecordParams) error
 	UpdateLeaveStatus(ctx context.Context, arg UpdateLeaveStatusParams) error

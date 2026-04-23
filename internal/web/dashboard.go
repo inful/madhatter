@@ -46,9 +46,24 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	// Load dashboard data.
 	h.loadDashboardData(ctx, data)
 
+	// Load pending swap count for logged-in user.
+	h.loadPendingSwapCount(ctx, data)
+
 	// Render template.
 	if err := h.tmpl.ExecuteTemplate(w, "dashboard.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func (h *Handler) loadPendingSwapCount(ctx context.Context, data map[string]any) {
+	user, ok := auth.GetUserFromContext(ctx)
+	if !ok {
+		return
+	}
+
+	count, err := h.db.CountPendingSwapsForMember(ctx, user.ID)
+	if err == nil && count > 0 {
+		data["PendingSwapCount"] = count
 	}
 }
 

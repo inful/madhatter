@@ -30,6 +30,17 @@ type CalendarSubscription struct {
 	LastUsedMeetingsAt sql.NullTime `json:"last_used_meetings_at"`
 }
 
+type HatSwap struct {
+	ID                    string       `json:"id"`
+	RequesterAssignmentID string       `json:"requester_assignment_id"`
+	TargetAssignmentID    string       `json:"target_assignment_id"`
+	RequesterMemberID     string       `json:"requester_member_id"`
+	TargetMemberID        string       `json:"target_member_id"`
+	Status                string       `json:"status"`
+	CreatedAt             sql.NullTime `json:"created_at"`
+	UpdatedAt             sql.NullTime `json:"updated_at"`
+}
+
 type LeaveRecord struct {
 	ID            string         `json:"id"`
 	MemberID      string         `json:"member_id"`

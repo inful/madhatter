@@ -215,6 +215,106 @@ func (q *Queries) GetCoverAssignmentByDate(ctx context.Context, date time.Time) 
 	return i, err
 }
 
+const getFutureAssignments = `-- name: GetFutureAssignments :many
+SELECT ra.id, ra.date, ra.member_id, ra.is_cover, ra.original_assignment_id,
+       tm.name AS member_name, tm.email AS member_email
+FROM rota_assignments ra
+JOIN team_members tm ON ra.member_id = tm.id
+WHERE ra.date >= date('now')
+ORDER BY ra.date
+`
+
+type GetFutureAssignmentsRow struct {
+	ID                   string         `json:"id"`
+	Date                 time.Time      `json:"date"`
+	MemberID             string         `json:"member_id"`
+	IsCover              sql.NullInt64  `json:"is_cover"`
+	OriginalAssignmentID sql.NullString `json:"original_assignment_id"`
+	MemberName           string         `json:"member_name"`
+	MemberEmail          string         `json:"member_email"`
+}
+
+func (q *Queries) GetFutureAssignments(ctx context.Context) ([]GetFutureAssignmentsRow, error) {
+	rows, err := q.db.QueryContext(ctx, getFutureAssignments)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetFutureAssignmentsRow{}
+	for rows.Next() {
+		var i GetFutureAssignmentsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Date,
+			&i.MemberID,
+			&i.IsCover,
+			&i.OriginalAssignmentID,
+			&i.MemberName,
+			&i.MemberEmail,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getFutureAssignmentsForMember = `-- name: GetFutureAssignmentsForMember :many
+SELECT ra.id, ra.date, ra.member_id, ra.is_cover, ra.original_assignment_id,
+       tm.name AS member_name, tm.email AS member_email
+FROM rota_assignments ra
+JOIN team_members tm ON ra.member_id = tm.id
+WHERE ra.member_id = ? AND ra.date >= date('now')
+ORDER BY ra.date
+`
+
+type GetFutureAssignmentsForMemberRow struct {
+	ID                   string         `json:"id"`
+	Date                 time.Time      `json:"date"`
+	MemberID             string         `json:"member_id"`
+	IsCover              sql.NullInt64  `json:"is_cover"`
+	OriginalAssignmentID sql.NullString `json:"original_assignment_id"`
+	MemberName           string         `json:"member_name"`
+	MemberEmail          string         `json:"member_email"`
+}
+
+func (q *Queries) GetFutureAssignmentsForMember(ctx context.Context, memberID string) ([]GetFutureAssignmentsForMemberRow, error) {
+	rows, err := q.db.QueryContext(ctx, getFutureAssignmentsForMember, memberID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetFutureAssignmentsForMemberRow{}
+	for rows.Next() {
+		var i GetFutureAssignmentsForMemberRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Date,
+			&i.MemberID,
+			&i.IsCover,
+			&i.OriginalAssignmentID,
+			&i.MemberName,
+			&i.MemberEmail,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getLatestAssignmentDate = `-- name: GetLatestAssignmentDate :one
 SELECT MAX(date) AS max_date
 FROM rota_assignments
@@ -295,6 +395,22 @@ func (q *Queries) GetUpcomingAssignments(ctx context.Context, arg GetUpcomingAss
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateAssignmentMember = `-- name: UpdateAssignmentMember :exec
+UPDATE rota_assignments
+SET member_id = ?
+WHERE id = ?
+`
+
+type UpdateAssignmentMemberParams struct {
+	MemberID string `json:"member_id"`
+	ID       string `json:"id"`
+}
+
+func (q *Queries) UpdateAssignmentMember(ctx context.Context, arg UpdateAssignmentMemberParams) error {
+	_, err := q.db.ExecContext(ctx, updateAssignmentMember, arg.MemberID, arg.ID)
+	return err
 }
 
 const updateCoverMember = `-- name: UpdateCoverMember :exec

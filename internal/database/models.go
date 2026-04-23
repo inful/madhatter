@@ -40,3 +40,20 @@ type CalendarSubscription struct {
 	LastUsedRotaAt     *time.Time `json:"last_used_rota_at,omitempty"`
 	LastUsedMeetingsAt *time.Time `json:"last_used_meetings_at,omitempty"`
 }
+
+// HatSwap represents a request to swap HAT day assignments between two team members.
+type HatSwap struct {
+	ID                    string    `json:"id"`
+	RequesterAssignmentID string    `json:"requester_assignment_id"`
+	TargetAssignmentID    string    `json:"target_assignment_id"`
+	RequesterMemberID     string    `json:"requester_member_id"`
+	TargetMemberID        string    `json:"target_member_id"`
+	Status                string    `json:"status"`
+	CreatedAt             time.Time `json:"created_at"`
+	UpdatedAt             time.Time `json:"updated_at"`
+	// Enriched fields (populated by GetEnrichedSwap).
+	RequesterName string `json:"requester_name,omitempty"`
+	TargetName    string `json:"target_name,omitempty"`
+	RequesterDate string `json:"requester_date,omitempty"`
+	TargetDate    string `json:"target_date,omitempty"`
+}

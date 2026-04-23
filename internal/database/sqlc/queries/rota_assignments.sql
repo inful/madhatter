@@ -50,6 +50,27 @@ UPDATE rota_assignments
 SET member_id = ?
 WHERE date = ? AND is_cover = 1;
 
+-- name: UpdateAssignmentMember :exec
+UPDATE rota_assignments
+SET member_id = ?
+WHERE id = ?;
+
+-- name: GetFutureAssignmentsForMember :many
+SELECT ra.id, ra.date, ra.member_id, ra.is_cover, ra.original_assignment_id,
+       tm.name AS member_name, tm.email AS member_email
+FROM rota_assignments ra
+JOIN team_members tm ON ra.member_id = tm.id
+WHERE ra.member_id = ? AND ra.date >= date('now')
+ORDER BY ra.date;
+
+-- name: GetFutureAssignments :many
+SELECT ra.id, ra.date, ra.member_id, ra.is_cover, ra.original_assignment_id,
+       tm.name AS member_name, tm.email AS member_email
+FROM rota_assignments ra
+JOIN team_members tm ON ra.member_id = tm.id
+WHERE ra.date >= date('now')
+ORDER BY ra.date;
+
 -- name: GetCoverAssignmentByDate :one
 SELECT id, date, member_id, is_cover, original_assignment_id
 FROM rota_assignments

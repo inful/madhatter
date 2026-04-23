@@ -3,10 +3,21 @@ package database
 import (
 	"context"
 	"errors"
+	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/inful/madhatter/internal/database/sqlc"
 )
+
+var (
+	ErrSwapNotPending     = errors.New("swap is no longer pending")
+	ErrSwapDatePassed     = errors.New("one of the HAT days has already passed and cannot be swapped")
+	ErrSwapSameMember     = errors.New("swap target must belong to another member")
+	ErrSwapAssignmentBusy = errors.New("one of the assignments already has an open swap request")
+)
+
+const dbHoursInDay = 24
 
 // CreateHatSwap creates a new pending HAT day swap request.
 func (db *DB) CreateHatSwap(ctx context.Context, requesterAssignmentID, targetAssignmentID, requesterMemberID, targetMemberID string) (string, error) {
@@ -15,7 +26,7 @@ func (db *DB) CreateHatSwap(ctx context.Context, requesterAssignmentID, targetAs
 	}
 
 	if requesterMemberID == targetMemberID {
-		return "", errors.New("cannot request a swap with yourself")
+		return "", ErrSwapSameMember
 	}
 
 	id := uuid.New().String()
@@ -28,6 +39,10 @@ func (db *DB) CreateHatSwap(ctx context.Context, requesterAssignmentID, targetAs
 		TargetMemberID:        targetMemberID,
 	})
 	if err != nil {
+		if strings.Contains(err.Error(), "pending swap already exists") {
+			return "", ErrSwapAssignmentBusy
+		}
+
 		return "", err
 	}
 
@@ -107,16 +122,10 @@ func (db *DB) ExecuteSwap(ctx context.Context, swapID string) error {
 	}
 
 	if swap.Status != "pending" {
-		return errors.New("swap is no longer pending")
+		return ErrSwapNotPending
 	}
 
-	// Load both assignments to get current member IDs.
-	reqAssignment, err := db.queries.GetAssignmentByID(ctx, swap.RequesterAssignmentID)
-	if err != nil {
-		return err
-	}
-
-	tgtAssignment, err := db.queries.GetAssignmentByID(ctx, swap.TargetAssignmentID)
+	reqAssignment, tgtAssignment, err := db.loadSwapAssignmentsForExecution(ctx, swap)
 	if err != nil {
 		return err
 	}
@@ -161,6 +170,25 @@ func (db *DB) ExecuteSwap(ctx context.Context, swapID string) error {
 	}
 
 	return tx.Commit()
+}
+
+func (db *DB) loadSwapAssignmentsForExecution(ctx context.Context, swap *HatSwap) (sqlc.GetAssignmentByIDRow, sqlc.GetAssignmentByIDRow, error) {
+	reqAssignment, err := db.queries.GetAssignmentByID(ctx, swap.RequesterAssignmentID)
+	if err != nil {
+		return sqlc.GetAssignmentByIDRow{}, sqlc.GetAssignmentByIDRow{}, err
+	}
+
+	tgtAssignment, err := db.queries.GetAssignmentByID(ctx, swap.TargetAssignmentID)
+	if err != nil {
+		return sqlc.GetAssignmentByIDRow{}, sqlc.GetAssignmentByIDRow{}, err
+	}
+
+	today := time.Now().Truncate(dbHoursInDay * time.Hour)
+	if reqAssignment.Date.Before(today) || tgtAssignment.Date.Before(today) {
+		return sqlc.GetAssignmentByIDRow{}, sqlc.GetAssignmentByIDRow{}, ErrSwapDatePassed
+	}
+
+	return reqAssignment, tgtAssignment, nil
 }
 
 // GetEnrichedSwaps enriches a slice of HatSwap with member names and assignment dates.

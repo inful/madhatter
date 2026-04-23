@@ -39,14 +39,17 @@ func (h *Handler) handleSwaps(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	memberID := h.resolveMemberID(ctx, user.Email)
+
 	data := map[string]any{
 		"Template": "swaps",
 		"User":     user,
 		"IsAdmin":  user.IsAdmin.Valid && user.IsAdmin.Int64 == 1,
+		"MemberID": memberID,
 	}
 
-	memberID := h.resolveMemberID(ctx, user.Email)
 	if memberID == "" {
+		delete(data, "MemberID")
 		data["Error"] = "You are not registered as a team member."
 		if err := h.tmpl.ExecuteTemplate(w, "swaps.html", data); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -127,6 +130,10 @@ func (h *Handler) validateSwapAssignments(ctx context.Context, requesterAssignme
 
 	if reqAssignment.MemberID != userID {
 		return "You can only swap your own assignments."
+	}
+
+	if tgtAssignment.MemberID == reqAssignment.MemberID {
+		return "You can only request swaps with another member."
 	}
 
 	today := time.Now().Truncate(hoursInDay * time.Hour)
@@ -215,6 +222,11 @@ func (h *Handler) handleSwapAccept(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.db.ExecuteSwap(ctx, swapID); err != nil {
+		if errors.Is(err, database.ErrSwapDatePassed) || errors.Is(err, database.ErrSwapNotPending) {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

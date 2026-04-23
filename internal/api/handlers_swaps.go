@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -95,6 +96,10 @@ func (s *Server) validateSwapAssignmentsAPI(
 		return nil, nil, huma.Error403Forbidden("You can only swap your own assignments")
 	}
 
+	if tgtAssignment.MemberID == reqAssignment.MemberID {
+		return nil, nil, huma.Error422UnprocessableEntity("Swap target must belong to another member", nil)
+	}
+
 	today := time.Now().Truncate(apiHoursInDay * time.Hour)
 
 	reqDate, parseErr := time.Parse("2006-01-02", reqAssignment.Date)
@@ -154,6 +159,13 @@ func (s *Server) handleCreateSwap(ctx context.Context, input *CreateSwapInput) (
 		tgtAssignment.MemberID,
 	)
 	if err != nil {
+		if errors.Is(err, database.ErrSwapSameMember) {
+			return nil, huma.Error422UnprocessableEntity(err.Error(), nil)
+		}
+		if errors.Is(err, database.ErrSwapAssignmentBusy) {
+			return nil, huma.Error409Conflict(err.Error())
+		}
+
 		return nil, huma.Error500InternalServerError("Failed to create swap request", err)
 	}
 
@@ -225,6 +237,10 @@ func (s *Server) handleAcceptSwap(ctx context.Context, input *SwapIDInput) (*Swa
 	}
 
 	if err := s.db.ExecuteSwap(ctx, input.ID); err != nil {
+		if errors.Is(err, database.ErrSwapDatePassed) || errors.Is(err, database.ErrSwapNotPending) {
+			return nil, huma.Error409Conflict(err.Error())
+		}
+
 		return nil, huma.Error500InternalServerError("Failed to execute swap", err)
 	}
 

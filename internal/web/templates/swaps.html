@@ -193,7 +193,7 @@
                         <td><small class="has-text-grey">{{.CreatedAt.Format "Jan 2, 2006"}}</small></td>
                         <td>
                             {{if eq .Status "pending"}}
-                                {{if eq .RequesterMemberID $.User.ID}}
+                                {{if eq .RequesterMemberID $.MemberID}}
                                     <form method="POST" action="/swaps/{{.ID}}/cancel">
                                         <button type="submit" class="button is-small is-light">
                                             <i class="fas fa-ban mr-1"></i> Cancel

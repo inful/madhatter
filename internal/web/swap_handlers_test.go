@@ -353,6 +353,39 @@ func TestHandleSwaps_Post_DuplicateSwap_ShowsError(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "already has an open swap request")
 }
 
+func TestHandleSwaps_GetPendingOutgoingSwap_ShowsCancelButton(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupSwapTestDB(t)
+	defer cleanup()
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	seedSchedule(t, db)
+
+	aliceAssignments, err := db.GetFutureAssignmentsForMember(ctx, aliceID)
+	require.NoError(t, err)
+	require.NotEmpty(t, aliceAssignments)
+	bobAssignments, err := db.GetFutureAssignmentsForMember(ctx, bobID)
+	require.NoError(t, err)
+	require.NotEmpty(t, bobAssignments)
+
+	_, err = db.CreateHatSwap(ctx, aliceAssignments[0].ID, bobAssignments[0].ID, aliceID, bobID)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/swaps", nil)
+	req = withUser(req, "alice@example.com", "Alice", false)
+	w := httptest.NewRecorder()
+
+	h := newSwapHandler(t, db)
+	h.handleSwaps(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Contains(t, w.Body.String(), "/cancel")
+}
+
 // ---------------------------------------------------------------------------
 // handleSwapCancel
 // ---------------------------------------------------------------------------
@@ -613,6 +646,41 @@ func TestHandleSwapAccept_Valid_ExecutesSwapAndRedirects(t *testing.T) {
 	updatedBob, err := db.GetAssignmentByID(ctx, bobAID)
 	require.NoError(t, err)
 	assert.Equal(t, aliceID, updatedBob.MemberID, "Bob's slot should now belong to Alice")
+}
+
+func TestHandleSwapAccept_PastAssignments_ReturnsBadRequest(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupSwapTestDB(t)
+	defer cleanup()
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	baseDate := time.Now().AddDate(0, 0, -3)
+	aliceAID, err := db.CreateRotaAssignment(ctx, baseDate.Format("2006-01-02"), aliceID, false, nil)
+	require.NoError(t, err)
+	bobAID, err := db.CreateRotaAssignment(ctx, baseDate.AddDate(0, 0, 1).Format("2006-01-02"), bobID, false, nil)
+	require.NoError(t, err)
+
+	swapID, err := db.CreateHatSwap(ctx, aliceAID, bobAID, aliceID, bobID)
+	require.NoError(t, err)
+
+	h := newSwapHandler(t, db)
+	req := httptest.NewRequest(http.MethodPost, "/swaps/"+swapID+"/accept", nil)
+	req = withUser(req, "bob@example.com", "Bob", false)
+	req = withChiParam(req, swapID)
+	w := httptest.NewRecorder()
+
+	h.handleSwapAccept(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "passed")
+
+	updatedAlice, err := db.GetAssignmentByID(ctx, aliceAID)
+	require.NoError(t, err)
+	assert.Equal(t, aliceID, updatedAlice.MemberID)
 }
 
 // ---------------------------------------------------------------------------

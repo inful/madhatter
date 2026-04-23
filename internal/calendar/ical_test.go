@@ -502,3 +502,44 @@ func TestICalGenerator_SequenceAndModified(t *testing.T) {
 	// Should contain last modified timestamp
 	assert.Contains(t, icalStr, "LAST-MODIFIED:")
 }
+
+func TestICalGenerator_WithAlarm(t *testing.T) {
+	generator := NewICalGenerator().WithAlarm()
+
+	assignment := database.RotaAssignment{
+		ID:       "test-alarm-123",
+		Date:     "2026-01-15",
+		MemberID: "member-1",
+		IsCover:  false,
+	}
+
+	err := generator.AddAssignment(assignment, "John Doe")
+	require.NoError(t, err)
+
+	icalStr, err := generator.Serialize()
+	require.NoError(t, err)
+
+	assert.Contains(t, icalStr, "BEGIN:VALARM")
+	assert.Contains(t, icalStr, "ACTION:DISPLAY")
+	assert.Contains(t, icalStr, "TRIGGER:-P1D")
+	assert.Contains(t, icalStr, "END:VALARM")
+}
+
+func TestICalGenerator_NoAlarmByDefault(t *testing.T) {
+	generator := NewICalGenerator()
+
+	assignment := database.RotaAssignment{
+		ID:       "test-no-alarm-456",
+		Date:     "2026-01-15",
+		MemberID: "member-1",
+		IsCover:  false,
+	}
+
+	err := generator.AddAssignment(assignment, "John Doe")
+	require.NoError(t, err)
+
+	icalStr, err := generator.Serialize()
+	require.NoError(t, err)
+
+	assert.NotContains(t, icalStr, "BEGIN:VALARM")
+}

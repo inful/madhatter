@@ -230,4 +230,77 @@ func (s *Server) registerOperations(development bool) {
 			{"apiTokenAuth": {}},
 		},
 	}, s.handleCleanupExpiredTokens)
+
+	// Swap Operations
+	huma.Register(s.api, huma.Operation{
+		OperationID: "create-swap",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/swaps",
+		Summary:     "Request a HAT day swap with another team member",
+		Tags:        []string{"Swaps"},
+		Security: []map[string][]string{
+			{"sessionAuth": {}},
+			{"apiTokenAuth": {}},
+		},
+	}, s.handleCreateSwap)
+
+	huma.Register(s.api, huma.Operation{
+		OperationID: "list-swaps",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/swaps",
+		Summary:     "List all swaps involving the current user",
+		Tags:        []string{"Swaps"},
+		Security: []map[string][]string{
+			{"sessionAuth": {}},
+			{"apiTokenAuth": {}},
+		},
+	}, s.handleListSwaps)
+
+	huma.Register(s.api, huma.Operation{
+		OperationID: "accept-swap",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/swaps/{id}/accept",
+		Summary:     "Accept an incoming HAT day swap request",
+		Tags:        []string{"Swaps"},
+		Security: []map[string][]string{
+			{"sessionAuth": {}},
+			{"apiTokenAuth": {}},
+		},
+	}, s.handleAcceptSwap)
+
+	huma.Register(s.api, huma.Operation{
+		OperationID: "reject-swap",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/swaps/{id}/reject",
+		Summary:     "Reject an incoming HAT day swap request",
+		Tags:        []string{"Swaps"},
+		Security: []map[string][]string{
+			{"sessionAuth": {}},
+			{"apiTokenAuth": {}},
+		},
+	}, s.handleRejectSwap)
+
+	huma.Register(s.api, huma.Operation{
+		OperationID: "cancel-swap",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/swaps/{id}/cancel",
+		Summary:     "Cancel a pending HAT day swap request",
+		Tags:        []string{"Swaps"},
+		Security: []map[string][]string{
+			{"sessionAuth": {}},
+			{"apiTokenAuth": {}},
+		},
+	}, s.handleCancelSwap)
+
+	huma.Register(s.api, huma.Operation{
+		OperationID: "delete-swap",
+		Method:      http.MethodDelete,
+		Path:        "/api/v1/swaps/{id}",
+		Summary:     "Delete a swap record (admin only)",
+		Tags:        []string{"Swaps"},
+		Security: []map[string][]string{
+			{"sessionAuth": {}},
+			{"apiTokenAuth": {}},
+		},
+	}, s.handleDeleteSwap)
 }

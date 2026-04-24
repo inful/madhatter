@@ -54,7 +54,7 @@ func TestLeaveCreationIntegration(t *testing.T) {
 	formData.Set("end_date", time.Now().AddDate(0, 0, 5).Format("2006-01-02"))
 
 	// Create POST request
-	req := httptest.NewRequest(http.MethodPost, "/leave", strings.NewReader(formData.Encode()))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/leave", strings.NewReader(formData.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	// Create response recorder
@@ -148,7 +148,7 @@ func TestLeaveCreationWithInvalidData(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Create POST request
-			req := httptest.NewRequest(http.MethodPost, "/leave", strings.NewReader(tc.formData.Encode()))
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/leave", strings.NewReader(tc.formData.Encode()))
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 			// Create response recorder

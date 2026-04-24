@@ -362,7 +362,7 @@ func TestCalendarEndpoints(t *testing.T) {
 		router := chi.NewRouter()
 		router.Get("/api/v1/calendar/{token}/ics", server.handleCalendarICS)
 
-		req := httptest.NewRequest(http.MethodGet, "/api/v1/calendar/"+token+"/ics", nil)
+		req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/calendar/"+token+"/ics", nil)
 		w := httptest.NewRecorder()
 
 		router.ServeHTTP(w, req)

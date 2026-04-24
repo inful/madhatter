@@ -269,9 +269,9 @@ func (sm *ScheduleMaintenance) RegenerateSchedule(ctx context.Context, start, en
 	}
 
 	for currentDate := start; !currentDate.After(end); currentDate = currentDate.AddDate(0, 0, 1) {
-		if err := sm.engine.processDate(ctx, currentDate, members, &memberIndex); err != nil {
+		if processErr := sm.engine.processDate(ctx, currentDate, members, &memberIndex); processErr != nil {
 			return 0, fmt.Errorf("failed to regenerate assignment for %s: %w",
-				currentDate.Format("2006-01-02"), err)
+				currentDate.Format("2006-01-02"), processErr)
 		}
 	}
 

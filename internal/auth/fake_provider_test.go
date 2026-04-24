@@ -16,6 +16,7 @@ import (
 
 // TestFakeProvider_Name tests that the fake provider returns the correct name.
 func TestFakeProvider_Name(t *testing.T) {
+	//nolint:gosec // Test-only OAuth configuration values.
 	config := ProviderConfig{
 		ClientID:     "test-client",
 		ClientSecret: "test-secret",
@@ -32,6 +33,7 @@ func TestFakeProvider_Name(t *testing.T) {
 
 // TestFakeProvider_GetAuthURL tests that the fake provider returns a valid auth URL.
 func TestFakeProvider_GetAuthURL(t *testing.T) {
+	//nolint:gosec // Test-only OAuth configuration values.
 	config := ProviderConfig{
 		ClientID:     "test-client",
 		ClientSecret: "test-secret",
@@ -54,6 +56,7 @@ func TestFakeProvider_GetAuthURL(t *testing.T) {
 
 // TestFakeProvider_ExchangeCode tests that the fake provider returns fake tokens.
 func TestFakeProvider_ExchangeCode(t *testing.T) {
+	//nolint:gosec // Test-only OAuth configuration values.
 	config := ProviderConfig{
 		ClientID:     "test-client",
 		ClientSecret: "test-secret",
@@ -77,6 +80,7 @@ func TestFakeProvider_ExchangeCode(t *testing.T) {
 
 // TestFakeProvider_GetUserInfo tests that the fake provider returns fake user info.
 func TestFakeProvider_GetUserInfo(t *testing.T) {
+	//nolint:gosec // Test-only OAuth configuration values.
 	config := ProviderConfig{
 		ClientID:     "test-client",
 		ClientSecret: "test-secret",
@@ -105,6 +109,7 @@ func TestFakeProvider_GetUserInfo(t *testing.T) {
 
 // TestFakeProvider_GetOAuthConfig tests that the fake provider returns valid OAuth config.
 func TestFakeProvider_GetOAuthConfig(t *testing.T) {
+	//nolint:gosec // Test-only OAuth configuration values.
 	config := ProviderConfig{
 		ClientID:     "test-client",
 		ClientSecret: "test-secret",
@@ -131,7 +136,7 @@ func TestFakeProvider_GetOAuthConfig(t *testing.T) {
 func TestFakeCallbackHandler_HandleLogin(t *testing.T) {
 	handler := NewFakeCallbackHandler()
 
-	req := httptest.NewRequest(http.MethodGet, "/auth/fake/login?state=test-state", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/auth/fake/login?state=test-state", nil)
 	w := httptest.NewRecorder()
 
 	handler.HandleLogin(w, req)
@@ -165,11 +170,11 @@ func TestFakeCallbackHandler_HandleLogin_UniqueStates(t *testing.T) {
 	handler := NewFakeCallbackHandler()
 
 	// Make two requests
-	req1 := httptest.NewRequest(http.MethodGet, "/auth/fake/login", nil)
+	req1 := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/auth/fake/login", nil)
 	w1 := httptest.NewRecorder()
 	handler.HandleLogin(w1, req1)
 
-	req2 := httptest.NewRequest(http.MethodGet, "/auth/fake/login", nil)
+	req2 := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/auth/fake/login", nil)
 	w2 := httptest.NewRecorder()
 	handler.HandleLogin(w2, req2)
 
@@ -214,6 +219,7 @@ func TestGetDevelopmentLoginHTML(t *testing.T) {
 // TestFakeProvider_Integration tests the complete fake OAuth flow.
 func TestFakeProvider_Integration(t *testing.T) {
 	// Setup
+	//nolint:gosec // Test-only OAuth configuration values.
 	config := ProviderConfig{
 		ClientID:     "dev-client",
 		ClientSecret: "dev-secret",
@@ -233,7 +239,7 @@ func TestFakeProvider_Integration(t *testing.T) {
 	assert.Contains(t, authURL, "/auth/fake/login")
 
 	// Step 2: Simulate login redirect
-	req := httptest.NewRequest(http.MethodGet, authURL, nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, authURL, nil)
 	w := httptest.NewRecorder()
 	handler.HandleLogin(w, req)
 

@@ -14,15 +14,18 @@ import (
 	"github.com/inful/madhatter/internal/database/sqlc"
 )
 
+const maxTeamFormBytes = 1 << 20
+
 func (h *Handler) handleTeamPost(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxTeamFormBytes)
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	_, err := h.db.AddTeamMember(ctx, r.FormValue("name"), r.FormValue("email"))
+	_, err := h.db.AddTeamMember(ctx, r.PostForm.Get("name"), r.PostForm.Get("email"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -119,13 +122,14 @@ func (h *Handler) handleTeamMemberEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxTeamFormBytes)
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	name := strings.TrimSpace(r.FormValue("name"))
-	email := strings.TrimSpace(r.FormValue("email"))
+	name := strings.TrimSpace(r.PostForm.Get("name"))
+	email := strings.TrimSpace(r.PostForm.Get("email"))
 
 	// Validate input at handler level.
 	if err := validateTeamMemberInput(name, email); err != nil {
@@ -168,12 +172,13 @@ func (h *Handler) handleUserAdminUpdate(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxTeamFormBytes)
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	makeAdmin := r.FormValue("is_admin") == "1"
+	makeAdmin := r.PostForm.Get("is_admin") == "1"
 	user, err := h.db.GetQueries().GetUserByID(ctx, userID)
 	if errors.Is(err, sql.ErrNoRows) {
 		http.Error(w, "user not found", http.StatusNotFound)

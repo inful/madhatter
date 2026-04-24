@@ -27,6 +27,7 @@ func getMigrationsPath() (string, error) {
 		if err != nil {
 			return "", err
 		}
+		//nolint:gosec // MIGRATIONS_PATH is an operator-provided local filesystem path.
 		if _, err := os.Stat(abs); err != nil {
 			return "", fmt.Errorf("MIGRATIONS_PATH does not exist: %w", err)
 		}

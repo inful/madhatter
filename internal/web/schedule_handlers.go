@@ -8,6 +8,8 @@ import (
 	"github.com/inful/madhatter/internal/auth"
 )
 
+const maxScheduleFormBytes = 1 << 20
+
 func (h *Handler) handleScheduleGenerate(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
 		h.handleScheduleGeneratePost(w, r)
@@ -20,6 +22,7 @@ func (h *Handler) handleScheduleGenerate(w http.ResponseWriter, r *http.Request)
 
 func (h *Handler) handleScheduleGeneratePost(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	r.Body = http.MaxBytesReader(w, r.Body, maxScheduleFormBytes)
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -37,7 +40,7 @@ func (h *Handler) handleScheduleGeneratePost(w http.ResponseWriter, r *http.Requ
 	}
 
 	// Generate schedule based on mode.
-	regenerate := r.FormValue("regenerate") == "on"
+	regenerate := r.PostForm.Get("regenerate") == "on"
 	var err error
 	if regenerate {
 		_, err = h.maintenance.RegenerateSchedule(ctx, start, end)
@@ -92,8 +95,8 @@ func (h *Handler) validateTeamMembers(ctx context.Context, w http.ResponseWriter
 }
 
 func (h *Handler) parseDateRange(w http.ResponseWriter, r *http.Request) (time.Time, time.Time, bool) {
-	startDate := r.FormValue("start_date")
-	endDate := r.FormValue("end_date")
+	startDate := r.PostForm.Get("start_date")
+	endDate := r.PostForm.Get("end_date")
 
 	start, err := time.Parse("2006-01-02", startDate)
 	if err != nil {

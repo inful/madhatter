@@ -114,7 +114,7 @@ func buildAdminUpdateRequest(userID, isAdminFormValue string) *http.Request {
 	form := url.Values{}
 	form.Set("is_admin", isAdminFormValue)
 
-	req := httptest.NewRequest(http.MethodPost, "/team/users/"+userID+"/admin", strings.NewReader(form.Encode()))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/team/users/"+userID+"/admin", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	routeCtx := chi.NewRouteContext()

@@ -14,6 +14,8 @@ import (
 	"github.com/inful/madhatter/internal/calendar"
 )
 
+const maxCalendarFormBytes = 1 << 20
+
 // setSubscriptionURLs populates the calendar/meetings URL template data for a given token.
 func setSubscriptionURLs(r *http.Request, token string, data map[string]any) {
 	data["Token"] = token
@@ -33,12 +35,13 @@ func setSubscriptionURLs(r *http.Request, token string, data map[string]any) {
 
 // handleCalendarAdminPost handles the admin-only POST to create a subscription for another member.
 func (h *Handler) handleCalendarAdminPost(w http.ResponseWriter, r *http.Request, data map[string]any) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxCalendarFormBytes)
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	token, err := h.db.CreateCalendarSubscription(r.Context(), r.FormValue("member_id"))
+	token, err := h.db.CreateCalendarSubscription(r.Context(), r.PostForm.Get("member_id"))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -231,6 +234,7 @@ func (h *Handler) handleCalendarICS(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 
 	// Write ICS content.
+	//nolint:gosec // Content is generated server-side and served as text/calendar.
 	_, _ = w.Write([]byte(icsContent))
 }
 
@@ -279,6 +283,7 @@ func (h *Handler) handleMeetingsCalendarICS(w http.ResponseWriter, r *http.Reque
 	w.Header().Set("Content-Disposition", "attachment; filename=\"support-meetings.ics\"")
 	w.Header().Set("Cache-Control", "no-cache")
 
+	//nolint:gosec // Content is generated server-side and served as text/calendar.
 	_, _ = w.Write([]byte(icsContent))
 }
 
@@ -306,6 +311,7 @@ func (h *Handler) handleTeamCalendarICS(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Content-Disposition", "attachment; filename=\"support-rota-others.ics\"")
 	w.Header().Set("Cache-Control", "no-cache")
 
+	//nolint:gosec // Content is generated server-side and served as text/calendar.
 	_, _ = w.Write([]byte(icsContent))
 }
 
@@ -433,13 +439,14 @@ func (h *Handler) handleCalendarSubscriptionsCleanup(w http.ResponseWriter, r *h
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxCalendarFormBytes)
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	days := defaultStaleSubscriptionDays
-	if v := strings.TrimSpace(r.FormValue("days")); v != "" {
+	if v := strings.TrimSpace(r.PostForm.Get("days")); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			days = n
 		}

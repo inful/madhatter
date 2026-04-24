@@ -29,7 +29,7 @@ func doJSONRequest(t *testing.T, server *Server, method, path string, body any, 
 		bodyReader = bytes.NewReader(nil)
 	}
 
-	req := httptest.NewRequest(method, path, bodyReader)
+	req := httptest.NewRequestWithContext(context.Background(), method, path, bodyReader)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}

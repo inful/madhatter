@@ -263,33 +263,10 @@ func collectSwapIDs(swaps []HatSwap) (memberIDs, assignmentIDs map[string]struct
 	}
 
 	return memberIDs, assignmentIDs
-	memberIDs := make(map[uuid.UUID]struct{})
-	assignmentIDs := make(map[uuid.UUID]struct{})
+}
 
-	for i := range swaps {
-		s := swaps[i]
-		memberIDs[s.RequesterMemberID] = struct{}{}
-		memberIDs[s.TargetMemberID] = struct{}{}
-		assignmentIDs[s.RequesterAssignmentID] = struct{}{}
-		assignmentIDs[s.TargetAssignmentID] = struct{}{}
-	}
-
-	memberNames := make(map[uuid.UUID]string, len(memberIDs))
-	for memberID := range memberIDs {
-		member, err := db.queries.GetMemberByID(ctx, memberID)
-		if err == nil {
-			memberNames[memberID] = member.Name
-		}
-	}
-
-	assignmentDates := make(map[uuid.UUID]string, len(assignmentIDs))
-	for assignmentID := range assignmentIDs {
-		assignment, err := db.queries.GetAssignmentByID(ctx, assignmentID)
-		if err == nil {
-			assignmentDates[assignmentID] = assignment.Date.Format("2006-01-02")
-		}
-	}
-
+// applySwapEnrichment populates enriched name and date fields on each swap.
+func applySwapEnrichment(swaps []HatSwap, memberNames, assignmentDates map[string]string) {
 	for i := range swaps {
 		s := &swaps[i]
 

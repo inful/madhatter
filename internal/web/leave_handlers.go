@@ -11,6 +11,8 @@ import (
 	"github.com/inful/madhatter/internal/database"
 )
 
+const maxLeaveFormBytes = 1 << 20
+
 func (h *Handler) handleLeaveReport(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	data := map[string]any{
@@ -33,6 +35,7 @@ func (h *Handler) handleLeaveReport(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleLeaveReportPost(w http.ResponseWriter, r *http.Request, data map[string]any) {
 	ctx := r.Context()
+	r.Body = http.MaxBytesReader(w, r.Body, maxLeaveFormBytes)
 
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -40,8 +43,8 @@ func (h *Handler) handleLeaveReportPost(w http.ResponseWriter, r *http.Request, 
 	}
 
 	memberID := r.FormValue("member_id")
-	startDate := r.FormValue("start_date")
-	endDate := r.FormValue("end_date")
+	startDate := r.PostForm.Get("start_date")
+	endDate := r.PostForm.Get("end_date")
 
 	// Validate dates before hitting the database.
 	if err := validateLeaveDates(startDate, endDate); err != nil {
@@ -174,14 +177,15 @@ func (h *Handler) handleLeaveEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, maxLeaveFormBytes)
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	memberID := strings.TrimSpace(r.FormValue("member_id"))
-	startDate := strings.TrimSpace(r.FormValue("start_date"))
-	endDate := strings.TrimSpace(r.FormValue("end_date"))
+	memberID := strings.TrimSpace(r.PostForm.Get("member_id"))
+	startDate := strings.TrimSpace(r.PostForm.Get("start_date"))
+	endDate := strings.TrimSpace(r.PostForm.Get("end_date"))
 
 	// Validate input at handler level.
 	if memberID == "" {

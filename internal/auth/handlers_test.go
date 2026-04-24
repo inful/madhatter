@@ -109,7 +109,7 @@ func TestAuthManager_HandleLogin(t *testing.T) {
 	authManager.RegisterProvider(fakeProvider)
 
 	// Create request with correct URL pattern and chi route context
-	req := httptest.NewRequest(http.MethodGet, "/auth/login/fake", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/auth/login/fake", nil)
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add("provider", "fake")
 	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
@@ -152,7 +152,7 @@ func TestAuthManager_HandleLogin_MissingProvider(t *testing.T) {
 	authManager := NewAuthManager(providerFactory, userService, sessionManager)
 
 	// Create request without provider
-	req := httptest.NewRequest(http.MethodGet, "/auth/login/", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/auth/login/", nil)
 	w := httptest.NewRecorder()
 
 	// Test
@@ -178,7 +178,7 @@ func TestAuthManager_HandleLogin_InvalidProvider(t *testing.T) {
 	authManager := NewAuthManager(providerFactory, userService, sessionManager)
 
 	// Create request with invalid provider
-	req := httptest.NewRequest(http.MethodGet, "/auth/login/invalid", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/auth/login/invalid", nil)
 	w := httptest.NewRecorder()
 
 	// Test
@@ -213,7 +213,7 @@ func TestAuthManager_HandleCallback(t *testing.T) {
 	state := "test-state"
 
 	// Create callback request
-	req := httptest.NewRequest(http.MethodGet, "/auth/callback?code=test-code&state=test-state&provider=fake", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/auth/callback?code=test-code&state=test-state&provider=fake", nil)
 	req.AddCookie(&http.Cookie{
 		Name:  "oauth_state",
 		Value: state,
@@ -264,7 +264,7 @@ func TestAuthManager_HandleCallback_MissingState(t *testing.T) {
 	authManager := NewAuthManager(providerFactory, userService, sessionManager)
 
 	// Create request without state cookie
-	req := httptest.NewRequest(http.MethodGet, "/auth/callback?code=test", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/auth/callback?code=test", nil)
 	w := httptest.NewRecorder()
 
 	// Test
@@ -290,7 +290,7 @@ func TestAuthManager_HandleCallback_StateMismatch(t *testing.T) {
 	authManager := NewAuthManager(providerFactory, userService, sessionManager)
 
 	// Create request with mismatched state
-	req := httptest.NewRequest(http.MethodGet, "/auth/callback?code=test&state=wrong", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/auth/callback?code=test&state=wrong", nil)
 	req.AddCookie(&http.Cookie{
 		Name:  "oauth_state",
 		Value: "correct-state",
@@ -320,7 +320,7 @@ func TestAuthManager_HandleCallback_MissingProvider(t *testing.T) {
 	authManager := NewAuthManager(providerFactory, userService, sessionManager)
 
 	// Create request without provider
-	req := httptest.NewRequest(http.MethodGet, "/auth/callback?code=test&state=test", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/auth/callback?code=test&state=test", nil)
 	req.AddCookie(&http.Cookie{
 		Name:  "oauth_state",
 		Value: "test",
@@ -356,7 +356,7 @@ func TestAuthManager_HandleCallback_MissingCode(t *testing.T) {
 	authManager.RegisterProvider(fakeProvider)
 
 	// Create request without code
-	req := httptest.NewRequest(http.MethodGet, "/auth/callback?state=test&provider=fake", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/auth/callback?state=test&provider=fake", nil)
 	req.AddCookie(&http.Cookie{
 		Name:  "oauth_state",
 		Value: "test",
@@ -400,7 +400,7 @@ func TestAuthManager_HandleLogout(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create logout request
-	req := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/auth/logout", nil)
 	req.AddCookie(&http.Cookie{
 		Name:  "session_token",
 		Value: sessionToken,
@@ -445,7 +445,7 @@ func TestAuthManager_HandleLoginView(t *testing.T) {
 	authManager := NewAuthManager(providerFactory, userService, sessionManager)
 
 	// Create request
-	req := httptest.NewRequest(http.MethodGet, "/login", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/login", nil)
 	w := httptest.NewRecorder()
 
 	// Test
@@ -487,7 +487,7 @@ func TestAuthManager_HandleLoginView_AlreadyLoggedIn(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create request with session
-	req := httptest.NewRequest(http.MethodGet, "/login", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/login", nil)
 	req.AddCookie(&http.Cookie{
 		Name:  "session_token",
 		Value: sessionToken,
@@ -530,7 +530,7 @@ func TestAuthManager_HandleGenerateAPIToken(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create request
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/tokens/generate?name=my-token", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/tokens/generate?name=my-token", nil)
 	req.AddCookie(&http.Cookie{
 		Name:  "session_token",
 		Value: sessionToken,
@@ -571,7 +571,7 @@ func TestAuthManager_HandleGenerateAPIToken_Unauthenticated(t *testing.T) {
 	authManager := NewAuthManager(providerFactory, userService, sessionManager)
 
 	// Create request without auth
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/tokens/generate?name=my-token", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/tokens/generate?name=my-token", nil)
 	w := httptest.NewRecorder()
 
 	// Test
@@ -629,7 +629,7 @@ func TestAuthManager_HandleListAPITokens(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create request
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/tokens", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/tokens", nil)
 	req.AddCookie(&http.Cookie{
 		Name:  "session_token",
 		Value: sessionToken,
@@ -668,7 +668,7 @@ func TestAuthManager_HandleListAPITokens_Unauthenticated(t *testing.T) {
 	authManager := NewAuthManager(providerFactory, userService, sessionManager)
 
 	// Create request without auth
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/tokens", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/tokens", nil)
 	w := httptest.NewRecorder()
 
 	// Test
@@ -718,7 +718,7 @@ func TestAuthManager_HandleRevokeAPIToken(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create request
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/tokens/"+tokenID, nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodDelete, "/api/v1/tokens/"+tokenID, nil)
 	req.AddCookie(&http.Cookie{
 		Name:  "session_token",
 		Value: sessionToken,
@@ -795,7 +795,7 @@ func TestAuthManager_HandleRevokeAPIToken_Unauthorized(t *testing.T) {
 	require.NoError(t, err)
 
 	// User 2 tries to revoke User 1's token
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/tokens/"+tokenID, nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodDelete, "/api/v1/tokens/"+tokenID, nil)
 	req.AddCookie(&http.Cookie{
 		Name:  "session_token",
 		Value: sessionToken,
@@ -856,7 +856,7 @@ func TestAuthManager_HandleCleanupExpiredTokens(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create request
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/tokens/cleanup", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/tokens/cleanup", nil)
 	req.AddCookie(&http.Cookie{
 		Name:  "session_token",
 		Value: sessionToken,
@@ -899,7 +899,7 @@ func TestAuthManager_HandleCleanupExpiredTokens_NotAdmin(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create request
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/tokens/cleanup", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/tokens/cleanup", nil)
 	req.AddCookie(&http.Cookie{
 		Name:  "session_token",
 		Value: sessionToken,
@@ -929,7 +929,7 @@ func TestAuthManager_HandleCleanupExpiredTokens_Unauthenticated(t *testing.T) {
 	authManager := NewAuthManager(providerFactory, userService, sessionManager)
 
 	// Create request without auth
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/tokens/cleanup", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/tokens/cleanup", nil)
 	w := httptest.NewRecorder()
 
 	// Test
@@ -1124,7 +1124,7 @@ func TestAuthManager_HandleRevokeAPIToken_MissingID(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create request without ID
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/tokens/", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodDelete, "/api/v1/tokens/", nil)
 	req.AddCookie(&http.Cookie{
 		Name:  "session_token",
 		Value: sessionToken,
@@ -1168,7 +1168,7 @@ func TestAuthManager_HandleRevokeAPIToken_NotFound(t *testing.T) {
 
 	// Create request with non-existent token ID
 	nonExistentID := uuid.New().String()
-	req := httptest.NewRequest(http.MethodDelete, "/api/v1/tokens/"+nonExistentID, nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodDelete, "/api/v1/tokens/"+nonExistentID, nil)
 	req.AddCookie(&http.Cookie{
 		Name:  "session_token",
 		Value: sessionToken,
@@ -1216,7 +1216,7 @@ func TestAuthManager_HandleGenerateAPIToken_WithExpiry(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create request with expiry
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/tokens/generate?name=expiring-token&expiry_days=30", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/tokens/generate?name=expiring-token&expiry_days=30", nil)
 	req.AddCookie(&http.Cookie{
 		Name:  "session_token",
 		Value: sessionToken,

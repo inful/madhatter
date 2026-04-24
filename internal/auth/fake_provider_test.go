@@ -18,7 +18,7 @@ import (
 func TestFakeProvider_Name(t *testing.T) {
 	config := ProviderConfig{
 		ClientID:     "test-client",
-		ClientSecret: "test-secret",
+		ClientSecret: "test-secret", // #nosec G101 -- test-only fake OAuth secret.
 		RedirectURL:  "http://localhost:8080/auth/callback",
 		AuthURL:      "/auth/fake/login",
 		TokenURL:     "/auth/fake/token",
@@ -34,7 +34,7 @@ func TestFakeProvider_Name(t *testing.T) {
 func TestFakeProvider_GetAuthURL(t *testing.T) {
 	config := ProviderConfig{
 		ClientID:     "test-client",
-		ClientSecret: "test-secret",
+		ClientSecret: "test-secret", // #nosec G101 -- test-only fake OAuth secret.
 		RedirectURL:  "http://localhost:8080/auth/callback",
 		AuthURL:      "/auth/fake/login",
 		TokenURL:     "/auth/fake/token",
@@ -56,7 +56,7 @@ func TestFakeProvider_GetAuthURL(t *testing.T) {
 func TestFakeProvider_ExchangeCode(t *testing.T) {
 	config := ProviderConfig{
 		ClientID:     "test-client",
-		ClientSecret: "test-secret",
+		ClientSecret: "test-secret", // #nosec G101 -- test-only fake OAuth secret.
 		RedirectURL:  "http://localhost:8080/auth/callback",
 		AuthURL:      "/auth/fake/login",
 		TokenURL:     "/auth/fake/token",
@@ -79,7 +79,7 @@ func TestFakeProvider_ExchangeCode(t *testing.T) {
 func TestFakeProvider_GetUserInfo(t *testing.T) {
 	config := ProviderConfig{
 		ClientID:     "test-client",
-		ClientSecret: "test-secret",
+		ClientSecret: "test-secret", // #nosec G101 -- test-only fake OAuth secret.
 		RedirectURL:  "http://localhost:8080/auth/callback",
 		AuthURL:      "/auth/fake/login",
 		TokenURL:     "/auth/fake/token",
@@ -107,7 +107,7 @@ func TestFakeProvider_GetUserInfo(t *testing.T) {
 func TestFakeProvider_GetOAuthConfig(t *testing.T) {
 	config := ProviderConfig{
 		ClientID:     "test-client",
-		ClientSecret: "test-secret",
+		ClientSecret: "test-secret", // #nosec G101 -- test-only fake OAuth secret.
 		RedirectURL:  "http://localhost:8080/auth/callback",
 		AuthURL:      "/auth/fake/login",
 		TokenURL:     "/auth/fake/token",
@@ -131,7 +131,7 @@ func TestFakeProvider_GetOAuthConfig(t *testing.T) {
 func TestFakeCallbackHandler_HandleLogin(t *testing.T) {
 	handler := NewFakeCallbackHandler()
 
-	req := httptest.NewRequest(http.MethodGet, "/auth/fake/login?state=test-state", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/auth/fake/login?state=test-state", nil)
 	w := httptest.NewRecorder()
 
 	handler.HandleLogin(w, req)
@@ -165,11 +165,11 @@ func TestFakeCallbackHandler_HandleLogin_UniqueStates(t *testing.T) {
 	handler := NewFakeCallbackHandler()
 
 	// Make two requests
-	req1 := httptest.NewRequest(http.MethodGet, "/auth/fake/login", nil)
+	req1 := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/auth/fake/login", nil)
 	w1 := httptest.NewRecorder()
 	handler.HandleLogin(w1, req1)
 
-	req2 := httptest.NewRequest(http.MethodGet, "/auth/fake/login", nil)
+	req2 := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/auth/fake/login", nil)
 	w2 := httptest.NewRecorder()
 	handler.HandleLogin(w2, req2)
 
@@ -216,7 +216,7 @@ func TestFakeProvider_Integration(t *testing.T) {
 	// Setup
 	config := ProviderConfig{
 		ClientID:     "dev-client",
-		ClientSecret: "dev-secret",
+		ClientSecret: "dev-secret", // #nosec G101 -- test-only fake OAuth secret.
 		RedirectURL:  "http://localhost:8080/auth/callback",
 		AuthURL:      "/auth/fake/login",
 		TokenURL:     "/auth/fake/token",
@@ -233,7 +233,7 @@ func TestFakeProvider_Integration(t *testing.T) {
 	assert.Contains(t, authURL, "/auth/fake/login")
 
 	// Step 2: Simulate login redirect
-	req := httptest.NewRequest(http.MethodGet, authURL, nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, authURL, nil)
 	w := httptest.NewRecorder()
 	handler.HandleLogin(w, req)
 

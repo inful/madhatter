@@ -21,7 +21,7 @@ func setupDevelopmentAuth(db *database.DB) (*auth.AuthManager, *auth.Middleware,
 
 	fakeConfig := auth.ProviderConfig{
 		ClientID:     "dev-client-id",
-		ClientSecret: "dev-client-secret",
+		ClientSecret: "dev-client-secret", // #nosec G101
 		RedirectURL:  "http://localhost:8080/auth/callback?provider=fake",
 		AuthURL:      "/auth/fake/login",
 		TokenURL:     "/auth/fake/token",

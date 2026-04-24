@@ -7,7 +7,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/inful/madhatter/internal/auth"
 	"github.com/inful/madhatter/internal/database"
-	"github.com/inful/madhatter/internal/rota"
 )
 
 type ReportLeaveInput struct {
@@ -177,7 +176,7 @@ func (s *Server) handleUpdateLeave(ctx context.Context, input *UpdateLeaveInput)
 	}
 
 	// Update schedule after modification
-	maintenance := rota.NewScheduleMaintenance(s.db)
+	maintenance := s.newScheduleMaintenance()
 	if err := maintenance.HandleLeaveChange(ctx, input.ID); err != nil {
 		return nil, huma.Error500InternalServerError("Failed to update schedule", err)
 	}
@@ -220,7 +219,7 @@ func (s *Server) handleDeleteLeave(ctx context.Context, input *DeleteLeaveInput)
 	}
 
 	// Reconcile schedule - will remove any stale covers automatically
-	maintenance := rota.NewScheduleMaintenance(s.db)
+	maintenance := s.newScheduleMaintenance()
 	if err := maintenance.HandleTeamChange(ctx); err != nil {
 		return nil, huma.Error500InternalServerError("Failed to update schedule", err)
 	}

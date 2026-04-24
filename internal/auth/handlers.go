@@ -258,10 +258,10 @@ func (am *AuthManager) HandleLoginView(w http.ResponseWriter, r *http.Request) {
 `)
 	for _, provider := range providers {
 		displayName := capitalizeProviderName(provider)
-		html.WriteString(fmt.Sprintf(`        <li class="provider-item">
+		fmt.Fprintf(&html, `        <li class="provider-item">
 	           <a href="/auth/login/%s" class="provider-btn">Login with %s</a>
 	       </li>
-`, provider, displayName))
+`, provider, displayName)
 	}
 	html.WriteString(`    </ul>
 </body>

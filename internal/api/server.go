@@ -138,6 +138,15 @@ func (s *Server) setupSessionCleanup(ctx context.Context) {
 	}
 }
 
+func (s *Server) newScheduleMaintenance() *rota.ScheduleMaintenance {
+	maintenance := rota.NewScheduleMaintenance(s.db)
+	if s.holidayService != nil {
+		maintenance.SetHolidayChecker(s.holidayService.ShouldSkipDate)
+	}
+
+	return maintenance
+}
+
 // startLeaveCleanup starts a background goroutine that deletes expired leave records daily.
 func (s *Server) startLeaveCleanup() {
 	log.Println("Starting leave record cleanup task...")

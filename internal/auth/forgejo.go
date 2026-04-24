@@ -66,12 +66,12 @@ func (p *ForgejoProvider) ExchangeCode(ctx context.Context, code string) (*oauth
 func (p *ForgejoProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) (*UserInfo, error) {
 	client := p.oauth.Client(ctx, token)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.config.UserInfoURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.config.UserInfoURL, nil) // #nosec G704 -- URL comes from validated provider configuration.
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrUserInfo, err)
 	}
 
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) // #nosec G704 -- Request target comes from validated provider configuration.
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrUserInfo, err)
 	}

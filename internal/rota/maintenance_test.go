@@ -580,3 +580,74 @@ func TestScheduleMaintenance_HandleTeamChange_DeleteMemberReschedulesRota(t *tes
 	assert.Empty(t, start, "Schedule should be complete after team member deletion")
 	assert.Empty(t, end, "Schedule should be complete after team member deletion")
 }
+
+// TestGenerateMissingDays_HolidayOnlyRange verifies that GenerateMissingDays returns
+// created=false when every date in the range is either a weekend or a holiday,
+// i.e. no assignment is actually written.
+func TestGenerateMissingDays_HolidayOnlyRange(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	// 2026-01-06 is a Tuesday; make it a holiday.
+	holiday := time.Date(2026, time.January, 6, 0, 0, 0, 0, time.UTC)
+	maintenance := NewScheduleMaintenance(db)
+	maintenance.SetHolidayChecker(func(date time.Time) bool {
+		return date.Equal(holiday)
+	})
+
+	// Range contains only the holiday - no real business day.
+	created, err := maintenance.GenerateMissingDays(ctx, holiday, holiday)
+	require.NoError(t, err)
+	assert.False(t, created, "no assignment should be created when the range is all holidays")
+}
+
+// TestGetStartingMemberIndex_SkipsWeekendBoundary verifies that when the schedule
+// starts on a Monday the rotation anchor is seeded from the most recent Friday
+// assignment (not from Sunday which has no assignment).
+func TestGetStartingMemberIndex_SkipsWeekendBoundary(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	maintenance := NewScheduleMaintenance(db)
+
+	// Create an assignment on Friday 2026-01-09.
+	friday := time.Date(2026, time.January, 9, 0, 0, 0, 0, time.UTC)
+	_, err = db.CreateRotaAssignment(ctx, friday.Format("2006-01-02"), func() string {
+		members, _ := db.GetActiveTeamMembers(ctx)
+		return members[0].ID // Alice
+	}(), false, nil)
+	require.NoError(t, err)
+
+	// Generate assignments starting from Monday 2026-01-12.
+	// The rotation should continue from Alice, so Monday gets Bob.
+	monday := time.Date(2026, time.January, 12, 0, 0, 0, 0, time.UTC)
+	created, err := maintenance.GenerateMissingDays(ctx, monday, monday)
+	require.NoError(t, err)
+	assert.True(t, created, "assignment should be created for Monday")
+
+	mondayAssignments, err := db.GetAssignmentsByDate(ctx, monday.Format("2006-01-02"))
+	require.NoError(t, err)
+	require.NotEmpty(t, mondayAssignments)
+
+	members, err := db.GetActiveTeamMembers(ctx)
+	require.NoError(t, err)
+	require.Len(t, members, 2)
+
+	// Friday was assigned to Alice (members[0]); Monday should be Bob (members[1]).
+	assert.Equal(t, members[1].ID, mondayAssignments[0].MemberID,
+		"Monday rotation should continue from Friday's Alice assignment, so Bob is next")
+}

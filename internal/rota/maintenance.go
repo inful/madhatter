@@ -163,26 +163,47 @@ func (sm *ScheduleMaintenance) getDatesWithAssignments(ctx context.Context, star
 }
 
 // getStartingMemberIndex determines where to start in the rotation.
+// It walks backwards from startDate (up to lookbackDays calendar days) looking
+// for the most recent *non-cover* assignment on a business day so that the
+// rotation anchor is always deterministic, unaffected by weekend boundaries or
+// the presence of cover assignments on the preceding day.
 func (sm *ScheduleMaintenance) getStartingMemberIndex(ctx context.Context, startDate time.Time, members []database.TeamMember) (int, error) {
-	// Find the last assigned member BEFORE the start date to continue the rotation
-	dayBeforeStart := startDate.AddDate(0, 0, -1)
-	assignmentsBefore, err := sm.db.GetAssignmentsByDateRange(
-		ctx,
-		dayBeforeStart.Format("2006-01-02"),
-		dayBeforeStart.Format("2006-01-02"),
-	)
-	if err != nil {
-		return 0, fmt.Errorf("failed to get assignments before range: %w", err)
+	const lookbackDays = 30
+
+	for i := 1; i <= lookbackDays; i++ {
+		day := startDate.AddDate(0, 0, -i)
+
+		// Skip weekends - they never have original assignments.
+		if day.Weekday() == time.Saturday || day.Weekday() == time.Sunday {
+			continue
+		}
+
+		// Skip holidays if a checker is configured.
+		if sm.engine.holidayChecker != nil && sm.engine.holidayChecker(day) {
+			continue
+		}
+
+		assignments, err := sm.db.GetAssignmentsByDateRange(
+			ctx,
+			day.Format("2006-01-02"),
+			day.Format("2006-01-02"),
+		)
+		if err != nil {
+			return 0, fmt.Errorf("failed to get assignments before range: %w", err)
+		}
+
+		// Find a non-cover original assignment - this is the R1 rotation anchor.
+		for _, a := range assignments {
+			if !a.IsCover {
+				memberIndex := sm.findMemberIndex(members, a.MemberID)
+				if memberIndex != -1 {
+					return (memberIndex + 1) % len(members), nil
+				}
+			}
+		}
 	}
 
-	lastAssignedMemberID := sm.findLastAssignedMember(assignmentsBefore, members)
-	memberIndex := sm.findMemberIndex(members, lastAssignedMemberID)
-
-	// If we found a previous assignment, start from the next member
-	// Otherwise start from the beginning
-	if memberIndex != -1 {
-		return (memberIndex + 1) % len(members), nil
-	}
+	// No prior original assignment found; start the rotation from the beginning.
 	return 0, nil
 }
 
@@ -203,7 +224,6 @@ func (sm *ScheduleMaintenance) generateAssignmentsForMissingDates(
 			continue
 		}
 
-		// The engine's processDate will handle holiday checking internally
 		if err := sm.engine.processDate(ctx, currentDate, members, &memberIndex); err != nil {
 			return createdAny, fmt.Errorf("failed to create assignment for %s: %w",
 				currentDate.Format("2006-01-02"), err)
@@ -220,18 +240,22 @@ func (sm *ScheduleMaintenance) generateAssignmentsForMissingDates(
 func (sm *ScheduleMaintenance) shouldSkipDate(date time.Time, datesWithAssignments map[string]bool) bool {
 	dateStr := date.Format("2006-01-02")
 
-	// Skip if this date already has assignments
+	// Skip if this date already has assignments.
 	if datesWithAssignments[dateStr] {
 		return true
 	}
 
-	// Skip weekends
+	// Skip weekends.
 	if date.Weekday() == time.Saturday || date.Weekday() == time.Sunday {
 		return true
 	}
 
-	// Skip holidays - this will be checked by the engine's holiday checker
-	// The engine will handle holiday checking when processing dates
+	// Skip holidays so that processDate is never called on them and createdAny
+	// is only set when an assignment is actually written.
+	if sm.engine.holidayChecker != nil && sm.engine.holidayChecker(date) {
+		return true
+	}
+
 	return false
 }
 
@@ -269,9 +293,9 @@ func (sm *ScheduleMaintenance) RegenerateSchedule(ctx context.Context, start, en
 	}
 
 	for currentDate := start; !currentDate.After(end); currentDate = currentDate.AddDate(0, 0, 1) {
-		if processErr := sm.engine.processDate(ctx, currentDate, members, &memberIndex); processErr != nil {
+		if err = sm.engine.processDate(ctx, currentDate, members, &memberIndex); err != nil {
 			return 0, fmt.Errorf("failed to regenerate assignment for %s: %w",
-				currentDate.Format("2006-01-02"), processErr)
+				currentDate.Format("2006-01-02"), err)
 		}
 	}
 
@@ -387,27 +411,6 @@ func (sm *ScheduleMaintenance) findOriginalMemberID(assignments []database.RotaA
 		}
 	}
 	return ""
-}
-
-// findLastAssignedMember finds the last member who was assigned in the existing schedule.
-// Returns the ID of the last assigned member, or empty string if no assignments exist.
-func (sm *ScheduleMaintenance) findLastAssignedMember(assignments []database.RotaAssignment, _ []database.TeamMember) string {
-	if len(assignments) == 0 {
-		return ""
-	}
-
-	// Find the latest assignment date
-	latestDate := ""
-	latestAssignment := database.RotaAssignment{}
-	for _, a := range assignments {
-		if a.Date > latestDate {
-			latestDate = a.Date
-			latestAssignment = a
-		}
-	}
-
-	// Return the member ID from the latest assignment
-	return latestAssignment.MemberID
 }
 
 // findMemberIndex finds the index of a member in the members slice.

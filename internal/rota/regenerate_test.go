@@ -5,8 +5,71 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestRegenerateSchedule_PreservesRotationAnchor(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+	_, err = db.AddTeamMember(ctx, "Charlie", "charlie@example.com")
+	require.NoError(t, err)
+
+	maintenance := NewScheduleMaintenance(db)
+	fullStart := time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)
+	fullEnd := time.Date(2024, 1, 19, 0, 0, 0, 0, time.UTC)
+
+	created, err := maintenance.GenerateMissingDays(ctx, fullStart, fullEnd)
+	require.NoError(t, err)
+	assert.True(t, created)
+
+	targetStart := time.Date(2024, 1, 17, 0, 0, 0, 0, time.UTC)
+	targetEnd := time.Date(2024, 1, 19, 0, 0, 0, 0, time.UTC)
+
+	beforeAssignments, err := db.GetAssignmentsByDateRange(
+		ctx,
+		targetStart.Format("2006-01-02"),
+		targetEnd.Format("2006-01-02"),
+	)
+	require.NoError(t, err)
+	require.NotEmpty(t, beforeAssignments)
+
+	beforeByDate := make(map[string]string, len(beforeAssignments))
+	for _, assignment := range beforeAssignments {
+		if assignment.IsCover {
+			continue
+		}
+		beforeByDate[assignment.Date] = assignment.MemberID
+	}
+
+	count, err := maintenance.RegenerateSchedule(ctx, targetStart, targetEnd)
+	require.NoError(t, err)
+	assert.Equal(t, len(beforeByDate), count)
+
+	afterAssignments, err := db.GetAssignmentsByDateRange(
+		ctx,
+		targetStart.Format("2006-01-02"),
+		targetEnd.Format("2006-01-02"),
+	)
+	require.NoError(t, err)
+
+	afterByDate := make(map[string]string, len(afterAssignments))
+	for _, assignment := range afterAssignments {
+		if assignment.IsCover {
+			continue
+		}
+		afterByDate[assignment.Date] = assignment.MemberID
+	}
+
+	assert.Equal(t, beforeByDate, afterByDate, "regeneration should preserve the original rotation anchor")
+}
 
 // TestRegenerateScheduleWithLeave tests that regenerating a schedule from scratch
 // uses fair R2 cover rotation when leave records exist.

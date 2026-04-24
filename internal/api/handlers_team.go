@@ -6,7 +6,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/inful/madhatter/internal/auth"
 	"github.com/inful/madhatter/internal/database"
-	"github.com/inful/madhatter/internal/rota"
 )
 
 type AddTeamInput struct {
@@ -155,7 +154,7 @@ func (s *Server) handleDeleteTeam(ctx context.Context, input *DeleteTeamInput) (
 	}
 
 	// Update schedule after deletion
-	maintenance := rota.NewScheduleMaintenance(s.db)
+	maintenance := s.newScheduleMaintenance()
 	if err := maintenance.HandleTeamChange(ctx); err != nil {
 		return nil, huma.Error500InternalServerError("Failed to update schedule", err)
 	}

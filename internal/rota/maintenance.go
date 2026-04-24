@@ -25,6 +25,11 @@ func NewScheduleMaintenance(db *database.DB) *ScheduleMaintenance {
 	}
 }
 
+// SetHolidayChecker configures holiday-aware skipping for maintenance operations.
+func (sm *ScheduleMaintenance) SetHolidayChecker(checker HolidayChecker) {
+	sm.engine.SetHolidayChecker(checker)
+}
+
 // EnsureSchedule guarantees that a schedule exists for the next 14 days from today.
 // It scans the entire 14-day window and fills any gaps, not just at the end.
 // This handles cases where assignments were deleted (e.g., team member removed).
@@ -242,16 +247,32 @@ func (sm *ScheduleMaintenance) HandleTeamChange(ctx context.Context) error {
 // RegenerateSchedule creates a fresh schedule from scratch, replacing all existing assignments
 // in the specified date range. This is useful for initial team setup or schedule resets.
 func (sm *ScheduleMaintenance) RegenerateSchedule(ctx context.Context, start, end time.Time) (int, error) {
+	// Get active team members before rebuilding the range.
+	members, err := sm.db.GetActiveTeamMembers(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get active team members: %w", err)
+	}
+
+	if len(members) == 0 {
+		return 0, errors.New("no active team members")
+	}
+
+	memberIndex, err := sm.getStartingMemberIndex(ctx, start, members)
+	if err != nil {
+		return 0, err
+	}
+
 	// Delete existing assignments in the date range
-	err := sm.db.DeleteAssignmentsInRange(ctx, start.Format("2006-01-02"), end.Format("2006-01-02"))
+	err = sm.db.DeleteAssignmentsInRange(ctx, start.Format("2006-01-02"), end.Format("2006-01-02"))
 	if err != nil {
 		return 0, fmt.Errorf("failed to delete existing assignments: %w", err)
 	}
 
-	// Use the engine's GenerateSchedule which handles all the logic correctly
-	err = sm.engine.GenerateSchedule(ctx, start, end)
-	if err != nil {
-		return 0, err
+	for currentDate := start; !currentDate.After(end); currentDate = currentDate.AddDate(0, 0, 1) {
+		if err := sm.engine.processDate(ctx, currentDate, members, &memberIndex); err != nil {
+			return 0, fmt.Errorf("failed to regenerate assignment for %s: %w",
+				currentDate.Format("2006-01-02"), err)
+		}
 	}
 
 	// Count how many assignments were created

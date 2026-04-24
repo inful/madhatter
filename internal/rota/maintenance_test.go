@@ -179,6 +179,45 @@ func TestScheduleMaintenance_GenerateMissingDays(t *testing.T) {
 	})
 }
 
+func TestScheduleMaintenance_GenerateMissingDays_SkipsHolidays(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	maintenance := NewScheduleMaintenance(db)
+	holiday := time.Date(2026, time.January, 6, 0, 0, 0, 0, time.UTC)
+	maintenance.SetHolidayChecker(func(date time.Time) bool {
+		return date.Equal(holiday)
+	})
+
+	startDate := time.Date(2026, time.January, 5, 0, 0, 0, 0, time.UTC)
+	endDate := time.Date(2026, time.January, 7, 0, 0, 0, 0, time.UTC)
+
+	created, err := maintenance.GenerateMissingDays(ctx, startDate, endDate)
+	require.NoError(t, err)
+	assert.True(t, created)
+
+	assignments, err := db.GetAssignmentsByDate(ctx, holiday.Format("2006-01-02"))
+	require.NoError(t, err)
+	assert.Empty(t, assignments, "holiday should not receive assignments")
+
+	previousDayAssignments, err := db.GetAssignmentsByDate(ctx, startDate.Format("2006-01-02"))
+	require.NoError(t, err)
+	assert.NotEmpty(t, previousDayAssignments, "non-holiday business day should receive assignments")
+
+	nextDayAssignments, err := db.GetAssignmentsByDate(ctx, endDate.Format("2006-01-02"))
+	require.NoError(t, err)
+	assert.NotEmpty(t, nextDayAssignments, "business day after holiday should receive assignments")
+	assert.NotEqual(t, previousDayAssignments[0].MemberID, nextDayAssignments[0].MemberID,
+		"holiday should not consume a rotation turn")
+}
+
 func TestScheduleMaintenance_HandleTeamChange(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()

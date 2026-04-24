@@ -54,10 +54,14 @@ func NewHandler(db *database.DB, authManager *auth.AuthManager, authMiddleware *
 	}
 
 	router := chi.NewRouter()
+	maintenance := rota.NewScheduleMaintenance(db)
+	if holidayChecker != nil {
+		maintenance.SetHolidayChecker(holidayChecker)
+	}
 
 	h := &Handler{
 		db:             db,
-		maintenance:    rota.NewScheduleMaintenance(db),
+		maintenance:    maintenance,
 		tmpl:           tmpl,
 		router:         router,
 		authManager:    authManager,

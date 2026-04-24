@@ -19,10 +19,9 @@ func setupAuth(db *database.DB, development bool) (*auth.AuthManager, *auth.Midd
 func setupDevelopmentAuth(db *database.DB) (*auth.AuthManager, *auth.Middleware, *auth.SessionManager, error) {
 	log.Println("Development mode: Using fake OAuth provider")
 
-	//nolint:gosec // Development-only fake OAuth credentials.
 	fakeConfig := auth.ProviderConfig{
 		ClientID:     "dev-client-id",
-		ClientSecret: "dev-client-secret",
+		ClientSecret: "dev-client-secret", // #nosec G101
 		RedirectURL:  "http://localhost:8080/auth/callback?provider=fake",
 		AuthURL:      "/auth/fake/login",
 		TokenURL:     "/auth/fake/token",

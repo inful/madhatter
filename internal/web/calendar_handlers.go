@@ -234,8 +234,7 @@ func (h *Handler) handleCalendarICS(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 
 	// Write ICS content.
-	//nolint:gosec // Content is generated server-side and served as text/calendar.
-	_, _ = w.Write([]byte(icsContent))
+	_, _ = w.Write([]byte(icsContent)) // #nosec G705 -- ICS content is generated server-side and served as text/calendar.
 }
 
 func (h *Handler) handleMeetingsCalendarICS(w http.ResponseWriter, r *http.Request) {
@@ -283,8 +282,7 @@ func (h *Handler) handleMeetingsCalendarICS(w http.ResponseWriter, r *http.Reque
 	w.Header().Set("Content-Disposition", "attachment; filename=\"support-meetings.ics\"")
 	w.Header().Set("Cache-Control", "no-cache")
 
-	//nolint:gosec // Content is generated server-side and served as text/calendar.
-	_, _ = w.Write([]byte(icsContent))
+	_, _ = w.Write([]byte(icsContent)) // #nosec G705 -- ICS content is generated server-side and served as text/calendar.
 }
 
 func (h *Handler) handleTeamCalendarICS(w http.ResponseWriter, r *http.Request) {
@@ -311,8 +309,7 @@ func (h *Handler) handleTeamCalendarICS(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Content-Disposition", "attachment; filename=\"support-rota-others.ics\"")
 	w.Header().Set("Cache-Control", "no-cache")
 
-	//nolint:gosec // Content is generated server-side and served as text/calendar.
-	_, _ = w.Write([]byte(icsContent))
+	_, _ = w.Write([]byte(icsContent)) // #nosec G705 -- ICS content is generated server-side and served as text/calendar.
 }
 
 func baseURLFromRequest(r *http.Request) string {

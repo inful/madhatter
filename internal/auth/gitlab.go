@@ -66,14 +66,12 @@ func (p *GitLabProvider) ExchangeCode(ctx context.Context, code string) (*oauth2
 func (p *GitLabProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) (*UserInfo, error) {
 	client := p.oauth.Client(ctx, token)
 
-	//nolint:gosec // UserInfoURL is controlled by validated provider configuration.
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.config.UserInfoURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.config.UserInfoURL, nil) // #nosec G704 -- URL comes from validated provider configuration.
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrUserInfo, err)
 	}
 
-	//nolint:gosec // Request target is controlled by validated provider configuration.
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) // #nosec G704 -- Request target comes from validated provider configuration.
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrUserInfo, err)
 	}
@@ -143,14 +141,12 @@ func (p *GitLabProvider) checkGroupMembership(ctx context.Context, client *http.
 	// This returns all groups the user is a member of
 	groupsURL := fmt.Sprintf("%s/groups?min_access_level=10", baseURL)
 
-	//nolint:gosec // groupsURL is derived from validated provider configuration.
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, groupsURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, groupsURL, nil) // #nosec G704 -- URL is derived from validated provider configuration.
 	if err != nil {
 		return false, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	//nolint:gosec // Request target is derived from validated provider configuration.
-	resp, err := client.Do(req)
+	resp, err := client.Do(req) // #nosec G704 -- Request target is derived from validated provider configuration.
 	if err != nil {
 		return false, fmt.Errorf("failed to fetch groups: %w", err)
 	}

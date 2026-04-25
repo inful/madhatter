@@ -179,3 +179,65 @@ func (db *DB) DeleteAssignmentsInRange(ctx context.Context, startDate, endDate s
 
 	return db.queries.DeleteAssignmentsByDateRange(ctx, params)
 }
+
+// GetAssignmentByID returns a single RotaAssignment by its ID.
+func (db *DB) GetAssignmentByID(ctx context.Context, id string) (*RotaAssignment, error) {
+	a, err := db.queries.GetAssignmentByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	return &RotaAssignment{
+		ID:                   a.ID,
+		Date:                 a.Date.Format("2006-01-02"),
+		MemberID:             a.MemberID,
+		IsCover:              a.IsCover.Valid && a.IsCover.Int64 == 1,
+		OriginalAssignmentID: getNullString(a.OriginalAssignmentID),
+	}, nil
+}
+
+// GetFutureAssignmentsForMember returns all upcoming (today onwards) assignments for one member.
+func (db *DB) GetFutureAssignmentsForMember(ctx context.Context, memberID string) ([]RotaAssignment, error) {
+	rows, err := db.queries.GetFutureAssignmentsForMember(ctx, memberID)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]RotaAssignment, len(rows))
+	for i := range rows {
+		a := &rows[i]
+		result[i] = RotaAssignment{
+			ID:          a.ID,
+			Date:        a.Date.Format("2006-01-02"),
+			MemberID:    a.MemberID,
+			IsCover:     a.IsCover.Valid && a.IsCover.Int64 == 1,
+			MemberName:  a.MemberName,
+			MemberEmail: a.MemberEmail,
+		}
+	}
+
+	return result, nil
+}
+
+// GetFutureAssignments returns all upcoming (today onwards) assignments for all members.
+func (db *DB) GetFutureAssignments(ctx context.Context) ([]RotaAssignment, error) {
+	rows, err := db.queries.GetFutureAssignments(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]RotaAssignment, len(rows))
+	for i := range rows {
+		a := &rows[i]
+		result[i] = RotaAssignment{
+			ID:          a.ID,
+			Date:        a.Date.Format("2006-01-02"),
+			MemberID:    a.MemberID,
+			IsCover:     a.IsCover.Valid && a.IsCover.Int64 == 1,
+			MemberName:  a.MemberName,
+			MemberEmail: a.MemberEmail,
+		}
+	}
+
+	return result, nil
+}

@@ -34,6 +34,12 @@
             <a href="/leave/report" class="button is-info action-btn">
                 <i class="fas fa-user-clock mr-1"></i> Leave
             </a>
+            <a href="/swaps" class="button is-link action-btn">
+                <i class="fas fa-exchange-alt mr-1"></i> Swap HAT Day
+                {{if .PendingSwapCount}}
+                    <span class="tag is-danger ml-1">{{.PendingSwapCount}}</span>
+                {{end}}
+            </a>
             <a href="/calendar" class="button is-warning action-btn">
                 <i class="fas fa-calendar-star mr-1"></i> Calendar
             </a>

@@ -47,6 +47,10 @@ func (h *Handler) registerRoutes() {
 
 		r.HandleFunc("/leave/report", h.handleLeaveReport)
 		r.HandleFunc("/calendar", h.handleCalendar)
+		r.HandleFunc("/swaps", h.handleSwaps)
+		r.Post("/swaps/{id}/cancel", h.handleSwapCancel)
+		r.Post("/swaps/{id}/accept", h.handleSwapAccept)
+		r.Post("/swaps/{id}/reject", h.handleSwapReject)
 	})
 
 	// Admin routes (require authentication and admin privileges).
@@ -64,6 +68,7 @@ func (h *Handler) registerRoutes() {
 		r.HandleFunc("/schedule/generate", h.handleScheduleGenerate)
 		r.HandleFunc("/calendar/subscriptions", h.handleCalendarSubscriptions)
 		r.HandleFunc("/calendar/subscriptions/cleanup", h.handleCalendarSubscriptionsCleanup)
+		r.Post("/swaps/{id}/delete", h.handleSwapAdminDelete)
 	})
 }
 

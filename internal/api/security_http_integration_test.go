@@ -234,6 +234,32 @@ func buildRequestBuilders(
 		"calendar-ics-public": func() requestSpec {
 			return requestSpec{Method: http.MethodGet, Path: "/api/v1/calendar/" + calToken + "/ics"}
 		},
+		// Swap Operations (non-existent IDs — auth checks run before DB lookups).
+		"create-swap": func() requestSpec {
+			return requestSpec{
+				Method: http.MethodPost,
+				Path:   "/api/v1/swaps",
+				Body: map[string]any{
+					"requester_assignment_id": "00000000-0000-0000-0000-000000000001",
+					"target_assignment_id":    "00000000-0000-0000-0000-000000000002",
+				},
+			}
+		},
+		"list-swaps": func() requestSpec {
+			return requestSpec{Method: http.MethodGet, Path: "/api/v1/swaps"}
+		},
+		"accept-swap": func() requestSpec {
+			return requestSpec{Method: http.MethodPost, Path: "/api/v1/swaps/00000000-0000-0000-0000-000000000001/accept"}
+		},
+		"reject-swap": func() requestSpec {
+			return requestSpec{Method: http.MethodPost, Path: "/api/v1/swaps/00000000-0000-0000-0000-000000000001/reject"}
+		},
+		"cancel-swap": func() requestSpec {
+			return requestSpec{Method: http.MethodPost, Path: "/api/v1/swaps/00000000-0000-0000-0000-000000000001/cancel"}
+		},
+		"delete-swap": func() requestSpec {
+			return requestSpec{Method: http.MethodDelete, Path: "/api/v1/swaps/00000000-0000-0000-0000-000000000001", RequiresAdmin: true}
+		},
 	}
 }
 

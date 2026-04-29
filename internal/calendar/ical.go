@@ -212,7 +212,7 @@ func loadSupportTextTemplate(path string, defaultTmpl *texttemplate.Template) (*
 	if cached, ok := supportTextTemplateCache.Load(path); ok {
 		return cached.(*texttemplate.Template), nil
 	}
-	contents, err := os.ReadFile(path) //nolint:gosec // Template path is deployment-configured; reading it is intended.
+	contents, err := os.ReadFile(path) //nolint:gosec // Text template path is administrator-configured via env var; reading it is intended.
 	if err != nil {
 		return nil, fmt.Errorf("read support text template %q: %w", path, err)
 	}
@@ -231,7 +231,7 @@ func loadSupportHTMLTemplate(path string, defaultTmpl *template.Template) (*temp
 	if cached, ok := supportHTMLTemplateCache.Load(path); ok {
 		return cached.(*template.Template), nil
 	}
-	contents, err := os.ReadFile(path) //nolint:gosec // Template path is deployment-configured; reading it is intended.
+	contents, err := os.ReadFile(path) //nolint:gosec // HTML template path is administrator-configured via env var; reading it is intended.
 	if err != nil {
 		return nil, fmt.Errorf("read support html template %q: %w", path, err)
 	}

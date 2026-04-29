@@ -2,6 +2,7 @@ package calendar
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -542,4 +543,132 @@ func TestICalGenerator_NoAlarmByDefault(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.NotContains(t, icalStr, "BEGIN:VALARM")
+}
+
+func TestICalGenerator_AddAssignment_CustomTextTemplate(t *testing.T) {
+	// Write a custom text template to a temp file.
+	dir := t.TempDir()
+	tmplPath := filepath.Join(dir, "assignment_text.tmpl")
+	err := os.WriteFile(tmplPath, []byte(`On duty: {{.MemberName}}{{if .IsCover}} (cover){{end}}`), 0o600)
+	require.NoError(t, err)
+
+	generator := NewICalGenerator().WithAssignmentTemplates(tmplPath, "")
+
+	assignment := database.RotaAssignment{
+		ID:       "test-custom-tmpl",
+		Date:     "2026-03-10",
+		MemberID: "member-1",
+		IsCover:  false,
+	}
+	err = generator.AddAssignment(assignment, "Alice")
+	require.NoError(t, err)
+
+	icalStr, err := generator.Serialize()
+	require.NoError(t, err)
+
+	// The custom template text should appear in the ICS output.
+	assert.Contains(t, unfoldICalLines(icalStr), "On duty: Alice")
+	// The default "Support duty" text should NOT appear.
+	assert.NotContains(t, icalStr, "Support duty")
+}
+
+func TestICalGenerator_AddAssignment_CustomHTMLTemplate(t *testing.T) {
+	// Write a custom HTML template to a temp file.
+	dir := t.TempDir()
+	tmplPath := filepath.Join(dir, "assignment_html.tmpl")
+	err := os.WriteFile(tmplPath, []byte(`<div class="hat-day">{{.MemberName}} is on duty</div>`), 0o600)
+	require.NoError(t, err)
+
+	generator := NewICalGenerator().WithAssignmentTemplates("", tmplPath)
+
+	assignment := database.RotaAssignment{
+		ID:       "test-custom-html",
+		Date:     "2026-03-10",
+		MemberID: "member-1",
+		IsCover:  false,
+	}
+	err = generator.AddAssignment(assignment, "Bob")
+	require.NoError(t, err)
+
+	icalStr, err := generator.Serialize()
+	require.NoError(t, err)
+
+	// The custom HTML template content should appear in the X-ALT-DESC property.
+	assert.Contains(t, unfoldICalLines(icalStr), "Bob is on duty")
+	assert.Contains(t, unfoldICalLines(icalStr), "hat-day")
+}
+
+func TestICalGenerator_AddLeaveEvent_CustomTextTemplate(t *testing.T) {
+	dir := t.TempDir()
+	tmplPath := filepath.Join(dir, "leave_text.tmpl")
+	err := os.WriteFile(tmplPath, []byte(`{{.MemberName}} is away ({{.LeaveType}})`), 0o600)
+	require.NoError(t, err)
+
+	generator := NewICalGenerator().WithLeaveTemplates(tmplPath, "")
+
+	startDate := time.Date(2026, 3, 10, 0, 0, 0, 0, time.UTC)
+	endDate := time.Date(2026, 3, 12, 0, 0, 0, 0, time.UTC)
+	err = generator.AddLeaveEvent("Charlie", "sick", startDate, endDate)
+	require.NoError(t, err)
+
+	icalStr, err := generator.Serialize()
+	require.NoError(t, err)
+
+	// Custom text description should appear in the DESCRIPTION field.
+	assert.Contains(t, unfoldICalLines(icalStr), "Charlie is away (Sick)")
+	// Default "leave for" text should not appear in the text DESCRIPTION line.
+	assert.NotContains(t, unfoldICalLines(icalStr), "DESCRIPTION:Sick leave for")
+}
+
+func TestICalGenerator_AddHoliday_CustomTextTemplate(t *testing.T) {
+	dir := t.TempDir()
+	tmplPath := filepath.Join(dir, "holiday_text.tmpl")
+	err := os.WriteFile(tmplPath, []byte(`No support today: {{.Name}}`), 0o600)
+	require.NoError(t, err)
+
+	generator := NewICalGenerator().WithHolidayTemplates(tmplPath, "")
+
+	holidayDate := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	err = generator.AddHoliday("Labour Day", holidayDate)
+	require.NoError(t, err)
+
+	icalStr, err := generator.Serialize()
+	require.NoError(t, err)
+
+	// Custom text description should appear in the DESCRIPTION field.
+	assert.Contains(t, unfoldICalLines(icalStr), "No support today: Labour Day")
+	// Default description should not appear in the text DESCRIPTION line.
+	assert.NotContains(t, unfoldICalLines(icalStr), "DESCRIPTION:Support rota is not scheduled")
+}
+
+func TestGenerateICalFromAssignmentsWithOptions_CustomTemplates(t *testing.T) {
+	dir := t.TempDir()
+	tmplPath := filepath.Join(dir, "assign_text.tmpl")
+	err := os.WriteFile(tmplPath, []byte(`Custom: {{.MemberName}}`), 0o600)
+	require.NoError(t, err)
+
+	assignments := []database.RotaAssignment{
+		{ID: "a1", Date: "2026-03-10", MemberID: "m1", IsCover: false},
+	}
+	icalStr, err := GenerateICalFromAssignmentsWithOptions(assignments, "Dave", SupportCalendarOptions{
+		AssignmentTemplateTextPath: tmplPath,
+	})
+	require.NoError(t, err)
+
+	assert.Contains(t, unfoldICalLines(icalStr), "Custom: Dave")
+	assert.NotContains(t, icalStr, "Support duty")
+}
+
+func TestICalGenerator_AddAssignment_InvalidTemplatePath(t *testing.T) {
+	generator := NewICalGenerator().WithAssignmentTemplates("/nonexistent/path/tmpl.txt", "")
+
+	assignment := database.RotaAssignment{
+		ID:       "test-err",
+		Date:     "2026-03-10",
+		MemberID: "member-1",
+		IsCover:  false,
+	}
+	err := generator.AddAssignment(assignment, "Eve")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "nonexistent")
 }

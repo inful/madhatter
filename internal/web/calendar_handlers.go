@@ -218,7 +218,16 @@ func (h *Handler) handleCalendarICS(w http.ResponseWriter, r *http.Request) {
 		h.db,
 		token,
 		defaultCalendarLookaheadDays,
-		calendar.SupportCalendarOptions{SupportDayLinks: supportDayLinks, WithAlarm: true},
+		calendar.SupportCalendarOptions{
+			SupportDayLinks:            supportDayLinks,
+			WithAlarm:                  true,
+			AssignmentTemplateTextPath: os.Getenv("SUPPORT_ASSIGNMENT_TEMPLATE_TEXT_PATH"),
+			AssignmentTemplateHTMLPath: os.Getenv("SUPPORT_ASSIGNMENT_TEMPLATE_HTML_PATH"),
+			LeaveTemplateTextPath:      os.Getenv("SUPPORT_LEAVE_TEMPLATE_TEXT_PATH"),
+			LeaveTemplateHTMLPath:      os.Getenv("SUPPORT_LEAVE_TEMPLATE_HTML_PATH"),
+			HolidayTemplateTextPath:    os.Getenv("SUPPORT_HOLIDAY_TEMPLATE_TEXT_PATH"),
+			HolidayTemplateHTMLPath:    os.Getenv("SUPPORT_HOLIDAY_TEMPLATE_HTML_PATH"),
+		},
 	)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)

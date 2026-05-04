@@ -97,6 +97,8 @@ func TestSwapValidationErrorMessage_KnownErrors(t *testing.T) {
 		{database.ErrSwapTargetSelf, "another member"},
 		{database.ErrSwapRequesterDatePassed, "HAT day"},
 		{database.ErrSwapTargetDatePassed, "target HAT day"},
+		{database.ErrSwapRequesterDateInvalid, "invalid"},
+		{database.ErrSwapTargetDateInvalid, "invalid"},
 	}
 
 	for _, tc := range cases {

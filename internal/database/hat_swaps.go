@@ -19,6 +19,14 @@ const (
 	SwapStatusCancelled = "cancelled"
 )
 
+// Swap status constants shared across the application.
+const (
+	SwapStatusPending   = "pending"
+	SwapStatusAccepted  = "accepted"
+	SwapStatusRejected  = "rejected"
+	SwapStatusCancelled = "cancelled"
+)
+
 var (
 	ErrSwapNotPending              = errors.New("swap is no longer pending")
 	ErrSwapDatePassed              = errors.New("one of the HAT days has already passed and cannot be swapped")

@@ -724,6 +724,14 @@ func TestScheduleMaintenance_DeleteLeave_RestoresOriginalAssignments(t *testing.
 	}
 	assert.True(t, hasTueCover, "expected cover assignment on Tuesday after leave creation")
 
+	// Wednesday is Charlie's original day — Bob is on leave but Charlie is not,
+	// so no cover should have been created for Wednesday.
+	wedAssignmentsAfterLeave, err := db.GetAssignmentsByDate(ctx, wed.Format("2006-01-02"))
+	require.NoError(t, err)
+	for _, a := range wedAssignmentsAfterLeave {
+		assert.False(t, a.IsCover, "unexpected cover assignment on Wednesday — Charlie was not on leave")
+	}
+
 	// Delete the leave — simulates the admin pressing "delete leave".
 	// HandleLeaveDelete captures the dates, deletes the record, and restores the schedule.
 	err = maintenance.HandleLeaveDelete(ctx, leaveID)

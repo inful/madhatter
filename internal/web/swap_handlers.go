@@ -6,7 +6,6 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/inful/madhatter/internal/auth"
 	"github.com/inful/madhatter/internal/database"
 )
 
@@ -24,11 +23,7 @@ func (h *Handler) resolveMemberID(ctx context.Context, email string) string {
 func (h *Handler) handleSwaps(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	user, ok := auth.GetUserFromContext(ctx)
-	if !ok {
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
-		return
-	}
+	user := mustGetUser(ctx)
 
 	memberID := h.resolveMemberID(ctx, user.Email)
 
@@ -116,12 +111,7 @@ func swapValidationErrorMessage(err error) string {
 func (h *Handler) handleSwapCancel(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	user, ok := auth.GetUserFromContext(ctx)
-	if !ok {
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
-		return
-	}
-
+	user := mustGetUser(ctx)
 	memberID := h.resolveMemberID(ctx, user.Email)
 
 	swapID := chi.URLParam(r, "id")
@@ -158,12 +148,7 @@ func (h *Handler) handleSwapCancel(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handleSwapAccept(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	user, ok := auth.GetUserFromContext(ctx)
-	if !ok {
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
-		return
-	}
-
+	user := mustGetUser(ctx)
 	memberID := h.resolveMemberID(ctx, user.Email)
 
 	swapID := chi.URLParam(r, "id")
@@ -200,12 +185,7 @@ func (h *Handler) handleSwapAccept(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handleSwapReject(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	user, ok := auth.GetUserFromContext(ctx)
-	if !ok {
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
-		return
-	}
-
+	user := mustGetUser(ctx)
 	memberID := h.resolveMemberID(ctx, user.Email)
 
 	swapID := chi.URLParam(r, "id")
@@ -242,11 +222,7 @@ func (h *Handler) handleSwapReject(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handleSwapAdminDelete(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
-	user, ok := auth.GetUserFromContext(ctx)
-	if !ok {
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
-		return
-	}
+	user := mustGetUser(ctx)
 
 	if !auth.IsAdminSession(user) {
 		http.Error(w, "forbidden", http.StatusForbidden)

@@ -74,7 +74,12 @@ func (h *Handler) handleSwapRequestPost(w http.ResponseWriter, r *http.Request, 
 	}
 
 	if err = h.db.CheckNoOpenSwaps(ctx, requesterAssignmentID, targetAssignmentID); err != nil {
-		h.renderSwapsPage(w, r, data, memberID, "One of the selected assignments already has an open swap request.")
+		if errors.Is(err, database.ErrSwapAssignmentBusy) {
+			h.renderSwapsPage(w, r, data, memberID, "One of the selected assignments already has an open swap request.")
+		} else {
+			http.Error(w, "An unexpected error occurred.", http.StatusInternalServerError)
+		}
+
 		return
 	}
 
@@ -103,8 +108,12 @@ func swapValidationErrorMessage(err error) string {
 		return "Your HAT day has already passed and cannot be swapped."
 	case errors.Is(err, database.ErrSwapTargetDatePassed):
 		return "The target HAT day has already passed and cannot be swapped."
+	case errors.Is(err, database.ErrSwapRequesterDateInvalid):
+		return "Your assignment date is invalid."
+	case errors.Is(err, database.ErrSwapTargetDateInvalid):
+		return "The target assignment date is invalid."
 	default:
-		return err.Error()
+		return "An unexpected error occurred."
 	}
 }
 

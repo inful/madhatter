@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"time"
 
@@ -30,6 +31,8 @@ var (
 	ErrTargetAssignmentNotFound    = errors.New("target assignment not found")
 	ErrSwapRequesterDatePassed     = errors.New("your HAT day has already passed and cannot be swapped")
 	ErrSwapTargetDatePassed        = errors.New("the target HAT day has already passed and cannot be swapped")
+	ErrSwapRequesterDateInvalid    = errors.New("requester assignment date is invalid")
+	ErrSwapTargetDateInvalid       = errors.New("target assignment date is invalid")
 )
 
 // ValidateSwapAssignments checks that both assignments exist, the requester owns their
@@ -41,13 +44,21 @@ func (db *DB) ValidateSwapAssignments(ctx context.Context, requesterAssignmentID
 	}
 
 	reqAssignment, err := db.GetAssignmentByID(ctx, requesterAssignmentID)
-	if err != nil || reqAssignment == nil {
-		return nil, nil, ErrRequesterAssignmentNotFound
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil, ErrRequesterAssignmentNotFound
+		}
+
+		return nil, nil, err
 	}
 
 	tgtAssignment, err := db.GetAssignmentByID(ctx, targetAssignmentID)
-	if err != nil || tgtAssignment == nil {
-		return nil, nil, ErrTargetAssignmentNotFound
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil, ErrTargetAssignmentNotFound
+		}
+
+		return nil, nil, err
 	}
 
 	if reqAssignment.MemberID != requesterMemberID {
@@ -71,12 +82,20 @@ func validateSwapAssignmentDates(reqDate, tgtDate string) error {
 	today := time.Date(nowUTC.Year(), nowUTC.Month(), nowUTC.Day(), 0, 0, 0, 0, time.UTC)
 
 	req, err := time.Parse("2006-01-02", reqDate)
-	if err != nil || req.Before(today) {
+	if err != nil {
+		return ErrSwapRequesterDateInvalid
+	}
+
+	if req.Before(today) {
 		return ErrSwapRequesterDatePassed
 	}
 
 	tgt, err := time.Parse("2006-01-02", tgtDate)
-	if err != nil || tgt.Before(today) {
+	if err != nil {
+		return ErrSwapTargetDateInvalid
+	}
+
+	if tgt.Before(today) {
 		return ErrSwapTargetDatePassed
 	}
 
@@ -88,7 +107,15 @@ func validateSwapAssignmentDates(reqDate, tgtDate string) error {
 func (db *DB) CheckNoOpenSwaps(ctx context.Context, assignmentIDs ...string) error {
 	for _, aid := range assignmentIDs {
 		existing, err := db.GetOpenSwapForAssignment(ctx, aid)
-		if err == nil && existing != nil {
+		if err != nil {
+			if !errors.Is(err, sql.ErrNoRows) {
+				return err
+			}
+
+			continue
+		}
+
+		if existing != nil {
 			return ErrSwapAssignmentBusy
 		}
 	}
@@ -214,7 +241,7 @@ func (db *DB) ExecuteSwap(ctx context.Context, swapID string) (retErr error) {
 		return err
 	}
 
-	if swap.Status != "pending" {
+	if swap.Status != SwapStatusPending {
 		return ErrSwapNotPending
 	}
 
@@ -260,7 +287,7 @@ func (db *DB) executeSwapTx(ctx context.Context, qtx *sqlc.Queries, reqAssignmen
 	}
 
 	result, err := qtx.UpdateHatSwapStatus(ctx, sqlc.UpdateHatSwapStatusParams{
-		Status: "accepted",
+		Status: SwapStatusAccepted,
 		ID:     swapID,
 	})
 	if err != nil {

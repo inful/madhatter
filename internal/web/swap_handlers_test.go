@@ -82,35 +82,27 @@ func seedSchedule(t *testing.T, db *database.DB) {
 }
 
 // ---------------------------------------------------------------------------
-// validateSwapDates — pure function tests
+// swapValidationErrorMessage — error mapping tests
 // ---------------------------------------------------------------------------
 
-func TestValidateSwapDates_BothFuture(t *testing.T) {
-	today := time.Now().Truncate(24 * time.Hour)
-	tomorrow := today.AddDate(0, 0, 1)
-	dayAfter := today.AddDate(0, 0, 2)
+func TestSwapValidationErrorMessage_KnownErrors(t *testing.T) {
+	cases := []struct {
+		err      error
+		contains string
+	}{
+		{database.ErrSwapSameAssignment, "itself"},
+		{database.ErrRequesterAssignmentNotFound, "not found"},
+		{database.ErrTargetAssignmentNotFound, "not found"},
+		{database.ErrSwapNotOwner, "your own"},
+		{database.ErrSwapTargetSelf, "another member"},
+		{database.ErrSwapRequesterDatePassed, "HAT day"},
+		{database.ErrSwapTargetDatePassed, "target HAT day"},
+	}
 
-	require.NoError(t, validateSwapDates(tomorrow, dayAfter, today))
-}
-
-func TestValidateSwapDates_RequesterDatePast(t *testing.T) {
-	today := time.Now().Truncate(24 * time.Hour)
-	yesterday := today.AddDate(0, 0, -1)
-	tomorrow := today.AddDate(0, 0, 1)
-
-	err := validateSwapDates(yesterday, tomorrow, today)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "your HAT day has already passed")
-}
-
-func TestValidateSwapDates_TargetDatePast(t *testing.T) {
-	today := time.Now().Truncate(24 * time.Hour)
-	tomorrow := today.AddDate(0, 0, 1)
-	yesterday := today.AddDate(0, 0, -1)
-
-	err := validateSwapDates(tomorrow, yesterday, today)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "the target HAT day has already passed")
+	for _, tc := range cases {
+		msg := swapValidationErrorMessage(tc.err)
+		assert.Contains(t, msg, tc.contains, "error: %v", tc.err)
+	}
 }
 
 // ---------------------------------------------------------------------------

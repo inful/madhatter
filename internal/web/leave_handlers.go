@@ -237,13 +237,7 @@ func (h *Handler) handleLeaveDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.db.DeleteLeaveRecord(ctx, leaveID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// Reconcile covers - will remove any stale covers automatically.
-	if err := h.maintenance.HandleTeamChange(ctx); err != nil {
+	if err := h.maintenance.HandleLeaveDelete(ctx, leaveID); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

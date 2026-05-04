@@ -213,15 +213,9 @@ func (s *Server) handleDeleteLeave(ctx context.Context, input *DeleteLeaveInput)
 		return nil, huma.Error403Forbidden("Admin privileges required")
 	}
 
-	err := s.db.DeleteLeaveRecord(ctx, input.ID)
-	if err != nil {
-		return nil, huma.Error500InternalServerError("Failed to delete leave record", err)
-	}
-
-	// Reconcile schedule - will remove any stale covers automatically
 	maintenance := s.newScheduleMaintenance()
-	if err := maintenance.HandleTeamChange(ctx); err != nil {
-		return nil, huma.Error500InternalServerError("Failed to update schedule", err)
+	if err := maintenance.HandleLeaveDelete(ctx, input.ID); err != nil {
+		return nil, huma.Error500InternalServerError("Failed to delete leave record", err)
 	}
 
 	resp := &DeleteLeaveOutput{}

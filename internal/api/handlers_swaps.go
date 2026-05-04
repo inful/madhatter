@@ -97,14 +97,18 @@ func swapDomainToHumaError(err error) error {
 		errors.Is(err, database.ErrSwapTargetDatePassed):
 		return huma.Error422UnprocessableEntity(err.Error(), nil)
 	default:
-		return huma.Error422UnprocessableEntity(err.Error(), nil)
+		return huma.Error500InternalServerError("An unexpected error occurred", err)
 	}
 }
 
 // checkNoOpenSwaps returns an error if either assignment already has a pending swap.
 func (s *Server) checkNoOpenSwaps(ctx context.Context, reqAssignmentID, tgtAssignmentID string) error {
 	if err := s.db.CheckNoOpenSwaps(ctx, reqAssignmentID, tgtAssignmentID); err != nil {
-		return huma.Error409Conflict(err.Error())
+		if errors.Is(err, database.ErrSwapAssignmentBusy) {
+			return huma.Error409Conflict(err.Error())
+		}
+
+		return huma.Error500InternalServerError("Failed to check for open swaps", err)
 	}
 
 	return nil

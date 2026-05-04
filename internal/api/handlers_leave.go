@@ -161,7 +161,7 @@ func (s *Server) handleUpdateLeave(ctx context.Context, input *UpdateLeaveInput)
 	}
 
 	// Check admin privileges
-	if !userSession.IsAdmin.Valid || userSession.IsAdmin.Int64 == 0 {
+	if !auth.IsAdminSession(userSession) {
 		return nil, huma.Error403Forbidden("Admin privileges required")
 	}
 
@@ -209,7 +209,7 @@ func (s *Server) handleDeleteLeave(ctx context.Context, input *DeleteLeaveInput)
 	}
 
 	// Check admin privileges
-	if !userSession.IsAdmin.Valid || userSession.IsAdmin.Int64 == 0 {
+	if !auth.IsAdminSession(userSession) {
 		return nil, huma.Error403Forbidden("Admin privileges required")
 	}
 

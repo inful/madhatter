@@ -34,7 +34,7 @@ func (s *Server) handleGenerateSchedule(ctx context.Context, input *GenerateSche
 	}
 
 	// Check admin privileges
-	if !userSession.IsAdmin.Valid || userSession.IsAdmin.Int64 == 0 {
+	if !auth.IsAdminSession(userSession) {
 		return nil, huma.Error403Forbidden("Admin privileges required")
 	}
 

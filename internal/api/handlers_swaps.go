@@ -334,7 +334,7 @@ func (s *Server) handleDeleteSwap(ctx context.Context, input *SwapIDInput) (*Swa
 		return nil, huma.Error401Unauthorized("Authentication required")
 	}
 
-	if !userSession.IsAdmin.Valid || userSession.IsAdmin.Int64 == 0 {
+	if !auth.IsAdminSession(userSession) {
 		return nil, huma.Error403Forbidden("Admin privileges required")
 	}
 

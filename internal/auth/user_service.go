@@ -221,5 +221,5 @@ func (us *UserService) IsAdmin(ctx context.Context, userID string) (bool, error)
 	if err != nil {
 		return false, err
 	}
-	return user.IsAdmin.Valid && user.IsAdmin.Int64 == 1, nil
+	return IsAdmin(user.IsAdmin), nil
 }

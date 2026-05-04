@@ -49,7 +49,7 @@ func TestUserService_GetOrCreateUser(t *testing.T) {
 		assert.Equal(t, userInfo.Email, user.Email)
 		assert.Equal(t, userInfo.Name, user.Name)
 		assert.Equal(t, "forgejo", user.Provider)
-		assert.True(t, user.IsAdmin.Valid && user.IsAdmin.Int64 == 1, "First user should be admin")
+		assert.True(t, IsAdmin(user.IsAdmin), "First user should be admin")
 	})
 
 	t.Run("Create Second User - Should Not Be Admin", func(t *testing.T) {
@@ -63,7 +63,7 @@ func TestUserService_GetOrCreateUser(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotEmpty(t, user.ID)
 		assert.Equal(t, userInfo.Email, user.Email)
-		assert.False(t, user.IsAdmin.Valid && user.IsAdmin.Int64 == 1, "Second user should not be admin")
+		assert.False(t, IsAdmin(user.IsAdmin), "Second user should not be admin")
 	})
 
 	t.Run("Get Existing User By Provider", func(t *testing.T) {
@@ -77,7 +77,7 @@ func TestUserService_GetOrCreateUser(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "user1@example.com", user.Email)
 		// Should still be admin
-		assert.True(t, user.IsAdmin.Valid && user.IsAdmin.Int64 == 1)
+		assert.True(t, IsAdmin(user.IsAdmin))
 	})
 
 	t.Run("Same Email Different Provider - Should Error", func(t *testing.T) {

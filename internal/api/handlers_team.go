@@ -35,7 +35,7 @@ func (s *Server) handleAddTeam(ctx context.Context, input *AddTeamInput) (*AddTe
 	}
 
 	// Check admin privileges
-	if !userSession.IsAdmin.Valid || userSession.IsAdmin.Int64 == 0 {
+	if !auth.IsAdminSession(userSession) {
 		return nil, huma.Error403Forbidden("Admin privileges required")
 	}
 
@@ -107,7 +107,7 @@ func (s *Server) handleUpdateTeam(ctx context.Context, input *UpdateTeamInput) (
 	}
 
 	// Check admin privileges
-	if !userSession.IsAdmin.Valid || userSession.IsAdmin.Int64 == 0 {
+	if !auth.IsAdminSession(userSession) {
 		return nil, huma.Error403Forbidden("Admin privileges required")
 	}
 
@@ -144,7 +144,7 @@ func (s *Server) handleDeleteTeam(ctx context.Context, input *DeleteTeamInput) (
 	}
 
 	// Check admin privileges
-	if !userSession.IsAdmin.Valid || userSession.IsAdmin.Int64 == 0 {
+	if !auth.IsAdminSession(userSession) {
 		return nil, huma.Error403Forbidden("Admin privileges required")
 	}
 

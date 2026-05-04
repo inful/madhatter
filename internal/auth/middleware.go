@@ -74,7 +74,7 @@ func (m *Middleware) RequireAdmin(next http.Handler) http.Handler {
 		}
 
 		// Check admin status
-		isAdmin := session.IsAdmin.Valid && session.IsAdmin.Int64 == 1
+		isAdmin := IsAdminSession(session)
 		if !isAdmin {
 			http.Error(w, "Admin access required", http.StatusForbidden)
 			return

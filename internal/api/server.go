@@ -296,7 +296,7 @@ func (s *Server) handleRefreshHolidays(ctx context.Context, input *struct{}) (*R
 	}
 
 	// Check admin privileges
-	if !userSession.IsAdmin.Valid || userSession.IsAdmin.Int64 == 0 {
+	if !auth.IsAdminSession(userSession) {
 		return nil, huma.Error403Forbidden("Admin privileges required")
 	}
 
@@ -520,7 +520,7 @@ func (s *Server) handleCleanupExpiredTokens(ctx context.Context, input *struct{}
 	}
 
 	// Check admin privileges
-	if !userSession.IsAdmin.Valid || userSession.IsAdmin.Int64 == 0 {
+	if !auth.IsAdminSession(userSession) {
 		return nil, huma.Error403Forbidden("Admin privileges required")
 	}
 

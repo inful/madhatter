@@ -43,7 +43,7 @@ func (h *Handler) handleSwaps(w http.ResponseWriter, r *http.Request) {
 	data := map[string]any{
 		"Template": "swaps",
 		"User":     user,
-		"IsAdmin":  user.IsAdmin.Valid && user.IsAdmin.Int64 == 1,
+		"IsAdmin":  auth.IsAdminSession(user),
 		"MemberID": memberID,
 	}
 
@@ -299,7 +299,7 @@ func (h *Handler) handleSwapAdminDelete(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if !user.IsAdmin.Valid || user.IsAdmin.Int64 != 1 {
+	if !auth.IsAdminSession(user) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}

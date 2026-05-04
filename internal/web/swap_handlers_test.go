@@ -109,7 +109,7 @@ func TestSwapValidationErrorMessage_KnownErrors(t *testing.T) {
 // handleSwaps GET
 // ---------------------------------------------------------------------------
 
-func TestHandleSwaps_NoAuth_Redirects(t *testing.T) {
+func TestHandleSwaps_NoAuth_Panics(t *testing.T) {
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
@@ -118,10 +118,11 @@ func TestHandleSwaps_NoAuth_Redirects(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/swaps", nil)
 	w := httptest.NewRecorder()
 
-	h.handleSwaps(w, req)
-
-	assert.Equal(t, http.StatusSeeOther, w.Code)
-	assert.Equal(t, "/login", w.Header().Get("Location"))
+	// safeRequireAuth middleware guarantees user is in context before the handler
+	// runs. Calling the handler without it is a programming error and must panic.
+	assert.Panics(t, func() {
+		h.handleSwaps(w, req)
+	})
 }
 
 func TestHandleSwaps_NotATeamMember_ShowsError(t *testing.T) {
@@ -382,7 +383,7 @@ func TestHandleSwaps_GetPendingOutgoingSwap_ShowsCancelButton(t *testing.T) {
 // handleSwapCancel
 // ---------------------------------------------------------------------------
 
-func TestHandleSwapCancel_NoAuth_Redirects(t *testing.T) {
+func TestHandleSwapCancel_NoAuth_Panics(t *testing.T) {
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
@@ -392,10 +393,9 @@ func TestHandleSwapCancel_NoAuth_Redirects(t *testing.T) {
 	req = withChiParam(req, "some-id")
 	w := httptest.NewRecorder()
 
-	h.handleSwapCancel(w, req)
-
-	assert.Equal(t, http.StatusSeeOther, w.Code)
-	assert.Equal(t, "/login", w.Header().Get("Location"))
+	assert.Panics(t, func() {
+		h.handleSwapCancel(w, req)
+	})
 }
 
 func TestHandleSwapCancel_SwapNotFound_404(t *testing.T) {
@@ -538,7 +538,7 @@ func TestHandleSwapCancel_Valid_Redirects(t *testing.T) {
 // handleSwapAccept
 // ---------------------------------------------------------------------------
 
-func TestHandleSwapAccept_NoAuth_Redirects(t *testing.T) {
+func TestHandleSwapAccept_NoAuth_Panics(t *testing.T) {
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
@@ -548,10 +548,9 @@ func TestHandleSwapAccept_NoAuth_Redirects(t *testing.T) {
 	req = withChiParam(req, "some-id")
 	w := httptest.NewRecorder()
 
-	h.handleSwapAccept(w, req)
-
-	assert.Equal(t, http.StatusSeeOther, w.Code)
-	assert.Equal(t, "/login", w.Header().Get("Location"))
+	assert.Panics(t, func() {
+		h.handleSwapAccept(w, req)
+	})
 }
 
 func TestHandleSwapAccept_NotTarget_403(t *testing.T) {
@@ -761,7 +760,7 @@ func TestHandleSwapReject_Valid_SetsStatusAndRedirects(t *testing.T) {
 // handleSwapAdminDelete
 // ---------------------------------------------------------------------------
 
-func TestHandleSwapAdminDelete_NoAuth_Redirects(t *testing.T) {
+func TestHandleSwapAdminDelete_NoAuth_Panics(t *testing.T) {
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
@@ -771,9 +770,9 @@ func TestHandleSwapAdminDelete_NoAuth_Redirects(t *testing.T) {
 	req = withChiParam(req, "some-id")
 	w := httptest.NewRecorder()
 
-	h.handleSwapAdminDelete(w, req)
-
-	assert.Equal(t, http.StatusSeeOther, w.Code)
+	assert.Panics(t, func() {
+		h.handleSwapAdminDelete(w, req)
+	})
 }
 
 func TestHandleSwapAdminDelete_NonAdmin_403(t *testing.T) {

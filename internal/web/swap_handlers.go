@@ -93,28 +93,28 @@ func (h *Handler) handleSwapRequestPost(w http.ResponseWriter, r *http.Request, 
 
 // swapValidationErrorMessage maps domain errors from ValidateSwapAssignments to user-facing messages.
 func swapValidationErrorMessage(err error) string {
-	switch {
-	case errors.Is(err, database.ErrSwapSameAssignment):
-		return "Cannot swap an assignment with itself."
-	case errors.Is(err, database.ErrRequesterAssignmentNotFound):
-		return "Your assignment was not found."
-	case errors.Is(err, database.ErrTargetAssignmentNotFound):
-		return "Target assignment was not found."
-	case errors.Is(err, database.ErrSwapNotOwner):
-		return "You can only swap your own assignments."
-	case errors.Is(err, database.ErrSwapTargetSelf):
-		return "You can only request swaps with another member."
-	case errors.Is(err, database.ErrSwapRequesterDatePassed):
-		return "Your HAT day has already passed and cannot be swapped."
-	case errors.Is(err, database.ErrSwapTargetDatePassed):
-		return "The target HAT day has already passed and cannot be swapped."
-	case errors.Is(err, database.ErrSwapRequesterDateInvalid):
-		return "Your assignment date is invalid."
-	case errors.Is(err, database.ErrSwapTargetDateInvalid):
-		return "The target assignment date is invalid."
-	default:
-		return "An unexpected error occurred."
+	errorMessages := []struct {
+		target error
+		msg    string
+	}{
+		{database.ErrSwapSameAssignment, "Cannot swap an assignment with itself."},
+		{database.ErrRequesterAssignmentNotFound, "Your assignment was not found."},
+		{database.ErrTargetAssignmentNotFound, "Target assignment was not found."},
+		{database.ErrSwapNotOwner, "You can only swap your own assignments."},
+		{database.ErrSwapTargetSelf, "You can only request swaps with another member."},
+		{database.ErrSwapRequesterDatePassed, "Your HAT day has already passed and cannot be swapped."},
+		{database.ErrSwapTargetDatePassed, "The target HAT day has already passed and cannot be swapped."},
+		{database.ErrSwapRequesterDateInvalid, "Your assignment date is invalid."},
+		{database.ErrSwapTargetDateInvalid, "The target assignment date is invalid."},
 	}
+
+	for _, em := range errorMessages {
+		if errors.Is(err, em.target) {
+			return em.msg
+		}
+	}
+
+	return "An unexpected error occurred."
 }
 
 func (h *Handler) handleSwapCancel(w http.ResponseWriter, r *http.Request) {

@@ -1,6 +1,24 @@
 package web
 
-import "net/http"
+import (
+	"context"
+	"net/http"
+
+	"github.com/inful/madhatter/internal/auth"
+	"github.com/inful/madhatter/internal/database/sqlc"
+)
+
+// mustGetUser returns the authenticated user from the context.
+// It panics if no user is present, which means a route was reached without
+// going through safeRequireAuth middleware — a programming error.
+func mustGetUser(ctx context.Context) *sqlc.GetSessionByTokenRow {
+	user, ok := auth.GetUserFromContext(ctx)
+	if !ok {
+		panic("mustGetUser: no authenticated user in context — missing safeRequireAuth middleware on this route")
+	}
+
+	return user
+}
 
 // safeAuthMiddleware wraps middleware to handle nil auth components gracefully.
 func (h *Handler) safeAuthMiddleware(next http.Handler) http.Handler {

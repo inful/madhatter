@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"time"
 
@@ -10,12 +11,117 @@ import (
 	"github.com/ncruces/go-sqlite3"
 )
 
-var (
-	ErrSwapNotPending     = errors.New("swap is no longer pending")
-	ErrSwapDatePassed     = errors.New("one of the HAT days has already passed and cannot be swapped")
-	ErrSwapSameMember     = errors.New("swap target must belong to another member")
-	ErrSwapAssignmentBusy = errors.New("one of the assignments already has an open swap request")
+// Swap status constants shared across the application.
+const (
+	SwapStatusPending   = "pending"
+	SwapStatusAccepted  = "accepted"
+	SwapStatusRejected  = "rejected"
+	SwapStatusCancelled = "cancelled"
 )
+
+var (
+	ErrSwapNotPending              = errors.New("swap is no longer pending")
+	ErrSwapDatePassed              = errors.New("one of the HAT days has already passed and cannot be swapped")
+	ErrSwapSameMember              = errors.New("swap target must belong to another member")
+	ErrSwapAssignmentBusy          = errors.New("one of the assignments already has an open swap request")
+	ErrSwapSameAssignment          = errors.New("cannot swap an assignment with itself")
+	ErrSwapNotOwner                = errors.New("you can only swap your own assignments")
+	ErrSwapTargetSelf              = errors.New("swap target must belong to another member")
+	ErrRequesterAssignmentNotFound = errors.New("requester assignment not found")
+	ErrTargetAssignmentNotFound    = errors.New("target assignment not found")
+	ErrSwapRequesterDatePassed     = errors.New("your HAT day has already passed and cannot be swapped")
+	ErrSwapTargetDatePassed        = errors.New("the target HAT day has already passed and cannot be swapped")
+	ErrSwapRequesterDateInvalid    = errors.New("requester assignment date is invalid")
+	ErrSwapTargetDateInvalid       = errors.New("target assignment date is invalid")
+)
+
+// ValidateSwapAssignments checks that both assignments exist, the requester owns their
+// assignment, the target belongs to a different member, and both dates are in the future.
+// It returns the two resolved assignments when all checks pass.
+func (db *DB) ValidateSwapAssignments(ctx context.Context, requesterAssignmentID, targetAssignmentID, requesterMemberID string) (*RotaAssignment, *RotaAssignment, error) {
+	if requesterAssignmentID == targetAssignmentID {
+		return nil, nil, ErrSwapSameAssignment
+	}
+
+	reqAssignment, err := db.GetAssignmentByID(ctx, requesterAssignmentID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil, ErrRequesterAssignmentNotFound
+		}
+
+		return nil, nil, err
+	}
+
+	tgtAssignment, err := db.GetAssignmentByID(ctx, targetAssignmentID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil, ErrTargetAssignmentNotFound
+		}
+
+		return nil, nil, err
+	}
+
+	if reqAssignment.MemberID != requesterMemberID {
+		return nil, nil, ErrSwapNotOwner
+	}
+
+	if tgtAssignment.MemberID == reqAssignment.MemberID {
+		return nil, nil, ErrSwapTargetSelf
+	}
+
+	if err = validateSwapAssignmentDates(reqAssignment.Date, tgtAssignment.Date); err != nil {
+		return nil, nil, err
+	}
+
+	return reqAssignment, tgtAssignment, nil
+}
+
+// validateSwapAssignmentDates checks that both assignment dates are in the future.
+func validateSwapAssignmentDates(reqDate, tgtDate string) error {
+	nowUTC := time.Now().UTC()
+	today := time.Date(nowUTC.Year(), nowUTC.Month(), nowUTC.Day(), 0, 0, 0, 0, time.UTC)
+
+	req, err := time.Parse("2006-01-02", reqDate)
+	if err != nil {
+		return ErrSwapRequesterDateInvalid
+	}
+
+	if req.Before(today) {
+		return ErrSwapRequesterDatePassed
+	}
+
+	tgt, err := time.Parse("2006-01-02", tgtDate)
+	if err != nil {
+		return ErrSwapTargetDateInvalid
+	}
+
+	if tgt.Before(today) {
+		return ErrSwapTargetDatePassed
+	}
+
+	return nil
+}
+
+// CheckNoOpenSwaps returns ErrSwapAssignmentBusy if any of the given assignments
+// already has a pending swap request.
+func (db *DB) CheckNoOpenSwaps(ctx context.Context, assignmentIDs ...string) error {
+	for _, aid := range assignmentIDs {
+		existing, err := db.GetOpenSwapForAssignment(ctx, aid)
+		if err != nil {
+			if !errors.Is(err, sql.ErrNoRows) {
+				return err
+			}
+
+			continue
+		}
+
+		if existing != nil {
+			return ErrSwapAssignmentBusy
+		}
+	}
+
+	return nil
+}
 
 // CreateHatSwap creates a new pending HAT day swap request.
 func (db *DB) CreateHatSwap(ctx context.Context, requesterAssignmentID, targetAssignmentID, requesterMemberID, targetMemberID string) (string, error) {
@@ -135,7 +241,7 @@ func (db *DB) ExecuteSwap(ctx context.Context, swapID string) (retErr error) {
 		return err
 	}
 
-	if swap.Status != "pending" {
+	if swap.Status != SwapStatusPending {
 		return ErrSwapNotPending
 	}
 
@@ -181,7 +287,7 @@ func (db *DB) executeSwapTx(ctx context.Context, qtx *sqlc.Queries, reqAssignmen
 	}
 
 	result, err := qtx.UpdateHatSwapStatus(ctx, sqlc.UpdateHatSwapStatusParams{
-		Status: "accepted",
+		Status: SwapStatusAccepted,
 		ID:     swapID,
 	})
 	if err != nil {

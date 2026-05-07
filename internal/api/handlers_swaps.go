@@ -10,10 +10,6 @@ import (
 	"github.com/inful/madhatter/internal/database"
 )
 
-const (
-	apiSwapStatusPending = "pending"
-)
-
 // -- Input/Output types -------------------------------------------------------
 
 type CreateSwapInput struct {
@@ -77,51 +73,42 @@ func (s *Server) validateSwapAssignmentsAPI(
 	ctx context.Context,
 	reqAssignmentID, tgtAssignmentID, memberID string,
 ) (*database.RotaAssignment, *database.RotaAssignment, error) {
-	if reqAssignmentID == tgtAssignmentID {
-		return nil, nil, huma.Error422UnprocessableEntity("Cannot swap an assignment with itself", nil)
-	}
-
-	reqAssignment, err := s.db.GetAssignmentByID(ctx, reqAssignmentID)
+	reqAssignment, tgtAssignment, err := s.db.ValidateSwapAssignments(ctx, reqAssignmentID, tgtAssignmentID, memberID)
 	if err != nil {
-		return nil, nil, huma.Error422UnprocessableEntity("Requester assignment not found", nil)
-	}
-
-	tgtAssignment, err := s.db.GetAssignmentByID(ctx, tgtAssignmentID)
-	if err != nil {
-		return nil, nil, huma.Error422UnprocessableEntity("Target assignment not found", nil)
-	}
-
-	if reqAssignment.MemberID != memberID {
-		return nil, nil, huma.Error403Forbidden("You can only swap your own assignments")
-	}
-
-	if tgtAssignment.MemberID == reqAssignment.MemberID {
-		return nil, nil, huma.Error422UnprocessableEntity("Swap target must belong to another member", nil)
-	}
-
-	nowUTC := time.Now().UTC()
-	today := time.Date(nowUTC.Year(), nowUTC.Month(), nowUTC.Day(), 0, 0, 0, 0, time.UTC)
-
-	reqDate, parseErr := time.Parse("2006-01-02", reqAssignment.Date)
-	if parseErr != nil || reqDate.Before(today) {
-		return nil, nil, huma.Error422UnprocessableEntity("Your HAT day has already passed and cannot be swapped", nil)
-	}
-
-	tgtDate, parseErr := time.Parse("2006-01-02", tgtAssignment.Date)
-	if parseErr != nil || tgtDate.Before(today) {
-		return nil, nil, huma.Error422UnprocessableEntity("The target HAT day has already passed and cannot be swapped", nil)
+		return nil, nil, swapDomainToHumaError(err)
 	}
 
 	return reqAssignment, tgtAssignment, nil
 }
 
+// swapDomainToHumaError converts a domain validation error into the appropriate huma error.
+func swapDomainToHumaError(err error) error {
+	switch {
+	case errors.Is(err, database.ErrSwapSameAssignment):
+		return huma.Error422UnprocessableEntity(err.Error(), nil)
+	case errors.Is(err, database.ErrRequesterAssignmentNotFound),
+		errors.Is(err, database.ErrTargetAssignmentNotFound):
+		return huma.Error422UnprocessableEntity(err.Error(), nil)
+	case errors.Is(err, database.ErrSwapNotOwner):
+		return huma.Error403Forbidden(err.Error())
+	case errors.Is(err, database.ErrSwapTargetSelf):
+		return huma.Error422UnprocessableEntity(err.Error(), nil)
+	case errors.Is(err, database.ErrSwapRequesterDatePassed),
+		errors.Is(err, database.ErrSwapTargetDatePassed):
+		return huma.Error422UnprocessableEntity(err.Error(), nil)
+	default:
+		return huma.Error500InternalServerError("An unexpected error occurred", err)
+	}
+}
+
 // checkNoOpenSwaps returns an error if either assignment already has a pending swap.
 func (s *Server) checkNoOpenSwaps(ctx context.Context, reqAssignmentID, tgtAssignmentID string) error {
-	for _, aid := range []string{reqAssignmentID, tgtAssignmentID} {
-		existing, lookupErr := s.db.GetOpenSwapForAssignment(ctx, aid)
-		if lookupErr == nil && existing != nil {
-			return huma.Error409Conflict("One of the assignments already has an open swap request")
+	if err := s.db.CheckNoOpenSwaps(ctx, reqAssignmentID, tgtAssignmentID); err != nil {
+		if errors.Is(err, database.ErrSwapAssignmentBusy) {
+			return huma.Error409Conflict(err.Error())
 		}
+
+		return huma.Error500InternalServerError("Failed to check for open swaps", err)
 	}
 
 	return nil
@@ -232,7 +219,7 @@ func (s *Server) handleAcceptSwap(ctx context.Context, input *SwapIDInput) (*Swa
 		return nil, huma.Error403Forbidden("Only the target member can accept this swap")
 	}
 
-	if swap.Status != apiSwapStatusPending {
+	if swap.Status != database.SwapStatusPending {
 		return nil, huma.Error409Conflict("Swap is no longer pending")
 	}
 
@@ -269,11 +256,11 @@ func (s *Server) handleRejectSwap(ctx context.Context, input *SwapIDInput) (*Swa
 		return nil, huma.Error403Forbidden("Only the target member can reject this swap")
 	}
 
-	if swap.Status != apiSwapStatusPending {
+	if swap.Status != database.SwapStatusPending {
 		return nil, huma.Error409Conflict("Swap is no longer pending")
 	}
 
-	if err := s.db.UpdateHatSwapStatus(ctx, input.ID, "rejected"); err != nil {
+	if err := s.db.UpdateHatSwapStatus(ctx, input.ID, database.SwapStatusRejected); err != nil {
 		if errors.Is(err, database.ErrSwapNotPending) {
 			return nil, huma.Error409Conflict("Swap is no longer pending")
 		}
@@ -306,11 +293,11 @@ func (s *Server) handleCancelSwap(ctx context.Context, input *SwapIDInput) (*Swa
 		return nil, huma.Error403Forbidden("Only the requester can cancel this swap")
 	}
 
-	if swap.Status != apiSwapStatusPending {
+	if swap.Status != database.SwapStatusPending {
 		return nil, huma.Error409Conflict("Swap is no longer pending")
 	}
 
-	if err := s.db.UpdateHatSwapStatus(ctx, input.ID, "cancelled"); err != nil {
+	if err := s.db.UpdateHatSwapStatus(ctx, input.ID, database.SwapStatusCancelled); err != nil {
 		if errors.Is(err, database.ErrSwapNotPending) {
 			return nil, huma.Error409Conflict("Swap is no longer pending")
 		}

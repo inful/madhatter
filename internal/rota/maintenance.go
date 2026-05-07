@@ -330,6 +330,37 @@ func (sm *ScheduleMaintenance) HandleLeaveChange(ctx context.Context, leaveID st
 	return sm.engine.AssignCoversForLeave(ctx, leaveID)
 }
 
+// HandleLeaveDelete deletes a leave record and restores the original schedule for
+// the affected date range. It must be called instead of deleting the record directly
+// so that orphaned cover/placeholder rows are cleaned up before GenerateMissingDays
+// refills those slots with the correct round-robin assignments.
+func (sm *ScheduleMaintenance) HandleLeaveDelete(ctx context.Context, leaveID string) error {
+	// Read dates before deletion so we know which range to reconcile afterwards.
+	leave, err := sm.db.GetLeaveByID(ctx, leaveID)
+	if err != nil {
+		return fmt.Errorf("failed to get leave record: %w", err)
+	}
+
+	startDate := leave.StartDate
+	endDate := leave.EndDate
+
+	if err := sm.db.DeleteLeaveRecord(ctx, leaveID); err != nil {
+		return fmt.Errorf("failed to delete leave record: %w", err)
+	}
+
+	// Remove stale covers (and their paired placeholder rows) for the leave window.
+	if err := sm.reconcileCoversForDateRange(ctx, startDate, endDate); err != nil {
+		return fmt.Errorf("failed to reconcile covers after leave deletion: %w", err)
+	}
+
+	// Refill any now-empty slots in the leave window with the correct assignments.
+	if _, err := sm.GenerateMissingDays(ctx, startDate, endDate); err != nil {
+		return fmt.Errorf("failed to regenerate assignments after leave deletion: %w", err)
+	}
+
+	return nil
+}
+
 // reconcileCoversForDateRange removes stale covers for a specific date range.
 func (sm *ScheduleMaintenance) reconcileCoversForDateRange(ctx context.Context, startDate, endDate time.Time) error {
 	leaveIndex, err := sm.buildLeaveIndex(ctx, startDate, endDate)

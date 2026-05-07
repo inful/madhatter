@@ -651,3 +651,116 @@ func TestGetStartingMemberIndex_SkipsWeekendBoundary(t *testing.T) {
 	assert.Equal(t, members[1].ID, mondayAssignments[0].MemberID,
 		"Monday rotation should continue from Friday's Alice assignment, so Bob is next")
 }
+
+// TestScheduleMaintenance_DeleteLeave_RestoresOriginalAssignments is a regression
+// test for the bug where deleting a leave left the cover assignments in place
+// instead of restoring the original round-robin schedule.
+//
+// Scenario (all on fixed weekdays to avoid time.Now() flakiness):
+//   - Schedule: Mon=A, Tue=B, Wed=C, Thu=A
+//   - Create leave for B covering Tue–Wed → C covers both days
+//   - Delete the leave
+//   - Expected: Tue=B (original), Wed=C (original) — identical to pre-leave state
+func TestScheduleMaintenance_DeleteLeave_RestoresOriginalAssignments(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+	charlieID, err := db.AddTeamMember(ctx, "Charlie", "charlie@example.com")
+	require.NoError(t, err)
+
+	engine := NewEngine(db)
+	maintenance := NewScheduleMaintenance(db)
+
+	// Fixed Monday — deterministic regardless of when the test runs.
+	mon := time.Date(2026, time.January, 5, 0, 0, 0, 0, time.UTC)
+	tue := mon.AddDate(0, 0, 1)
+	wed := mon.AddDate(0, 0, 2)
+
+	// Generate a four-day schedule (Mon–Thu): A, B, C, A
+	thu := mon.AddDate(0, 0, 3)
+	err = engine.GenerateSchedule(ctx, mon, thu)
+	require.NoError(t, err)
+
+	// Snapshot the original assignment member for each date in the leave window.
+	snapshotMember := func(date time.Time) string {
+		t.Helper()
+		assignments, getErr := db.GetAssignmentsByDate(ctx, date.Format("2006-01-02"))
+		require.NoError(t, getErr)
+		require.Len(t, assignments, 1, "expected exactly one original assignment for %s", date.Format("2006-01-02"))
+		require.False(t, assignments[0].IsCover)
+
+		return assignments[0].MemberID
+	}
+
+	originalTue := snapshotMember(tue) // should be bobID
+	originalWed := snapshotMember(wed) // should be charlieID
+
+	assert.Equal(t, aliceID, snapshotMember(mon))
+	assert.Equal(t, bobID, originalTue)
+	assert.Equal(t, charlieID, originalWed)
+
+	// Create leave for Bob covering Tue–Wed.
+	leaveID, err := db.CreateLeaveRecord(ctx, bobID, tue.Format("2006-01-02"), wed.Format("2006-01-02"))
+	require.NoError(t, err)
+
+	err = maintenance.HandleLeaveChange(ctx, leaveID)
+	require.NoError(t, err)
+
+	// Verify a cover is present on Tuesday — the day Bob was originally scheduled.
+	// Wednesday is Charlie's day (not Bob's), so no cover is needed there.
+	tuAssignments, err := db.GetAssignmentsByDate(ctx, tue.Format("2006-01-02"))
+	require.NoError(t, err)
+	hasTueCover := false
+	for _, a := range tuAssignments {
+		if a.IsCover {
+			hasTueCover = true
+		}
+	}
+	assert.True(t, hasTueCover, "expected cover assignment on Tuesday after leave creation")
+
+	// Wednesday is Charlie's original day — Bob is on leave but Charlie is not,
+	// so no cover should have been created for Wednesday.
+	wedAssignmentsAfterLeave, err := db.GetAssignmentsByDate(ctx, wed.Format("2006-01-02"))
+	require.NoError(t, err)
+	for _, a := range wedAssignmentsAfterLeave {
+		assert.False(t, a.IsCover, "unexpected cover assignment on Wednesday — Charlie was not on leave")
+	}
+
+	// Delete the leave — simulates the admin pressing "delete leave".
+	// HandleLeaveDelete captures the dates, deletes the record, and restores the schedule.
+	err = maintenance.HandleLeaveDelete(ctx, leaveID)
+	require.NoError(t, err)
+
+	// After deletion the schedule for Tue and Wed must be identical to the
+	// pre-leave state: one non-cover assignment per day for the original member.
+	assertRestored := func(date time.Time, wantMemberID string) {
+		t.Helper()
+		dateStr := date.Format("2006-01-02")
+		assignments, getErr := db.GetAssignmentsByDate(ctx, dateStr)
+		require.NoError(t, getErr)
+
+		// Must have exactly one assignment.
+		require.Len(t, assignments, 1, "expected exactly one assignment on %s after leave deletion", dateStr)
+
+		// Must not be a cover.
+		assert.False(t, assignments[0].IsCover,
+			"assignment on %s should not be a cover after leave deletion", dateStr)
+
+		// Must be the original member.
+		assert.Equal(t, wantMemberID, assignments[0].MemberID,
+			"wrong member on %s after leave deletion: want original member, got %s",
+			dateStr, assignments[0].MemberID)
+	}
+
+	assertRestored(tue, originalTue) // Bob should be back on Tuesday
+	assertRestored(wed, originalWed) // Charlie should be back on Wednesday
+
+	// Days outside the leave window must be untouched.
+	assert.Equal(t, aliceID, snapshotMember(mon))
+}

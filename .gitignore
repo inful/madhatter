@@ -49,3 +49,4 @@ config_test.yaml
 config.yml
 madhatter
 support-rota
+.tokensave

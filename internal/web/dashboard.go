@@ -22,7 +22,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	// Add user info to data.
 	if user, ok := auth.GetUserFromContext(ctx); ok {
 		data["User"] = user
-		data["IsAdmin"] = user.IsAdmin.Valid && user.IsAdmin.Int64 == 1
+		data["IsAdmin"] = auth.IsAdminSession(user)
 	}
 
 	// Check team members - show message if none exist, but always load schedule.

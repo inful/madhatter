@@ -425,7 +425,7 @@ func (am *AuthManager) HandleCleanupExpiredTokens(w http.ResponseWriter, r *http
 	}
 
 	// Check admin privileges (handle sql.NullInt64)
-	if !userSession.IsAdmin.Valid || userSession.IsAdmin.Int64 == 0 {
+	if !IsAdminSession(userSession) {
 		http.Error(w, "Admin privileges required", http.StatusForbidden)
 		return
 	}

@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/inful/madhatter/internal/auth"
 	"github.com/inful/madhatter/internal/database"
 )
 
@@ -30,7 +31,7 @@ func (h *Handler) handleSwaps(w http.ResponseWriter, r *http.Request) {
 	data := map[string]any{
 		"Template": "swaps",
 		"User":     user,
-		"IsAdmin":  user.IsAdmin.Valid && user.IsAdmin.Int64 == 1,
+		"IsAdmin":  auth.IsAdminSession(user),
 		"MemberID": memberID,
 	}
 
@@ -233,7 +234,7 @@ func (h *Handler) handleSwapAdminDelete(w http.ResponseWriter, r *http.Request) 
 
 	user := mustGetUser(ctx)
 
-	if !user.IsAdmin.Valid || user.IsAdmin.Int64 != 1 {
+	if !auth.IsAdminSession(user) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}

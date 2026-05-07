@@ -137,7 +137,7 @@
                                 <span class="has-text-grey">{{.Email}}</span>
                             </div>
                             <div class="column is-narrow">
-                                {{if and .IsAdmin.Valid (eq .IsAdmin.Int64 1)}}
+                                {{if .IsAdmin}}
                                     <span class="tag is-danger is-light mr-2">
                                         <i class="fas fa-shield-alt mr-1"></i> Admin
                                     </span>

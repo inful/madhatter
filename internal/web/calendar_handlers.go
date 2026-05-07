@@ -94,7 +94,7 @@ func (h *Handler) handleCalendar(w http.ResponseWriter, r *http.Request) {
 	user, loggedIn := auth.GetUserFromContext(ctx)
 	if loggedIn {
 		data["User"] = user
-		isAdmin = user.IsAdmin.Valid && user.IsAdmin.Int64 == 1
+		isAdmin = auth.IsAdminSession(user)
 		data["IsAdmin"] = isAdmin
 	}
 
@@ -408,7 +408,7 @@ func (h *Handler) renderCalendarSubscriptionsPage(w http.ResponseWriter, r *http
 
 	if user, ok := auth.GetUserFromContext(ctx); ok {
 		data["User"] = user
-		data["IsAdmin"] = user.IsAdmin.Valid && user.IsAdmin.Int64 == 1
+		data["IsAdmin"] = auth.IsAdminSession(user)
 	}
 
 	subs, err := h.db.GetAllSubscriptions(ctx)

@@ -16,6 +16,13 @@ import (
 
 const maxTeamFormBytes = 1 << 20
 
+type teamUserView struct {
+	ID      string
+	Name    string
+	Email   string
+	IsAdmin bool
+}
+
 func (h *Handler) handleTeamPost(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -47,7 +54,7 @@ func (h *Handler) handleTeam(w http.ResponseWriter, r *http.Request) {
 
 	if user, ok := auth.GetUserFromContext(ctx); ok {
 		data["User"] = user
-		data["IsAdmin"] = user.IsAdmin.Valid && user.IsAdmin.Int64 == 1
+		data["IsAdmin"] = auth.IsAdminSession(user)
 	}
 
 	if r.Method == http.MethodPost {
@@ -72,7 +79,16 @@ func (h *Handler) handleTeam(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data["Members"] = members
-	data["Users"] = users
+	userViews := make([]teamUserView, 0, len(users))
+	for i := range users {
+		userViews = append(userViews, teamUserView{
+			ID:      users[i].ID,
+			Name:    users[i].Name,
+			Email:   users[i].Email,
+			IsAdmin: auth.IsAdmin(users[i].IsAdmin),
+		})
+	}
+	data["Users"] = userViews
 	data["AdminCount"] = adminCount
 
 	// Build subscription activity map: member ID → {RotaActive, MeetingsActive}.
@@ -190,7 +206,7 @@ func (h *Handler) handleUserAdminUpdate(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	isAdmin := user.IsAdmin.Valid && user.IsAdmin.Int64 == 1
+	isAdmin := auth.IsAdmin(user.IsAdmin)
 	if status, guardErr := h.guardAdminDemotion(ctx, isAdmin, makeAdmin); guardErr != nil {
 		http.Error(w, guardErr.Error(), status)
 		return

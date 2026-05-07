@@ -22,7 +22,7 @@ func (h *Handler) handleLeaveReport(w http.ResponseWriter, r *http.Request) {
 	// Add user info to data.
 	if user, ok := auth.GetUserFromContext(ctx); ok {
 		data["User"] = user
-		data["IsAdmin"] = user.IsAdmin.Valid && user.IsAdmin.Int64 == 1
+		data["IsAdmin"] = auth.IsAdminSession(user)
 	}
 
 	if r.Method == http.MethodPost {
@@ -119,7 +119,7 @@ func (h *Handler) handleLeaveManagement(w http.ResponseWriter, r *http.Request) 
 	// Add user info to data.
 	if user, ok := auth.GetUserFromContext(ctx); ok {
 		data["User"] = user
-		data["IsAdmin"] = user.IsAdmin.Valid && user.IsAdmin.Int64 == 1
+		data["IsAdmin"] = auth.IsAdminSession(user)
 	}
 
 	// Get all leave records.

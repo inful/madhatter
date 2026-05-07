@@ -8,8 +8,6 @@ import (
 	"github.com/inful/madhatter/internal/auth"
 )
 
-const maxScheduleFormBytes = 1 << 20
-
 func (h *Handler) handleScheduleGenerate(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
 		h.handleScheduleGeneratePost(w, r)
@@ -22,7 +20,6 @@ func (h *Handler) handleScheduleGenerate(w http.ResponseWriter, r *http.Request)
 
 func (h *Handler) handleScheduleGeneratePost(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	r.Body = http.MaxBytesReader(w, r.Body, maxScheduleFormBytes)
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -40,7 +37,7 @@ func (h *Handler) handleScheduleGeneratePost(w http.ResponseWriter, r *http.Requ
 	}
 
 	// Generate schedule based on mode.
-	regenerate := r.PostForm.Get("regenerate") == "on"
+	regenerate := r.FormValue("regenerate") == "on"
 	var err error
 	if regenerate {
 		_, err = h.maintenance.RegenerateSchedule(ctx, start, end)
@@ -69,7 +66,7 @@ func (h *Handler) handleScheduleGenerateGet(w http.ResponseWriter, r *http.Reque
 	// Add user info to data.
 	if user, ok := auth.GetUserFromContext(ctx); ok {
 		data["User"] = user
-		data["IsAdmin"] = user.IsAdmin.Valid && user.IsAdmin.Int64 == 1
+		data["IsAdmin"] = auth.IsAdminSession(user)
 	}
 
 	now := time.Now()
@@ -95,8 +92,8 @@ func (h *Handler) validateTeamMembers(ctx context.Context, w http.ResponseWriter
 }
 
 func (h *Handler) parseDateRange(w http.ResponseWriter, r *http.Request) (time.Time, time.Time, bool) {
-	startDate := r.PostForm.Get("start_date")
-	endDate := r.PostForm.Get("end_date")
+	startDate := r.FormValue("start_date")
+	endDate := r.FormValue("end_date")
 
 	start, err := time.Parse("2006-01-02", startDate)
 	if err != nil {

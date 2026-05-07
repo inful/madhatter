@@ -65,7 +65,8 @@ func (us *UserService) GetOrCreateUser(ctx context.Context, userInfo *UserInfo, 
 
 // EnsureTeamMember ensures a corresponding team member exists for an authenticated user.
 //
-// If the member exists, it will be reactivated (if inactive) and its name updated.
+// If the member exists, it will be reactivated (if inactive) but its existing
+// display name is preserved.
 // If not, it will be created.
 func (us *UserService) EnsureTeamMember(ctx context.Context, userInfo *UserInfo) error {
 	name, email, err := normalizeUserIdentity(userInfo)
@@ -75,7 +76,7 @@ func (us *UserService) EnsureTeamMember(ctx context.Context, userInfo *UserInfo)
 
 	member, err := us.db.GetMemberByEmail(ctx, email)
 	if err == nil {
-		return us.syncTeamMember(ctx, member, name, email)
+		return us.syncTeamMember(ctx, member)
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("failed to look up team member: %w", err)
@@ -88,7 +89,7 @@ func (us *UserService) EnsureTeamMember(ctx context.Context, userInfo *UserInfo)
 		if fetchErr != nil {
 			return fmt.Errorf("failed to fetch team member after unique constraint: %w", fetchErr)
 		}
-		return us.syncTeamMember(ctx, member, name, email)
+		return us.syncTeamMember(ctx, member)
 	} else {
 		return fmt.Errorf("failed to create team member: %w", err)
 	}
@@ -113,18 +114,13 @@ func (us *UserService) insertTeamMember(ctx context.Context, name, email string)
 	return err
 }
 
-func (us *UserService) syncTeamMember(ctx context.Context, member sqlc.TeamMember, name, email string) error {
+func (us *UserService) syncTeamMember(ctx context.Context, member sqlc.TeamMember) error {
 	if member.IsActive.Valid && member.IsActive.Int64 == 0 {
 		if err := us.db.ActivateTeamMember(ctx, member.ID); err != nil {
 			return fmt.Errorf("failed to activate team member: %w", err)
 		}
 	}
-	if member.Name == name {
-		return nil
-	}
-	if err := us.db.UpdateTeamMember(ctx, sqlc.UpdateTeamMemberParams{ID: member.ID, Name: name, Email: email}); err != nil {
-		return fmt.Errorf("failed to update team member: %w", err)
-	}
+
 	return nil
 }
 

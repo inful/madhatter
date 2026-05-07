@@ -93,6 +93,32 @@ func TestUserService_GetOrCreateUser(t *testing.T) {
 	})
 }
 
+func TestUserService_EnsureTeamMember_PreservesExistingName(t *testing.T) {
+	db := setupTestDB(t)
+	t.Setenv("TOKEN_ENCRYPTION_KEY", "MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTI=")
+
+	encryptor, err := NewTokenEncryptor()
+	require.NoError(t, err)
+
+	userService := NewUserService(db.GetQueries(), encryptor)
+	ctx := context.Background()
+
+	_, err = db.AddTeamMember(ctx, "Local Custom Name", "dev@example.com")
+	require.NoError(t, err)
+
+	err = userService.EnsureTeamMember(ctx, &UserInfo{
+		ID:    "provider-user-1",
+		Email: "dev@example.com",
+		Name:  "OAuth Provider Name",
+	})
+	require.NoError(t, err)
+
+	member, err := db.GetMemberByEmail(ctx, "dev@example.com")
+	require.NoError(t, err)
+	assert.Equal(t, "Local Custom Name", member.Name)
+	assert.True(t, member.IsActive)
+}
+
 func TestUserService_OAuthTokens(t *testing.T) {
 	db := setupTestDB(t)
 	t.Setenv("TOKEN_ENCRYPTION_KEY", "MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTI=")

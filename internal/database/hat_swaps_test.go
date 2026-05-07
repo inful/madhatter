@@ -333,4 +333,3 @@ func TestCheckNoOpenSwaps_SecondAssignmentBusy_ReturnsErrSwapAssignmentBusy(t *t
 	err = db.CheckNoOpenSwaps(ctx, aliceAssignmentID, bobAssignmentID)
 	require.ErrorIs(t, err, ErrSwapAssignmentBusy)
 }
-

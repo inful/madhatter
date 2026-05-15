@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -231,4 +232,18 @@ func TestGetAssignmentsByDateRange(t *testing.T) {
 	// Assert
 	require.NoError(t, err)
 	require.Len(t, assignments, 2)
+}
+
+func TestCreateBackup_ReturnsSQLiteSnapshot(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	backupBytes, err := db.CreateBackup(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, backupBytes)
+	require.True(t, strings.HasPrefix(string(backupBytes), "SQLite format 3\x00"))
 }

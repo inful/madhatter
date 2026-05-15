@@ -4,6 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -52,6 +55,26 @@ func (db *DB) GetQueries() *sqlc.Queries {
 
 func (db *DB) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	return db.db.ExecContext(ctx, query, args...)
+}
+
+// CreateBackup creates a consistent SQLite database snapshot and returns its bytes.
+func (db *DB) CreateBackup(ctx context.Context) ([]byte, error) {
+	backupPath := filepath.Join(os.TempDir(), fmt.Sprintf("madhatter-backup-%d.db", time.Now().UnixNano()))
+	defer func() {
+		_ = os.Remove(backupPath)
+	}()
+
+	if _, err := db.db.ExecContext(ctx, "VACUUM INTO ?", backupPath); err != nil {
+		return nil, err
+	}
+
+	//nolint:gosec // backupPath is generated internally with a fixed prefix under os.TempDir.
+	backupBytes, err := os.ReadFile(backupPath)
+	if err != nil {
+		return nil, err
+	}
+
+	return backupBytes, nil
 }
 
 func (db *DB) AddTeamMember(ctx context.Context, name, email string) (string, error) {

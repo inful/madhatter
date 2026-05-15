@@ -7,21 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 )
 
 const sqliteFileHeader = "SQLite format 3\x00"
 
-var requiredRestoreTables = []string{
-	"team_members",
-	"leave_records",
-	"rota_assignments",
-	"calendar_subscriptions",
-	"users",
-	"sessions",
-	"oauth_tokens",
-	"api_tokens",
-}
+const defaultSchemaTableCapacity = 16
 
 // ValidateRestoreCandidate validates an uploaded SQLite backup file without applying it.
 func (db *DB) ValidateRestoreCandidate(ctx context.Context, backupBytes []byte) error {
@@ -91,11 +83,7 @@ func runRestoreCandidateChecks(ctx context.Context, liveDB *sql.DB, candidateDB 
 		return err
 	}
 
-	if err := validateRequiredTables(ctx, candidateDB); err != nil {
-		return err
-	}
-
-	return validateMigrationCompatibility(liveDB, candidateDB)
+	return validateMigrationCompatibility(ctx, liveDB, candidateDB)
 }
 
 func validateSQLiteIntegrity(ctx context.Context, candidateDB *sql.DB) error {
@@ -131,28 +119,7 @@ func validateSQLiteIntegrity(ctx context.Context, candidateDB *sql.DB) error {
 	return nil
 }
 
-func validateRequiredTables(ctx context.Context, candidateDB *sql.DB) error {
-	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(requiredRestoreTables)), ",")
-	query := "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN (" + placeholders + ")"
-
-	args := make([]any, 0, len(requiredRestoreTables))
-	for i := range requiredRestoreTables {
-		args = append(args, requiredRestoreTables[i])
-	}
-
-	var tableCount int
-	if err := candidateDB.QueryRowContext(ctx, query, args...).Scan(&tableCount); err != nil {
-		return err
-	}
-
-	if tableCount != len(requiredRestoreTables) {
-		return fmt.Errorf("backup is missing required tables: expected %d, found %d", len(requiredRestoreTables), tableCount)
-	}
-
-	return nil
-}
-
-func validateMigrationCompatibility(liveDB *sql.DB, candidateDB *sql.DB) error {
+func validateMigrationCompatibility(ctx context.Context, liveDB *sql.DB, candidateDB *sql.DB) error {
 	liveVersion, liveDirty, err := GetMigrationVersion(liveDB)
 	if err != nil {
 		return fmt.Errorf("failed to read current migration version: %w", err)
@@ -171,9 +138,62 @@ func validateMigrationCompatibility(liveDB *sql.DB, candidateDB *sql.DB) error {
 		return errors.New("uploaded backup is in a dirty migration state")
 	}
 
-	if candidateVersion != liveVersion {
-		return fmt.Errorf("migration version mismatch: uploaded=%d current=%d", candidateVersion, liveVersion)
+	if candidateVersion > liveVersion {
+		return fmt.Errorf("uploaded backup version %d is newer than current version %d", candidateVersion, liveVersion)
+	}
+
+	if candidateVersion < liveVersion {
+		if err := MigrateToVersion(candidateDB, liveVersion); err != nil {
+			return fmt.Errorf("failed to migrate uploaded backup from %d to %d: %w", candidateVersion, liveVersion, err)
+		}
+
+		if err := validateSchemaParity(ctx, liveDB, candidateDB); err != nil {
+			return err
+		}
 	}
 
 	return nil
+}
+
+func validateSchemaParity(ctx context.Context, liveDB *sql.DB, candidateDB *sql.DB) error {
+	liveTables, err := listUserTables(ctx, liveDB)
+	if err != nil {
+		return fmt.Errorf("failed to read current schema tables: %w", err)
+	}
+
+	candidateTables, err := listUserTables(ctx, candidateDB)
+	if err != nil {
+		return fmt.Errorf("failed to read uploaded schema tables: %w", err)
+	}
+
+	if !slices.Equal(liveTables, candidateTables) {
+		return fmt.Errorf("schema mismatch after migration: uploaded tables=%v current tables=%v", candidateTables, liveTables)
+	}
+
+	return nil
+}
+
+func listUserTables(ctx context.Context, db *sql.DB) ([]string, error) {
+	rows, err := db.QueryContext(ctx, "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = rows.Close()
+	}()
+
+	tables := make([]string, 0, defaultSchemaTableCapacity)
+	for rows.Next() {
+		var tableName string
+		if err := rows.Scan(&tableName); err != nil {
+			return nil, err
+		}
+		tables = append(tables, tableName)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return tables, nil
 }

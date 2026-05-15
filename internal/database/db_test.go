@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"database/sql"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -293,4 +294,39 @@ func TestApplyRestoreCandidate_RestoresPreviousState(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, members, 1)
 	require.Equal(t, "Alice", members[0].Name)
+}
+
+func TestValidateRestoreCandidate_OlderBackupVersion_IsAccepted(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	backupBytes, err := db.CreateBackup(ctx)
+	require.NoError(t, err)
+
+	liveVersion, _, err := GetMigrationVersion(db.db)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, liveVersion, uint(1))
+
+	tmpFile := filepath.Join(t.TempDir(), "older-version.db")
+	require.NoError(t, os.WriteFile(tmpFile, backupBytes, 0o600))
+
+	candidateDB, err := sql.Open("sqlite3", tmpFile)
+	require.NoError(t, err)
+
+	if liveVersion > 0 {
+		require.NoError(t, MigrateToVersion(candidateDB, liveVersion-1))
+	}
+
+	require.NoError(t, candidateDB.Close())
+
+	//nolint:gosec // tmpFile is created within t.TempDir and controlled by the test.
+	olderBackupBytes, err := os.ReadFile(tmpFile)
+	require.NoError(t, err)
+
+	err = db.ValidateRestoreCandidate(ctx, olderBackupBytes)
+	require.NoError(t, err)
 }

@@ -34,12 +34,18 @@
     </header>
     <div class="card-content">
         <form method="POST" action="/admin/database/restore" enctype="multipart/form-data">
+            {{if .ValidatedRestoreToken}}
+                <input type="hidden" name="validated_token" value="{{.ValidatedRestoreToken}}">
+            {{end}}
             <div class="field">
                 <label class="label">SQLite Backup File</label>
                 <div class="control">
-                    <input class="input" type="file" name="backup_file" accept=".db,.sqlite,.sqlite3,application/vnd.sqlite3" required>
+                    <input class="input" type="file" name="backup_file" accept=".db,.sqlite,.sqlite3,application/vnd.sqlite3" {{if not .ValidatedRestoreToken}}required{{end}}>
                 </div>
                 <p class="help">Maximum file size: 50 MB.</p>
+                {{if .ValidatedRestoreToken}}
+                    <p class="help is-success">A validated restore file is cached server-side. You can apply without re-uploading.</p>
+                {{end}}
             </div>
 
             <div class="field">

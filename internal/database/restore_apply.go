@@ -9,6 +9,8 @@ import (
 	"strings"
 )
 
+const defaultRestoreTableCapacity = 16
+
 // ApplyRestoreCandidate validates and applies an uploaded backup to the live database.
 func (db *DB) ApplyRestoreCandidate(ctx context.Context, backupBytes []byte) error {
 	tmpPath, err := writeTempRestoreCandidate(backupBytes)
@@ -23,11 +25,13 @@ func (db *DB) ApplyRestoreCandidate(ctx context.Context, backupBytes []byte) err
 	if err != nil {
 		return err
 	}
-	defer func() {
-		_ = candidateDB.Close()
-	}()
 
 	if err := runRestoreCandidateChecks(ctx, db.db, candidateDB); err != nil {
+		_ = candidateDB.Close()
+		return err
+	}
+
+	if err := candidateDB.Close(); err != nil {
 		return err
 	}
 
@@ -144,7 +148,7 @@ func getRestoreTableNames(ctx context.Context, tx *sql.Tx) ([]string, error) {
 		_ = rows.Close()
 	}()
 
-	tableNames := make([]string, 0, len(requiredRestoreTables)+1)
+	tableNames := make([]string, 0, defaultRestoreTableCapacity)
 	for rows.Next() {
 		var tableName string
 		if err := rows.Scan(&tableName); err != nil {

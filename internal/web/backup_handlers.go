@@ -1,11 +1,15 @@
 package web
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/inful/madhatter/internal/auth"
 )
 
@@ -45,7 +49,7 @@ func (h *Handler) handleDatabaseRestore(w http.ResponseWriter, r *http.Request) 
 
 	switch r.Method {
 	case http.MethodGet:
-		h.renderDatabaseRestore(w, r, "", false)
+		h.renderDatabaseRestore(w, r, "", false, "")
 	case http.MethodPost:
 		h.handleDatabaseRestorePost(w, r)
 	default:
@@ -60,10 +64,54 @@ func (h *Handler) handleDatabaseRestorePost(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	mode := r.FormValue("mode")
+	validatedToken := strings.TrimSpace(r.FormValue("validated_token"))
+
+	if mode == "apply" && validatedToken != "" {
+		h.handleDatabaseRestoreApplyWithToken(w, r, validatedToken)
+		return
+	}
+
+	content, err := h.readRestoreUpload(w, r)
+	if err != nil {
+		return
+	}
+
+	if mode == "apply" {
+		h.handleDatabaseRestoreApply(w, r, content, "")
+		return
+	}
+
+	validateErr := h.db.ValidateRestoreCandidate(r.Context(), content)
+	if validateErr != nil {
+		h.renderDatabaseRestore(w, r, "Validation failed: "+validateErr.Error(), false, "")
+		return
+	}
+
+	validatedToken, err = h.storePendingRestore(content)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	h.renderDatabaseRestore(w, r, "Validation succeeded. You can apply now without re-uploading.", true, validatedToken)
+}
+
+func (h *Handler) handleDatabaseRestoreApplyWithToken(w http.ResponseWriter, r *http.Request, validatedToken string) {
+	backupBytes, err := h.loadPendingRestore(validatedToken)
+	if err != nil {
+		h.renderDatabaseRestore(w, r, "Validated file expired or unavailable. Please validate again.", false, "")
+		return
+	}
+
+	h.handleDatabaseRestoreApply(w, r, backupBytes, validatedToken)
+}
+
+func (h *Handler) readRestoreUpload(w http.ResponseWriter, r *http.Request) ([]byte, error) {
 	file, _, err := r.FormFile("backup_file")
 	if err != nil {
 		http.Error(w, "backup_file is required", http.StatusBadRequest)
-		return
+		return nil, err
 	}
 	defer func() {
 		_ = file.Close()
@@ -72,31 +120,20 @@ func (h *Handler) handleDatabaseRestorePost(w http.ResponseWriter, r *http.Reque
 	content, err := io.ReadAll(io.LimitReader(file, maxRestoreUploadBytes+1))
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
+		return nil, err
 	}
 
 	if int64(len(content)) > maxRestoreUploadBytes {
 		http.Error(w, "uploaded file exceeds maximum allowed size", http.StatusRequestEntityTooLarge)
-		return
+		return nil, errors.New("uploaded file exceeds maximum allowed size")
 	}
 
-	mode := r.FormValue("mode")
-	if mode == "apply" {
-		h.handleDatabaseRestoreApply(w, r, content)
-		return
-	}
-
-	if err := h.db.ValidateRestoreCandidate(r.Context(), content); err != nil {
-		h.renderDatabaseRestore(w, r, "Validation failed: "+err.Error(), false)
-		return
-	}
-
-	h.renderDatabaseRestore(w, r, "Validation succeeded. This file is compatible for restore.", true)
+	return content, nil
 }
 
-func (h *Handler) handleDatabaseRestoreApply(w http.ResponseWriter, r *http.Request, backupBytes []byte) {
+func (h *Handler) handleDatabaseRestoreApply(w http.ResponseWriter, r *http.Request, backupBytes []byte, validatedToken string) {
 	if r.FormValue("confirm_overwrite") != "on" {
-		h.renderDatabaseRestore(w, r, "Restore blocked: you must confirm overwrite before applying.", false)
+		h.renderDatabaseRestore(w, r, "Restore blocked: you must confirm overwrite before applying.", false, validatedToken)
 		return
 	}
 
@@ -112,14 +149,18 @@ func (h *Handler) handleDatabaseRestoreApply(w http.ResponseWriter, r *http.Requ
 	defer h.restoreBusy.Store(false)
 
 	if err := h.db.ApplyRestoreCandidate(r.Context(), backupBytes); err != nil {
-		h.renderDatabaseRestore(w, r, "Restore failed: "+err.Error(), false)
+		h.renderDatabaseRestore(w, r, "Restore failed: "+err.Error(), false, validatedToken)
 		return
 	}
 
-	h.renderDatabaseRestore(w, r, "Restore applied successfully.", true)
+	if validatedToken != "" {
+		h.deletePendingRestore(validatedToken)
+	}
+
+	h.renderDatabaseRestore(w, r, "Restore applied successfully.", true, "")
 }
 
-func (h *Handler) renderDatabaseRestore(w http.ResponseWriter, r *http.Request, message string, ok bool) {
+func (h *Handler) renderDatabaseRestore(w http.ResponseWriter, r *http.Request, message string, ok bool, validatedToken string) {
 	ctx := r.Context()
 	data := map[string]any{
 		"Template": "database_restore",
@@ -135,7 +176,61 @@ func (h *Handler) renderDatabaseRestore(w http.ResponseWriter, r *http.Request, 
 		data["ValidationOK"] = ok
 	}
 
+	if validatedToken != "" {
+		data["ValidatedRestoreToken"] = validatedToken
+	}
+
 	if err := h.tmpl.ExecuteTemplate(w, "database_restore.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+func (h *Handler) storePendingRestore(content []byte) (string, error) {
+	tmpFile, err := os.CreateTemp("", "madhatter-validated-restore-*.db")
+	if err != nil {
+		return "", err
+	}
+	defer func() {
+		_ = tmpFile.Close()
+	}()
+
+	if _, err := tmpFile.Write(content); err != nil {
+		return "", err
+	}
+
+	if err := tmpFile.Sync(); err != nil {
+		return "", err
+	}
+
+	token := uuid.NewString()
+	h.pendingMu.Lock()
+	h.pendingRestore[token] = tmpFile.Name()
+	h.pendingMu.Unlock()
+
+	return token, nil
+}
+
+func (h *Handler) loadPendingRestore(token string) ([]byte, error) {
+	h.pendingMu.Lock()
+	path, ok := h.pendingRestore[token]
+	h.pendingMu.Unlock()
+	if !ok {
+		return nil, os.ErrNotExist
+	}
+
+	//nolint:gosec // Path comes from server-created temp file map, not user-provided input.
+	return os.ReadFile(path)
+}
+
+func (h *Handler) deletePendingRestore(token string) {
+	h.pendingMu.Lock()
+	path, ok := h.pendingRestore[token]
+	if ok {
+		delete(h.pendingRestore, token)
+	}
+	h.pendingMu.Unlock()
+
+	if ok {
+		_ = os.Remove(path)
 	}
 }

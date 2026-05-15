@@ -1,0 +1,63 @@
+{{define "database_restore.html"}}
+{{template "base" .}}
+{{end}}
+
+{{define "database_restore_title"}}Database Restore Validation{{end}}
+
+{{define "database_restore_content"}}
+{{template "user_card" .}}
+{{template "page_header" (dict "Title" "Validate Database Restore" "Icon" "fas fa-database" "BackHref" "/" "BackLabel" "Dashboard")}}
+
+<div class="card">
+    <header class="card-header">
+        <p class="card-header-title">
+            <i class="fas fa-shield-alt mr-2"></i> Validation Only
+        </p>
+    </header>
+    <div class="card-content">
+        <p class="mb-2">Upload a database backup file to validate it for restore compatibility.</p>
+        <p class="is-size-7 has-text-grey">This milestone does not modify live data. It only validates integrity and schema compatibility.</p>
+    </div>
+</div>
+
+{{if .ValidationMessage}}
+<div class="notification {{if .ValidationOK}}is-success is-light{{else}}is-danger is-light{{end}}">
+    {{.ValidationMessage}}
+</div>
+{{end}}
+
+<div class="card">
+    <header class="card-header">
+        <p class="card-header-title">
+            <i class="fas fa-file-upload mr-2"></i> Upload Backup File
+        </p>
+    </header>
+    <div class="card-content">
+        <form method="POST" action="/admin/database/restore" enctype="multipart/form-data">
+            <div class="field">
+                <label class="label">SQLite Backup File</label>
+                <div class="control">
+                    <input class="input" type="file" name="backup_file" accept=".db,.sqlite,.sqlite3,application/vnd.sqlite3" required>
+                </div>
+                <p class="help">Maximum file size: 50 MB.</p>
+            </div>
+
+            <div class="field">
+                <div class="control">
+                    <button type="submit" class="button is-danger is-fullwidth submit-btn">
+                        <i class="fas fa-check-circle mr-2"></i> Validate Restore File
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+{{end}}
+
+{{define "database_restore_styles"}}
+<style>
+</style>
+{{end}}
+
+{{define "database_restore_scripts"}}
+{{end}}

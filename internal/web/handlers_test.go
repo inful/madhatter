@@ -107,6 +107,7 @@ func TestAllTemplatesParse(t *testing.T) {
 		"team.html",
 		"leave_report.html",
 		"schedule_generate.html",
+		"database_restore.html",
 		"calendar.html",
 	}
 

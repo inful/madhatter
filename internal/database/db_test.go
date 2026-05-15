@@ -247,3 +247,27 @@ func TestCreateBackup_ReturnsSQLiteSnapshot(t *testing.T) {
 	require.NotEmpty(t, backupBytes)
 	require.True(t, strings.HasPrefix(string(backupBytes), "SQLite format 3\x00"))
 }
+
+func TestValidateRestoreCandidate_ValidBackup(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	_, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	backupBytes, err := db.CreateBackup(ctx)
+	require.NoError(t, err)
+
+	err = db.ValidateRestoreCandidate(ctx, backupBytes)
+	require.NoError(t, err)
+}
+
+func TestValidateRestoreCandidate_InvalidBytes(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	err := db.ValidateRestoreCandidate(context.Background(), []byte("not-a-sqlite-file"))
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "valid SQLite")
+}

@@ -67,6 +67,7 @@ func (h *Handler) registerRoutes() {
 		r.HandleFunc("/leave/{id}/delete", h.handleLeaveDelete)
 		r.HandleFunc("/schedule/generate", h.handleScheduleGenerate)
 		r.HandleFunc("/admin/database/backup", h.handleDatabaseBackup)
+		r.HandleFunc("/admin/database/restore", h.handleDatabaseRestore)
 		r.HandleFunc("/calendar/subscriptions", h.handleCalendarSubscriptions)
 		r.HandleFunc("/calendar/subscriptions/cleanup", h.handleCalendarSubscriptionsCleanup)
 		r.Post("/swaps/{id}/delete", h.handleSwapAdminDelete)

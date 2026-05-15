@@ -2,21 +2,21 @@
 {{template "base" .}}
 {{end}}
 
-{{define "database_restore_title"}}Database Restore Validation{{end}}
+{{define "database_restore_title"}}Database Restore{{end}}
 
 {{define "database_restore_content"}}
 {{template "user_card" .}}
-{{template "page_header" (dict "Title" "Validate Database Restore" "Icon" "fas fa-database" "BackHref" "/" "BackLabel" "Dashboard")}}
+{{template "page_header" (dict "Title" "Database Restore" "Icon" "fas fa-database" "BackHref" "/" "BackLabel" "Dashboard")}}
 
 <div class="card">
     <header class="card-header">
         <p class="card-header-title">
-            <i class="fas fa-shield-alt mr-2"></i> Validation Only
+            <i class="fas fa-shield-alt mr-2"></i> Safe Restore Workflow
         </p>
     </header>
     <div class="card-content">
-        <p class="mb-2">Upload a database backup file to validate it for restore compatibility.</p>
-        <p class="is-size-7 has-text-grey">This milestone does not modify live data. It only validates integrity and schema compatibility.</p>
+        <p class="mb-2">Upload a database backup file to validate compatibility, then optionally apply it.</p>
+        <p class="is-size-7 has-text-grey">Apply will overwrite current data. Use validation first and keep a current backup before proceeding.</p>
     </div>
 </div>
 
@@ -43,9 +43,21 @@
             </div>
 
             <div class="field">
-                <div class="control">
-                    <button type="submit" class="button is-danger is-fullwidth submit-btn">
+                <label class="checkbox">
+                    <input type="checkbox" name="confirm_overwrite">
+                    <span class="ml-2">I understand that applying restore overwrites current database data.</span>
+                </label>
+            </div>
+
+            <div class="field is-grouped is-grouped-right">
+                <div class="control is-expanded">
+                    <button type="submit" name="mode" value="validate" class="button is-info is-fullwidth submit-btn">
                         <i class="fas fa-check-circle mr-2"></i> Validate Restore File
+                    </button>
+                </div>
+                <div class="control is-expanded">
+                    <button type="submit" name="mode" value="apply" class="button is-danger is-fullwidth submit-btn">
+                        <i class="fas fa-exclamation-triangle mr-2"></i> Apply Restore
                     </button>
                 </div>
             </div>

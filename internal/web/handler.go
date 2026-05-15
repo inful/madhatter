@@ -2,6 +2,8 @@ package web
 
 import (
 	"html/template"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -31,6 +33,8 @@ type Handler struct {
 	authMiddleware *auth.Middleware
 	holidayChecker func(time.Time) bool
 	development    bool
+	restoreMu      sync.Mutex
+	restoreBusy    atomic.Bool
 }
 
 type presenceDay struct {

@@ -47,13 +47,13 @@ func (h *Handler) handleDatabaseRestore(w http.ResponseWriter, r *http.Request) 
 	case http.MethodGet:
 		h.renderDatabaseRestore(w, r, "", false)
 	case http.MethodPost:
-		h.handleDatabaseRestoreValidation(w, r)
+		h.handleDatabaseRestorePost(w, r)
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
-func (h *Handler) handleDatabaseRestoreValidation(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) handleDatabaseRestorePost(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxRestoreUploadBytes)
 	if err := r.ParseMultipartForm(maxRestoreUploadBytes); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -80,12 +80,43 @@ func (h *Handler) handleDatabaseRestoreValidation(w http.ResponseWriter, r *http
 		return
 	}
 
+	mode := r.FormValue("mode")
+	if mode == "apply" {
+		h.handleDatabaseRestoreApply(w, r, content)
+		return
+	}
+
 	if err := h.db.ValidateRestoreCandidate(r.Context(), content); err != nil {
 		h.renderDatabaseRestore(w, r, "Validation failed: "+err.Error(), false)
 		return
 	}
 
 	h.renderDatabaseRestore(w, r, "Validation succeeded. This file is compatible for restore.", true)
+}
+
+func (h *Handler) handleDatabaseRestoreApply(w http.ResponseWriter, r *http.Request, backupBytes []byte) {
+	if r.FormValue("confirm_overwrite") != "on" {
+		h.renderDatabaseRestore(w, r, "Restore blocked: you must confirm overwrite before applying.", false)
+		return
+	}
+
+	h.restoreMu.Lock()
+	defer h.restoreMu.Unlock()
+
+	if h.restoreBusy.Load() {
+		http.Error(w, "A restore is already in progress", http.StatusConflict)
+		return
+	}
+
+	h.restoreBusy.Store(true)
+	defer h.restoreBusy.Store(false)
+
+	if err := h.db.ApplyRestoreCandidate(r.Context(), backupBytes); err != nil {
+		h.renderDatabaseRestore(w, r, "Restore failed: "+err.Error(), false)
+		return
+	}
+
+	h.renderDatabaseRestore(w, r, "Restore applied successfully.", true)
 }
 
 func (h *Handler) renderDatabaseRestore(w http.ResponseWriter, r *http.Request, message string, ok bool) {

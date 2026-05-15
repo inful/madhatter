@@ -271,3 +271,26 @@ func TestValidateRestoreCandidate_InvalidBytes(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "valid SQLite")
 }
+
+func TestApplyRestoreCandidate_RestoresPreviousState(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	backupBytes, err := db.CreateBackup(ctx)
+	require.NoError(t, err)
+
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	err = db.ApplyRestoreCandidate(ctx, backupBytes)
+	require.NoError(t, err)
+
+	members, err := db.GetActiveTeamMembers(ctx)
+	require.NoError(t, err)
+	require.Len(t, members, 1)
+	require.Equal(t, "Alice", members[0].Name)
+}

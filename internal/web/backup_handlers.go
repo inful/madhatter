@@ -13,7 +13,10 @@ import (
 	"github.com/inful/madhatter/internal/auth"
 )
 
-const maxRestoreUploadBytes = 50 << 20
+const (
+	maxRestoreUploadBytes  = 50 << 20
+	pendingRestoreTokenTTL = 30 * time.Minute
+)
 
 func (h *Handler) handleDatabaseBackup(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
@@ -49,6 +52,7 @@ func (h *Handler) handleDatabaseRestore(w http.ResponseWriter, r *http.Request) 
 
 	switch r.Method {
 	case http.MethodGet:
+		h.cleanupExpiredPendingRestores(time.Now())
 		h.renderDatabaseRestore(w, r, "", false, "")
 	case http.MethodPost:
 		h.handleDatabaseRestorePost(w, r)
@@ -98,13 +102,18 @@ func (h *Handler) handleDatabaseRestorePost(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *Handler) handleDatabaseRestoreApplyWithToken(w http.ResponseWriter, r *http.Request, validatedToken string) {
-	backupBytes, err := h.loadPendingRestore(validatedToken)
+	if r.FormValue("confirm_overwrite") != "on" {
+		h.renderDatabaseRestore(w, r, "Restore blocked: you must confirm overwrite before applying.", false, validatedToken)
+		return
+	}
+
+	backupBytes, err := h.consumePendingRestore(validatedToken, time.Now())
 	if err != nil {
 		h.renderDatabaseRestore(w, r, "Validated file expired or unavailable. Please validate again.", false, "")
 		return
 	}
 
-	h.handleDatabaseRestoreApply(w, r, backupBytes, validatedToken)
+	h.handleDatabaseRestoreApply(w, r, backupBytes, "")
 }
 
 func (h *Handler) readRestoreUpload(w http.ResponseWriter, r *http.Request) ([]byte, error) {
@@ -204,33 +213,61 @@ func (h *Handler) storePendingRestore(content []byte) (string, error) {
 
 	token := uuid.NewString()
 	h.pendingMu.Lock()
-	h.pendingRestore[token] = tmpFile.Name()
+	h.cleanupExpiredPendingRestoresLocked(time.Now())
+	h.pendingRestore[token] = pendingRestoreItem{
+		Path:      tmpFile.Name(),
+		CreatedAt: time.Now(),
+	}
 	h.pendingMu.Unlock()
 
 	return token, nil
 }
 
-func (h *Handler) loadPendingRestore(token string) ([]byte, error) {
+func (h *Handler) consumePendingRestore(token string, now time.Time) ([]byte, error) {
 	h.pendingMu.Lock()
-	path, ok := h.pendingRestore[token]
+	h.cleanupExpiredPendingRestoresLocked(now)
+	item, ok := h.pendingRestore[token]
+	if ok {
+		delete(h.pendingRestore, token)
+	}
 	h.pendingMu.Unlock()
 	if !ok {
 		return nil, os.ErrNotExist
 	}
 
-	//nolint:gosec // Path comes from server-created temp file map, not user-provided input.
-	return os.ReadFile(path)
+	defer func() {
+		_ = os.Remove(item.Path)
+	}()
+
+	return os.ReadFile(item.Path)
 }
 
 func (h *Handler) deletePendingRestore(token string) {
 	h.pendingMu.Lock()
-	path, ok := h.pendingRestore[token]
+	item, ok := h.pendingRestore[token]
 	if ok {
 		delete(h.pendingRestore, token)
 	}
 	h.pendingMu.Unlock()
 
 	if ok {
-		_ = os.Remove(path)
+		_ = os.Remove(item.Path)
+	}
+}
+
+func (h *Handler) cleanupExpiredPendingRestores(now time.Time) {
+	h.pendingMu.Lock()
+	h.cleanupExpiredPendingRestoresLocked(now)
+	h.pendingMu.Unlock()
+}
+
+func (h *Handler) cleanupExpiredPendingRestoresLocked(now time.Time) {
+	for token, item := range h.pendingRestore {
+		if now.Sub(item.CreatedAt) <= pendingRestoreTokenTTL {
+			continue
+		}
+
+		delete(h.pendingRestore, token)
+		_ = os.Remove(item.Path)
 	}
 }

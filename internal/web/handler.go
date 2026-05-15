@@ -36,7 +36,12 @@ type Handler struct {
 	restoreMu      sync.Mutex
 	restoreBusy    atomic.Bool
 	pendingMu      sync.Mutex
-	pendingRestore map[string]string
+	pendingRestore map[string]pendingRestoreItem
+}
+
+type pendingRestoreItem struct {
+	Path      string
+	CreatedAt time.Time
 }
 
 type presenceDay struct {
@@ -74,7 +79,7 @@ func NewHandler(db *database.DB, authManager *auth.AuthManager, authMiddleware *
 		authMiddleware: authMiddleware,
 		holidayChecker: holidayChecker,
 		development:    development,
-		pendingRestore: make(map[string]string),
+		pendingRestore: make(map[string]pendingRestoreItem),
 	}
 
 	h.registerRoutes()

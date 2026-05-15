@@ -72,16 +72,16 @@ func (db *DB) applyRestoreFromFile(ctx context.Context, restorePath string) erro
 		return err
 	}
 
+	if err := postRestoreIntegrityChecksTx(ctx, tx); err != nil {
+		return err
+	}
+
 	if err := tx.Commit(); err != nil {
 		return err
 	}
 	committed = true
 
 	if err := detachRestoreDatabase(ctx, conn); err != nil {
-		return err
-	}
-
-	if err := postRestoreIntegrityChecks(ctx, db.db); err != nil {
 		return err
 	}
 
@@ -168,12 +168,12 @@ func quoteIdentifier(input string) string {
 	return `"` + strings.ReplaceAll(input, `"`, `""`) + `"`
 }
 
-func postRestoreIntegrityChecks(ctx context.Context, db *sql.DB) error {
-	if err := validateSQLiteIntegrity(ctx, db); err != nil {
+func postRestoreIntegrityChecksTx(ctx context.Context, tx *sql.Tx) error {
+	if err := validateSQLiteIntegrityTx(ctx, tx); err != nil {
 		return fmt.Errorf("post-restore integrity check failed: %w", err)
 	}
 
-	rows, err := db.QueryContext(ctx, "PRAGMA foreign_key_check")
+	rows, err := tx.QueryContext(ctx, "PRAGMA foreign_key_check")
 	if err != nil {
 		return err
 	}
@@ -193,4 +193,37 @@ func postRestoreIntegrityChecks(ctx context.Context, db *sql.DB) error {
 	}
 
 	return rows.Err()
+}
+
+func validateSQLiteIntegrityTx(ctx context.Context, tx *sql.Tx) error {
+	rows, err := tx.QueryContext(ctx, "PRAGMA integrity_check")
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = rows.Close()
+	}()
+
+	hasRows := false
+	for rows.Next() {
+		hasRows = true
+		var result string
+		if err := rows.Scan(&result); err != nil {
+			return err
+		}
+
+		if !strings.EqualFold(result, "ok") {
+			return fmt.Errorf("integrity check failed: %s", result)
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	if !hasRows {
+		return errors.New("integrity check returned no result")
+	}
+
+	return nil
 }

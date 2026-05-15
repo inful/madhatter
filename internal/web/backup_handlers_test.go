@@ -335,3 +335,43 @@ func TestHandleDatabaseRestore_ValidateThenApply_WithoutReupload(t *testing.T) {
 	require.Len(t, members, 1)
 	require.Equal(t, "Alice", members[0].Name)
 }
+
+func TestHandleDatabaseRestore_PostAdmin_Apply_WhenRestoreBusy_ReturnsConflict(t *testing.T) {
+	db, err := database.New(":memory:")
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	_, err = db.AddTeamMember(context.Background(), "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	backupBytes, err := db.CreateBackup(context.Background())
+	require.NoError(t, err)
+
+	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+	h.restoreBusy.Store(true)
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, err := writer.CreateFormFile("backup_file", "backup.db")
+	require.NoError(t, err)
+	_, err = part.Write(backupBytes)
+	require.NoError(t, err)
+	require.NoError(t, writer.WriteField("mode", "apply"))
+	require.NoError(t, writer.WriteField("confirm_overwrite", "on"))
+	require.NoError(t, writer.Close())
+
+	req := httptest.NewRequest(http.MethodPost, "/admin/database/restore", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req = req.WithContext(context.WithValue(req.Context(), auth.UserContextKey, &sqlc.GetSessionByTokenRow{
+		Email:   "admin@example.com",
+		Name:    "Admin",
+		IsAdmin: sql.NullInt64{Int64: 1, Valid: true},
+	}))
+
+	rec := httptest.NewRecorder()
+	h.handleDatabaseRestore(rec, req)
+
+	assert.Equal(t, http.StatusConflict, rec.Code)
+	assert.Contains(t, rec.Body.String(), "already in progress")
+}

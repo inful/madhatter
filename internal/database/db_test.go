@@ -330,3 +330,41 @@ func TestValidateRestoreCandidate_OlderBackupVersion_IsAccepted(t *testing.T) {
 	err = db.ValidateRestoreCandidate(ctx, olderBackupBytes)
 	require.NoError(t, err)
 }
+
+func TestApplyRestoreCandidate_CopyFailure_RollsBack(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	backupBytes, err := db.CreateBackup(ctx)
+	require.NoError(t, err)
+
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	tmpPath, err := writeTempRestoreCandidate(backupBytes)
+	require.NoError(t, err)
+	defer func() { _ = os.Remove(tmpPath) }()
+
+	conn, err := db.db.Conn(ctx)
+	require.NoError(t, err)
+	defer func() { _ = conn.Close() }()
+
+	tx, err := conn.BeginTx(ctx, nil)
+	require.NoError(t, err)
+
+	tableNames, err := prepareRestoreTransaction(ctx, tx, tmpPath)
+	require.NoError(t, err)
+	tableNames = append(tableNames, "missing_table")
+
+	err = copyTablesFromRestore(ctx, tx, tableNames)
+	require.Error(t, err)
+	require.NoError(t, tx.Rollback())
+
+	members, err := db.GetActiveTeamMembers(ctx)
+	require.NoError(t, err)
+	require.Len(t, members, 2)
+}

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/inful/madhatter/internal/database"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -68,4 +69,46 @@ func TestGetUpcomingPresenceFrom_SkipsNonBusinessDays(t *testing.T) {
 	require.Equal(t, "Alice", presence[1].Present[0].Name)
 	require.Len(t, presence[1].Away, 1)
 	require.Equal(t, "Bob", presence[1].Away[0].Member.Name)
+}
+
+func TestGetUpcomingPresenceFrom_ShowsSwapBadgeForSwappedAssignment(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupPresenceTestDB(t)
+	defer cleanup()
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	start := nextBusinessDay(time.Now().AddDate(0, 0, 7))
+	next := nextBusinessDay(start.AddDate(0, 0, 1))
+
+	aliceAssignmentID, err := db.CreateRotaAssignment(ctx, start.Format("2006-01-02"), aliceID, false, nil)
+	require.NoError(t, err)
+	bobAssignmentID, err := db.CreateRotaAssignment(ctx, next.Format("2006-01-02"), bobID, false, nil)
+	require.NoError(t, err)
+
+	swapID, err := db.CreateHatSwap(ctx, aliceAssignmentID, bobAssignmentID, aliceID, bobID)
+	require.NoError(t, err)
+	require.NoError(t, db.ExecuteSwap(ctx, swapID))
+
+	handler := &Handler{db: db}
+	presence, err := handler.getUpcomingPresenceFrom(ctx, start)
+	require.NoError(t, err)
+	require.NotEmpty(t, presence)
+
+	require.Equal(t, start.Format("2006-01-02"), presence[0].DateISO)
+	require.NotNil(t, presence[0].Assigned)
+	assert.Equal(t, bobID, presence[0].Assigned.ID)
+	assert.True(t, presence[0].AssignedSwapped)
+}
+
+func nextBusinessDay(from time.Time) time.Time {
+	date := time.Date(from.Year(), from.Month(), from.Day(), 0, 0, 0, 0, from.Location())
+	for date.Weekday() == time.Saturday || date.Weekday() == time.Sunday {
+		date = date.AddDate(0, 0, 1)
+	}
+
+	return date
 }

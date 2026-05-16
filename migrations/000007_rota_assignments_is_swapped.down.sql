@@ -1,3 +1,5 @@
+PRAGMA foreign_keys = OFF;
+
 -- SQLite does not support DROP COLUMN in older versions, so we recreate the table without is_swapped.
 CREATE TABLE rota_assignments_backup (
     id TEXT PRIMARY KEY,
@@ -16,3 +18,5 @@ INSERT INTO rota_assignments_backup SELECT id, date, member_id, is_cover, origin
 DROP TABLE rota_assignments;
 
 ALTER TABLE rota_assignments_backup RENAME TO rota_assignments;
+
+PRAGMA foreign_keys = ON;

@@ -22,7 +22,6 @@ const (
 var (
 	ErrSwapNotPending              = errors.New("swap is no longer pending")
 	ErrSwapDatePassed              = errors.New("one of the HAT days has already passed and cannot be swapped")
-	ErrSwapSameMember              = errors.New("swap target must belong to another member")
 	ErrSwapAssignmentBusy          = errors.New("one of the assignments already has an open swap request")
 	ErrSwapSameAssignment          = errors.New("cannot swap an assignment with itself")
 	ErrSwapNotOwner                = errors.New("you can only swap your own assignments")
@@ -130,7 +129,7 @@ func (db *DB) CreateHatSwap(ctx context.Context, requesterAssignmentID, targetAs
 	}
 
 	if requesterMemberID == targetMemberID {
-		return "", ErrSwapSameMember
+		return "", ErrSwapTargetSelf
 	}
 
 	id := uuid.New().String()

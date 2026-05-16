@@ -146,9 +146,6 @@ func (s *Server) handleCreateSwap(ctx context.Context, input *CreateSwapInput) (
 		tgtAssignment.MemberID,
 	)
 	if err != nil {
-		if errors.Is(err, database.ErrSwapSameMember) {
-			return nil, huma.Error422UnprocessableEntity(err.Error(), nil)
-		}
 		if errors.Is(err, database.ErrSwapAssignmentBusy) {
 			return nil, huma.Error409Conflict(err.Error())
 		}

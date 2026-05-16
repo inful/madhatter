@@ -68,6 +68,75 @@ func TestExecuteSwap_RejectsPastAssignments(t *testing.T) {
 	assert.Equal(t, bobID, bobAssignment.MemberID)
 }
 
+func TestExecuteSwap_SwapsMembersAndSetsIsSwapped(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	baseDate := time.Now().AddDate(0, 0, 7)
+	aliceAssignmentID, err := db.CreateRotaAssignment(ctx, baseDate.Format("2006-01-02"), aliceID, false, nil)
+	require.NoError(t, err)
+	bobAssignmentID, err := db.CreateRotaAssignment(ctx, baseDate.AddDate(0, 0, 1).Format("2006-01-02"), bobID, false, nil)
+	require.NoError(t, err)
+
+	swapID, err := db.CreateHatSwap(ctx, aliceAssignmentID, bobAssignmentID, aliceID, bobID)
+	require.NoError(t, err)
+
+	err = db.ExecuteSwap(ctx, swapID)
+	require.NoError(t, err)
+
+	aliceAssignment, err := db.GetAssignmentByID(ctx, aliceAssignmentID)
+	require.NoError(t, err)
+	assert.Equal(t, bobID, aliceAssignment.MemberID)
+	assert.True(t, aliceAssignment.IsSwapped)
+
+	bobAssignment, err := db.GetAssignmentByID(ctx, bobAssignmentID)
+	require.NoError(t, err)
+	assert.Equal(t, aliceID, bobAssignment.MemberID)
+	assert.True(t, bobAssignment.IsSwapped)
+
+	swap, err := db.GetHatSwapByID(ctx, swapID)
+	require.NoError(t, err)
+	assert.Equal(t, SwapStatusAccepted, swap.Status)
+}
+
+func TestExecuteSwap_DoesNotMarkUnrelatedAssignments(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+	charlieID, err := db.AddTeamMember(ctx, "Charlie", "charlie@example.com")
+	require.NoError(t, err)
+
+	baseDate := time.Now().AddDate(0, 0, 7)
+	aliceAssignmentID, err := db.CreateRotaAssignment(ctx, baseDate.Format("2006-01-02"), aliceID, false, nil)
+	require.NoError(t, err)
+	bobAssignmentID, err := db.CreateRotaAssignment(ctx, baseDate.AddDate(0, 0, 1).Format("2006-01-02"), bobID, false, nil)
+	require.NoError(t, err)
+	charlieAssignmentID, err := db.CreateRotaAssignment(ctx, baseDate.AddDate(0, 0, 2).Format("2006-01-02"), charlieID, false, nil)
+	require.NoError(t, err)
+
+	swapID, err := db.CreateHatSwap(ctx, aliceAssignmentID, bobAssignmentID, aliceID, bobID)
+	require.NoError(t, err)
+
+	err = db.ExecuteSwap(ctx, swapID)
+	require.NoError(t, err)
+
+	charlieAssignment, err := db.GetAssignmentByID(ctx, charlieAssignmentID)
+	require.NoError(t, err)
+	assert.False(t, charlieAssignment.IsSwapped)
+	assert.Equal(t, charlieID, charlieAssignment.MemberID)
+}
+
 // ---------------------------------------------------------------------------
 // ValidateSwapAssignments
 // ---------------------------------------------------------------------------

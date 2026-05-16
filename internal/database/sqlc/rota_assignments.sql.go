@@ -60,7 +60,7 @@ func (q *Queries) DeleteRotaAssignment(ctx context.Context, id string) error {
 }
 
 const getAssignmentByID = `-- name: GetAssignmentByID :one
-SELECT id, date, member_id, is_cover, original_assignment_id
+SELECT id, date, member_id, is_cover, original_assignment_id, is_swapped
 FROM rota_assignments
 WHERE id = ?
 `
@@ -71,6 +71,7 @@ type GetAssignmentByIDRow struct {
 	MemberID             string         `json:"member_id"`
 	IsCover              sql.NullInt64  `json:"is_cover"`
 	OriginalAssignmentID sql.NullString `json:"original_assignment_id"`
+	IsSwapped            int64          `json:"is_swapped"`
 }
 
 func (q *Queries) GetAssignmentByID(ctx context.Context, id string) (GetAssignmentByIDRow, error) {
@@ -82,12 +83,13 @@ func (q *Queries) GetAssignmentByID(ctx context.Context, id string) (GetAssignme
 		&i.MemberID,
 		&i.IsCover,
 		&i.OriginalAssignmentID,
+		&i.IsSwapped,
 	)
 	return i, err
 }
 
 const getAssignmentsByDate = `-- name: GetAssignmentsByDate :many
-SELECT ra.id, ra.date, ra.member_id, ra.is_cover, ra.original_assignment_id, tm.name AS member_name, tm.email AS member_email
+SELECT ra.id, ra.date, ra.member_id, ra.is_cover, ra.original_assignment_id, ra.is_swapped, tm.name AS member_name, tm.email AS member_email
 FROM rota_assignments ra
 JOIN team_members tm ON ra.member_id = tm.id
 WHERE ra.date = ?
@@ -99,6 +101,7 @@ type GetAssignmentsByDateRow struct {
 	MemberID             string         `json:"member_id"`
 	IsCover              sql.NullInt64  `json:"is_cover"`
 	OriginalAssignmentID sql.NullString `json:"original_assignment_id"`
+	IsSwapped            int64          `json:"is_swapped"`
 	MemberName           string         `json:"member_name"`
 	MemberEmail          string         `json:"member_email"`
 }
@@ -118,6 +121,7 @@ func (q *Queries) GetAssignmentsByDate(ctx context.Context, date time.Time) ([]G
 			&i.MemberID,
 			&i.IsCover,
 			&i.OriginalAssignmentID,
+			&i.IsSwapped,
 			&i.MemberName,
 			&i.MemberEmail,
 		); err != nil {
@@ -135,7 +139,7 @@ func (q *Queries) GetAssignmentsByDate(ctx context.Context, date time.Time) ([]G
 }
 
 const getAssignmentsByDateRange = `-- name: GetAssignmentsByDateRange :many
-SELECT ra.id, ra.date, ra.member_id, ra.is_cover, ra.original_assignment_id, tm.name AS member_name, tm.email AS member_email
+SELECT ra.id, ra.date, ra.member_id, ra.is_cover, ra.original_assignment_id, ra.is_swapped, tm.name AS member_name, tm.email AS member_email
 FROM rota_assignments ra
 JOIN team_members tm ON ra.member_id = tm.id
 WHERE ra.date >= ? AND ra.date <= ?
@@ -153,6 +157,7 @@ type GetAssignmentsByDateRangeRow struct {
 	MemberID             string         `json:"member_id"`
 	IsCover              sql.NullInt64  `json:"is_cover"`
 	OriginalAssignmentID sql.NullString `json:"original_assignment_id"`
+	IsSwapped            int64          `json:"is_swapped"`
 	MemberName           string         `json:"member_name"`
 	MemberEmail          string         `json:"member_email"`
 }
@@ -172,6 +177,7 @@ func (q *Queries) GetAssignmentsByDateRange(ctx context.Context, arg GetAssignme
 			&i.MemberID,
 			&i.IsCover,
 			&i.OriginalAssignmentID,
+			&i.IsSwapped,
 			&i.MemberName,
 			&i.MemberEmail,
 		); err != nil {
@@ -189,7 +195,7 @@ func (q *Queries) GetAssignmentsByDateRange(ctx context.Context, arg GetAssignme
 }
 
 const getCoverAssignmentByDate = `-- name: GetCoverAssignmentByDate :one
-SELECT id, date, member_id, is_cover, original_assignment_id
+SELECT id, date, member_id, is_cover, original_assignment_id, is_swapped
 FROM rota_assignments
 WHERE date = ? AND is_cover = 1
 `
@@ -200,6 +206,7 @@ type GetCoverAssignmentByDateRow struct {
 	MemberID             string         `json:"member_id"`
 	IsCover              sql.NullInt64  `json:"is_cover"`
 	OriginalAssignmentID sql.NullString `json:"original_assignment_id"`
+	IsSwapped            int64          `json:"is_swapped"`
 }
 
 func (q *Queries) GetCoverAssignmentByDate(ctx context.Context, date time.Time) (GetCoverAssignmentByDateRow, error) {
@@ -211,12 +218,13 @@ func (q *Queries) GetCoverAssignmentByDate(ctx context.Context, date time.Time) 
 		&i.MemberID,
 		&i.IsCover,
 		&i.OriginalAssignmentID,
+		&i.IsSwapped,
 	)
 	return i, err
 }
 
 const getFutureAssignments = `-- name: GetFutureAssignments :many
-SELECT ra.id, ra.date, ra.member_id, ra.is_cover, ra.original_assignment_id,
+SELECT ra.id, ra.date, ra.member_id, ra.is_cover, ra.original_assignment_id, ra.is_swapped,
        tm.name AS member_name, tm.email AS member_email
 FROM rota_assignments ra
 JOIN team_members tm ON ra.member_id = tm.id
@@ -230,6 +238,7 @@ type GetFutureAssignmentsRow struct {
 	MemberID             string         `json:"member_id"`
 	IsCover              sql.NullInt64  `json:"is_cover"`
 	OriginalAssignmentID sql.NullString `json:"original_assignment_id"`
+	IsSwapped            int64          `json:"is_swapped"`
 	MemberName           string         `json:"member_name"`
 	MemberEmail          string         `json:"member_email"`
 }
@@ -249,6 +258,7 @@ func (q *Queries) GetFutureAssignments(ctx context.Context) ([]GetFutureAssignme
 			&i.MemberID,
 			&i.IsCover,
 			&i.OriginalAssignmentID,
+			&i.IsSwapped,
 			&i.MemberName,
 			&i.MemberEmail,
 		); err != nil {
@@ -266,7 +276,7 @@ func (q *Queries) GetFutureAssignments(ctx context.Context) ([]GetFutureAssignme
 }
 
 const getFutureAssignmentsForMember = `-- name: GetFutureAssignmentsForMember :many
-SELECT ra.id, ra.date, ra.member_id, ra.is_cover, ra.original_assignment_id,
+SELECT ra.id, ra.date, ra.member_id, ra.is_cover, ra.original_assignment_id, ra.is_swapped,
        tm.name AS member_name, tm.email AS member_email
 FROM rota_assignments ra
 JOIN team_members tm ON ra.member_id = tm.id
@@ -280,6 +290,7 @@ type GetFutureAssignmentsForMemberRow struct {
 	MemberID             string         `json:"member_id"`
 	IsCover              sql.NullInt64  `json:"is_cover"`
 	OriginalAssignmentID sql.NullString `json:"original_assignment_id"`
+	IsSwapped            int64          `json:"is_swapped"`
 	MemberName           string         `json:"member_name"`
 	MemberEmail          string         `json:"member_email"`
 }
@@ -299,6 +310,7 @@ func (q *Queries) GetFutureAssignmentsForMember(ctx context.Context, memberID st
 			&i.MemberID,
 			&i.IsCover,
 			&i.OriginalAssignmentID,
+			&i.IsSwapped,
 			&i.MemberName,
 			&i.MemberEmail,
 		); err != nil {
@@ -349,7 +361,7 @@ func (q *Queries) GetMostRecentCoverAssignment(ctx context.Context) (GetMostRece
 }
 
 const getUpcomingAssignments = `-- name: GetUpcomingAssignments :many
-SELECT id, date, member_id, is_cover, original_assignment_id
+SELECT id, date, member_id, is_cover, original_assignment_id, is_swapped
 FROM rota_assignments
 WHERE member_id = ? AND date >= date('now') AND date <= date('now', '+' || ? || ' days')
 ORDER BY date
@@ -366,6 +378,7 @@ type GetUpcomingAssignmentsRow struct {
 	MemberID             string         `json:"member_id"`
 	IsCover              sql.NullInt64  `json:"is_cover"`
 	OriginalAssignmentID sql.NullString `json:"original_assignment_id"`
+	IsSwapped            int64          `json:"is_swapped"`
 }
 
 func (q *Queries) GetUpcomingAssignments(ctx context.Context, arg GetUpcomingAssignmentsParams) ([]GetUpcomingAssignmentsRow, error) {
@@ -383,6 +396,7 @@ func (q *Queries) GetUpcomingAssignments(ctx context.Context, arg GetUpcomingAss
 			&i.MemberID,
 			&i.IsCover,
 			&i.OriginalAssignmentID,
+			&i.IsSwapped,
 		); err != nil {
 			return nil, err
 		}
@@ -395,6 +409,17 @@ func (q *Queries) GetUpcomingAssignments(ctx context.Context, arg GetUpcomingAss
 		return nil, err
 	}
 	return items, nil
+}
+
+const markAssignmentSwapped = `-- name: MarkAssignmentSwapped :exec
+UPDATE rota_assignments
+SET is_swapped = 1
+WHERE id = ?
+`
+
+func (q *Queries) MarkAssignmentSwapped(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, markAssignmentSwapped, id)
+	return err
 }
 
 const updateAssignmentMember = `-- name: UpdateAssignmentMember :exec

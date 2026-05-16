@@ -75,6 +75,7 @@ type Querier interface {
 	GetUserByProvider(ctx context.Context, arg GetUserByProviderParams) (User, error)
 	ListActiveUsers(ctx context.Context) ([]User, error)
 	ListAdminUsers(ctx context.Context) ([]User, error)
+	MarkAssignmentSwapped(ctx context.Context, id string) error
 	TouchMeetingsSubscription(ctx context.Context, token string) error
 	TouchRotaSubscription(ctx context.Context, token string) error
 	UpdateAPITokenLastUsed(ctx context.Context, id string) (sql.Result, error)

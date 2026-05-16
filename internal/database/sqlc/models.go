@@ -69,6 +69,7 @@ type RotaAssignment struct {
 	MemberID             string         `json:"member_id"`
 	IsCover              sql.NullInt64  `json:"is_cover"`
 	OriginalAssignmentID sql.NullString `json:"original_assignment_id"`
+	IsSwapped            int64          `json:"is_swapped"`
 	CreatedAt            sql.NullTime   `json:"created_at"`
 }
 

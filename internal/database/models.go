@@ -25,6 +25,7 @@ type RotaAssignment struct {
 	Date                 string    `json:"date"`
 	MemberID             string    `json:"member_id"`
 	IsCover              bool      `json:"is_cover"`
+	IsSwapped            bool      `json:"is_swapped"`
 	OriginalAssignmentID *string   `json:"original_assignment_id"`
 	CreatedAt            time.Time `json:"created_at"`
 	MemberName           string    `json:"member_name,omitempty"`

@@ -145,18 +145,19 @@ func (h *Handler) getUpcomingPresence(ctx context.Context) ([]presenceDay, error
 	return h.getUpcomingPresenceFrom(ctx, time.Now())
 }
 
-// getAssignedMember fetches the assigned member for a given date.
-func (h *Handler) getAssignedMember(ctx context.Context, dateStr string, memberMap map[string]database.TeamMember) *database.TeamMember {
+// getAssignedMember fetches the assigned member and swap status for a given date.
+// It returns the member, whether the assignment was swapped, and whether any assignment was found.
+func (h *Handler) getAssignedMember(ctx context.Context, dateStr string, memberMap map[string]database.TeamMember) (*database.TeamMember, bool) {
 	assignments, err := h.db.GetAssignmentsByDate(ctx, dateStr)
 	if err != nil {
-		return nil
+		return nil, false
 	}
 
 	// Prioritize cover assignment - they're the one actually doing support.
 	for i := range assignments {
 		if assignments[i].IsCover {
 			if member, ok := memberMap[assignments[i].MemberID]; ok {
-				return &member
+				return &member, assignments[i].IsSwapped
 			}
 		}
 	}
@@ -165,12 +166,12 @@ func (h *Handler) getAssignedMember(ctx context.Context, dateStr string, memberM
 	for i := range assignments {
 		if !assignments[i].IsCover {
 			if member, ok := memberMap[assignments[i].MemberID]; ok {
-				return &member
+				return &member, assignments[i].IsSwapped
 			}
 		}
 	}
 
-	return nil
+	return nil, false
 }
 
 // buildPresenceList creates a sorted list of present members.
@@ -212,7 +213,7 @@ func (h *Handler) getUpcomingPresenceFrom(ctx context.Context, start time.Time) 
 		}
 
 		dateStr := current.Format("2006-01-02")
-		assigned := h.getAssignedMember(ctx, dateStr, memberMap)
+		assigned, assignedSwapped := h.getAssignedMember(ctx, dateStr, memberMap)
 
 		leaveRecords, leaveErr := h.db.GetLeaveByDate(ctx, dateStr)
 		if leaveErr != nil {
@@ -241,12 +242,13 @@ func (h *Handler) getUpcomingPresenceFrom(ctx context.Context, start time.Time) 
 		isToday := current.Year() == now.Year() && current.YearDay() == now.YearDay()
 
 		presence = append(presence, presenceDay{
-			DateISO:     dateStr,
-			DateDisplay: current.Format("Mon, Jan 2"),
-			IsToday:     isToday,
-			Assigned:    assigned,
-			Present:     present,
-			Away:        away,
+			DateISO:         dateStr,
+			DateDisplay:     current.Format("Mon, Jan 2"),
+			IsToday:         isToday,
+			Assigned:        assigned,
+			AssignedSwapped: assignedSwapped,
+			Present:         present,
+			Away:            away,
 		})
 
 		current = current.AddDate(0, 0, 1)

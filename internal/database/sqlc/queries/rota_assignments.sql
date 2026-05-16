@@ -3,19 +3,19 @@ INSERT INTO rota_assignments (id, date, member_id, is_cover, original_assignment
 VALUES (?, ?, ?, ?, ?);
 
 -- name: GetAssignmentsByDate :many
-SELECT ra.id, ra.date, ra.member_id, ra.is_cover, ra.original_assignment_id, tm.name AS member_name, tm.email AS member_email
+SELECT ra.id, ra.date, ra.member_id, ra.is_cover, ra.original_assignment_id, ra.is_swapped, tm.name AS member_name, tm.email AS member_email
 FROM rota_assignments ra
 JOIN team_members tm ON ra.member_id = tm.id
 WHERE ra.date = ?;
 
 -- name: GetUpcomingAssignments :many
-SELECT id, date, member_id, is_cover, original_assignment_id
+SELECT id, date, member_id, is_cover, original_assignment_id, is_swapped
 FROM rota_assignments
 WHERE member_id = ? AND date >= date('now') AND date <= date('now', '+' || ? || ' days')
 ORDER BY date;
 
 -- name: GetAssignmentsByDateRange :many
-SELECT ra.id, ra.date, ra.member_id, ra.is_cover, ra.original_assignment_id, tm.name AS member_name, tm.email AS member_email
+SELECT ra.id, ra.date, ra.member_id, ra.is_cover, ra.original_assignment_id, ra.is_swapped, tm.name AS member_name, tm.email AS member_email
 FROM rota_assignments ra
 JOIN team_members tm ON ra.member_id = tm.id
 WHERE ra.date >= ? AND ra.date <= ?
@@ -33,7 +33,7 @@ DELETE FROM rota_assignments
 WHERE id = ?;
 
 -- name: GetAssignmentByID :one
-SELECT id, date, member_id, is_cover, original_assignment_id
+SELECT id, date, member_id, is_cover, original_assignment_id, is_swapped
 FROM rota_assignments
 WHERE id = ?;
 
@@ -56,7 +56,7 @@ SET member_id = ?
 WHERE id = ?;
 
 -- name: GetFutureAssignmentsForMember :many
-SELECT ra.id, ra.date, ra.member_id, ra.is_cover, ra.original_assignment_id,
+SELECT ra.id, ra.date, ra.member_id, ra.is_cover, ra.original_assignment_id, ra.is_swapped,
        tm.name AS member_name, tm.email AS member_email
 FROM rota_assignments ra
 JOIN team_members tm ON ra.member_id = tm.id
@@ -64,7 +64,7 @@ WHERE ra.member_id = ? AND ra.date >= date('now')
 ORDER BY ra.date;
 
 -- name: GetFutureAssignments :many
-SELECT ra.id, ra.date, ra.member_id, ra.is_cover, ra.original_assignment_id,
+SELECT ra.id, ra.date, ra.member_id, ra.is_cover, ra.original_assignment_id, ra.is_swapped,
        tm.name AS member_name, tm.email AS member_email
 FROM rota_assignments ra
 JOIN team_members tm ON ra.member_id = tm.id
@@ -72,6 +72,11 @@ WHERE ra.date >= date('now')
 ORDER BY ra.date;
 
 -- name: GetCoverAssignmentByDate :one
-SELECT id, date, member_id, is_cover, original_assignment_id
+SELECT id, date, member_id, is_cover, original_assignment_id, is_swapped
 FROM rota_assignments
 WHERE date = ? AND is_cover = 1;
+
+-- name: MarkAssignmentSwapped :exec
+UPDATE rota_assignments
+SET is_swapped = 1
+WHERE id = ?;

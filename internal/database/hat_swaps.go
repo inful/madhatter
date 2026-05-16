@@ -286,6 +286,14 @@ func (db *DB) executeSwapTx(ctx context.Context, qtx *sqlc.Queries, reqAssignmen
 		return err
 	}
 
+	if err := qtx.MarkAssignmentSwapped(ctx, reqAssignment.ID); err != nil {
+		return err
+	}
+
+	if err := qtx.MarkAssignmentSwapped(ctx, tgtAssignment.ID); err != nil {
+		return err
+	}
+
 	result, err := qtx.UpdateHatSwapStatus(ctx, sqlc.UpdateHatSwapStatusParams{
 		Status: SwapStatusAccepted,
 		ID:     swapID,

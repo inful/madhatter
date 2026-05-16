@@ -63,6 +63,7 @@ func (db *DB) GetAssignmentsByDate(ctx context.Context, date string) ([]RotaAssi
 			Date:                 a.Date.Format("2006-01-02"),
 			MemberID:             a.MemberID,
 			IsCover:              a.IsCover.Valid && a.IsCover.Int64 == 1,
+			IsSwapped:            a.IsSwapped == 1,
 			OriginalAssignmentID: getNullString(a.OriginalAssignmentID),
 			CreatedAt:            time.Time{},
 			MemberName:           a.MemberName,
@@ -102,6 +103,7 @@ func (db *DB) GetAssignmentsByDateRange(ctx context.Context, startDate, endDate 
 			Date:                 a.Date.Format("2006-01-02"),
 			MemberID:             a.MemberID,
 			IsCover:              a.IsCover.Valid && a.IsCover.Int64 == 1,
+			IsSwapped:            a.IsSwapped == 1,
 			OriginalAssignmentID: getNullString(a.OriginalAssignmentID),
 			CreatedAt:            time.Time{},
 			MemberName:           a.MemberName,
@@ -192,6 +194,7 @@ func (db *DB) GetAssignmentByID(ctx context.Context, id string) (*RotaAssignment
 		Date:                 a.Date.Format("2006-01-02"),
 		MemberID:             a.MemberID,
 		IsCover:              a.IsCover.Valid && a.IsCover.Int64 == 1,
+		IsSwapped:            a.IsSwapped == 1,
 		OriginalAssignmentID: getNullString(a.OriginalAssignmentID),
 	}, nil
 }
@@ -211,6 +214,7 @@ func (db *DB) GetFutureAssignmentsForMember(ctx context.Context, memberID string
 			Date:        a.Date.Format("2006-01-02"),
 			MemberID:    a.MemberID,
 			IsCover:     a.IsCover.Valid && a.IsCover.Int64 == 1,
+			IsSwapped:   a.IsSwapped == 1,
 			MemberName:  a.MemberName,
 			MemberEmail: a.MemberEmail,
 		}
@@ -234,6 +238,7 @@ func (db *DB) GetFutureAssignments(ctx context.Context) ([]RotaAssignment, error
 			Date:        a.Date.Format("2006-01-02"),
 			MemberID:    a.MemberID,
 			IsCover:     a.IsCover.Valid && a.IsCover.Int64 == 1,
+			IsSwapped:   a.IsSwapped == 1,
 			MemberName:  a.MemberName,
 			MemberEmail: a.MemberEmail,
 		}

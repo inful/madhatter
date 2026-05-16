@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS rota_assignments (
     member_id TEXT NOT NULL,
     is_cover INTEGER DEFAULT 0,
     original_assignment_id TEXT,
+    is_swapped INTEGER NOT NULL DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (member_id) REFERENCES team_members(id) ON DELETE CASCADE,
     FOREIGN KEY (original_assignment_id) REFERENCES rota_assignments(id) ON DELETE SET NULL,

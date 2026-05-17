@@ -565,6 +565,87 @@ func TestMigrationEdgeCases(t *testing.T) {
 	})
 }
 
+func TestBackfillIsSwappedMigration(t *testing.T) {
+	db, err := sql.Open("sqlite3", ":memory:")
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	_, err = db.ExecContext(context.Background(), `
+CREATE TABLE team_members (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    email TEXT UNIQUE NOT NULL,
+    is_active INTEGER DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE rota_assignments (
+    id TEXT PRIMARY KEY,
+    date DATE NOT NULL,
+    member_id TEXT NOT NULL,
+    is_cover INTEGER DEFAULT 0,
+    original_assignment_id TEXT,
+    is_swapped INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE hat_swaps (
+    id TEXT PRIMARY KEY,
+    requester_assignment_id TEXT NOT NULL,
+    target_assignment_id TEXT NOT NULL,
+    requester_member_id TEXT NOT NULL,
+    target_member_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+`)
+
+	require.NoError(t, err)
+
+	_, err = db.ExecContext(context.Background(), `
+INSERT INTO team_members (id, name, email) VALUES
+    ('alice', 'Alice', 'alice@example.com'),
+    ('bob', 'Bob', 'bob@example.com');
+
+INSERT INTO rota_assignments (id, date, member_id, is_cover, original_assignment_id, is_swapped) VALUES
+    ('assign-a', '2026-01-05', 'alice', 0, NULL, 0),
+    ('assign-b', '2026-01-06', 'bob', 0, NULL, 0),
+    ('assign-c', '2026-01-07', 'alice', 0, NULL, 0);
+
+INSERT INTO hat_swaps (id, requester_assignment_id, target_assignment_id, requester_member_id, target_member_id, status) VALUES
+    ('swap-accepted', 'assign-a', 'assign-b', 'alice', 'bob', 'accepted'),
+    ('swap-pending', 'assign-b', 'assign-c', 'bob', 'alice', 'pending');
+`)
+	require.NoError(t, err)
+
+	upSQL, err := os.ReadFile(filepath.Join("..", "..", "migrations", "000008_backfill_is_swapped.up.sql"))
+	require.NoError(t, err)
+	_, err = db.ExecContext(context.Background(), string(upSQL))
+	require.NoError(t, err)
+
+	checkIsSwapped := func(id string) int64 {
+		t.Helper()
+		var swapped int64
+		queryErr := db.QueryRowContext(context.Background(), `SELECT is_swapped FROM rota_assignments WHERE id = ?`, id).Scan(&swapped)
+		require.NoError(t, queryErr)
+		return swapped
+	}
+
+	assert.Equal(t, int64(1), checkIsSwapped("assign-a"))
+	assert.Equal(t, int64(1), checkIsSwapped("assign-b"))
+	assert.Equal(t, int64(0), checkIsSwapped("assign-c"))
+
+	downSQL, err := os.ReadFile(filepath.Join("..", "..", "migrations", "000008_backfill_is_swapped.down.sql"))
+	require.NoError(t, err)
+	_, err = db.ExecContext(context.Background(), string(downSQL))
+	require.NoError(t, err)
+
+	assert.Equal(t, int64(0), checkIsSwapped("assign-a"))
+	assert.Equal(t, int64(0), checkIsSwapped("assign-b"))
+	assert.Equal(t, int64(0), checkIsSwapped("assign-c"))
+}
+
 // TestMigrationConcurrency tests that migrations are safe with concurrent access.
 func TestMigrationConcurrency(t *testing.T) {
 	t.Run("Multiple readers after migration", func(t *testing.T) {

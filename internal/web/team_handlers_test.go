@@ -131,3 +131,298 @@ func withAdminContext(req *http.Request, userID string) *http.Request {
 
 	return req.WithContext(context.WithValue(req.Context(), auth.UserContextKey, session))
 }
+
+// ---------------------------------------------------------------------------
+// validateTeamMemberInput
+// ---------------------------------------------------------------------------
+
+func TestValidateTeamMemberInput_RejectsEmptyName(t *testing.T) {
+	err := validateTeamMemberInput("", "alice@example.com")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "name cannot be empty")
+}
+
+func TestValidateTeamMemberInput_RejectsEmptyEmail(t *testing.T) {
+	err := validateTeamMemberInput("Alice", "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "email cannot be empty")
+}
+
+func TestValidateTeamMemberInput_RejectsLongName(t *testing.T) {
+	err := validateTeamMemberInput(strings.Repeat("x", 256), "alice@example.com")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "name is too long")
+}
+
+func TestValidateTeamMemberInput_RejectsLongEmail(t *testing.T) {
+	err := validateTeamMemberInput("Alice", strings.Repeat("x", 256)+"@example.com")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "email is too long")
+}
+
+func TestValidateTeamMemberInput_RejectsInvalidEmailFormat(t *testing.T) {
+	err := validateTeamMemberInput("Alice", "not-an-email")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid email format")
+}
+
+func TestValidateTeamMemberInput_AcceptsValidInput(t *testing.T) {
+	err := validateTeamMemberInput("Alice", "alice@example.com")
+	require.NoError(t, err)
+}
+
+// ---------------------------------------------------------------------------
+// handleTeamPost
+// ---------------------------------------------------------------------------
+
+func TestHandleTeamPost_ValidMember_RedirectsToTeam(t *testing.T) {
+	db, err := database.New(":memory:")
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	form := url.Values{}
+	form.Set("name", "Alice")
+	form.Set("email", "alice@example.com")
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/team", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+
+	h.handleTeamPost(w, req)
+
+	assert.Equal(t, http.StatusSeeOther, w.Code)
+	assert.Equal(t, "/team", w.Header().Get("Location"))
+
+	members, err := db.GetActiveTeamMembers(context.Background())
+	require.NoError(t, err)
+	require.Len(t, members, 1)
+	assert.Equal(t, "Alice", members[0].Name)
+}
+
+func TestHandleTeamPost_DuplicateEmail_Returns500(t *testing.T) {
+	db, err := database.New(":memory:")
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	_, err = db.AddTeamMember(context.Background(), "Existing", "dup@example.com")
+	require.NoError(t, err)
+
+	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	form := url.Values{}
+	form.Set("name", "New Person")
+	form.Set("email", "dup@example.com")
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/team", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+
+	h.handleTeamPost(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+// ---------------------------------------------------------------------------
+// handleTeam (GET + POST routing)
+// ---------------------------------------------------------------------------
+
+func TestHandleTeam_Get_Returns200(t *testing.T) {
+	db, err := database.New(":memory:")
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/team", nil)
+	w := httptest.NewRecorder()
+
+	h.handleTeam(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestHandleTeam_Post_DelegatesToHandleTeamPost(t *testing.T) {
+	db, err := database.New(":memory:")
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	form := url.Values{}
+	form.Set("name", "Bob")
+	form.Set("email", "bob@example.com")
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/team", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+
+	h.handleTeam(w, req)
+
+	assert.Equal(t, http.StatusSeeOther, w.Code)
+	assert.Equal(t, "/team", w.Header().Get("Location"))
+}
+
+// ---------------------------------------------------------------------------
+// handleTeamMemberEdit
+// ---------------------------------------------------------------------------
+
+func TestHandleTeamMemberEdit_WrongMethod_Returns405(t *testing.T) {
+	db, err := database.New(":memory:")
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/team/members/x/edit", nil)
+	req = withChiParam(req, "x")
+	w := httptest.NewRecorder()
+
+	h.handleTeamMemberEdit(w, req)
+
+	assert.Equal(t, http.StatusMethodNotAllowed, w.Code)
+}
+
+func TestHandleTeamMemberEdit_InvalidInput_Returns400(t *testing.T) {
+	db, err := database.New(":memory:")
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	form := url.Values{}
+	form.Set("name", "")
+	form.Set("email", "alice@example.com")
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/team/members/x/edit", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req = withChiParam(req, "x")
+	w := httptest.NewRecorder()
+
+	h.handleTeamMemberEdit(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestHandleTeamMemberEdit_ValidPost_RedirectsToTeam(t *testing.T) {
+	db, err := database.New(":memory:")
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	ctx := context.Background()
+	memberID, err := db.AddTeamMember(ctx, "Old Name", "old@example.com")
+	require.NoError(t, err)
+
+	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	form := url.Values{}
+	form.Set("name", "New Name")
+	form.Set("email", "new@example.com")
+
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/team/members/"+memberID+"/edit", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req = withChiParam(req, memberID)
+	w := httptest.NewRecorder()
+
+	h.handleTeamMemberEdit(w, req)
+
+	assert.Equal(t, http.StatusSeeOther, w.Code)
+	assert.Equal(t, "/team", w.Header().Get("Location"))
+}
+
+// ---------------------------------------------------------------------------
+// handleTeamMemberDelete
+// ---------------------------------------------------------------------------
+
+func TestHandleTeamMemberDelete_WrongMethod_Returns405(t *testing.T) {
+	db, err := database.New(":memory:")
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/team/members/x/delete", nil)
+	req = withChiParam(req, "x")
+	w := httptest.NewRecorder()
+
+	h.handleTeamMemberDelete(w, req)
+
+	assert.Equal(t, http.StatusMethodNotAllowed, w.Code)
+}
+
+func TestHandleTeamMemberDelete_ValidPost_RedirectsToTeam(t *testing.T) {
+	db, err := database.New(":memory:")
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	ctx := context.Background()
+	memberID, err := db.AddTeamMember(ctx, "To Delete", "todelete@example.com")
+	require.NoError(t, err)
+
+	// A second member must remain so HandleTeamChange can still build the schedule.
+	_, err = db.AddTeamMember(ctx, "Remaining", "remaining@example.com")
+	require.NoError(t, err)
+
+	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/team/members/"+memberID+"/delete", nil)
+	req = withChiParam(req, memberID)
+	w := httptest.NewRecorder()
+
+	h.handleTeamMemberDelete(w, req)
+
+	assert.Equal(t, http.StatusSeeOther, w.Code)
+	assert.Equal(t, "/team", w.Header().Get("Location"))
+}
+
+// ---------------------------------------------------------------------------
+// handleUserAdminUpdate — additional edge cases
+// ---------------------------------------------------------------------------
+
+func TestHandleUserAdminUpdate_WrongMethod_Returns405(t *testing.T) {
+	db, err := database.New(":memory:")
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/team/users/x/admin", nil)
+	req = withChiParam(req, "x")
+	w := httptest.NewRecorder()
+
+	h.handleUserAdminUpdate(w, req)
+
+	assert.Equal(t, http.StatusMethodNotAllowed, w.Code)
+}
+
+func TestHandleUserAdminUpdate_UserNotFound_Returns404(t *testing.T) {
+	db, err := database.New(":memory:")
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	form := url.Values{}
+	form.Set("is_admin", "1")
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/team/users/nonexistent/admin", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req = withChiParam(req, uuid.NewString())
+	w := httptest.NewRecorder()
+
+	h.handleUserAdminUpdate(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}

@@ -137,7 +137,7 @@ func (s *Service) CanWithdraw(wfhDate time.Time) bool {
 func (s *Service) CheckQuota(ctx context.Context, memberID, date string) (bool, error) {
 	wfhDate, err := time.Parse("2006-01-02", date)
 	if err != nil {
-		return false, errors.New("invalid date")
+		return false, database.ErrWFHInvalidDate
 	}
 	start, end, err := s.ComputePeriodBounds(wfhDate)
 	if err != nil {

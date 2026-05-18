@@ -37,6 +37,7 @@ func (s *Scheduler) Start() error {
 		s.mu.Unlock()
 		return errors.New("WFH scheduler is already running")
 	}
+	s.stopChan = make(chan struct{})
 	s.running = true
 	s.mu.Unlock()
 

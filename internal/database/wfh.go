@@ -18,6 +18,7 @@ var (
 	ErrWFHAlreadySettled           = errors.New("WFH request has already been settled")
 	ErrWFHWithdrawalDeadlinePassed = errors.New("withdrawal deadline has passed")
 	ErrWFHDuplicateRequest         = errors.New("a WFH request already exists for this date")
+	ErrWFHInvalidDate              = errors.New("invalid date format, expected YYYY-MM-DD")
 	ErrWFHDatePassed               = errors.New("WFH date has already passed")
 	ErrWFHMemberNotFound           = errors.New("member not found")
 	ErrWFHNotApproved              = errors.New("WFH request is not approved")
@@ -67,7 +68,7 @@ func (db *DB) CreateWFHRequest(ctx context.Context, memberID, date string) (*WFH
 	// Validate the date is today or in the future.
 	dateTime, err := time.Parse("2006-01-02", date)
 	if err != nil {
-		return nil, errors.New("invalid date format, expected YYYY-MM-DD")
+		return nil, ErrWFHInvalidDate
 	}
 
 	nowUTC := time.Now().UTC()
@@ -115,7 +116,7 @@ func (db *DB) GetWFHRequestByID(ctx context.Context, id string) (*WFHRequest, er
 func (db *DB) GetWFHRequestsByDate(ctx context.Context, date string) ([]WFHRequest, error) {
 	dateTime, err := time.Parse("2006-01-02", date)
 	if err != nil {
-		return nil, errors.New("invalid date format, expected YYYY-MM-DD")
+		return nil, ErrWFHInvalidDate
 	}
 	rows, err := db.queries.GetWFHRequestsByDate(ctx, dateTime)
 	if err != nil {
@@ -128,7 +129,7 @@ func (db *DB) GetWFHRequestsByDate(ctx context.Context, date string) ([]WFHReque
 func (db *DB) GetWFHRequestsByDateAndStatus(ctx context.Context, date, status string) ([]WFHRequest, error) {
 	dateTime, err := time.Parse("2006-01-02", date)
 	if err != nil {
-		return nil, errors.New("invalid date format, expected YYYY-MM-DD")
+		return nil, ErrWFHInvalidDate
 	}
 	rows, err := db.queries.GetWFHRequestsByDateAndStatus(ctx, sqlc.GetWFHRequestsByDateAndStatusParams{
 		Date:   dateTime,
@@ -153,11 +154,11 @@ func (db *DB) GetWFHRequestsByMember(ctx context.Context, memberID string) ([]WF
 func (db *DB) GetWFHRequestsUsedInPeriod(ctx context.Context, memberID, periodStart, periodEnd string) ([]WFHRequest, error) {
 	start, err := time.Parse("2006-01-02", periodStart)
 	if err != nil {
-		return nil, errors.New("invalid periodStart format")
+		return nil, ErrWFHInvalidDate
 	}
 	end, err := time.Parse("2006-01-02", periodEnd)
 	if err != nil {
-		return nil, errors.New("invalid periodEnd format")
+		return nil, ErrWFHInvalidDate
 	}
 	rows, err := db.queries.GetWFHRequestsByMemberAndPeriod(ctx, sqlc.GetWFHRequestsByMemberAndPeriodParams{
 		MemberID: memberID,
@@ -174,7 +175,7 @@ func (db *DB) GetWFHRequestsUsedInPeriod(ctx context.Context, memberID, periodSt
 func (db *DB) GetPendingForSettlement(ctx context.Context, cutoffDate string) ([]WFHRequest, error) {
 	cutoff, err := time.Parse("2006-01-02", cutoffDate)
 	if err != nil {
-		return nil, errors.New("invalid cutoffDate format")
+		return nil, ErrWFHInvalidDate
 	}
 	rows, err := db.queries.GetPendingWFHRequestsForSettlement(ctx, cutoff)
 	if err != nil {
@@ -250,7 +251,7 @@ func (db *DB) WithdrawWFHRequest(ctx context.Context, id, adminUserID string, wi
 func (db *DB) CountApprovedWFHByDate(ctx context.Context, date string) (int, error) {
 	dateTime, err := time.Parse("2006-01-02", date)
 	if err != nil {
-		return 0, errors.New("invalid date format")
+		return 0, ErrWFHInvalidDate
 	}
 	count, err := db.queries.CountApprovedWFHByDate(ctx, dateTime)
 	return int(count), err

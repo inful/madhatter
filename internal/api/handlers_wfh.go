@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -63,6 +64,8 @@ func wfhDomainToHumaError(err error) error {
 		return huma.Error409Conflict(err.Error())
 	case errors.Is(err, database.ErrWFHDatePassed):
 		return huma.Error422UnprocessableEntity(err.Error(), nil)
+	case errors.Is(err, database.ErrWFHInvalidDate):
+		return huma.Error422UnprocessableEntity(err.Error(), nil)
 	case errors.Is(err, database.ErrWFHMemberNotFound):
 		return huma.Error422UnprocessableEntity(err.Error(), nil)
 	case errors.Is(err, database.ErrWFHNotApproved):
@@ -83,7 +86,14 @@ func (s *Server) resolveWFHMemberID(ctx context.Context) (string, error) {
 	}
 
 	member, err := s.db.GetMemberByEmail(ctx, user.Email)
-	if err != nil || member == nil {
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", huma.Error403Forbidden("You are not registered as a team member")
+		}
+
+		return "", huma.Error500InternalServerError("Failed to look up team member", err)
+	}
+        if member == nil {
 		return "", huma.Error403Forbidden("You are not registered as a team member")
 	}
 
@@ -107,6 +117,10 @@ func (s *Server) handleRequestWFH(ctx context.Context, input *CreateWFHInput) (*
 	if s.wfhService != nil {
 		hasQuota, quotaErr := s.wfhService.CheckQuota(ctx, memberID, input.Body.Date)
 		if quotaErr != nil {
+			if errors.Is(quotaErr, database.ErrWFHInvalidDate) {
+				return nil, wfhDomainToHumaError(quotaErr)
+			}
+
 			return nil, huma.Error500InternalServerError("Failed to check WFH quota", quotaErr)
 		}
 		if !hasQuota {
@@ -139,11 +153,11 @@ func (s *Server) handleListWFH(ctx context.Context, _ *struct{}) (*ListWFHOutput
 	if auth.IsAdminSession(user) {
 		requests, err = s.db.GetAllWFHRequests(ctx)
 	} else {
-		member, mErr := s.db.GetMemberByEmail(ctx, user.Email)
-		if mErr != nil || member == nil {
-			return nil, huma.Error403Forbidden("You are not registered as a team member")
+		memberID, resolveErr := s.resolveWFHMemberID(ctx)
+		if resolveErr != nil {
+			return nil, resolveErr
 		}
-		requests, err = s.db.GetWFHRequestsByMember(ctx, member.ID)
+		requests, err = s.db.GetWFHRequestsByMember(ctx, memberID)
 	}
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to retrieve WFH requests", err)
@@ -280,7 +294,7 @@ func (s *Server) handleGetWFHByDate(ctx context.Context, input *struct {
 
 	requests, err := s.db.GetWFHRequestsByDate(ctx, input.Date)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("Failed to retrieve WFH requests", err)
+		return nil, wfhDomainToHumaError(err)
 	}
 
 	members, _ := s.db.GetActiveTeamMembers(ctx)

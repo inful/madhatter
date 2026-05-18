@@ -5,7 +5,10 @@ import (
 	"context"
 	"fmt"
 	"html/template"
+	"os"
 	"strings"
+	"sync"
+	texttemplate "text/template"
 	"time"
 	"unicode"
 
@@ -43,11 +46,37 @@ type ICalGenerator struct {
 
 	supportDayLinks []MeetingLink
 	withAlarm       bool
+
+	assignmentTemplateTextPath string
+	assignmentTemplateHTMLPath string
+	leaveTemplateTextPath      string
+	leaveTemplateHTMLPath      string
+	holidayTemplateTextPath    string
+	holidayTemplateHTMLPath    string
 }
 
+// SupportCalendarOptions configures the support-rota ICS calendar generation.
 type SupportCalendarOptions struct {
 	SupportDayLinks []MeetingLink
 	WithAlarm       bool
+
+	// Optional paths to Go template files for overriding assignment event descriptions.
+	// The template receives an assignmentDescriptionData value.
+	// If empty, built-in defaults are used.
+	AssignmentTemplateTextPath string
+	AssignmentTemplateHTMLPath string
+
+	// Optional paths to Go template files for overriding leave event descriptions.
+	// The template receives a leaveDescriptionData value.
+	// If empty, built-in defaults are used.
+	LeaveTemplateTextPath string
+	LeaveTemplateHTMLPath string
+
+	// Optional paths to Go template files for overriding holiday event descriptions.
+	// The template receives a holidayDescriptionData value.
+	// If empty, built-in defaults are used.
+	HolidayTemplateTextPath string
+	HolidayTemplateHTMLPath string
 }
 
 // NewICalGeneratorWithMetadata creates a new iCalendar generator with custom metadata.
@@ -84,6 +113,160 @@ func (g *ICalGenerator) WithAlarm() *ICalGenerator {
 	return g
 }
 
+// WithAssignmentTemplates sets optional template file paths for assignment event descriptions.
+// An empty path means "use the built-in default".
+func (g *ICalGenerator) WithAssignmentTemplates(textPath, htmlPath string) *ICalGenerator {
+	g.assignmentTemplateTextPath = textPath
+	g.assignmentTemplateHTMLPath = htmlPath
+	return g
+}
+
+// WithLeaveTemplates sets optional template file paths for leave event descriptions.
+// An empty path means "use the built-in default".
+func (g *ICalGenerator) WithLeaveTemplates(textPath, htmlPath string) *ICalGenerator {
+	g.leaveTemplateTextPath = textPath
+	g.leaveTemplateHTMLPath = htmlPath
+	return g
+}
+
+// WithHolidayTemplates sets optional template file paths for holiday event descriptions.
+// An empty path means "use the built-in default".
+func (g *ICalGenerator) WithHolidayTemplates(textPath, htmlPath string) *ICalGenerator {
+	g.holidayTemplateTextPath = textPath
+	g.holidayTemplateHTMLPath = htmlPath
+	return g
+}
+
+// assignmentDescriptionData is the template data for support-day (assignment) events.
+type assignmentDescriptionData struct {
+	// Summary is the event summary line, e.g. "HAT day (Name) (COVER)".
+	Summary string
+	// MemberName is the name of the team member on duty.
+	MemberName string
+	// IsCover is true when this assignment covers for another member's leave.
+	IsCover bool
+	// IsForLeave is true when there is an original assignment being covered.
+	IsForLeave bool
+	// Links is the list of support-day resource links.
+	Links []meetingLinkTemplateData
+}
+
+// leaveDescriptionData is the template data for leave events.
+type leaveDescriptionData struct {
+	// Summary is the event summary line, e.g. "Name - Vacation".
+	Summary string
+	// MemberName is the name of the absent team member.
+	MemberName string
+	// LeaveType is the title-cased leave type, e.g. "Vacation".
+	LeaveType string
+}
+
+// holidayDescriptionData is the template data for holiday/closed-day events.
+type holidayDescriptionData struct {
+	// Summary is the event summary line, e.g. "Office Closed - New Year".
+	Summary string
+	// Name is the name of the holiday.
+	Name string
+}
+
+var (
+	defaultAssignmentTextTemplate = texttemplate.Must(texttemplate.New("assignmentText").Parse(
+		`Support duty{{if .IsCover}} (cover){{if .IsForLeave}} for leave{{end}}{{end}}{{if .Links}}
+
+Links:
+{{- range .Links}}
+- {{.Text}}{{end}}{{end}}`,
+	))
+
+	defaultAssignmentHTMLTemplate = template.Must(template.New("assignmentHTML").Parse(
+		`<h3>{{.Summary}}</h3>` +
+			`<p>Support duty{{if .IsCover}} (cover){{if .IsForLeave}} for leave{{end}}{{end}}</p>` +
+			`{{if .Links}}<h4>Links</h4>{{range .Links}}{{if .HTML}}<p>{{.HTML}}</p>` +
+			`{{else}}<p><a href="{{.URL}}">{{.Label}}</a></p>{{end}}{{end}}{{end}}`,
+	))
+
+	defaultLeaveTextTemplate = texttemplate.Must(texttemplate.New("leaveText").Parse(
+		`{{.LeaveType}} leave for {{.MemberName}}`,
+	))
+
+	defaultLeaveHTMLTemplate = template.Must(template.New("leaveHTML").Parse(
+		`<h3>{{.Summary}}</h3><p>{{.LeaveType}} leave for {{.MemberName}}</p>`,
+	))
+
+	defaultHolidayTextTemplate = texttemplate.Must(texttemplate.New("holidayText").Parse(
+		`Support rota is not scheduled on this day`,
+	))
+
+	defaultHolidayHTMLTemplate = template.Must(template.New("holidayHTML").Parse(
+		`<h3>{{.Summary}}</h3><p>Support rota is not scheduled on this day</p>`,
+	))
+
+	supportTextTemplateCache sync.Map // map[string]*texttemplate.Template
+	supportHTMLTemplateCache sync.Map // map[string]*template.Template
+)
+
+func loadSupportTextTemplate(path string, defaultTmpl *texttemplate.Template) (*texttemplate.Template, error) {
+	if strings.TrimSpace(path) == "" {
+		return defaultTmpl, nil
+	}
+	if cached, ok := supportTextTemplateCache.Load(path); ok {
+		return cached.(*texttemplate.Template), nil
+	}
+	contents, err := os.ReadFile(path) //nolint:gosec // Text template path is administrator-configured via env var; reading it is intended.
+	if err != nil {
+		return nil, fmt.Errorf("read support text template %q: %w", path, err)
+	}
+	tmpl, err := texttemplate.New("supportTextOverride").Parse(string(contents))
+	if err != nil {
+		return nil, fmt.Errorf("parse support text template %q: %w", path, err)
+	}
+	supportTextTemplateCache.Store(path, tmpl)
+	return tmpl, nil
+}
+
+func loadSupportHTMLTemplate(path string, defaultTmpl *template.Template) (*template.Template, error) {
+	if strings.TrimSpace(path) == "" {
+		return defaultTmpl, nil
+	}
+	if cached, ok := supportHTMLTemplateCache.Load(path); ok {
+		return cached.(*template.Template), nil
+	}
+	contents, err := os.ReadFile(path) //nolint:gosec // HTML template path is administrator-configured via env var; reading it is intended.
+	if err != nil {
+		return nil, fmt.Errorf("read support html template %q: %w", path, err)
+	}
+	tmpl, err := template.New("supportHTMLOverride").Parse(string(contents))
+	if err != nil {
+		return nil, fmt.Errorf("parse support html template %q: %w", path, err)
+	}
+	supportHTMLTemplateCache.Store(path, tmpl)
+	return tmpl, nil
+}
+
+func renderSupportText(path string, defaultTmpl *texttemplate.Template, data any) (string, error) {
+	tmpl, err := loadSupportTextTemplate(path, defaultTmpl)
+	if err != nil {
+		return "", err
+	}
+	var b bytes.Buffer
+	if err := tmpl.Execute(&b, data); err != nil {
+		return "", fmt.Errorf("execute support text template: %w", err)
+	}
+	return b.String(), nil
+}
+
+func renderSupportHTML(path string, defaultTmpl *template.Template, data any) (string, error) {
+	tmpl, err := loadSupportHTMLTemplate(path, defaultTmpl)
+	if err != nil {
+		return "", err
+	}
+	var b bytes.Buffer
+	if err := tmpl.Execute(&b, data); err != nil {
+		return "", fmt.Errorf("execute support html template: %w", err)
+	}
+	return b.String(), nil
+}
+
 // AddAssignment adds a rota assignment as a calendar event.
 func (g *ICalGenerator) AddAssignment(assignment database.RotaAssignment, memberName string) error {
 	event := g.calendar.AddEvent(fmt.Sprintf("%s@supportrota", assignment.ID))
@@ -107,24 +290,26 @@ func (g *ICalGenerator) AddAssignment(assignment database.RotaAssignment, member
 	}
 	event.SetSummary(summary)
 
-	// Set description.
-	baseDescription := "Support duty"
-	if assignment.IsCover {
-		baseDescription += " (cover)"
-		if assignment.OriginalAssignmentID != nil {
-			baseDescription += " for leave"
-		}
+	// Build template data.
+	data := assignmentDescriptionData{
+		Summary:    summary,
+		MemberName: memberName,
+		IsCover:    assignment.IsCover,
+		IsForLeave: assignment.IsCover && assignment.OriginalAssignmentID != nil,
+		Links:      buildMeetingLinkTemplateData(g.supportDayLinks),
 	}
 
-	textDescription := baseDescription
-	if len(g.supportDayLinks) > 0 {
-		textDescription += formatLinksText(g.supportDayLinks)
+	// Render text description.
+	textDesc, err := renderSupportText(g.assignmentTemplateTextPath, defaultAssignmentTextTemplate, data)
+	if err != nil {
+		return err
 	}
-	event.SetDescription(textDescription)
+	event.SetDescription(textDesc)
 
-	htmlDesc := htmlHeading(summary) + htmlParagraph(baseDescription)
-	if len(g.supportDayLinks) > 0 {
-		htmlDesc += formatLinksHTML(g.supportDayLinks)
+	// Render HTML description.
+	htmlDesc, err := renderSupportHTML(g.assignmentTemplateHTMLPath, defaultAssignmentHTMLTemplate, data)
+	if err != nil {
+		return err
 	}
 	setAltDescHTML(event, htmlDesc)
 
@@ -149,29 +334,6 @@ func (g *ICalGenerator) AddAssignment(assignment database.RotaAssignment, member
 	}
 
 	return nil
-}
-
-func formatLinksText(links []MeetingLink) string {
-	var b strings.Builder
-	first := true
-	for _, l := range links {
-		label, urlStr := meetingLinkLabelAndURL(l)
-		if label == "" {
-			continue
-		}
-		if first {
-			b.WriteString("\n\nLinks:\n")
-			first = false
-		}
-		b.WriteString("- ")
-		b.WriteString(label)
-		if urlStr != "" {
-			b.WriteString(": ")
-			b.WriteString(urlStr)
-		}
-		b.WriteString("\n")
-	}
-	return b.String()
 }
 
 func meetingLinkLabelAndURL(link MeetingLink) (label string, urlStr string) {
@@ -259,41 +421,6 @@ func stripHTMLTags(s string) string {
 	return b.String()
 }
 
-func formatLinksHTML(links []MeetingLink) string {
-	var b strings.Builder
-	builtAny := false
-
-	for _, l := range links {
-		if strings.TrimSpace(string(l.HTML)) != "" {
-			if !builtAny {
-				b.WriteString("<h4>Links</h4>")
-				builtAny = true
-			}
-			b.WriteString("<p>")
-			b.WriteString(string(l.HTML))
-			b.WriteString("</p>")
-			continue
-		}
-
-		label := strings.TrimSpace(l.Label)
-		urlStr := safeHTTPURL(strings.TrimSpace(l.URL))
-		if label == "" || urlStr == "" {
-			continue
-		}
-		if !builtAny {
-			b.WriteString("<h4>Links</h4>")
-			builtAny = true
-		}
-		b.WriteString("<p><a href=\"")
-		b.WriteString(template.HTMLEscapeString(urlStr))
-		b.WriteString("\">")
-		b.WriteString(template.HTMLEscapeString(label))
-		b.WriteString("</a></p>")
-	}
-
-	return b.String()
-}
-
 // AddLeaveEvent adds a leave/absence event to the calendar.
 func (g *ICalGenerator) AddLeaveEvent(memberName string, leaveType string, startDate, endDate time.Time) error {
 	event := g.calendar.AddEvent(fmt.Sprintf("leave-%s-%d", strings.ToLower(memberName), startDate.Unix()))
@@ -303,14 +430,29 @@ func (g *ICalGenerator) AddLeaveEvent(memberName string, leaveType string, start
 	event.SetAllDayEndAt(endDate.Add(hoursPerDay * time.Hour)) // End date is exclusive in iCalendar
 
 	// Set summary
-	event.SetSummary(fmt.Sprintf("%s - %s", memberName, titleCase(leaveType)))
+	summary := fmt.Sprintf("%s - %s", memberName, titleCase(leaveType))
+	event.SetSummary(summary)
 
-	// Set description
-	event.SetDescription(fmt.Sprintf("%s leave for %s", titleCase(leaveType), memberName))
-	setAltDescHTML(
-		event,
-		htmlHeading(fmt.Sprintf("%s - %s", memberName, titleCase(leaveType)))+htmlParagraph(fmt.Sprintf("%s leave for %s", titleCase(leaveType), memberName)),
-	)
+	// Build template data.
+	data := leaveDescriptionData{
+		Summary:    summary,
+		MemberName: memberName,
+		LeaveType:  titleCase(leaveType),
+	}
+
+	// Render text description.
+	textDesc, err := renderSupportText(g.leaveTemplateTextPath, defaultLeaveTextTemplate, data)
+	if err != nil {
+		return err
+	}
+	event.SetDescription(textDesc)
+
+	// Render HTML description.
+	htmlDesc, err := renderSupportHTML(g.leaveTemplateHTMLPath, defaultLeaveHTMLTemplate, data)
+	if err != nil {
+		return err
+	}
+	setAltDescHTML(event, htmlDesc)
 
 	// Set status to tentative for leave
 	event.SetStatus(ics.ObjectStatusTentative)
@@ -330,14 +472,28 @@ func (g *ICalGenerator) AddHoliday(name string, date time.Time) error {
 	event.SetAllDayEndAt(date.Add(hoursPerDay * time.Hour))
 
 	// Set summary
-	event.SetSummary(fmt.Sprintf("Office Closed - %s", name))
+	summary := fmt.Sprintf("Office Closed - %s", name)
+	event.SetSummary(summary)
 
-	// Set description
-	event.SetDescription("Support rota is not scheduled on this day")
-	setAltDescHTML(
-		event,
-		htmlHeading(fmt.Sprintf("Office Closed - %s", name))+htmlParagraph("Support rota is not scheduled on this day"),
-	)
+	// Build template data.
+	data := holidayDescriptionData{
+		Summary: summary,
+		Name:    name,
+	}
+
+	// Render text description.
+	textDesc, err := renderSupportText(g.holidayTemplateTextPath, defaultHolidayTextTemplate, data)
+	if err != nil {
+		return err
+	}
+	event.SetDescription(textDesc)
+
+	// Render HTML description.
+	htmlDesc, err := renderSupportHTML(g.holidayTemplateHTMLPath, defaultHolidayHTMLTemplate, data)
+	if err != nil {
+		return err
+	}
+	setAltDescHTML(event, htmlDesc)
 
 	// Set status to canceled
 	event.SetStatus(ics.ObjectStatusCancelled)
@@ -364,7 +520,11 @@ func (g *ICalGenerator) SerializeBytes() ([]byte, error) {
 
 // GenerateICalFromAssignmentsWithOptions creates a complete iCalendar file from rota assignments.
 func GenerateICalFromAssignmentsWithOptions(assignments []database.RotaAssignment, memberName string, opts SupportCalendarOptions) (string, error) {
-	generator := NewICalGenerator().WithSupportDayLinks(opts.SupportDayLinks)
+	generator := NewICalGenerator().
+		WithSupportDayLinks(opts.SupportDayLinks).
+		WithAssignmentTemplates(opts.AssignmentTemplateTextPath, opts.AssignmentTemplateHTMLPath).
+		WithLeaveTemplates(opts.LeaveTemplateTextPath, opts.LeaveTemplateHTMLPath).
+		WithHolidayTemplates(opts.HolidayTemplateTextPath, opts.HolidayTemplateHTMLPath)
 	if opts.WithAlarm {
 		generator = generator.WithAlarm()
 	}

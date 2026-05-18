@@ -104,6 +104,38 @@ func TestGetUpcomingPresenceFrom_ShowsSwapBadgeForSwappedAssignment(t *testing.T
 	assert.True(t, presence[0].AssignedSwapped)
 }
 
+func TestLoadCurrentUserPresenceStatus_SetsHatDayAndLeave(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupPresenceTestDB(t)
+	defer cleanup()
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	today := time.Now().Format("2006-01-02")
+	tomorrow := nextBusinessDay(time.Now().AddDate(0, 0, 1)).Format("2006-01-02")
+	_, err = db.CreateRotaAssignment(ctx, today, aliceID, false, nil)
+	require.NoError(t, err)
+	_, err = db.CreateRotaAssignment(ctx, tomorrow, aliceID, false, nil)
+	require.NoError(t, err)
+
+	_, err = db.CreateLeaveRecord(ctx, aliceID, today, today)
+	require.NoError(t, err)
+	_, err = db.CreateWFHRequest(ctx, aliceID, tomorrow)
+	require.NoError(t, err)
+
+	handler := &Handler{db: db}
+	data := map[string]any{}
+
+	handler.loadCurrentUserPresenceStatus(ctx, data, "alice@example.com")
+
+	assert.Equal(t, currentUserStatusOnLeave, data["CurrentUserPresenceStatus"])
+	assert.Equal(t, true, data["CurrentUserHasHATDay"])
+	assert.Equal(t, today, data["CurrentUserNextHATDay"])
+	assert.Equal(t, tomorrow, data["CurrentUserNextWFHDay"])
+	assert.Equal(t, today, data["CurrentUserNextLeaveDay"])
+}
+
 func nextBusinessDay(from time.Time) time.Time {
 	date := time.Date(from.Year(), from.Month(), from.Day(), 0, 0, 0, 0, from.Location())
 	for date.Weekday() == time.Saturday || date.Weekday() == time.Sunday {

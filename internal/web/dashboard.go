@@ -10,6 +10,12 @@ import (
 	"github.com/inful/madhatter/internal/database"
 )
 
+const (
+	currentUserStatusOnLeave = "On leave"
+	currentUserStatusWFH     = "WFH"
+	currentUserStatusOnSite  = "On-site"
+)
+
 func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	data := map[string]any{
@@ -23,6 +29,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	if user, ok := auth.GetUserFromContext(ctx); ok {
 		data["User"] = user
 		data["IsAdmin"] = auth.IsAdminSession(user)
+		h.loadCurrentUserPresenceStatus(ctx, data, user.Email)
 	}
 
 	// Check team members - show message if none exist, but always load schedule.
@@ -69,6 +76,89 @@ func (h *Handler) loadPendingSwapCount(ctx context.Context, data map[string]any)
 	count, err := h.db.CountPendingSwapsForMember(ctx, member.ID)
 	if err == nil && count > 0 {
 		data["PendingSwapCount"] = count
+	}
+}
+
+func (h *Handler) loadCurrentUserPresenceStatus(ctx context.Context, data map[string]any, email string) {
+	member, err := h.db.GetMemberByEmail(ctx, email)
+	if err != nil || member == nil {
+		return
+	}
+
+	today := time.Now().Format("2006-01-02")
+	assignments, err := h.db.GetAssignmentsByDate(ctx, today)
+	if err == nil {
+		for i := range assignments {
+			if assignments[i].MemberID == member.ID {
+				data["CurrentUserHasHATDay"] = true
+				break
+			}
+		}
+	}
+
+	h.loadCurrentUserUpcomingDates(ctx, data, member.ID, today)
+
+	leaveRecords, err := h.db.GetLeaveByDate(ctx, today)
+	if err == nil {
+		for i := range leaveRecords {
+			if leaveRecords[i].MemberID == member.ID {
+				data["CurrentUserPresenceStatus"] = currentUserStatusOnLeave
+				return
+			}
+		}
+	}
+
+	wfhRequests, err := h.db.GetWFHRequestsByDateAndStatus(ctx, today, database.WFHStatusApproved)
+	if err == nil {
+		for i := range wfhRequests {
+			if wfhRequests[i].MemberID == member.ID {
+				data["CurrentUserPresenceStatus"] = currentUserStatusWFH
+				return
+			}
+		}
+	}
+
+	data["CurrentUserPresenceStatus"] = currentUserStatusOnSite
+}
+
+func (h *Handler) loadCurrentUserUpcomingDates(ctx context.Context, data map[string]any, memberID, today string) {
+	futureAssignments, err := h.db.GetFutureAssignmentsForMember(ctx, memberID)
+	if err == nil && len(futureAssignments) > 0 {
+		data["CurrentUserNextHATDay"] = futureAssignments[0].Date
+	}
+
+	wfhRequests, err := h.db.GetWFHRequestsByMember(ctx, memberID)
+	if err == nil {
+		for i := range wfhRequests {
+			if wfhRequests[i].Date < today {
+				continue
+			}
+			if wfhRequests[i].Status != database.WFHStatusPending && wfhRequests[i].Status != database.WFHStatusApproved {
+				continue
+			}
+			data["CurrentUserNextWFHDay"] = wfhRequests[i].Date
+			break
+		}
+	}
+
+	leaveRecords, err := h.db.GetLeaveRecords(ctx)
+	if err == nil {
+		for i := range leaveRecords {
+			if leaveRecords[i].MemberID != memberID {
+				continue
+			}
+
+			effectiveStart := leaveRecords[i].StartDate.Format("2006-01-02")
+			if effectiveStart < today {
+				effectiveStart = today
+			}
+			if leaveRecords[i].EndDate.Format("2006-01-02") < today {
+				continue
+			}
+
+			data["CurrentUserNextLeaveDay"] = effectiveStart
+			break
+		}
 	}
 }
 
@@ -220,8 +310,14 @@ func (h *Handler) getUpcomingPresenceFrom(ctx context.Context, start time.Time) 
 			return nil, leaveErr
 		}
 
+		wfhRequests, wfhErr := h.db.GetWFHRequestsByDateAndStatus(ctx, dateStr, database.WFHStatusApproved)
+		if wfhErr != nil {
+			return nil, wfhErr
+		}
+
 		away := make([]presenceLeave, 0, len(leaveRecords))
 		onLeave := make(map[string]struct{})
+		wfhMemberIDs := make(map[string]struct{}, len(wfhRequests))
 		for i := range leaveRecords {
 			leave := &leaveRecords[i]
 			member, ok := memberMap[leave.MemberID]
@@ -232,7 +328,20 @@ func (h *Handler) getUpcomingPresenceFrom(ctx context.Context, start time.Time) 
 			away = append(away, presenceLeave{Member: member})
 		}
 
+		for i := range wfhRequests {
+			wfhMemberIDs[wfhRequests[i].MemberID] = struct{}{}
+		}
+
 		present := buildPresenceList(memberMap, onLeave)
+		onsite := make([]database.TeamMember, 0, len(present))
+		wfh := make([]database.TeamMember, 0, len(wfhMemberIDs))
+		for i := range present {
+			if _, ok := wfhMemberIDs[present[i].ID]; ok {
+				wfh = append(wfh, present[i])
+				continue
+			}
+			onsite = append(onsite, present[i])
+		}
 
 		sort.Slice(away, func(i, j int) bool {
 			return away[i].Member.Name < away[j].Member.Name
@@ -247,7 +356,8 @@ func (h *Handler) getUpcomingPresenceFrom(ctx context.Context, start time.Time) 
 			IsToday:         isToday,
 			Assigned:        assigned,
 			AssignedSwapped: assignedSwapped,
-			Present:         present,
+			Present:         onsite,
+			WFH:             wfh,
 			Away:            away,
 		})
 

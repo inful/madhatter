@@ -142,61 +142,91 @@ oauth_tokens          - Encrypted OAuth tokens
 
 ### Environment Variables
 
-#### Required for Production
+The application is primarily configured through environment variables.
+
+#### Production-critical
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `SESSION_SECRET` | none | Required in production for session signing and validation. |
+| `TOKEN_ENCRYPTION_KEY` | random ephemeral key | Optional for local development, but required in production if you want stored OAuth tokens to survive restarts. Must be a base64-encoded 32-byte key. |
+
+#### OAuth provider configuration
+
+At least one provider must be configured for production authentication.
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `FORGEJO_CLIENT_ID` | none | Enables Forgejo auth when set. |
+| `FORGEJO_CLIENT_SECRET` | none | Forgejo OAuth client secret. |
+| `FORGEJO_REDIRECT_URL` | none | Forgejo callback URL. |
+| `FORGEJO_AUTH_URL` | `/login/oauth/authorize` | Override for self-hosted Forgejo. |
+| `FORGEJO_TOKEN_URL` | `/login/oauth/access_token` | Override for self-hosted Forgejo. |
+| `FORGEJO_USERINFO_URL` | `/api/v1/user` | Override for self-hosted Forgejo. |
+| `FORGEJO_SCOPE` | `read:user` | Forgejo OAuth scope. |
+| `GITLAB_CLIENT_ID` | none | Enables GitLab auth when set. |
+| `GITLAB_CLIENT_SECRET` | none | GitLab OAuth client secret. |
+| `GITLAB_REDIRECT_URL` | none | GitLab callback URL. |
+| `GITLAB_AUTH_URL` | `https://gitlab.com/oauth/authorize` | Override for self-hosted GitLab. |
+| `GITLAB_TOKEN_URL` | `https://gitlab.com/oauth/token` | Override for self-hosted GitLab. |
+| `GITLAB_USERINFO_URL` | `https://gitlab.com/api/v4/user` | Override for self-hosted GitLab. |
+| `GITLAB_SCOPE` | `read_user` | If `GITLAB_ALLOWED_GROUP` is set and `GITLAB_SCOPE` is unset, the effective default becomes `read_api read_user`. |
+| `GITLAB_ALLOWED_GROUP` | none | Optional GitLab group/subgroup path restriction, for example `myorg/platform`. |
+
+#### Work From Home (WFH)
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `WFH_ENABLED` | `true` | Enables the WFH feature. |
+| `WFH_MIN_ONSITE_PERCENTAGE` | `50.0` | Minimum percentage of active team members required on-site. |
+| `WFH_MIN_ONSITE_ABSOLUTE` | `1` | Minimum absolute number of on-site team members. |
+| `WFH_MAX_DAYS_PER_PERIOD` | `2` | Max WFH days per quota period, counting pending and approved requests. |
+| `WFH_PERIOD_DAYS` | `7` | Length of one WFH quota period. |
+| `WFH_PERIOD_ANCHOR` | `2026-01-05` | Reference date used to compute WFH periods. Must use `YYYY-MM-DD`. |
+| `WFH_SETTLEMENT_DAYS` | `2` | Number of days ahead that pending WFH requests are auto-settled. |
+| `WFH_WITHDRAWAL_HOURS` | `24` | Hours before the WFH day when admins can still withdraw an approved request. |
+
+#### Calendar and meetings
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `MEETINGS_TIMEZONE` | `Europe/Oslo` | Used when generating meeting events. Invalid values fall back to `Europe/Oslo`. |
+| `MEETINGS_TEAMS_URL` | none | Teams join URL included in meeting events. |
+| `MEETINGS_TEMPLATE_TEXT_PATH` | built-in template | Optional text/template override for meeting descriptions. |
+| `MEETINGS_TEMPLATE_HTML_PATH` | built-in template | Optional html/template override for meeting descriptions. |
+| `MEETINGS_LINKS` | none | Comma-separated shared links for meeting events. |
+| `MEETINGS_LINKS_MORNING` | falls back to `MEETINGS_LINKS` | Overrides links for Tue-Fri morning shuffle meetings. |
+| `MEETINGS_LINKS_PROJECT` | falls back to `MEETINGS_LINKS` | Overrides links for Monday project shuffle meetings. |
+| `SUPPORT_DAY_LINKS` | none | Extra links included in support-duty calendar events. |
+
+#### Holidays and database
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `HOLIDAY_URLS` | none | Comma-separated holiday iCal feed URLs. If unset, holiday support is effectively disabled. |
+| `MIGRATIONS_PATH` | auto-detected | Optional absolute or relative path to the migrations directory. If unset, the app searches common repo-relative locations. |
+
+Example production setup:
+
 ```bash
-# OAuth2 Providers (at least one)
-FORGEJO_CLIENT_ID=your-client-id
-FORGEJO_CLIENT_SECRET=your-client-secret
-FORGEJO_REDIRECT_URL=http://your-domain:8080/auth/callback?provider=forgejo
+export SESSION_SECRET="$(openssl rand -base64 32)"
+export TOKEN_ENCRYPTION_KEY="$(openssl rand -base64 32)"
 
-GITLAB_CLIENT_ID=your-client-id
-GITLAB_CLIENT_SECRET=your-client-secret
-GITLAB_REDIRECT_URL=http://your-domain:8080/auth/callback?provider=gitlab
+export GITLAB_CLIENT_ID="your-client-id"
+export GITLAB_CLIENT_SECRET="your-client-secret"
+export GITLAB_REDIRECT_URL="https://your-domain/auth/callback?provider=gitlab"
 
-# Session Security
-SESSION_SECRET=generate-a-random-secret-key
+export HOLIDAY_URLS="https://www.officeholidays.com/subscribe/norway"
+
+export WFH_MIN_ONSITE_PERCENTAGE="50"
+export WFH_MAX_DAYS_PER_PERIOD="2"
 ```
 
-#### Optional Configuration
-```bash
-# Meetings calendar
-MEETINGS_TIMEZONE=Europe/Oslo
-MEETINGS_TEAMS_URL=https://teams.example.com/meet
+Notes:
 
-# Optional: override meeting descriptions using Go templates.
-# The files are read by the server process at runtime.
-MEETINGS_TEMPLATE_TEXT_PATH=/etc/support-rota/templates/meeting_description.txt.tmpl
-MEETINGS_TEMPLATE_HTML_PATH=/etc/support-rota/templates/meeting_description.html.tmpl
-
-# Optional: extra links to include in meeting event descriptions.
-# Comma-separated; each item is either a raw HTML <a ...>...</a> or a Label|URL pair.
-MEETINGS_LINKS='Runbook|https://example.com/runbook, <a href="https://example.com/raw">Raw link</a>'
-
-# Optional: different links for each meeting type.
-# If set, these take precedence over MEETINGS_LINKS for their respective events.
-MEETINGS_LINKS_PROJECT='Project doc|https://example.com/project'
-MEETINGS_LINKS_MORNING='Standup board|https://example.com/morning'
-
-# Optional: extra links for support duty (HAT day) events in the support rota calendar.
-SUPPORT_DAY_LINKS='Runbook|https://example.com/runbook'
-
-# Holiday Service
-HOLIDAY_URLS=https://www.officeholidays.com/subscribe/norway,https://www.officeholidays.com/subscribe/uk
-HOLIDAY_FETCH_INTERVAL=24  # hours
-HOLIDAY_LOOKAHEAD=365      # days
-
-# OAuth URLs (for self-hosted providers)
-FORGEJO_AUTH_URL=/login/oauth/authorize
-FORGEJO_TOKEN_URL=/login/oauth/access_token
-FORGEJO_USERINFO_URL=/api/v1/user
-FORGEJO_SCOPE=read:user
-
-GITLAB_AUTH_URL=https://gitlab.com/oauth/authorize
-GITLAB_TOKEN_URL=https://gitlab.com/oauth/token
-GITLAB_USERINFO_URL=https://gitlab.com/api/v4/user
-GITLAB_SCOPE=read_user
-GITLAB_ALLOWED_GROUP=myorg/myteam  # Optional: restrict to group members
-```
+- `HOLIDAY_FETCH_INTERVAL` and `HOLIDAY_LOOKAHEAD` are not currently read from environment variables by the application.
+- Meeting template and link environment variables are read when calendar output is generated.
+- Most other environment variables are loaded during server startup.
 
 ### Meeting template overrides
 

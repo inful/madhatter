@@ -27,6 +27,9 @@
                 <a href="/leave/manage" class="button is-warning action-btn">
                     <i class="fas fa-calendar-times mr-1"></i> Manage Leave
                 </a>
+                <a href="/admin/wfh" class="button is-success action-btn">
+                    <i class="fas fa-home mr-1"></i> Manage WFH
+                </a>
                 <a href="/calendar/subscriptions" class="button is-light action-btn">
                     <i class="fas fa-rss mr-1"></i> Subscriptions
                 </a>
@@ -45,6 +48,9 @@
                 {{if .PendingSwapCount}}
                     <span class="tag is-danger ml-1">{{.PendingSwapCount}}</span>
                 {{end}}
+            </a>
+            <a href="/wfh" class="button is-success action-btn">
+                <i class="fas fa-home mr-1"></i> WFH
             </a>
             <a href="/calendar" class="button is-warning action-btn">
                 <i class="fas fa-calendar-star mr-1"></i> Calendar

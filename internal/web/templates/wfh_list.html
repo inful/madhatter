@@ -1,0 +1,129 @@
+{{define "wfh_list.html"}}
+{{template "base" .}}
+{{end}}
+
+{{define "wfh_list_title"}}Work From Home Requests{{end}}
+
+{{define "wfh_list_content"}}
+{{template "user_card" .}}
+{{template "page_header" (dict "Title" "Work From Home" "Icon" "fas fa-home" "BackHref" "/" "BackLabel" "Dashboard")}}
+
+{{if .Error}}
+<div class="notification is-danger is-light mb-4">
+    <i class="fas fa-exclamation-triangle mr-2"></i> {{.Error}}
+</div>
+{{end}}
+
+{{if .Quota}}
+<div class="card mb-4">
+    <header class="card-header">
+        <p class="card-header-title">
+            <i class="fas fa-chart-bar mr-2"></i> Your WFH Quota
+        </p>
+    </header>
+    <div class="card-content">
+        <div class="level">
+            <div class="level-item has-text-centered">
+                <div>
+                    <p class="heading">Period</p>
+                    <p class="title is-6">{{.Quota.PeriodStart}} – {{.Quota.PeriodEnd}}</p>
+                </div>
+            </div>
+            <div class="level-item has-text-centered">
+                <div>
+                    <p class="heading">Used</p>
+                    <p class="title is-3 has-text-info">{{.Quota.Used}}</p>
+                </div>
+            </div>
+            <div class="level-item has-text-centered">
+                <div>
+                    <p class="heading">Remaining</p>
+                    <p class="title is-3 {{if gt .Quota.Remaining 0}}has-text-success{{else}}has-text-danger{{end}}">{{.Quota.Remaining}}</p>
+                </div>
+            </div>
+        </div>
+        {{if gt .Quota.Remaining 0}}
+        <div class="has-text-centered mt-3">
+            <a href="/wfh/request" class="button is-primary">
+                <span class="icon"><i class="fas fa-plus"></i></span>
+                <span>Request WFH Day</span>
+            </a>
+        </div>
+        {{else}}
+        <div class="notification is-warning is-light mt-3">
+            <i class="fas fa-exclamation-circle mr-2"></i> You have used your full WFH quota for this period.
+        </div>
+        {{end}}
+    </div>
+</div>
+{{else}}
+<div class="mb-4">
+    <a href="/wfh/request" class="button is-primary">
+        <span class="icon"><i class="fas fa-plus"></i></span>
+        <span>Request WFH Day</span>
+    </a>
+</div>
+{{end}}
+
+{{if .Requests}}
+<div class="card">
+    <header class="card-header">
+        <p class="card-header-title">
+            <i class="fas fa-list mr-2"></i> Your WFH Requests
+        </p>
+    </header>
+    <div class="card-content">
+        <div class="table-container">
+            <table class="table is-fullwidth is-striped is-hoverable">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Status</th>
+                        <th>Requested</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .Requests}}
+                    <tr>
+                        <td><strong>{{.Date}}</strong></td>
+                        <td>
+                            {{if eq .Status "pending"}}
+                            <span class="tag is-warning is-light"><i class="fas fa-clock mr-1"></i> Pending</span>
+                            {{else if eq .Status "approved"}}
+                            <span class="tag is-success is-light"><i class="fas fa-check mr-1"></i> Approved</span>
+                            {{else if eq .Status "denied"}}
+                            <span class="tag is-danger is-light"><i class="fas fa-times mr-1"></i> Denied</span>
+                            {{else if eq .Status "cancelled"}}
+                            <span class="tag is-light"><i class="fas fa-ban mr-1"></i> Cancelled</span>
+                            {{else if eq .Status "withdrawn"}}
+                            <span class="tag is-dark is-light"><i class="fas fa-undo mr-1"></i> Withdrawn</span>
+                            {{else}}
+                            <span class="tag is-light">{{.Status}}</span>
+                            {{end}}
+                        </td>
+                        <td>{{.CreatedAt.Format "2006-01-02 15:04"}}</td>
+                        <td>
+                            {{if eq .Status "pending"}}
+                            <form method="post" action="/wfh/{{.ID}}/cancel" style="display:inline">
+                                <button type="submit" class="button is-small is-danger is-light"
+                                    onclick="return confirm('Cancel this WFH request?')">
+                                    <span class="icon"><i class="fas fa-times"></i></span>
+                                    <span>Cancel</span>
+                                </button>
+                            </form>
+                            {{end}}
+                        </td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{{else}}
+<div class="notification is-info is-light">
+    <i class="fas fa-info-circle mr-2"></i> You have no WFH requests yet.
+</div>
+{{end}}
+{{end}}

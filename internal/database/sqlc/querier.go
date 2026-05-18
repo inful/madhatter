@@ -15,6 +15,7 @@ type Querier interface {
 	AddTeamMember(ctx context.Context, arg AddTeamMemberParams) (sql.Result, error)
 	CleanupExpiredTokens(ctx context.Context) (sql.Result, error)
 	CountAdmins(ctx context.Context) (int64, error)
+	CountApprovedWFHByDate(ctx context.Context, date time.Time) (int64, error)
 	CountPendingSwapsForMember(ctx context.Context, targetMemberID string) (int64, error)
 	CreateAPIToken(ctx context.Context, arg CreateAPITokenParams) (sql.Result, error)
 	CreateCalendarSubscription(ctx context.Context, arg CreateCalendarSubscriptionParams) (sql.Result, error)
@@ -26,6 +27,7 @@ type Querier interface {
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	// Atomically creates a user and makes them admin only if no admins exist
 	CreateUserAsFirstAdmin(ctx context.Context, arg CreateUserAsFirstAdminParams) (User, error)
+	CreateWFHRequest(ctx context.Context, arg CreateWFHRequestParams) (sql.Result, error)
 	DeactivateAPIToken(ctx context.Context, id string) (sql.Result, error)
 	DeactivateTeamMember(ctx context.Context, id string) error
 	DeleteAPIToken(ctx context.Context, id string) (sql.Result, error)
@@ -42,11 +44,13 @@ type Querier interface {
 	DeleteStaleSubscriptions(ctx context.Context, arg DeleteStaleSubscriptionsParams) (sql.Result, error)
 	DeleteTeamMember(ctx context.Context, id string) error
 	DeleteUserSessions(ctx context.Context, userID string) error
+	DeleteWFHRequest(ctx context.Context, id string) error
 	GetAPITokenByHash(ctx context.Context, tokenHash string) (ApiToken, error)
 	GetAPITokenByID(ctx context.Context, id string) (ApiToken, error)
 	GetAPITokensByUser(ctx context.Context, userID string) ([]ApiToken, error)
 	GetActiveTeamMembers(ctx context.Context) ([]TeamMember, error)
 	GetAllSubscriptions(ctx context.Context) ([]CalendarSubscription, error)
+	GetAllWFHRequests(ctx context.Context) ([]WfhRequest, error)
 	GetAssignmentByID(ctx context.Context, id string) (GetAssignmentByIDRow, error)
 	GetAssignmentsByDate(ctx context.Context, date time.Time) ([]GetAssignmentsByDateRow, error)
 	GetAssignmentsByDateRange(ctx context.Context, arg GetAssignmentsByDateRangeParams) ([]GetAssignmentsByDateRangeRow, error)
@@ -65,6 +69,7 @@ type Querier interface {
 	GetOAuthToken(ctx context.Context, arg GetOAuthTokenParams) (OauthToken, error)
 	GetOpenSwapForAssignment(ctx context.Context, arg GetOpenSwapForAssignmentParams) (HatSwap, error)
 	GetPendingSwapsForMember(ctx context.Context, targetMemberID string) ([]HatSwap, error)
+	GetPendingWFHRequestsForSettlement(ctx context.Context, date time.Time) ([]WfhRequest, error)
 	GetSessionByToken(ctx context.Context, token string) (GetSessionByTokenRow, error)
 	GetSubscriptionByToken(ctx context.Context, token string) (CalendarSubscription, error)
 	GetSubscriptionsByMemberID(ctx context.Context, memberID string) ([]CalendarSubscription, error)
@@ -73,6 +78,12 @@ type Querier interface {
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id string) (User, error)
 	GetUserByProvider(ctx context.Context, arg GetUserByProviderParams) (User, error)
+	GetWFHRequestByID(ctx context.Context, id string) (WfhRequest, error)
+	GetWFHRequestByMemberAndDate(ctx context.Context, arg GetWFHRequestByMemberAndDateParams) (WfhRequest, error)
+	GetWFHRequestsByDate(ctx context.Context, date time.Time) ([]WfhRequest, error)
+	GetWFHRequestsByDateAndStatus(ctx context.Context, arg GetWFHRequestsByDateAndStatusParams) ([]WfhRequest, error)
+	GetWFHRequestsByMember(ctx context.Context, memberID string) ([]WfhRequest, error)
+	GetWFHRequestsByMemberAndPeriod(ctx context.Context, arg GetWFHRequestsByMemberAndPeriodParams) ([]WfhRequest, error)
 	ListActiveUsers(ctx context.Context) ([]User, error)
 	ListAdminUsers(ctx context.Context) ([]User, error)
 	MarkAssignmentSwapped(ctx context.Context, id string) error
@@ -89,6 +100,8 @@ type Querier interface {
 	UpdateTeamMember(ctx context.Context, arg UpdateTeamMemberParams) error
 	UpdateUser(ctx context.Context, arg UpdateUserParams) error
 	UpdateUserProvider(ctx context.Context, arg UpdateUserProviderParams) error
+	UpdateWFHRequestStatus(ctx context.Context, arg UpdateWFHRequestStatusParams) (sql.Result, error)
+	UpdateWFHRequestWithdrawn(ctx context.Context, arg UpdateWFHRequestWithdrawnParams) (sql.Result, error)
 }
 
 var _ Querier = (*Queries)(nil)

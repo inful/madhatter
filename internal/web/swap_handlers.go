@@ -37,7 +37,7 @@ func (h *Handler) handleSwaps(w http.ResponseWriter, r *http.Request) {
 
 	if memberID == "" {
 		delete(data, "MemberID")
-		data["Error"] = "You are not registered as a team member."
+		data["Error"] = errNotTeamMember
 		if err := h.tmpl.ExecuteTemplate(w, "swaps.html", data); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}

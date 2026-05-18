@@ -303,4 +303,88 @@ func (s *Server) registerOperations(development bool) {
 			{"apiTokenAuth": {}},
 		},
 	}, s.handleDeleteSwap)
+
+	// WFH Operations
+	huma.Register(s.api, huma.Operation{
+		OperationID: "request-wfh",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/wfh",
+		Summary:     "Request a work-from-home day",
+		Tags:        []string{"WFH"},
+		Security: []map[string][]string{
+			{"sessionAuth": {}},
+			{"apiTokenAuth": {}},
+		},
+	}, s.handleRequestWFH)
+
+	huma.Register(s.api, huma.Operation{
+		OperationID: "list-wfh",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/wfh",
+		Summary:     "List WFH requests (own requests for regular users, all for admins)",
+		Tags:        []string{"WFH"},
+		Security: []map[string][]string{
+			{"sessionAuth": {}},
+			{"apiTokenAuth": {}},
+		},
+	}, s.handleListWFH)
+
+	huma.Register(s.api, huma.Operation{
+		OperationID: "cancel-wfh",
+		Method:      http.MethodDelete,
+		Path:        "/api/v1/wfh/{id}",
+		Summary:     "Cancel a pending WFH request",
+		Tags:        []string{"WFH"},
+		Security: []map[string][]string{
+			{"sessionAuth": {}},
+			{"apiTokenAuth": {}},
+		},
+	}, s.handleCancelWFH)
+
+	huma.Register(s.api, huma.Operation{
+		OperationID: "withdraw-wfh",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/wfh/{id}/withdraw",
+		Summary:     "Withdraw an approved WFH request (admin only)",
+		Tags:        []string{"WFH"},
+		Security: []map[string][]string{
+			{"sessionAuth": {}},
+			{"apiTokenAuth": {}},
+		},
+	}, s.handleWithdrawWFH)
+
+	huma.Register(s.api, huma.Operation{
+		OperationID: "settle-wfh",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/wfh/settle",
+		Summary:     "Manually trigger WFH settlement (admin only)",
+		Tags:        []string{"WFH"},
+		Security: []map[string][]string{
+			{"sessionAuth": {}},
+		},
+	}, s.handleSettleWFH)
+
+	huma.Register(s.api, huma.Operation{
+		OperationID: "get-wfh-quota",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/wfh/quota",
+		Summary:     "Get the current user's WFH quota status",
+		Tags:        []string{"WFH"},
+		Security: []map[string][]string{
+			{"sessionAuth": {}},
+			{"apiTokenAuth": {}},
+		},
+	}, s.handleWFHQuota)
+
+	huma.Register(s.api, huma.Operation{
+		OperationID: "get-wfh-by-date",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/wfh/date/{date}",
+		Summary:     "Get WFH requests for a specific date (admin only)",
+		Tags:        []string{"WFH"},
+		Security: []map[string][]string{
+			{"sessionAuth": {}},
+			{"apiTokenAuth": {}},
+		},
+	}, s.handleGetWFHByDate)
 }

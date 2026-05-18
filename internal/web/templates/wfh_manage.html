@@ -1,0 +1,107 @@
+{{define "wfh_manage.html"}}
+{{template "base" .}}
+{{end}}
+
+{{define "wfh_manage_title"}}Manage WFH Requests{{end}}
+
+{{define "wfh_manage_content"}}
+{{template "user_card" .}}
+{{template "page_header" (dict "Title" "Manage WFH Requests" "Icon" "fas fa-home" "BackHref" "/" "BackLabel" "Dashboard")}}
+
+{{if .Error}}
+<div class="notification is-danger is-light mb-4">
+    <i class="fas fa-exclamation-triangle mr-2"></i> {{.Error}}
+</div>
+{{end}}
+
+<div class="mb-4 is-flex is-justify-content-flex-end">
+    <form method="post" action="/admin/wfh/settle">
+        <button type="submit" class="button is-primary"
+            onclick="return confirm('Run settlement now? This will approve or deny all pending requests.')">
+            <span class="icon"><i class="fas fa-gavel"></i></span>
+            <span>Settle Pending Requests</span>
+        </button>
+    </form>
+</div>
+
+{{if .Requests}}
+<div class="card">
+    <header class="card-header">
+        <p class="card-header-title">
+            <i class="fas fa-list mr-2"></i> All WFH Requests
+        </p>
+    </header>
+    <div class="card-content">
+        <div class="table-container">
+            <table class="table is-fullwidth is-striped is-hoverable">
+                <thead>
+                    <tr>
+                        <th>Member</th>
+                        <th>Date</th>
+                        <th>Status</th>
+                        <th>Requested</th>
+                        <th>Settled</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .Requests}}
+                    <tr>
+                        <td><strong>{{.MemberName}}</strong></td>
+                        <td>{{.Date}}</td>
+                        <td>
+                            {{if eq .Status "pending"}}
+                            <span class="tag is-warning is-light"><i class="fas fa-clock mr-1"></i> Pending</span>
+                            {{else if eq .Status "approved"}}
+                            <span class="tag is-success is-light"><i class="fas fa-check mr-1"></i> Approved</span>
+                            {{else if eq .Status "denied"}}
+                            <span class="tag is-danger is-light"><i class="fas fa-times mr-1"></i> Denied</span>
+                            {{else if eq .Status "cancelled"}}
+                            <span class="tag is-light"><i class="fas fa-ban mr-1"></i> Cancelled</span>
+                            {{else if eq .Status "withdrawn"}}
+                            <span class="tag is-dark is-light"><i class="fas fa-undo mr-1"></i> Withdrawn</span>
+                            {{else}}
+                            <span class="tag is-light">{{.Status}}</span>
+                            {{end}}
+                        </td>
+                        <td>{{.CreatedAt.Format "2006-01-02 15:04"}}</td>
+                        <td>
+                            {{if .SettledAt}}
+                            {{.SettledAt.Format "2006-01-02 15:04"}}
+                            {{else}}
+                            <span class="has-text-grey">—</span>
+                            {{end}}
+                        </td>
+                        <td>
+                            {{if .CanWithdraw}}
+                            <form method="post" action="/admin/wfh/{{.ID}}/withdraw" style="display:inline">
+                                <button type="submit" class="button is-small is-warning is-light"
+                                    onclick="return confirm('Withdraw this approved WFH request?')">
+                                    <span class="icon"><i class="fas fa-undo"></i></span>
+                                    <span>Withdraw</span>
+                                </button>
+                            </form>
+                            {{else if eq .Status "approved"}}
+                            <span class="tag is-light is-small" title="Withdrawal deadline has passed">Past deadline</span>
+                            {{end}}
+                        </td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{{if .WithdrawalHours}}
+<div class="notification is-info is-light mt-4">
+    <i class="fas fa-info-circle mr-2"></i>
+    Approved WFH requests can be withdrawn up to <strong>{{.WithdrawalHours}} hours</strong> before the scheduled WFH day.
+</div>
+{{end}}
+{{else}}
+<div class="notification is-info is-light">
+    <i class="fas fa-info-circle mr-2"></i> There are no WFH requests to display.
+</div>
+{{end}}
+{{end}}

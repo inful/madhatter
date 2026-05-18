@@ -42,6 +42,29 @@ type CalendarSubscription struct {
 	LastUsedMeetingsAt *time.Time `json:"last_used_meetings_at,omitempty"`
 }
 
+// WFHRequest represents a work-from-home day request for a team member.
+type WFHRequest struct {
+	ID          string     `json:"id"`
+	MemberID    string     `json:"member_id"`
+	Date        string     `json:"date"` // "2006-01-02"
+	Status      string     `json:"status"`
+	CreatedAt   time.Time  `json:"created_at"`
+	SettledAt   *time.Time `json:"settled_at,omitempty"`
+	WithdrawnBy *string    `json:"withdrawn_by,omitempty"`
+	WithdrawnAt *time.Time `json:"withdrawn_at,omitempty"`
+	// Enriched fields (populated by callers).
+	MemberName string `json:"member_name,omitempty"`
+}
+
+// WFH status constants.
+const (
+	WFHStatusPending   = "pending"
+	WFHStatusApproved  = "approved"
+	WFHStatusDenied    = "denied"
+	WFHStatusCancelled = "cancelled"
+	WFHStatusWithdrawn = "withdrawn"
+)
+
 // HatSwap represents a request to swap HAT day assignments between two team members.
 type HatSwap struct {
 	ID                    string    `json:"id"`

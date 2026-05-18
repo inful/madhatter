@@ -10,6 +10,7 @@ import (
 	"github.com/inful/madhatter/internal/auth"
 	"github.com/inful/madhatter/internal/database"
 	"github.com/inful/madhatter/internal/rota"
+	"github.com/inful/madhatter/internal/wfh"
 )
 
 const (
@@ -37,6 +38,7 @@ type Handler struct {
 	restoreBusy    atomic.Bool
 	pendingMu      sync.Mutex
 	pendingRestore map[string]pendingRestoreItem
+	wfhService     *wfh.Service
 }
 
 type pendingRestoreItem struct {
@@ -91,4 +93,9 @@ func NewHandler(db *database.DB, authManager *auth.AuthManager, authMiddleware *
 	}
 
 	return h, nil
+}
+
+// SetWFHService sets the WFH service on the handler.
+func (h *Handler) SetWFHService(svc *wfh.Service) {
+	h.wfhService = svc
 }

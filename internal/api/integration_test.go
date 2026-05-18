@@ -391,7 +391,8 @@ func TestHUMAAPIIntegration(t *testing.T) {
 
 	t.Run("TeamAPI", func(t *testing.T) {
 		// Test POST /api/v1/team
-		resp := api.Post("/api/v1/team",
+		resp := api.Post(
+			"/api/v1/team",
 			map[string]string{
 				"name":  "John Doe",
 				"email": "john@example.com",
@@ -408,7 +409,8 @@ func TestHUMAAPIIntegration(t *testing.T) {
 
 	t.Run("TeamAPIList", func(t *testing.T) {
 		// Test GET /api/v1/team
-		resp := api.Get("/api/v1/team",
+		resp := api.Get(
+			"/api/v1/team",
 			"Cookie: session_token="+sessionToken,
 		)
 		assert.Equal(t, 200, resp.Code)
@@ -421,7 +423,8 @@ func TestHUMAAPIIntegration(t *testing.T) {
 
 	t.Run("TeamAPIUpdate", func(t *testing.T) {
 		// First, add a team member
-		addResp := api.Post("/api/v1/team",
+		addResp := api.Post(
+			"/api/v1/team",
 			map[string]string{
 				"name":  "Jane Doe",
 				"email": "jane@example.com",
@@ -435,7 +438,8 @@ func TestHUMAAPIIntegration(t *testing.T) {
 		memberID := addBody["id"].(string)
 
 		// Now update the team member
-		updateResp := api.Put("/api/v1/team/"+memberID,
+		updateResp := api.Put(
+			"/api/v1/team/"+memberID,
 			map[string]string{
 				"name":  "Jane Smith",
 				"email": "jane.smith@example.com",
@@ -451,7 +455,8 @@ func TestHUMAAPIIntegration(t *testing.T) {
 
 	t.Run("TeamAPIDelete", func(t *testing.T) {
 		// First, add a team member to delete
-		addResp := api.Post("/api/v1/team",
+		addResp := api.Post(
+			"/api/v1/team",
 			map[string]string{
 				"name":  "Bob Johnson",
 				"email": "bob@example.com",
@@ -465,7 +470,8 @@ func TestHUMAAPIIntegration(t *testing.T) {
 		memberID := addBody["id"].(string)
 
 		// Now delete the team member
-		deleteResp := api.Delete("/api/v1/team/"+memberID,
+		deleteResp := api.Delete(
+			"/api/v1/team/"+memberID,
 			"Cookie: session_token="+sessionToken,
 		)
 		assert.Equal(t, 200, deleteResp.Code)

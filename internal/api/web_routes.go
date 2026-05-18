@@ -18,6 +18,10 @@ func (s *Server) registerWebRoutes(development bool) error {
 		return err
 	}
 
+	if s.wfhService != nil {
+		webHandler.SetWFHService(s.wfhService)
+	}
+
 	// Development mode: The web handler's registerDevelopmentRoutes will handle the fake login view.
 	// No need to register it separately here.
 

@@ -1,0 +1,278 @@
+package web
+
+import (
+	"errors"
+	"net/http"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/inful/madhatter/internal/auth"
+	"github.com/inful/madhatter/internal/database"
+)
+
+const (
+	maxWFHFormBytes  = 1 << 20
+	errNotTeamMember = "You are not registered as a team member."
+)
+
+// wfhBaseData builds the common data map for WFH templates.
+func (h *Handler) wfhBaseData(r *http.Request, templateName string) map[string]any {
+	ctx := r.Context()
+	data := map[string]any{
+		"Template": templateName,
+	}
+	if user, ok := auth.GetUserFromContext(ctx); ok {
+		data["User"] = user
+		data["IsAdmin"] = auth.IsAdminSession(user)
+	}
+	return data
+}
+
+// handleWFHList shows the current user's WFH requests and quota status.
+func (h *Handler) handleWFHList(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	data := h.wfhBaseData(r, "wfh_list")
+
+	user := mustGetUser(ctx)
+	memberID := h.resolveMemberID(ctx, user.Email)
+	if memberID == "" {
+		data["Error"] = errNotTeamMember
+		if err := h.tmpl.ExecuteTemplate(w, "wfh_list.html", data); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+
+	requests, err := h.db.GetWFHRequestsByMember(ctx, memberID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	data["Requests"] = requests
+
+	// Quota status.
+	if h.wfhService != nil {
+		quota, qErr := h.wfhService.GetQuotaStatus(ctx, memberID)
+		if qErr == nil {
+			data["Quota"] = quota
+		}
+	}
+
+	if err := h.tmpl.ExecuteTemplate(w, "wfh_list.html", data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// handleWFHRequest handles GET and POST for the WFH request form.
+func (h *Handler) handleWFHRequest(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	data := h.wfhBaseData(r, "wfh_request")
+
+	user := mustGetUser(ctx)
+	memberID := h.resolveMemberID(ctx, user.Email)
+	if memberID == "" {
+		data["Error"] = errNotTeamMember
+		if err := h.tmpl.ExecuteTemplate(w, "wfh_request.html", data); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+
+	if r.Method == http.MethodPost {
+		h.handleWFHRequestPost(w, r, data, memberID)
+		return
+	}
+
+	h.renderWFHRequestForm(w, r, data, memberID, "")
+}
+
+func (h *Handler) handleWFHRequestPost(w http.ResponseWriter, r *http.Request, data map[string]any, memberID string) {
+	ctx := r.Context()
+	r.Body = http.MaxBytesReader(w, r.Body, maxWFHFormBytes)
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	date := r.FormValue("date")
+	if date == "" {
+		h.renderWFHRequestForm(w, r, data, memberID, "Date is required.")
+		return
+	}
+
+	if _, err := time.Parse("2006-01-02", date); err != nil {
+		h.renderWFHRequestForm(w, r, data, memberID, "Invalid date format, expected YYYY-MM-DD.")
+		return
+	}
+
+	// Check quota.
+	if h.wfhService != nil {
+		hasQuota, err := h.wfhService.CheckQuota(ctx, memberID, date)
+		if err != nil {
+			h.renderWFHRequestForm(w, r, data, memberID, "Failed to check WFH quota.")
+			return
+		}
+		if !hasQuota {
+			h.renderWFHRequestForm(w, r, data, memberID, "You have reached your WFH quota for this period.")
+			return
+		}
+	}
+
+	if _, err := h.db.CreateWFHRequest(ctx, memberID, date); err != nil {
+		h.renderWFHRequestForm(w, r, data, memberID, wfhWebErrorMessage(err))
+		return
+	}
+
+	http.Redirect(w, r, "/wfh", http.StatusSeeOther)
+}
+
+func (h *Handler) renderWFHRequestForm(w http.ResponseWriter, r *http.Request, data map[string]any, memberID, errMsg string) {
+	ctx := r.Context()
+
+	if errMsg != "" {
+		data["Error"] = errMsg
+	}
+	data["Today"] = time.Now().Format("2006-01-02")
+
+	if h.wfhService != nil {
+		quota, err := h.wfhService.GetQuotaStatus(ctx, memberID)
+		if err == nil {
+			data["Quota"] = quota
+		}
+	}
+
+	if err := h.tmpl.ExecuteTemplate(w, "wfh_request.html", data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// handleWFHCancel lets the current user cancel their own pending WFH request.
+func (h *Handler) handleWFHCancel(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id := chi.URLParam(r, "id")
+
+	user := mustGetUser(ctx)
+	memberID := h.resolveMemberID(ctx, user.Email)
+	if memberID == "" {
+		http.Error(w, "Not a team member", http.StatusForbidden)
+		return
+	}
+
+	if err := h.db.CancelWFHRequest(ctx, id, memberID); err != nil {
+		http.Error(w, wfhWebErrorMessage(err), http.StatusBadRequest)
+		return
+	}
+
+	http.Redirect(w, r, "/wfh", http.StatusSeeOther)
+}
+
+// enrichedWFHRequest wraps a WFHRequest with a CanWithdraw flag for admin display.
+type enrichedWFHRequest struct {
+	database.WFHRequest
+	CanWithdraw bool
+}
+
+// handleWFHAdminPage shows the admin WFH management page.
+func (h *Handler) handleWFHAdminPage(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	data := h.wfhBaseData(r, "wfh_manage")
+
+	requests, err := h.db.GetAllWFHRequests(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Enrich with member names.
+	members, _ := h.db.GetActiveTeamMembers(ctx)
+	memberMap := make(map[string]string, len(members))
+	for _, m := range members {
+		memberMap[m.ID] = m.Name
+	}
+
+	withdrawalHours := 24
+	if h.wfhService != nil {
+		withdrawalHours = h.wfhService.Config().WithdrawalHours
+	}
+
+	enriched := make([]enrichedWFHRequest, len(requests))
+	for i := range requests {
+		if name, ok := memberMap[requests[i].MemberID]; ok {
+			requests[i].MemberName = name
+		}
+		canWith := false
+		if requests[i].Status == database.WFHStatusApproved && h.wfhService != nil {
+			d, parseErr := time.Parse("2006-01-02", requests[i].Date)
+			if parseErr == nil {
+				canWith = h.wfhService.CanWithdraw(d)
+			}
+		}
+		enriched[i] = enrichedWFHRequest{WFHRequest: requests[i], CanWithdraw: canWith}
+	}
+	data["Requests"] = enriched
+	data["WithdrawalHours"] = withdrawalHours
+
+	if err := h.tmpl.ExecuteTemplate(w, "wfh_manage.html", data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// handleWFHAdminWithdraw handles the admin withdrawal of an approved WFH request.
+func (h *Handler) handleWFHAdminWithdraw(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id := chi.URLParam(r, "id")
+
+	user := mustGetUser(ctx)
+
+	withdrawalHours := 24
+	if h.wfhService != nil {
+		withdrawalHours = h.wfhService.Config().WithdrawalHours
+	}
+
+	if err := h.db.WithdrawWFHRequest(ctx, id, user.UserID, withdrawalHours); err != nil {
+		http.Error(w, wfhWebErrorMessage(err), http.StatusBadRequest)
+		return
+	}
+
+	http.Redirect(w, r, "/admin/wfh", http.StatusSeeOther)
+}
+
+// handleWFHAdminSettle triggers a manual settlement run.
+func (h *Handler) handleWFHAdminSettle(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	if h.wfhService == nil {
+		http.Error(w, "WFH service is not enabled", http.StatusServiceUnavailable)
+		return
+	}
+
+	if err := h.wfhService.SettlePendingRequests(ctx); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, "/admin/wfh", http.StatusSeeOther)
+}
+
+// wfhWebErrorMessage returns a user-facing message for WFH domain errors.
+func wfhWebErrorMessage(err error) string {
+	switch {
+	case errors.Is(err, database.ErrWFHNotFound):
+		return "WFH request not found."
+	case errors.Is(err, database.ErrWFHNotOwner):
+		return "You can only modify your own WFH requests."
+	case errors.Is(err, database.ErrWFHAlreadySettled):
+		return "This WFH request has already been settled and cannot be cancelled."
+	case errors.Is(err, database.ErrWFHDuplicateRequest):
+		return "A WFH request already exists for this date."
+	case errors.Is(err, database.ErrWFHDatePassed):
+		return "The selected date has already passed."
+	case errors.Is(err, database.ErrWFHNotApproved):
+		return "Only approved WFH requests can be withdrawn."
+	case errors.Is(err, database.ErrWFHWithdrawalDeadlinePassed):
+		return "The withdrawal deadline for this WFH day has passed."
+	default:
+		return err.Error()
+	}
+}

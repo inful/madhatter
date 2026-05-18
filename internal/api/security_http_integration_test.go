@@ -260,6 +260,28 @@ func buildRequestBuilders(
 		"delete-swap": func() requestSpec {
 			return requestSpec{Method: http.MethodDelete, Path: "/api/v1/swaps/00000000-0000-0000-0000-000000000001", RequiresAdmin: true}
 		},
+		// WFH Operations.
+		"request-wfh": func() requestSpec {
+			return requestSpec{Method: http.MethodPost, Path: "/api/v1/wfh", Body: map[string]any{"date": "2099-01-15"}}
+		},
+		"list-wfh": func() requestSpec {
+			return requestSpec{Method: http.MethodGet, Path: "/api/v1/wfh"}
+		},
+		"cancel-wfh": func() requestSpec {
+			return requestSpec{Method: http.MethodDelete, Path: "/api/v1/wfh/00000000-0000-0000-0000-000000000001"}
+		},
+		"withdraw-wfh": func() requestSpec {
+			return requestSpec{Method: http.MethodPost, Path: "/api/v1/wfh/00000000-0000-0000-0000-000000000001/withdraw", RequiresAdmin: true}
+		},
+		"settle-wfh": func() requestSpec {
+			return requestSpec{Method: http.MethodPost, Path: "/api/v1/wfh/settle", RequiresAdmin: true}
+		},
+		"get-wfh-quota": func() requestSpec {
+			return requestSpec{Method: http.MethodGet, Path: "/api/v1/wfh/quota"}
+		},
+		"get-wfh-by-date": func() requestSpec {
+			return requestSpec{Method: http.MethodGet, Path: "/api/v1/wfh/date/2099-01-15", RequiresAdmin: true}
+		},
 	}
 }
 

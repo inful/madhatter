@@ -100,3 +100,14 @@ type User struct {
 	CreatedAt  sql.NullTime  `json:"created_at"`
 	UpdatedAt  sql.NullTime  `json:"updated_at"`
 }
+
+type WfhRequest struct {
+	ID          string         `json:"id"`
+	MemberID    string         `json:"member_id"`
+	Date        time.Time      `json:"date"`
+	Status      string         `json:"status"`
+	CreatedAt   sql.NullTime   `json:"created_at"`
+	SettledAt   sql.NullTime   `json:"settled_at"`
+	WithdrawnBy sql.NullString `json:"withdrawn_by"`
+	WithdrawnAt sql.NullTime   `json:"withdrawn_at"`
+}

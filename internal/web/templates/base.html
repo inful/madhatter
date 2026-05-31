@@ -74,6 +74,72 @@
             background: #f8f9fa;
             border-radius: 8px;
         }
+
+        .user-pane.card {
+            margin-bottom: 1rem;
+        }
+
+        .user-pane .card-content {
+            padding: 0.85rem 1rem;
+        }
+
+        .user-pane .user-name {
+            font-size: 1.05rem;
+            line-height: 1.25;
+        }
+
+        .user-pane .user-email {
+            margin-top: 0.2rem;
+            font-size: 0.8rem !important;
+        }
+
+        .user-pane .column.is-narrow {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .user-pane .button.is-small {
+            height: 1.95em;
+            padding-left: 0.7rem;
+            padding-right: 0.7rem;
+            font-size: 0.78rem;
+        }
+
+        .page-header {
+            margin-bottom: 0.85rem;
+        }
+
+        .page-header .title.is-2 {
+            margin-bottom: 0;
+            letter-spacing: -0.02em;
+            font-size: clamp(2rem, 4.2vw, 2.45rem);
+            line-height: 1.06;
+        }
+
+        .page-header .title.is-2 i {
+            margin-right: 0.3rem;
+        }
+
+        @media (max-width: 640px) {
+            .page-header {
+                margin-bottom: 0.7rem;
+            }
+
+            .page-header .title.is-2 {
+                font-size: 1.8rem;
+            }
+
+            .user-pane .columns.is-mobile {
+                align-items: flex-start;
+            }
+
+            .user-pane .column.is-narrow {
+                width: 100%;
+                justify-content: flex-start;
+                margin-top: 0.5rem;
+            }
+        }
     </style>
     {{if .Template}}
         {{render (printf "%s_styles" .Template) .}}
@@ -106,14 +172,14 @@
 
 {{define "user_card"}}
 {{if .User}}
-<div class="card">
+<div class="card user-pane">
     <div class="card-content">
         <div class="columns is-vcentered is-mobile">
             <div class="column">
-                <p class="has-text-weight-semibold">
+                <p class="has-text-weight-semibold user-name">
                     <i class="fas fa-user-circle mr-2"></i>{{.User.Name}}
                 </p>
-                <p class="is-size-7 has-text-grey">{{.User.Email}}</p>
+                <p class="is-size-7 has-text-grey user-email">{{.User.Email}}</p>
                 {{if .IsAdmin}}
                     <span class="tag is-danger is-light mt-1">
                         <i class="fas fa-shield-alt mr-1"></i> Admin
@@ -135,7 +201,7 @@
 {{end}}
 
 {{define "page_header"}}
-<div class="level is-mobile">
+<div class="level is-mobile page-header">
     <div class="level-left">
         <div class="level-item">
             <h1 class="title is-2 has-text-primary">

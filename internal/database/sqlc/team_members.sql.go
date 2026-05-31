@@ -58,7 +58,7 @@ func (q *Queries) DeleteTeamMember(ctx context.Context, id string) error {
 }
 
 const getActiveTeamMembers = `-- name: GetActiveTeamMembers :many
-SELECT id, name, email, is_active, created_at
+SELECT id, name, email, is_active, is_permanent_wfh, created_at
 FROM team_members
 WHERE is_active = 1
 ORDER BY name
@@ -78,6 +78,7 @@ func (q *Queries) GetActiveTeamMembers(ctx context.Context) ([]TeamMember, error
 			&i.Name,
 			&i.Email,
 			&i.IsActive,
+			&i.IsPermanentWfh,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -94,7 +95,7 @@ func (q *Queries) GetActiveTeamMembers(ctx context.Context) ([]TeamMember, error
 }
 
 const getMemberByEmail = `-- name: GetMemberByEmail :one
-SELECT id, name, email, is_active, created_at
+SELECT id, name, email, is_active, is_permanent_wfh, created_at
 FROM team_members
 WHERE email = ?
 `
@@ -107,13 +108,14 @@ func (q *Queries) GetMemberByEmail(ctx context.Context, email string) (TeamMembe
 		&i.Name,
 		&i.Email,
 		&i.IsActive,
+		&i.IsPermanentWfh,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getMemberByID = `-- name: GetMemberByID :one
-SELECT id, name, email, is_active, created_at
+SELECT id, name, email, is_active, is_permanent_wfh, created_at
 FROM team_members
 WHERE id = ?
 `
@@ -126,13 +128,14 @@ func (q *Queries) GetMemberByID(ctx context.Context, id string) (TeamMember, err
 		&i.Name,
 		&i.Email,
 		&i.IsActive,
+		&i.IsPermanentWfh,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getMemberByToken = `-- name: GetMemberByToken :one
-SELECT tm.id, tm.name, tm.email, tm.is_active, tm.created_at
+SELECT tm.id, tm.name, tm.email, tm.is_active, tm.is_permanent_wfh, tm.created_at
 FROM calendar_subscriptions cs
 JOIN team_members tm ON cs.member_id = tm.id
 WHERE cs.token = ?
@@ -146,9 +149,26 @@ func (q *Queries) GetMemberByToken(ctx context.Context, token string) (TeamMembe
 		&i.Name,
 		&i.Email,
 		&i.IsActive,
+		&i.IsPermanentWfh,
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const setTeamMemberPermanentWFH = `-- name: SetTeamMemberPermanentWFH :exec
+UPDATE team_members
+SET is_permanent_wfh = ?
+WHERE id = ?
+`
+
+type SetTeamMemberPermanentWFHParams struct {
+	IsPermanentWfh int64  `json:"is_permanent_wfh"`
+	ID             string `json:"id"`
+}
+
+func (q *Queries) SetTeamMemberPermanentWFH(ctx context.Context, arg SetTeamMemberPermanentWFHParams) error {
+	_, err := q.db.ExecContext(ctx, setTeamMemberPermanentWFH, arg.IsPermanentWfh, arg.ID)
+	return err
 }
 
 const updateTeamMember = `-- name: UpdateTeamMember :exec

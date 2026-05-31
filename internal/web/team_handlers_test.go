@@ -246,6 +246,34 @@ func TestHandleTeam_Get_Returns200(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
+func TestHandleTeam_Get_DevelopmentModeSyncsTeamMembersToApplicationUsers(t *testing.T) {
+	db, err := database.New(":memory:")
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	ctx := context.Background()
+	_, err = db.AddTeamMember(ctx, "Dev Member", "dev-member@example.com")
+	require.NoError(t, err)
+
+	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, true, nil)
+	require.NoError(t, err)
+
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/team", nil)
+	w := httptest.NewRecorder()
+
+	h.handleTeam(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	users, err := db.GetQueries().ListActiveUsers(ctx)
+	require.NoError(t, err)
+	require.Len(t, users, 1)
+	assert.Equal(t, "dev-member@example.com", users[0].Email)
+	assert.Equal(t, "Dev Member", users[0].Name)
+	assert.Equal(t, "fake", users[0].Provider)
+	assert.False(t, auth.IsAdmin(users[0].IsAdmin))
+}
+
 func TestHandleTeam_Post_DelegatesToHandleTeamPost(t *testing.T) {
 	db, err := database.New(":memory:")
 	require.NoError(t, err)
@@ -383,6 +411,93 @@ func TestHandleTeamMemberDelete_ValidPost_RedirectsToTeam(t *testing.T) {
 
 	assert.Equal(t, http.StatusSeeOther, w.Code)
 	assert.Equal(t, "/team", w.Header().Get("Location"))
+}
+
+// ---------------------------------------------------------------------------
+// handleTeamMemberPermanentWFHUpdate
+// ---------------------------------------------------------------------------
+
+func TestHandleTeamMemberPermanentWFHUpdate_WrongMethod_Returns405(t *testing.T) {
+	db, err := database.New(":memory:")
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/team/members/x/permanent-wfh", nil)
+	req = withChiParam(req, "x")
+	w := httptest.NewRecorder()
+
+	h.handleTeamMemberPermanentWFHUpdate(w, req)
+
+	assert.Equal(t, http.StatusMethodNotAllowed, w.Code)
+}
+
+func TestHandleTeamMemberPermanentWFHUpdate_NotFound_Returns404(t *testing.T) {
+	db, err := database.New(":memory:")
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	form := url.Values{}
+	form.Set("is_permanent_wfh", "1")
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/team/members/x/permanent-wfh", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req = withChiParam(req, uuid.NewString())
+	w := httptest.NewRecorder()
+
+	h.handleTeamMemberPermanentWFHUpdate(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestHandleTeamMemberPermanentWFHUpdate_ValidPost_UpdatesFlag(t *testing.T) {
+	db, err := database.New(":memory:")
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	ctx := context.Background()
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	setForm := url.Values{}
+	setForm.Set("is_permanent_wfh", "1")
+	setReq := httptest.NewRequestWithContext(ctx, http.MethodPost, "/team/members/"+memberID+"/permanent-wfh", strings.NewReader(setForm.Encode()))
+	setReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	setReq = withChiParam(setReq, memberID)
+	setResp := httptest.NewRecorder()
+
+	h.handleTeamMemberPermanentWFHUpdate(setResp, setReq)
+
+	assert.Equal(t, http.StatusSeeOther, setResp.Code)
+	assert.Equal(t, "/team", setResp.Header().Get("Location"))
+
+	member, err := db.GetMemberByID(ctx, memberID)
+	require.NoError(t, err)
+	assert.True(t, member.IsPermanentWFH)
+
+	unsetForm := url.Values{}
+	unsetForm.Set("is_permanent_wfh", "0")
+	unsetReq := httptest.NewRequestWithContext(ctx, http.MethodPost, "/team/members/"+memberID+"/permanent-wfh", strings.NewReader(unsetForm.Encode()))
+	unsetReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	unsetReq = withChiParam(unsetReq, memberID)
+	unsetResp := httptest.NewRecorder()
+
+	h.handleTeamMemberPermanentWFHUpdate(unsetResp, unsetReq)
+
+	assert.Equal(t, http.StatusSeeOther, unsetResp.Code)
+	assert.Equal(t, "/team", unsetResp.Header().Get("Location"))
+
+	member, err = db.GetMemberByID(ctx, memberID)
+	require.NoError(t, err)
+	assert.False(t, member.IsPermanentWFH)
 }
 
 // ---------------------------------------------------------------------------

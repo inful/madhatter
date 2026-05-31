@@ -102,6 +102,9 @@ func TestGetUpcomingPresenceFrom_ShowsSwapBadgeForSwappedAssignment(t *testing.T
 	require.NotNil(t, presence[0].Assigned)
 	assert.Equal(t, bobID, presence[0].Assigned.ID)
 	assert.True(t, presence[0].AssignedSwapped)
+	assert.Contains(t, presence[0].AssignedSwapInfo, "Accepted swap:")
+	assert.Contains(t, presence[0].AssignedSwapInfo, "Alice")
+	assert.Contains(t, presence[0].AssignedSwapInfo, "Bob")
 }
 
 func TestLoadCurrentUserPresenceStatus_SetsHatDayAndLeave(t *testing.T) {
@@ -134,6 +137,90 @@ func TestLoadCurrentUserPresenceStatus_SetsHatDayAndLeave(t *testing.T) {
 	assert.Equal(t, today, data["CurrentUserNextHATDay"])
 	assert.Equal(t, tomorrow, data["CurrentUserNextWFHDay"])
 	assert.Equal(t, today, data["CurrentUserNextLeaveDay"])
+}
+
+func TestLoadCurrentUserPresenceStatus_NextWFHUsesEarliestUpcomingDate(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupPresenceTestDB(t)
+	defer cleanup()
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	nearDate := nextBusinessDay(time.Now().AddDate(0, 0, 1)).Format("2006-01-02")
+	farDate := nextBusinessDay(time.Now().AddDate(0, 0, 7)).Format("2006-01-02")
+
+	_, err = db.CreateWFHRequest(ctx, aliceID, nearDate)
+	require.NoError(t, err)
+	_, err = db.CreateWFHRequest(ctx, aliceID, farDate)
+	require.NoError(t, err)
+
+	handler := &Handler{db: db}
+	data := map[string]any{}
+
+	handler.loadCurrentUserPresenceStatus(ctx, data, "alice@example.com")
+
+	assert.Equal(t, nearDate, data["CurrentUserNextWFHDay"])
+}
+
+func TestLoadCurrentUserPresenceStatus_NextWFHUpdatesAfterSettlement(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupPresenceTestDB(t)
+	defer cleanup()
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	nearDate := nextBusinessDay(time.Now().AddDate(0, 0, 1)).Format("2006-01-02")
+	farDate := nextBusinessDay(time.Now().AddDate(0, 0, 7)).Format("2006-01-02")
+
+	_, err = db.CreateWFHRequest(ctx, aliceID, nearDate)
+	require.NoError(t, err)
+	_, err = db.CreateWFHRequest(ctx, aliceID, farDate)
+	require.NoError(t, err)
+
+	requests, err := db.GetWFHRequestsByMember(ctx, aliceID)
+	require.NoError(t, err)
+
+	var nearRequestID string
+	for i := range requests {
+		if requests[i].Date == nearDate {
+			nearRequestID = requests[i].ID
+			break
+		}
+	}
+	require.NotEmpty(t, nearRequestID)
+
+	require.NoError(t, db.UpdateWFHRequestStatus(ctx, nearRequestID, database.WFHStatusDenied))
+
+	handler := &Handler{db: db}
+	data := map[string]any{}
+
+	handler.loadCurrentUserPresenceStatus(ctx, data, "alice@example.com")
+
+	assert.Equal(t, farDate, data["CurrentUserNextWFHDay"])
+}
+
+func TestLoadCurrentUserPresenceStatus_PermanentWFH(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupPresenceTestDB(t)
+	defer cleanup()
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	require.NoError(t, db.SetTeamMemberPermanentWFH(ctx, aliceID, true))
+
+	today := time.Now().Format("2006-01-02")
+	_, err = db.CreateRotaAssignment(ctx, today, aliceID, false, nil)
+	require.NoError(t, err)
+
+	handler := &Handler{db: db}
+	data := map[string]any{}
+
+	handler.loadCurrentUserPresenceStatus(ctx, data, "alice@example.com")
+
+	assert.Equal(t, currentUserStatusWFH, data["CurrentUserPresenceStatus"])
+	assert.Equal(t, true, data["CurrentUserHasHATDay"])
 }
 
 func nextBusinessDay(from time.Time) time.Time {

@@ -82,11 +82,12 @@ type Session struct {
 }
 
 type TeamMember struct {
-	ID        string        `json:"id"`
-	Name      string        `json:"name"`
-	Email     string        `json:"email"`
-	IsActive  sql.NullInt64 `json:"is_active"`
-	CreatedAt sql.NullTime  `json:"created_at"`
+	ID             string        `json:"id"`
+	Name           string        `json:"name"`
+	Email          string        `json:"email"`
+	IsActive       sql.NullInt64 `json:"is_active"`
+	IsPermanentWfh int64         `json:"is_permanent_wfh"`
+	CreatedAt      sql.NullTime  `json:"created_at"`
 }
 
 type User struct {

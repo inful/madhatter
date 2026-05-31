@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"sort"
 	"time"
@@ -108,6 +109,11 @@ func (h *Handler) loadCurrentUserPresenceStatus(ctx context.Context, data map[st
 		}
 	}
 
+	if member.IsPermanentWFH {
+		data["CurrentUserPresenceStatus"] = currentUserStatusWFH
+		return
+	}
+
 	wfhRequests, err := h.db.GetWFHRequestsByDateAndStatus(ctx, today, database.WFHStatusApproved)
 	if err == nil {
 		for i := range wfhRequests {
@@ -129,6 +135,7 @@ func (h *Handler) loadCurrentUserUpcomingDates(ctx context.Context, data map[str
 
 	wfhRequests, err := h.db.GetWFHRequestsByMember(ctx, memberID)
 	if err == nil {
+		nextWFHDay := ""
 		for i := range wfhRequests {
 			if wfhRequests[i].Date < today {
 				continue
@@ -136,8 +143,13 @@ func (h *Handler) loadCurrentUserUpcomingDates(ctx context.Context, data map[str
 			if wfhRequests[i].Status != database.WFHStatusPending && wfhRequests[i].Status != database.WFHStatusApproved {
 				continue
 			}
-			data["CurrentUserNextWFHDay"] = wfhRequests[i].Date
-			break
+			if nextWFHDay == "" || wfhRequests[i].Date < nextWFHDay {
+				nextWFHDay = wfhRequests[i].Date
+			}
+		}
+
+		if nextWFHDay != "" {
+			data["CurrentUserNextWFHDay"] = nextWFHDay
 		}
 	}
 
@@ -236,18 +248,18 @@ func (h *Handler) getUpcomingPresence(ctx context.Context) ([]presenceDay, error
 }
 
 // getAssignedMember fetches the assigned member and swap status for a given date.
-// It returns the member, whether the assignment was swapped, and whether any assignment was found.
-func (h *Handler) getAssignedMember(ctx context.Context, dateStr string, memberMap map[string]database.TeamMember) (*database.TeamMember, bool) {
+// It returns the member, whether the assignment was swapped, and the selected assignment ID.
+func (h *Handler) getAssignedMember(ctx context.Context, dateStr string, memberMap map[string]database.TeamMember) (*database.TeamMember, bool, string) {
 	assignments, err := h.db.GetAssignmentsByDate(ctx, dateStr)
 	if err != nil {
-		return nil, false
+		return nil, false, ""
 	}
 
 	// Prioritize cover assignment - they're the one actually doing support.
 	for i := range assignments {
 		if assignments[i].IsCover {
 			if member, ok := memberMap[assignments[i].MemberID]; ok {
-				return &member, assignments[i].IsSwapped
+				return &member, assignments[i].IsSwapped, assignments[i].ID
 			}
 		}
 	}
@@ -256,12 +268,35 @@ func (h *Handler) getAssignedMember(ctx context.Context, dateStr string, memberM
 	for i := range assignments {
 		if !assignments[i].IsCover {
 			if member, ok := memberMap[assignments[i].MemberID]; ok {
-				return &member, assignments[i].IsSwapped
+				return &member, assignments[i].IsSwapped, assignments[i].ID
 			}
 		}
 	}
 
-	return nil, false
+	return nil, false, ""
+}
+
+func (h *Handler) getAssignedSwapInfo(ctx context.Context, assignmentID string) string {
+	if assignmentID == "" {
+		return ""
+	}
+
+	swap, err := h.db.GetAcceptedSwapForAssignment(ctx, assignmentID)
+	if err != nil || swap == nil {
+		return ""
+	}
+
+	enrichedSwaps, err := h.db.GetEnrichedSwaps(ctx, []database.HatSwap{*swap})
+	if err != nil || len(enrichedSwaps) == 0 {
+		return ""
+	}
+
+	s := enrichedSwaps[0]
+	if s.RequesterName == "" || s.TargetName == "" || s.RequesterDate == "" || s.TargetDate == "" {
+		return "Accepted swap assignment."
+	}
+
+	return fmt.Sprintf("Accepted swap: %s (%s) ↔ %s (%s)", s.RequesterName, s.RequesterDate, s.TargetName, s.TargetDate)
 }
 
 // buildPresenceList creates a sorted list of present members.
@@ -303,7 +338,11 @@ func (h *Handler) getUpcomingPresenceFrom(ctx context.Context, start time.Time) 
 		}
 
 		dateStr := current.Format("2006-01-02")
-		assigned, assignedSwapped := h.getAssignedMember(ctx, dateStr, memberMap)
+		assigned, assignedSwapped, assignedID := h.getAssignedMember(ctx, dateStr, memberMap)
+		assignedSwapInfo := ""
+		if assignedSwapped {
+			assignedSwapInfo = h.getAssignedSwapInfo(ctx, assignedID)
+		}
 
 		leaveRecords, leaveErr := h.db.GetLeaveByDate(ctx, dateStr)
 		if leaveErr != nil {
@@ -332,6 +371,12 @@ func (h *Handler) getUpcomingPresenceFrom(ctx context.Context, start time.Time) 
 			wfhMemberIDs[wfhRequests[i].MemberID] = struct{}{}
 		}
 
+		for i := range members {
+			if members[i].IsPermanentWFH {
+				wfhMemberIDs[members[i].ID] = struct{}{}
+			}
+		}
+
 		present := buildPresenceList(memberMap, onLeave)
 		onsite := make([]database.TeamMember, 0, len(present))
 		wfh := make([]database.TeamMember, 0, len(wfhMemberIDs))
@@ -356,6 +401,7 @@ func (h *Handler) getUpcomingPresenceFrom(ctx context.Context, start time.Time) 
 			IsToday:         isToday,
 			Assigned:        assigned,
 			AssignedSwapped: assignedSwapped,
+			AssignedSwapInfo: assignedSwapInfo,
 			Present:         onsite,
 			WFH:             wfh,
 			Away:            away,

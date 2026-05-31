@@ -7,6 +7,7 @@ type TeamMember struct {
 	Name      string    `json:"name"`
 	Email     string    `json:"email"`
 	IsActive  bool      `json:"is_active"`
+	IsPermanentWFH bool `json:"is_permanent_wfh"`
 	CreatedAt time.Time `json:"created_at"`
 }
 

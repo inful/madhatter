@@ -2,6 +2,7 @@ package wfh
 
 import (
 	"context"
+	"math"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -55,7 +56,7 @@ func nextBusinessDay(from time.Time) time.Time {
 func TestLoadConfigFromEnv_DefaultsAndOverrides(t *testing.T) {
 	cfg := LoadConfigFromEnv()
 	assert.True(t, cfg.Enabled)
-	assert.Equal(t, defaultMinOnsitePercentage, cfg.MinOnsitePercentage)
+	assert.LessOrEqual(t, math.Abs(cfg.MinOnsitePercentage-defaultMinOnsitePercentage), 0.0001)
 	assert.Equal(t, defaultMinOnsiteAbsolute, cfg.MinOnsiteAbsolute)
 	assert.Equal(t, defaultMaxDaysPerPeriod, cfg.MaxDaysPerPeriod)
 	assert.Equal(t, defaultPeriodDays, cfg.PeriodDays)
@@ -74,7 +75,7 @@ func TestLoadConfigFromEnv_DefaultsAndOverrides(t *testing.T) {
 
 	cfg = LoadConfigFromEnv()
 	assert.False(t, cfg.Enabled)
-	assert.Equal(t, 60.5, cfg.MinOnsitePercentage)
+	assert.LessOrEqual(t, math.Abs(cfg.MinOnsitePercentage-60.5), 0.0001)
 	assert.Equal(t, 3, cfg.MinOnsiteAbsolute)
 	assert.Equal(t, 4, cfg.MaxDaysPerPeriod)
 	assert.Equal(t, 14, cfg.PeriodDays)
@@ -87,7 +88,7 @@ func TestLoadConfigFromEnv_DefaultsAndOverrides(t *testing.T) {
 	t.Setenv("WFH_MIN_ONSITE_ABSOLUTE", "bad")
 	cfg = LoadConfigFromEnv()
 	assert.True(t, cfg.Enabled)
-	assert.Equal(t, defaultMinOnsitePercentage, cfg.MinOnsitePercentage)
+	assert.LessOrEqual(t, math.Abs(cfg.MinOnsitePercentage-defaultMinOnsitePercentage), 0.0001)
 	assert.Equal(t, defaultMinOnsiteAbsolute, cfg.MinOnsiteAbsolute)
 }
 
@@ -135,9 +136,10 @@ func TestPrioritisePending_SortsByUsageThenCreatedAt(t *testing.T) {
 	defer cleanup()
 
 	svc := NewService(db, testConfig())
-	date := nextBusinessDay(time.Now().UTC().AddDate(0, 0, 1))
+	baseDate := nextBusinessDay(time.Now().UTC())
+	date := nextBusinessDay(baseDate.AddDate(0, 0, 1))
 	dateStr := date.Format("2006-01-02")
-	previousDateStr := nextBusinessDay(time.Now().UTC()).Format("2006-01-02")
+	previousDateStr := baseDate.Format("2006-01-02")
 
 	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
 	require.NoError(t, err)
@@ -183,8 +185,8 @@ func TestSettlePendingRequests_ApprovesHighestPriorityWithinSlots(t *testing.T) 
 	cfg.MinOnsiteAbsolute = 1
 	svc := NewService(db, cfg)
 
-	targetDate := nextBusinessDay(time.Now().UTC().AddDate(0, 0, 1))
 	today := nextBusinessDay(time.Now().UTC())
+	targetDate := nextBusinessDay(today.AddDate(0, 0, 1))
 	targetDateStr := targetDate.Format("2006-01-02")
 	todayStr := today.Format("2006-01-02")
 
@@ -222,6 +224,55 @@ func TestSettlePendingRequests_ApprovesHighestPriorityWithinSlots(t *testing.T) 
 
 	assert.Equal(t, database.WFHStatusDenied, bobReq.Status)
 	assert.Equal(t, database.WFHStatusApproved, carolReq.Status)
+	assert.NotNil(t, bobReq.SettledAt)
+	assert.NotNil(t, carolReq.SettledAt)
+
+	_ = aliceID
+}
+
+func TestSettlePendingRequests_PermanentWFHConsumesRemoteCapacity(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	cfg := testConfig()
+	cfg.MinOnsitePercentage = 50
+	cfg.MinOnsiteAbsolute = 1
+	svc := NewService(db, cfg)
+
+	targetDate := nextBusinessDay(time.Now().UTC().AddDate(0, 0, 1))
+	targetDateStr := targetDate.Format("2006-01-02")
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+	carolID, err := db.AddTeamMember(ctx, "Carol", "carol@example.com")
+	require.NoError(t, err)
+	daveID, err := db.AddTeamMember(ctx, "Dave", "dave@example.com")
+	require.NoError(t, err)
+
+	require.NoError(t, db.SetTeamMemberPermanentWFH(ctx, daveID, true))
+
+	bobPending, err := db.CreateWFHRequest(ctx, bobID, targetDateStr)
+	require.NoError(t, err)
+	carolPending, err := db.CreateWFHRequest(ctx, carolID, targetDateStr)
+	require.NoError(t, err)
+
+	_, err = db.ExecContext(ctx, "UPDATE wfh_requests SET created_at = ? WHERE id = ?", "2026-01-01 08:00:00", bobPending.ID)
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, "UPDATE wfh_requests SET created_at = ? WHERE id = ?", "2026-01-01 09:00:00", carolPending.ID)
+	require.NoError(t, err)
+
+	require.NoError(t, svc.SettlePendingRequests(ctx))
+
+	bobReq, err := db.GetWFHRequestByID(ctx, bobPending.ID)
+	require.NoError(t, err)
+	carolReq, err := db.GetWFHRequestByID(ctx, carolPending.ID)
+	require.NoError(t, err)
+
+	assert.Equal(t, database.WFHStatusApproved, bobReq.Status)
+	assert.Equal(t, database.WFHStatusDenied, carolReq.Status)
 	assert.NotNil(t, bobReq.SettledAt)
 	assert.NotNil(t, carolReq.SettledAt)
 

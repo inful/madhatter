@@ -50,6 +50,28 @@ func TestAddTeamMember_Success(t *testing.T) {
 	require.Equal(t, "Alice Johnson", members[0].Name)
 	require.Equal(t, "alice@example.com", members[0].Email)
 	require.True(t, members[0].IsActive)
+	require.False(t, members[0].IsPermanentWFH)
+}
+
+func TestSetTeamMemberPermanentWFH(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	require.NoError(t, db.SetTeamMemberPermanentWFH(ctx, memberID, true))
+
+	member, err := db.GetMemberByID(ctx, memberID)
+	require.NoError(t, err)
+	require.True(t, member.IsPermanentWFH)
+
+	require.NoError(t, db.SetTeamMemberPermanentWFH(ctx, memberID, false))
+
+	member, err = db.GetMemberByID(ctx, memberID)
+	require.NoError(t, err)
+	require.False(t, member.IsPermanentWFH)
 }
 
 func TestAddTeamMember_DuplicateEmail(t *testing.T) {

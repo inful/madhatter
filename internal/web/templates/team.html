@@ -69,6 +69,11 @@
                                 <span class="tag is-success is-light mr-2">
                                     <i class="fas fa-check-circle mr-1"></i> Active
                                 </span>
+                                {{if .IsPermanentWFH}}
+                                    <span class="tag is-warning is-light mr-1" title="This member is always treated as WFH in presence views">
+                                        <i class="fas fa-house-laptop mr-1"></i> Permanent WFH
+                                    </span>
+                                {{end}}
                                 {{with index $.SubscriptionActivity .ID}}
                                     {{if .RotaActive}}
                                         <span class="tag is-info is-light mr-1" title="Rota calendar fetched in the last 7 days">
@@ -97,6 +102,19 @@
                                     </span>
                                 {{end}}
                                 {{if $.IsAdmin}}
+                                    <form method="POST" action="/team/{{.ID}}/permanent-wfh" style="display: inline;">
+                                        {{if .IsPermanentWFH}}
+                                            <input type="hidden" name="is_permanent_wfh" value="0">
+                                            <button type="submit" class="button is-small is-warning is-light mr-1" title="Disable permanent WFH for this member">
+                                                <i class="fas fa-house-user mr-1"></i> Unset WFH
+                                            </button>
+                                        {{else}}
+                                            <input type="hidden" name="is_permanent_wfh" value="1">
+                                            <button type="submit" class="button is-small is-info is-light mr-1" title="Always mark this member as WFH in presence views">
+                                                <i class="fas fa-house-laptop mr-1"></i> Set WFH
+                                            </button>
+                                        {{end}}
+                                    </form>
                                     <button class="button is-small is-info is-light mr-1" onclick='showEditModal("{{js .ID}}", "{{js .Name}}", "{{js .Email}}")' aria-label="Edit team member">
                                         <i class="fas fa-edit"></i>
                                     </button>

@@ -201,12 +201,10 @@ func (s *Service) settleDate(ctx context.Context, date string, pending []databas
 		return nil
 	}
 
-	// Count on-leave members.
-	leaveRecords, err := s.db.GetLeaveByDate(ctx, date)
+	onLeave, permanentWFH, err := s.leaveAndPermanentWFHCounts(ctx, date, members)
 	if err != nil {
 		return err
 	}
-	onLeave := len(leaveRecords)
 
 	// Count already-approved WFH (from previously settled requests not in this batch).
 	alreadyApproved, err := s.db.CountApprovedWFHByDate(ctx, date)
@@ -218,7 +216,7 @@ func (s *Service) settleDate(ctx context.Context, date string, pending []databas
 	minOnsite := s.minOnsiteCount(totalActive)
 
 	// How many new WFH approvals are allowed?
-	slotsUsed := onLeave + alreadyApproved
+	slotsUsed := onLeave + alreadyApproved + permanentWFH
 	availableSlots := max(totalActive-slotsUsed-minOnsite, 0)
 
 	// Sort pending requests by priority: fewest period-days used → earliest created_at.
@@ -238,6 +236,32 @@ func (s *Service) settleDate(ctx context.Context, date string, pending []databas
 		}
 	}
 	return nil
+}
+
+func (s *Service) leaveAndPermanentWFHCounts(ctx context.Context, date string, members []database.TeamMember) (int, int, error) {
+	leaveRecords, err := s.db.GetLeaveByDate(ctx, date)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	onLeave := len(leaveRecords)
+	onLeaveIDs := make(map[string]struct{}, len(leaveRecords))
+	for i := range leaveRecords {
+		onLeaveIDs[leaveRecords[i].MemberID] = struct{}{}
+	}
+
+	permanentWFH := 0
+	for i := range members {
+		if !members[i].IsPermanentWFH {
+			continue
+		}
+		if _, away := onLeaveIDs[members[i].ID]; away {
+			continue
+		}
+		permanentWFH++
+	}
+
+	return onLeave, permanentWFH, nil
 }
 
 // minOnsiteCount computes the minimum on-site count from config.

@@ -105,6 +105,20 @@ func buildPresenceListsWithWFH(
 		wfhList = append(wfhList, member)
 	}
 
+	for id, member := range memberMap {
+		if !member.IsPermanentWFH {
+			continue
+		}
+		if _, awayToday := onLeave[id]; awayToday {
+			continue
+		}
+		if _, exists := onWFH[id]; exists {
+			continue
+		}
+		onWFH[id] = struct{}{}
+		wfhList = append(wfhList, member)
+	}
+
 	present = make([]database.TeamMember, 0, len(memberMap))
 	for id, member := range memberMap {
 		if _, absent := onLeave[id]; absent {

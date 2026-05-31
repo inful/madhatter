@@ -87,6 +87,7 @@ type Querier interface {
 	ListActiveUsers(ctx context.Context) ([]User, error)
 	ListAdminUsers(ctx context.Context) ([]User, error)
 	MarkAssignmentSwapped(ctx context.Context, id string) error
+	SetTeamMemberPermanentWFH(ctx context.Context, arg SetTeamMemberPermanentWFHParams) error
 	TouchMeetingsSubscription(ctx context.Context, token string) error
 	TouchRotaSubscription(ctx context.Context, token string) error
 	UpdateAPITokenLastUsed(ctx context.Context, id string) (sql.Result, error)

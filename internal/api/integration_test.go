@@ -204,6 +204,39 @@ func TestPresenceTodayEndpoint(t *testing.T) {
 	assert.False(t, ok)
 }
 
+func TestPresenceTodayEndpoint_PermanentWFHMember(t *testing.T) {
+	server, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	ctx := createTestContext(t, server)
+
+	aliceID, err := server.db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	require.NoError(t, server.db.SetTeamMemberPermanentWFH(ctx, aliceID, true))
+
+	today := time.Now().Format("2006-01-02")
+	_, err = server.db.CreateRotaAssignment(ctx, today, aliceID, false, nil)
+	require.NoError(t, err)
+
+	resp, err := server.handleGetPresenceToday(ctx, &struct{}{})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+
+	wfhIDs := make(map[string]struct{}, len(resp.Body.WFH))
+	for i := range resp.Body.WFH {
+		wfhIDs[resp.Body.WFH[i].ID] = struct{}{}
+	}
+	_, ok := wfhIDs[aliceID]
+	assert.True(t, ok)
+
+	presentIDs := make(map[string]struct{}, len(resp.Body.Present))
+	for i := range resp.Body.Present {
+		presentIDs[resp.Body.Present[i].ID] = struct{}{}
+	}
+	_, ok = presentIDs[aliceID]
+	assert.False(t, ok)
+}
+
 func TestScheduleEndpoints(t *testing.T) {
 	server, cleanup := setupTestServer(t)
 	defer cleanup()

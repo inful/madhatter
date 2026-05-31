@@ -102,11 +102,12 @@ func (db *DB) GetActiveTeamMembers(ctx context.Context) ([]TeamMember, error) {
 	result := make([]TeamMember, len(members))
 	for i, m := range members {
 		result[i] = TeamMember{
-			ID:        m.ID,
-			Name:      m.Name,
-			Email:     m.Email,
-			IsActive:  m.IsActive.Valid && m.IsActive.Int64 == 1,
-			CreatedAt: m.CreatedAt.Time,
+			ID:             m.ID,
+			Name:           m.Name,
+			Email:          m.Email,
+			IsActive:       m.IsActive.Valid && m.IsActive.Int64 == 1,
+			IsPermanentWFH: m.IsPermanentWfh == 1,
+			CreatedAt:      m.CreatedAt.Time,
 		}
 	}
 	return result, nil
@@ -119,11 +120,12 @@ func (db *DB) GetMemberByEmail(ctx context.Context, email string) (*TeamMember, 
 	}
 
 	return &TeamMember{
-		ID:        member.ID,
-		Name:      member.Name,
-		Email:     member.Email,
-		IsActive:  member.IsActive.Valid && member.IsActive.Int64 == 1,
-		CreatedAt: member.CreatedAt.Time,
+		ID:             member.ID,
+		Name:           member.Name,
+		Email:          member.Email,
+		IsActive:       member.IsActive.Valid && member.IsActive.Int64 == 1,
+		IsPermanentWFH: member.IsPermanentWfh == 1,
+		CreatedAt:      member.CreatedAt.Time,
 	}, nil
 }
 
@@ -149,6 +151,22 @@ func (db *DB) DeleteTeamMember(ctx context.Context, id string) error {
 	return db.queries.DeleteTeamMember(ctx, id)
 }
 
+func (db *DB) SetTeamMemberPermanentWFH(ctx context.Context, id string, isPermanentWFH bool) error {
+	if id == "" {
+		return errors.New("id cannot be empty")
+	}
+
+	value := int64(0)
+	if isPermanentWFH {
+		value = 1
+	}
+
+	return db.queries.SetTeamMemberPermanentWFH(ctx, sqlc.SetTeamMemberPermanentWFHParams{
+		IsPermanentWfh: value,
+		ID:             id,
+	})
+}
+
 func (db *DB) GetMemberByID(ctx context.Context, id string) (*TeamMember, error) {
 	member, err := db.queries.GetMemberByID(ctx, id)
 	if err != nil {
@@ -156,11 +174,12 @@ func (db *DB) GetMemberByID(ctx context.Context, id string) (*TeamMember, error)
 	}
 
 	return &TeamMember{
-		ID:        member.ID,
-		Name:      member.Name,
-		Email:     member.Email,
-		IsActive:  member.IsActive.Valid && member.IsActive.Int64 == 1,
-		CreatedAt: member.CreatedAt.Time,
+		ID:             member.ID,
+		Name:           member.Name,
+		Email:          member.Email,
+		IsActive:       member.IsActive.Valid && member.IsActive.Int64 == 1,
+		IsPermanentWFH: member.IsPermanentWfh == 1,
+		CreatedAt:      member.CreatedAt.Time,
 	}, nil
 }
 
@@ -191,11 +210,12 @@ func (db *DB) GetMemberByToken(ctx context.Context, token string) (*TeamMember, 
 	}
 
 	return &TeamMember{
-		ID:        member.ID,
-		Name:      member.Name,
-		Email:     member.Email,
-		IsActive:  member.IsActive.Valid && member.IsActive.Int64 == 1,
-		CreatedAt: member.CreatedAt.Time,
+		ID:             member.ID,
+		Name:           member.Name,
+		Email:          member.Email,
+		IsActive:       member.IsActive.Valid && member.IsActive.Int64 == 1,
+		IsPermanentWFH: member.IsPermanentWfh == 1,
+		CreatedAt:      member.CreatedAt.Time,
 	}, nil
 }
 

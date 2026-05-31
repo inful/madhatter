@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS team_members (
     name TEXT NOT NULL,
     email TEXT UNIQUE NOT NULL,
     is_active INTEGER DEFAULT 1,
+    is_permanent_wfh INTEGER NOT NULL DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 

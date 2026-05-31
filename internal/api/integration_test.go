@@ -380,15 +380,21 @@ func TestCalendarEndpoints(t *testing.T) {
 	})
 
 	t.Run("GetICSFeed", func(t *testing.T) {
-		// First generate a schedule for the current month
+		// Generate schedule from today forward to ensure there are upcoming assignments.
 		now := time.Now().UTC()
-		startDate := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
-		endDate := time.Date(now.Year(), now.Month()+1, 0, 0, 0, 0, 0, time.UTC)
+		startDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+		endDate := startDate.AddDate(0, 0, 30)
 		err := server.engine.GenerateSchedule(ctx, startDate, endDate)
 		require.NoError(t, err)
 
+		// Select a member that definitely has an upcoming assignment to avoid time-sensitive flakes.
+		futureAssignments, err := server.db.GetFutureAssignments(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, futureAssignments)
+		testMemberID := futureAssignments[0].MemberID
+
 		// Then create subscription
-		token, err := server.db.CreateCalendarSubscription(ctx, aliceID)
+		token, err := server.db.CreateCalendarSubscription(ctx, testMemberID)
 		require.NoError(t, err)
 
 		// Use the full router to properly handle URL parameters

@@ -278,3 +278,60 @@ func TestSettlePendingRequests_PermanentWFHConsumesRemoteCapacity(t *testing.T) 
 
 	_ = aliceID
 }
+
+func TestSettlePendingRequests_NoDoubleCountForApprovedPermanentWFH(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	cfg := testConfig()
+	cfg.MinOnsitePercentage = 50
+	cfg.MinOnsiteAbsolute = 1
+	svc := NewService(db, cfg)
+
+	today := nextBusinessDay(time.Now().UTC())
+	targetDate := nextBusinessDay(today.AddDate(0, 0, 1))
+	targetDateStr := targetDate.Format("2006-01-02")
+
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+	carolID, err := db.AddTeamMember(ctx, "Carol", "carol@example.com")
+	require.NoError(t, err)
+	daveID, err := db.AddTeamMember(ctx, "Dave", "dave@example.com")
+	require.NoError(t, err)
+
+	require.NoError(t, db.SetTeamMemberPermanentWFH(ctx, daveID, true))
+
+	// Seed approved request for permanent-WFH member (legacy/existing data case) and ensure no double counting.
+	daveApproved, err := db.ExecContext(ctx,
+		"INSERT INTO wfh_requests (id, member_id, date, status) VALUES (?, ?, ?, ?)",
+		"dave-approved-1", daveID, targetDateStr, database.WFHStatusApproved,
+	)
+	require.NoError(t, err)
+	rows, err := daveApproved.RowsAffected()
+	require.NoError(t, err)
+	require.EqualValues(t, 1, rows)
+
+	bobPending, err := db.CreateWFHRequest(ctx, bobID, targetDateStr)
+	require.NoError(t, err)
+	carolPending, err := db.CreateWFHRequest(ctx, carolID, targetDateStr)
+	require.NoError(t, err)
+
+	_, err = db.ExecContext(ctx, "UPDATE wfh_requests SET created_at = ? WHERE id = ?", "2026-01-01 08:00:00", bobPending.ID)
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, "UPDATE wfh_requests SET created_at = ? WHERE id = ?", "2026-01-01 09:00:00", carolPending.ID)
+	require.NoError(t, err)
+
+	require.NoError(t, svc.SettlePendingRequests(ctx))
+
+	bobReq, err := db.GetWFHRequestByID(ctx, bobPending.ID)
+	require.NoError(t, err)
+	carolReq, err := db.GetWFHRequestByID(ctx, carolPending.ID)
+	require.NoError(t, err)
+
+	// Exactly one slot remains in this setup, so first-priority request is approved.
+	assert.Equal(t, database.WFHStatusApproved, bobReq.Status)
+	assert.Equal(t, database.WFHStatusDenied, carolReq.Status)
+}

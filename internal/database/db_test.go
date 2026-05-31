@@ -7,7 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -72,6 +74,23 @@ func TestSetTeamMemberPermanentWFH(t *testing.T) {
 	member, err = db.GetMemberByID(ctx, memberID)
 	require.NoError(t, err)
 	require.False(t, member.IsPermanentWFH)
+}
+
+func TestCreateWFHRequest_PermanentMemberRejected(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	require.NoError(t, db.SetTeamMemberPermanentWFH(ctx, memberID, true))
+
+	targetDate := time.Now().UTC().AddDate(0, 0, 1).Format("2006-01-02")
+	request, err := db.CreateWFHRequest(ctx, memberID, targetDate)
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrWFHPermanentMember)
+	assert.Nil(t, request)
 }
 
 func TestAddTeamMember_DuplicateEmail(t *testing.T) {

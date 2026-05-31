@@ -201,13 +201,13 @@ func (s *Service) settleDate(ctx context.Context, date string, pending []databas
 		return nil
 	}
 
-	onLeave, permanentWFH, err := s.leaveAndPermanentWFHCounts(ctx, date, members)
+	onLeaveIDs, permanentWFHIDs, err := s.leaveAndPermanentWFHMemberIDs(ctx, date, members)
 	if err != nil {
 		return err
 	}
 
 	// Count already-approved WFH (from previously settled requests not in this batch).
-	alreadyApproved, err := s.db.CountApprovedWFHByDate(ctx, date)
+	approvedWFH, err := s.db.GetWFHRequestsByDateAndStatus(ctx, date, database.WFHStatusApproved)
 	if err != nil {
 		return err
 	}
@@ -215,8 +215,9 @@ func (s *Service) settleDate(ctx context.Context, date string, pending []databas
 	// Compute the minimum on-site headcount.
 	minOnsite := s.minOnsiteCount(totalActive)
 
-	// How many new WFH approvals are allowed?
-	slotsUsed := onLeave + alreadyApproved + permanentWFH
+	// How many members are already unavailable for on-site duty?
+	// Use unique member IDs to avoid double counting overlap between leave/WFH/permanent-WFH.
+	slotsUsed := countUniqueMembers(onLeaveIDs, permanentWFHIDs, memberIDsFromWFHRequests(approvedWFH))
 	availableSlots := max(totalActive-slotsUsed-minOnsite, 0)
 
 	// Sort pending requests by priority: fewest period-days used → earliest created_at.
@@ -238,19 +239,18 @@ func (s *Service) settleDate(ctx context.Context, date string, pending []databas
 	return nil
 }
 
-func (s *Service) leaveAndPermanentWFHCounts(ctx context.Context, date string, members []database.TeamMember) (int, int, error) {
+func (s *Service) leaveAndPermanentWFHMemberIDs(ctx context.Context, date string, members []database.TeamMember) (map[string]struct{}, map[string]struct{}, error) {
 	leaveRecords, err := s.db.GetLeaveByDate(ctx, date)
 	if err != nil {
-		return 0, 0, err
+		return nil, nil, err
 	}
 
-	onLeave := len(leaveRecords)
 	onLeaveIDs := make(map[string]struct{}, len(leaveRecords))
 	for i := range leaveRecords {
 		onLeaveIDs[leaveRecords[i].MemberID] = struct{}{}
 	}
 
-	permanentWFH := 0
+	permanentWFHIDs := make(map[string]struct{})
 	for i := range members {
 		if !members[i].IsPermanentWFH {
 			continue
@@ -258,10 +258,28 @@ func (s *Service) leaveAndPermanentWFHCounts(ctx context.Context, date string, m
 		if _, away := onLeaveIDs[members[i].ID]; away {
 			continue
 		}
-		permanentWFH++
+		permanentWFHIDs[members[i].ID] = struct{}{}
 	}
 
-	return onLeave, permanentWFH, nil
+	return onLeaveIDs, permanentWFHIDs, nil
+}
+
+func memberIDsFromWFHRequests(requests []database.WFHRequest) map[string]struct{} {
+	ids := make(map[string]struct{}, len(requests))
+	for i := range requests {
+		ids[requests[i].MemberID] = struct{}{}
+	}
+	return ids
+}
+
+func countUniqueMembers(sets ...map[string]struct{}) int {
+	unique := make(map[string]struct{})
+	for _, set := range sets {
+		for id := range set {
+			unique[id] = struct{}{}
+		}
+	}
+	return len(unique)
 }
 
 // minOnsiteCount computes the minimum on-site count from config.

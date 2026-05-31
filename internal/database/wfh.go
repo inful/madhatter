@@ -21,6 +21,7 @@ var (
 	ErrWFHInvalidDate              = errors.New("invalid date format, expected YYYY-MM-DD")
 	ErrWFHDatePassed               = errors.New("WFH date has already passed")
 	ErrWFHMemberNotFound           = errors.New("member not found")
+	ErrWFHPermanentMember          = errors.New("permanent WFH members cannot request WFH days")
 	ErrWFHNotApproved              = errors.New("WFH request is not approved")
 )
 
@@ -57,12 +58,15 @@ func (db *DB) CreateWFHRequest(ctx context.Context, memberID, date string) (*WFH
 	}
 
 	// Validate member exists.
-	_, err := db.queries.GetMemberByID(ctx, memberID)
+	member, err := db.queries.GetMemberByID(ctx, memberID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrWFHMemberNotFound
 		}
 		return nil, err
+	}
+	if member.IsPermanentWfh == 1 {
+		return nil, ErrWFHPermanentMember
 	}
 
 	// Validate the date is today or in the future.

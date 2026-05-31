@@ -641,7 +641,7 @@ func TestHandleSwapAccept_Valid_ExecutesSwapAndRedirects(t *testing.T) {
 	assert.Equal(t, aliceID, updatedBob.MemberID, "Bob's slot should now belong to Alice")
 }
 
-func TestHandleSwapAccept_PastAssignments_ReturnsBadRequest(t *testing.T) {
+func TestHandleSwapAccept_PastAssignments_RendersSwapsPageErrorAndCancelsSwap(t *testing.T) {
 	ctx := context.Background()
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
@@ -668,12 +668,17 @@ func TestHandleSwapAccept_PastAssignments_ReturnsBadRequest(t *testing.T) {
 
 	h.handleSwapAccept(w, req)
 
-	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Contains(t, w.Body.String(), "passed")
+	assert.Contains(t, w.Body.String(), "expired")
 
 	updatedAlice, err := db.GetAssignmentByID(ctx, aliceAID)
 	require.NoError(t, err)
 	assert.Equal(t, aliceID, updatedAlice.MemberID)
+
+	swap, err := db.GetHatSwapByID(ctx, swapID)
+	require.NoError(t, err)
+	assert.Equal(t, database.SwapStatusCancelled, swap.Status)
 }
 
 // ---------------------------------------------------------------------------

@@ -278,8 +278,8 @@ func TestDevelopmentLoginHTML_ContainsSecurityWarnings(t *testing.T) {
 
 	// Should explain how it works
 	assert.Contains(t, html, "How it works")
-	assert.Contains(t, html, "fake user")
-	assert.Contains(t, html, "automatically becomes an admin")
+	assert.Contains(t, html, "Select any defined active user")
+	assert.Contains(t, html, "default \"dev@example.com\" admin")
 }
 
 // TestDevelopmentLoginHTML_UsesBulma tests the HTML uses Bulma framework.
@@ -316,8 +316,9 @@ func TestDevelopmentLoginHTML_FormAction(t *testing.T) {
 	// Form should POST to the fake login endpoint
 	assert.Contains(t, html, `action="/auth/fake/login"`)
 	assert.Contains(t, html, `method="GET"`)
+	assert.Contains(t, html, `name="user"`)
 	assert.Contains(t, html, `type="submit"`)
-	assert.Contains(t, html, "Login as Development User")
+	assert.Contains(t, html, "Login as Selected User")
 }
 
 // TestDevelopmentLoginHTML_BackLink tests the back link is present.
@@ -327,4 +328,60 @@ func TestDevelopmentLoginHTML_BackLink(t *testing.T) {
 	// Should have a back to home link
 	assert.Contains(t, html, `href="/"`)
 	assert.Contains(t, html, "Back to Home")
+}
+
+// TestFakeCallbackHandler_HandleLogin_SelectedUser tests selected user propagation in fake code.
+func TestFakeCallbackHandler_HandleLogin_SelectedUser(t *testing.T) {
+	handler := NewFakeCallbackHandler()
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/auth/fake/login?user=alice%40example.com", nil)
+	w := httptest.NewRecorder()
+	handler.HandleLogin(w, req)
+
+	assert.Equal(t, http.StatusSeeOther, w.Code)
+
+	location := w.Header().Get("Location")
+	u, err := url.Parse(location)
+	require.NoError(t, err)
+
+	code := u.Query().Get("code")
+	selected, ok := parseSelectedUserFromCode(code)
+	require.True(t, ok)
+	assert.Equal(t, "alice@example.com", selected)
+}
+
+// TestFakeProvider_GetUserInfo_SelectedUser tests selected user resolution from the fake OAuth flow.
+func TestFakeProvider_GetUserInfo_SelectedUser(t *testing.T) {
+	config := ProviderConfig{}
+	provider := NewFakeProviderWithUserStore(config,
+		func(ctx context.Context, key string) (*UserInfo, error) {
+			return &UserInfo{
+				ID:       "existing-user-id",
+				Email:    key,
+				Name:     "Existing User",
+				Username: "existing",
+			}, nil
+		},
+		nil,
+	)
+
+	fakeCode := buildFakeAuthorizationCode("existing@example.com")
+	token, err := provider.ExchangeCode(context.Background(), fakeCode)
+	require.NoError(t, err)
+
+	userInfo, err := provider.GetUserInfo(context.Background(), token)
+	require.NoError(t, err)
+	assert.Equal(t, "existing@example.com", userInfo.Email)
+	assert.Equal(t, "existing-user-id", userInfo.ID)
+}
+
+// TestGetDevelopmentLoginHTMLWithUsers tests rendering custom selectable users.
+func TestGetDevelopmentLoginHTMLWithUsers(t *testing.T) {
+	html := GetDevelopmentLoginHTMLWithUsers([]DevelopmentLoginUser{
+		{Key: "alice@example.com", Name: "Alice", Email: "alice@example.com", IsAdmin: true},
+		{Key: "bob@example.com", Name: "Bob", Email: "bob@example.com", IsAdmin: false},
+	})
+
+	assert.Contains(t, html, `<option value="alice@example.com">Alice (alice@example.com) [Admin]</option>`)
+	assert.Contains(t, html, `<option value="bob@example.com">Bob (bob@example.com)</option>`)
 }

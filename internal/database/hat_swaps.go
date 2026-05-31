@@ -199,6 +199,49 @@ func (db *DB) GetOpenSwapForAssignment(ctx context.Context, assignmentID string)
 	return hatSwapFromRow(row), nil
 }
 
+// GetAcceptedSwapForAssignment returns the most recent accepted swap involving the given assignment.
+func (db *DB) GetAcceptedSwapForAssignment(ctx context.Context, assignmentID string) (*HatSwap, error) {
+	const query = `
+SELECT id, requester_assignment_id, target_assignment_id,
+       requester_member_id, target_member_id, status, created_at, updated_at
+FROM hat_swaps
+WHERE (requester_assignment_id = ? OR target_assignment_id = ?)
+  AND status = 'accepted'
+ORDER BY updated_at DESC, created_at DESC
+LIMIT 1
+`
+
+	var swap HatSwap
+	var createdAt sql.NullTime
+	var updatedAt sql.NullTime
+
+	err := db.db.QueryRowContext(ctx, query, assignmentID, assignmentID).Scan(
+		&swap.ID,
+		&swap.RequesterAssignmentID,
+		&swap.TargetAssignmentID,
+		&swap.RequesterMemberID,
+		&swap.TargetMemberID,
+		&swap.Status,
+		&createdAt,
+		&updatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	if createdAt.Valid {
+		swap.CreatedAt = createdAt.Time
+	}
+	if updatedAt.Valid {
+		swap.UpdatedAt = updatedAt.Time
+	}
+
+	return &swap, nil
+}
+
 // UpdateHatSwapStatus updates the status of a pending swap request.
 // Returns ErrSwapNotPending if the swap was not in pending state.
 func (db *DB) UpdateHatSwapStatus(ctx context.Context, id, status string) error {
@@ -230,6 +273,36 @@ func (db *DB) DeleteHatSwap(ctx context.Context, id string) error {
 // CountPendingSwapsForMember returns the count of pending incoming swaps for a member.
 func (db *DB) CountPendingSwapsForMember(ctx context.Context, memberID string) (int64, error) {
 	return db.queries.CountPendingSwapsForMember(ctx, memberID)
+}
+
+// CleanupExpiredPendingSwaps cancels pending swaps when either assignment date is already in the past.
+func (db *DB) CleanupExpiredPendingSwaps(ctx context.Context) (int64, error) {
+	today := time.Now().UTC().Format("2006-01-02")
+
+	const query = `
+UPDATE hat_swaps
+SET status = ?, updated_at = CURRENT_TIMESTAMP
+WHERE status = 'pending'
+  AND EXISTS (
+      SELECT 1
+      FROM rota_assignments req
+      JOIN rota_assignments tgt ON tgt.id = hat_swaps.target_assignment_id
+      WHERE req.id = hat_swaps.requester_assignment_id
+        AND (req.date < ? OR tgt.date < ?)
+  )
+`
+
+	result, err := db.db.ExecContext(ctx, query, SwapStatusCancelled, today, today)
+	if err != nil {
+		return 0, err
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+
+	return affected, nil
 }
 
 // ExecuteSwap accepts a swap: it swaps the member_id on both rota assignments and

@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/base64"
@@ -57,6 +58,25 @@ func (am *AuthManager) GetProvider(name string) (Provider, error) {
 // GetSessionManager returns the session manager.
 func (am *AuthManager) GetSessionManager() *SessionManager {
 	return am.sessionManager
+}
+
+// GetDevelopmentUsers returns selectable users for development-mode login.
+func (am *AuthManager) GetDevelopmentUsers(ctx context.Context) ([]DevelopmentLoginUser, error) {
+	provider, err := am.GetProvider("fake")
+	if err != nil {
+		return nil, nil
+	}
+
+	type developmentUserLister interface {
+		ListDevelopmentUsers(context.Context) ([]DevelopmentLoginUser, error)
+	}
+
+	lister, ok := provider.(developmentUserLister)
+	if !ok {
+		return nil, nil
+	}
+
+	return lister.ListDevelopmentUsers(ctx)
 }
 
 // HandleLogin initiates the OAuth2 flow.
@@ -212,6 +232,7 @@ func (am *AuthManager) HandleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleLoginView renders the login page.
+// TODO: Why is this not using the templating system?
 func (am *AuthManager) HandleLoginView(w http.ResponseWriter, r *http.Request) {
 	// Check if already logged in
 	token, err := am.sessionManager.GetSessionCookie(r)

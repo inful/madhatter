@@ -93,7 +93,7 @@ func (s *Server) resolveWFHMemberID(ctx context.Context) (string, error) {
 
 		return "", huma.Error500InternalServerError("Failed to look up team member", err)
 	}
-        if member == nil {
+	if member == nil {
 		return "", huma.Error403Forbidden("You are not registered as a team member")
 	}
 

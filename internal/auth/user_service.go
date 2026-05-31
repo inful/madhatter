@@ -39,6 +39,10 @@ func (us *UserService) GetOrCreateUser(ctx context.Context, userInfo *UserInfo, 
 	// If not found, check if user exists by email
 	existingUserByEmail, err := us.db.GetUserByEmail(ctx, userInfo.Email)
 	if err == nil {
+		if providerName == "fake" {
+			return &existingUserByEmail, nil
+		}
+
 		// User exists with same email but different provider
 		// Don't allow login with different provider - this could be a security issue
 		return nil, fmt.Errorf("user with email %s already exists with provider %s, cannot login with %s",

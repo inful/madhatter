@@ -52,6 +52,7 @@ type presenceDay struct {
 	IsToday         bool
 	Assigned        *database.TeamMember
 	AssignedSwapped bool
+	AssignedSwapInfo string
 	Present         []database.TeamMember
 	WFH             []database.TeamMember
 	Away            []presenceLeave

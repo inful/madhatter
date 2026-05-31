@@ -105,6 +105,36 @@ func TestExecuteSwap_SwapsMembersAndSetsIsSwapped(t *testing.T) {
 	assert.Equal(t, SwapStatusAccepted, swap.Status)
 }
 
+func TestCleanupExpiredPendingSwaps_CancelsExpiredPending(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	pastDate := time.Now().AddDate(0, 0, -3)
+	futureDate := time.Now().AddDate(0, 0, 7)
+
+	alicePastID, err := db.CreateRotaAssignment(ctx, pastDate.Format("2006-01-02"), aliceID, false, nil)
+	require.NoError(t, err)
+	bobFutureID, err := db.CreateRotaAssignment(ctx, futureDate.Format("2006-01-02"), bobID, false, nil)
+	require.NoError(t, err)
+
+	swapID, err := db.CreateHatSwap(ctx, alicePastID, bobFutureID, aliceID, bobID)
+	require.NoError(t, err)
+
+	affected, err := db.CleanupExpiredPendingSwaps(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), affected)
+
+	swap, err := db.GetHatSwapByID(ctx, swapID)
+	require.NoError(t, err)
+	assert.Equal(t, SwapStatusCancelled, swap.Status)
+}
+
 func TestExecuteSwap_DoesNotMarkUnrelatedAssignments(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()

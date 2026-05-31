@@ -1,8 +1,13 @@
 package api
 
 import (
+	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"log"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/inful/madhatter/internal/auth"
@@ -43,7 +48,103 @@ func setupDevelopmentAuth(db *database.DB) (*auth.AuthManager, *auth.Middleware,
 	authManager := auth.NewAuthManager(providerFactory, userService, sessionManager)
 	authMiddleware := auth.NewMiddleware(sessionManager)
 
-	fakeProvider := auth.NewFakeProvider(fakeConfig)
+	queries := db.GetQueries()
+	fakeResolver := func(ctx context.Context, key string) (*auth.UserInfo, error) {
+		normalizedKey := strings.TrimSpace(key)
+		if normalizedKey == "" {
+			return nil, errors.New("selected user key is required")
+		}
+
+		user, err := queries.GetUserByEmail(ctx, key)
+		if err != nil {
+			if !errors.Is(err, sql.ErrNoRows) {
+				return nil, err
+			}
+
+			member, memberErr := queries.GetMemberByEmail(ctx, normalizedKey)
+			if memberErr != nil {
+				return nil, memberErr
+			}
+			if member.IsActive.Valid && member.IsActive.Int64 == 0 {
+				return nil, fmt.Errorf("user %q is inactive", normalizedKey)
+			}
+
+			return &auth.UserInfo{
+				ID:       member.Email,
+				Email:    member.Email,
+				Name:     member.Name,
+				Username: member.Name,
+			}, nil
+		}
+		if user.IsActive.Valid && user.IsActive.Int64 == 0 {
+			return nil, fmt.Errorf("user %q is inactive", normalizedKey)
+		}
+
+		return &auth.UserInfo{
+			ID:       user.ID,
+			Email:    user.Email,
+			Name:     user.Name,
+			Username: user.Name,
+		}, nil
+	}
+
+	fakeUserLister := func(ctx context.Context) ([]auth.DevelopmentLoginUser, error) {
+		byEmail := make(map[string]auth.DevelopmentLoginUser)
+
+		users, err := queries.ListActiveUsers(ctx)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				users = nil
+			} else {
+				return nil, err
+			}
+		}
+
+		for _, user := range users {
+			byEmail[user.Email] = auth.DevelopmentLoginUser{
+				Key:     user.Email,
+				Name:    user.Name,
+				Email:   user.Email,
+				IsAdmin: auth.IsAdmin(user.IsAdmin),
+			}
+		}
+
+		members, err := queries.GetActiveTeamMembers(ctx)
+		if err != nil {
+			if err != sql.ErrNoRows {
+				return nil, err
+			}
+			members = nil
+		}
+
+		for _, member := range members {
+			if _, exists := byEmail[member.Email]; exists {
+				continue
+			}
+
+			byEmail[member.Email] = auth.DevelopmentLoginUser{
+				Key:   member.Email,
+				Name:  member.Name,
+				Email: member.Email,
+			}
+		}
+
+		devUsers := make([]auth.DevelopmentLoginUser, 0, len(byEmail))
+		for _, user := range byEmail {
+			devUsers = append(devUsers, user)
+		}
+
+		sort.Slice(devUsers, func(i, j int) bool {
+			if devUsers[i].Name == devUsers[j].Name {
+				return devUsers[i].Email < devUsers[j].Email
+			}
+			return devUsers[i].Name < devUsers[j].Name
+		})
+
+		return devUsers, nil
+	}
+
+	fakeProvider := auth.NewFakeProviderWithUserStore(fakeConfig, fakeResolver, fakeUserLister)
 	authManager.RegisterProvider(fakeProvider)
 
 	return authManager, authMiddleware, sessionManager, nil

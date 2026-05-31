@@ -2,7 +2,9 @@ package auth
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
+	"html"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -24,13 +26,43 @@ const (
 // FakeProvider implements OAuth2 provider for development mode.
 // It bypasses real OAuth and creates fake users automatically.
 type FakeProvider struct {
-	config ProviderConfig
+	config      ProviderConfig
+	resolveUser FakeUserResolver
+	listUsers   FakeUserLister
 }
+
+const (
+	fakeCodeUserMarker        = "-u-"
+	fakeAccessTokenUserMarker = "-u-"
+)
+
+// DevelopmentLoginUser represents a selectable user in development mode.
+type DevelopmentLoginUser struct {
+	Key     string
+	Name    string
+	Email   string
+	IsAdmin bool
+}
+
+// FakeUserResolver resolves a development login selection into user info.
+type FakeUserResolver func(ctx context.Context, key string) (*UserInfo, error)
+
+// FakeUserLister returns selectable users for development login.
+type FakeUserLister func(ctx context.Context) ([]DevelopmentLoginUser, error)
 
 // NewFakeProvider creates a new fake OAuth provider.
 func NewFakeProvider(config ProviderConfig) *FakeProvider {
 	return &FakeProvider{
 		config: config,
+	}
+}
+
+// NewFakeProviderWithUserStore creates a fake provider that can list and resolve users.
+func NewFakeProviderWithUserStore(config ProviderConfig, resolver FakeUserResolver, lister FakeUserLister) *FakeProvider {
+	return &FakeProvider{
+		config:      config,
+		resolveUser: resolver,
+		listUsers:   lister,
 	}
 }
 
@@ -49,10 +81,17 @@ func (f *FakeProvider) GetAuthURL(state string) string {
 // ExchangeCode simulates exchanging an authorization code for tokens.
 // In development mode, this returns fake tokens immediately.
 func (f *FakeProvider) ExchangeCode(ctx context.Context, code string) (*oauth2.Token, error) {
+	selectedUser, hasSelectedUser := parseSelectedUserFromCode(code)
+
 	// In development mode, we don't actually exchange codes
 	// This should never be called if we handle the fake flow correctly
+	accessToken := "fake-access-token-" + strconv.FormatInt(time.Now().UnixNano(), 10)
+	if hasSelectedUser {
+		accessToken += fakeAccessTokenUserMarker + encodeSelection(selectedUser)
+	}
+
 	return &oauth2.Token{
-		AccessToken:  "fake-access-token-" + strconv.FormatInt(time.Now().UnixNano(), 10),
+		AccessToken:  accessToken,
 		RefreshToken: "fake-refresh-token",
 		TokenType:    "Bearer",
 		Expiry:       time.Now().Add(SessionExpiryDuration),
@@ -69,8 +108,33 @@ var fakeUser = &UserInfo{
 
 // GetUserInfo returns fake user information.
 func (f *FakeProvider) GetUserInfo(ctx context.Context, token *oauth2.Token) (*UserInfo, error) {
-	// Return fake user info - in development mode, we'll use a default user
+	if selectedUser, ok := parseSelectedUserFromAccessToken(token.AccessToken); ok && f.resolveUser != nil {
+		user, err := f.resolveUser(ctx, selectedUser)
+		if err != nil {
+			return nil, fmt.Errorf("failed to resolve selected development user: %w", err)
+		}
+		return user, nil
+	}
+
+	// Return fake user info - in development mode, use a default user when none is selected.
 	return fakeUser, nil
+}
+
+// ListDevelopmentUsers returns users that can be selected on the development login page.
+func (f *FakeProvider) ListDevelopmentUsers(ctx context.Context) ([]DevelopmentLoginUser, error) {
+	if f.listUsers == nil {
+		return defaultDevelopmentUsers(), nil
+	}
+
+	users, err := f.listUsers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(users) == 0 {
+		return defaultDevelopmentUsers(), nil
+	}
+
+	return users, nil
 }
 
 // GetOAuthConfig returns the OAuth2 configuration.
@@ -113,8 +177,9 @@ func (h *FakeCallbackHandler) HandleLogin(w http.ResponseWriter, r *http.Request
 		MaxAge: StateCookieExpiry,
 	})
 
-	// Generate a fake authorization code
-	fakeCode := fmt.Sprintf("fake-code-%d", time.Now().UnixNano())
+	// Generate a fake authorization code.
+	selectedUser := strings.TrimSpace(r.URL.Query().Get("user"))
+	fakeCode := buildFakeAuthorizationCode(selectedUser)
 
 	// Redirect to callback with fake code and the random state
 	callbackURL := "/auth/callback?code=" + url.QueryEscape(fakeCode) + "&state=" + url.QueryEscape(randomState) + "&provider=fake"
@@ -124,6 +189,48 @@ func (h *FakeCallbackHandler) HandleLogin(w http.ResponseWriter, r *http.Request
 // GetDevelopmentLoginHTML returns the shared HTML for the development mode login page.
 // This eliminates duplication between web and auth packages.
 func GetDevelopmentLoginHTML() string {
+	return GetDevelopmentLoginHTMLWithUsers(nil)
+}
+
+// GetDevelopmentLoginHTMLWithUsers returns the shared HTML for the development mode login page.
+func GetDevelopmentLoginHTMLWithUsers(users []DevelopmentLoginUser) string {
+	if len(users) == 0 {
+		users = defaultDevelopmentUsers()
+	}
+
+	var options strings.Builder
+	for _, user := range users {
+		if strings.TrimSpace(user.Key) == "" {
+			continue
+		}
+
+		label := strings.TrimSpace(user.Name)
+		if label == "" {
+			label = user.Email
+		}
+		if strings.TrimSpace(user.Email) != "" {
+			label += " (" + user.Email + ")"
+		}
+		if user.IsAdmin {
+			label += " [Admin]"
+		}
+
+		options.WriteString("<option value=\"")
+		options.WriteString(html.EscapeString(user.Key))
+		options.WriteString("\">")
+		options.WriteString(html.EscapeString(label))
+		options.WriteString("</option>")
+	}
+
+	if options.Len() == 0 {
+		defaultUser := defaultDevelopmentUsers()[0]
+		options.WriteString("<option value=\"")
+		options.WriteString(html.EscapeString(defaultUser.Key))
+		options.WriteString("\">")
+		options.WriteString(html.EscapeString(defaultUser.Name + " (" + defaultUser.Email + ") [Admin]"))
+		options.WriteString("</option>")
+	}
+
 	return `<!DOCTYPE html>
 <html>
 <head>
@@ -164,8 +271,8 @@ func GetDevelopmentLoginHTML() string {
                             <div class="dev-info">
                                 <p class="has-text-weight-semibold mb-2"><i class="fas fa-info-circle"></i> How it works:</p>
                                 <ul class="is-size-7">
-                                    <li>- Clicking "Login" creates a fake user "dev@example.com"</li>
-                                    <li>- The user automatically becomes an admin</li>
+									<li>- Select any defined active user and click "Login"</li>
+									<li>- If no users exist yet, a default "dev@example.com" admin is used</li>
                                     <li>- No real OAuth provider is needed</li>
                                     <li>- Perfect for local development and testing</li>
                                 </ul>
@@ -173,8 +280,18 @@ func GetDevelopmentLoginHTML() string {
 
                             <div class="content has-text-centered">
                                 <form action="/auth/fake/login" method="GET">
+									<div class="field">
+										<label class="label has-text-left">Login As</label>
+										<div class="control">
+											<div class="select is-fullwidth">
+												<select name="user" required>
+													` + options.String() + `
+												</select>
+											</div>
+										</div>
+									</div>
                                     <button type="submit" class="button is-primary is-large is-fullwidth">
-                                        <i class="fas fa-sign-in-alt mr-2"></i> Login as Development User
+										<i class="fas fa-sign-in-alt mr-2"></i> Login as Selected User
                                     </button>
                                 </form>
                             </div>
@@ -192,6 +309,69 @@ func GetDevelopmentLoginHTML() string {
     </section>
 </body>
 </html>`
+}
+
+func defaultDevelopmentUsers() []DevelopmentLoginUser {
+	return []DevelopmentLoginUser{
+		{
+			Key:     fakeUser.Email,
+			Name:    fakeUser.Name,
+			Email:   fakeUser.Email,
+			IsAdmin: true,
+		},
+	}
+}
+
+func buildFakeAuthorizationCode(selectedUser string) string {
+	baseCode := fmt.Sprintf("fake-code-%d", time.Now().UnixNano())
+	if strings.TrimSpace(selectedUser) == "" {
+		return baseCode
+	}
+
+	return baseCode + fakeCodeUserMarker + encodeSelection(selectedUser)
+}
+
+func parseSelectedUserFromCode(code string) (string, bool) {
+	index := strings.LastIndex(code, fakeCodeUserMarker)
+	if index == -1 {
+		return "", false
+	}
+
+	encodedUser := code[index+len(fakeCodeUserMarker):]
+	selectedUser, err := decodeSelection(encodedUser)
+	if err != nil || strings.TrimSpace(selectedUser) == "" {
+		return "", false
+	}
+
+	return selectedUser, true
+}
+
+func parseSelectedUserFromAccessToken(accessToken string) (string, bool) {
+	index := strings.LastIndex(accessToken, fakeAccessTokenUserMarker)
+	if index == -1 {
+		return "", false
+	}
+
+	encodedUser := accessToken[index+len(fakeAccessTokenUserMarker):]
+	selectedUser, err := decodeSelection(encodedUser)
+	if err != nil || strings.TrimSpace(selectedUser) == "" {
+		return "", false
+	}
+
+	return selectedUser, true
+}
+
+func encodeSelection(value string) string {
+	return base64.RawURLEncoding.EncodeToString([]byte(value))
+}
+
+func decodeSelection(value string) (string, error) {
+	decoded, err := base64.RawURLEncoding.DecodeString(value)
+	if err != nil {
+		return "", err
+	}
+
+	return string(decoded), nil
 }
 
 // FakeCallbackHandler.HandleCallback has been removed in favor of the standard

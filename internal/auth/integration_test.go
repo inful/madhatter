@@ -91,6 +91,19 @@ func TestUserService_GetOrCreateUser(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "already exists with provider")
 	})
+
+	t.Run("Same Email Fake Provider - Should Reuse Existing User", func(t *testing.T) {
+		userInfo := &UserInfo{
+			ID:    "dev-selected-user",
+			Email: "user1@example.com", // Existing user from forgejo
+			Name:  "User One",
+		}
+
+		user, err := userService.GetOrCreateUser(ctx, userInfo, "fake")
+		require.NoError(t, err)
+		assert.Equal(t, "user1@example.com", user.Email)
+		assert.Equal(t, "forgejo", user.Provider)
+	})
 }
 
 func TestUserService_EnsureTeamMember_PreservesExistingName(t *testing.T) {

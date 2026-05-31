@@ -1,0 +1,151 @@
+{{define "help.html"}}
+{{template "base" .}}
+{{end}}
+
+{{define "help_title"}}MadHatter - Help{{end}}
+
+{{define "help_content"}}
+{{template "user_card" .}}
+{{template "page_header" (dict "Title" "User Guide" "Icon" "fas fa-book" "BackHref" "/" "BackLabel" "Dashboard")}}
+
+<div class="card">
+    <header class="card-header">
+        <p class="card-header-title">
+            <i class="fas fa-rocket mr-2"></i> Getting Started
+        </p>
+    </header>
+    <div class="card-content">
+        <div class="content">
+            <p>The dashboard is your control center. It shows your status, next HAT day, next WFH day, and upcoming leave.</p>
+            <p>If your assignment was swapped, you will see the swap icon on your HAT tag and can hover for details.</p>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <header class="card-header">
+        <p class="card-header-title">
+            <i class="fas fa-user-clock mr-2"></i> Leave And WFH
+        </p>
+    </header>
+    <div class="card-content">
+        <div class="content">
+            <p>Use Leave to report absences. Admins review and manage leave records from the management page.</p>
+            <p>Use WFH to submit work-from-home requests. Requests are settled by policy and may be approved or denied based on capacity rules.</p>
+            <p>Approved WFH requests can be withdrawn by admins before the configured cutoff time.</p>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <header class="card-header">
+        <p class="card-header-title">
+            <i class="fas fa-balance-scale mr-2"></i> How WFH Is Settled
+        </p>
+    </header>
+    <div class="card-content">
+        <div class="content">
+            <p>Pending WFH requests are reviewed in a rolling horizon rather than all at once. The settlement window means the system only decides requests up to a certain number of days ahead, then leaves later requests pending until they move into that window. This helps avoid locking in decisions too far in advance while still giving people timely outcomes for upcoming days.</p>
+            <p>Inside that window, each day is processed against on-site coverage limits. If demand is higher than available WFH slots, requests are prioritized by members who have used fewer WFH days in the current period, then by earlier submission time.</p>
+        </div>
+
+        {{if .WFHConfigured}}
+        <table class="table is-fullwidth is-striped is-hoverable is-size-7">
+            <tbody>
+                <tr>
+                    <th>Settlement window</th>
+                    <td>{{.WFHSettlementDays}} day(s) ahead</td>
+                </tr>
+                <tr>
+                    <th>Minimum on-site coverage</th>
+                    <td>{{printf "%.0f" .WFHMinOnsitePercentage}}% and at least {{.WFHMinOnsiteAbsolute}} person(s)</td>
+                </tr>
+                <tr>
+                    <th>WFH quota per period</th>
+                    <td>{{.WFHMaxDaysPerPeriod}} day(s)</td>
+                </tr>
+                <tr>
+                    <th>Quota period length</th>
+                    <td>{{.WFHPeriodDays}} day(s)</td>
+                </tr>
+                <tr>
+                    <th>Quota period anchor</th>
+                    <td>{{.WFHPeriodAnchor}}</td>
+                </tr>
+                <tr>
+                    <th>Admin withdrawal cutoff</th>
+                    <td>{{.WFHWithdrawalHours}} hour(s) before the WFH day</td>
+                </tr>
+            </tbody>
+        </table>
+        {{else}}
+        <div class="notification is-warning is-light">
+            <i class="fas fa-triangle-exclamation mr-2"></i>
+            WFH service is currently disabled, so settlement rules are not active.
+        </div>
+        {{end}}
+    </div>
+</div>
+
+<div class="card">
+    <header class="card-header">
+        <p class="card-header-title">
+            <i class="fas fa-exchange-alt mr-2"></i> HAT Day Swaps
+        </p>
+    </header>
+    <div class="card-content">
+        <div class="content">
+            <p>Use Swaps to request exchanging your HAT day with another teammate.</p>
+            <p>Incoming requests can be accepted or rejected. Expired requests are automatically cleaned up and cannot be accepted.</p>
+            <p>You can cancel your own pending requests before they are accepted.</p>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <header class="card-header">
+        <p class="card-header-title">
+            <i class="fas fa-shuffle mr-2"></i> How HAT Days Are Assigned
+        </p>
+    </header>
+    <div class="card-content">
+        <div class="content">
+            <p>HAT days are distributed using a round-robin rotation across active team members to keep assignments fair over time.</p>
+            <p>Only business days are assigned. Weekends are skipped automatically, and configured holidays are also skipped.</p>
+            <p>When leave is reported, the system creates cover assignments when needed and keeps existing assignments as stable as possible.</p>
+            <p>Accepted swap requests exchange assignment ownership and are shown with a swap icon on the dashboard.</p>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <header class="card-header">
+        <p class="card-header-title">
+            <i class="fas fa-calendar-star mr-2"></i> Calendar Subscriptions
+        </p>
+    </header>
+    <div class="card-content">
+        <div class="content">
+            <p>Open Calendar to create subscription links for rota and meetings feeds.</p>
+            <p>You can copy feed URLs into your calendar app and keep schedules up to date automatically.</p>
+        </div>
+    </div>
+</div>
+
+<div class="notification is-info is-light">
+    <i class="fas fa-circle-info mr-2"></i>
+    Need admin help? Contact your rota administrator for team management, policy changes, and access questions.
+</div>
+{{end}}
+
+{{define "help_styles"}}
+<style>
+    .help-grid {
+        display: grid;
+        gap: 1rem;
+    }
+</style>
+{{end}}
+
+{{define "help_scripts"}}
+{{end}}

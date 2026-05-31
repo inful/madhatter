@@ -5,9 +5,6 @@
 {{define "dashboard_title"}}MadHatter - Dashboard{{end}}
 
 {{define "dashboard_content"}}
-<div class="dashboard-userpane">
-    {{template "user_card" .}}
-</div>
 {{template "page_header" (dict "Title" "Dashboard" "Icon" "fas fa-calendar-check")}}
 
 {{if .User}}

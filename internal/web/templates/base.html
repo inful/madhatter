@@ -75,6 +75,37 @@
             border-radius: 8px;
         }
 
+        .global-user-menu.card {
+            margin-bottom: 1rem;
+        }
+
+        .global-user-menu .card-content {
+            padding: 0.8rem 1rem;
+        }
+
+        .global-user-menu .menu-name {
+            font-size: 1.02rem;
+            line-height: 1.25;
+        }
+
+        .global-user-menu .menu-email {
+            margin-top: 0.15rem;
+            font-size: 0.8rem;
+        }
+
+        .global-user-menu .menu-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
+        }
+
+        .global-user-menu .button.is-small {
+            height: 1.95em;
+            padding-left: 0.7rem;
+            padding-right: 0.7rem;
+            font-size: 0.78rem;
+        }
+
         .user-pane.card {
             margin-bottom: 1rem;
         }
@@ -122,6 +153,17 @@
         }
 
         @media (max-width: 640px) {
+            .global-user-menu .columns.is-mobile {
+                align-items: flex-start;
+            }
+
+            .global-user-menu .menu-actions {
+                width: 100%;
+                justify-content: flex-start;
+                margin-top: 0.45rem;
+                flex-wrap: wrap;
+            }
+
             .page-header {
                 margin-bottom: 0.7rem;
             }
@@ -153,6 +195,7 @@
             <div class="hero-body">
                 <div class="container">
                     {{if .Template}}
+                        {{template "global_user_menu" .}}
                         {{render (printf "%s_content" .Template) .}}
                     {{else}}
                         {{template "login_content" .}}
@@ -170,24 +213,24 @@
 </html>
 {{end}}
 
-{{define "user_card"}}
+{{define "global_user_menu"}}
 {{if .User}}
-<div class="card user-pane">
+<div class="card global-user-menu">
     <div class="card-content">
         <div class="columns is-vcentered is-mobile">
             <div class="column">
-                <p class="has-text-weight-semibold user-name">
+                <p class="has-text-weight-semibold menu-name">
                     <i class="fas fa-user-circle mr-2"></i>{{.User.Name}}
                 </p>
-                <p class="is-size-7 has-text-grey user-email">{{.User.Email}}</p>
+                <p class="has-text-grey menu-email">{{.User.Email}}</p>
                 {{if .IsAdmin}}
                     <span class="tag is-danger is-light mt-1">
                         <i class="fas fa-shield-alt mr-1"></i> Admin
                     </span>
                 {{end}}
             </div>
-            <div class="column is-narrow">
-                <a href="/help" class="button is-small is-info is-light mr-2">
+            <div class="column is-narrow menu-actions">
+                <a href="/help" class="button is-small is-info is-light">
                     <i class="fas fa-book mr-1"></i> Help
                 </a>
                 <a href="/auth/logout" class="button is-small is-danger is-light">
@@ -198,6 +241,9 @@
     </div>
 </div>
 {{end}}
+{{end}}
+
+{{define "user_card"}}
 {{end}}
 
 {{define "page_header"}}

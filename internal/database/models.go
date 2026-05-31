@@ -3,12 +3,12 @@ package database
 import "time"
 
 type TeamMember struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Email     string    `json:"email"`
-	IsActive  bool      `json:"is_active"`
-	IsPermanentWFH bool `json:"is_permanent_wfh"`
-	CreatedAt time.Time `json:"created_at"`
+	ID             string    `json:"id"`
+	Name           string    `json:"name"`
+	Email          string    `json:"email"`
+	IsActive       bool      `json:"is_active"`
+	IsPermanentWFH bool      `json:"is_permanent_wfh"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 type LeaveRecord struct {

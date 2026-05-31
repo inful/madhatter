@@ -396,15 +396,15 @@ func (h *Handler) getUpcomingPresenceFrom(ctx context.Context, start time.Time) 
 		isToday := current.Year() == now.Year() && current.YearDay() == now.YearDay()
 
 		presence = append(presence, presenceDay{
-			DateISO:         dateStr,
-			DateDisplay:     current.Format("Mon, Jan 2"),
-			IsToday:         isToday,
-			Assigned:        assigned,
-			AssignedSwapped: assignedSwapped,
+			DateISO:          dateStr,
+			DateDisplay:      current.Format("Mon, Jan 2"),
+			IsToday:          isToday,
+			Assigned:         assigned,
+			AssignedSwapped:  assignedSwapped,
 			AssignedSwapInfo: assignedSwapInfo,
-			Present:         onsite,
-			WFH:             wfh,
-			Away:            away,
+			Present:          onsite,
+			WFH:              wfh,
+			Away:             away,
 		})
 
 		current = current.AddDate(0, 0, 1)

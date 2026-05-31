@@ -47,15 +47,15 @@ type pendingRestoreItem struct {
 }
 
 type presenceDay struct {
-	DateISO         string
-	DateDisplay     string
-	IsToday         bool
-	Assigned        *database.TeamMember
-	AssignedSwapped bool
+	DateISO          string
+	DateDisplay      string
+	IsToday          bool
+	Assigned         *database.TeamMember
+	AssignedSwapped  bool
 	AssignedSwapInfo string
-	Present         []database.TeamMember
-	WFH             []database.TeamMember
-	Away            []presenceLeave
+	Present          []database.TeamMember
+	WFH              []database.TeamMember
+	Away             []presenceLeave
 }
 
 type presenceLeave struct {

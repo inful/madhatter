@@ -192,6 +192,7 @@ func (h *Handler) loadDashboardData(ctx context.Context, data map[string]any) {
 	// Get upcoming presence for next business days.
 	if presence, presenceErr := h.getUpcomingPresence(ctx); presenceErr == nil {
 		data["UpcomingPresence"] = presence
+		data["ScheduleMatrix"] = buildScheduleMatrix(presence)
 	}
 
 	// Get current and next week assignments.
@@ -205,6 +206,105 @@ func (h *Handler) loadDashboardData(ctx context.Context, data map[string]any) {
 	if h.holidayChecker != nil {
 		data["UpcomingHolidays"] = h.getUpcomingHolidays()
 	}
+}
+
+func buildScheduleMatrix(presence []presenceDay) scheduleMatrix {
+	memberByID := make(map[string]database.TeamMember)
+
+	for _, day := range presence {
+		for i := range day.Present {
+			memberByID[day.Present[i].ID] = day.Present[i]
+		}
+		for i := range day.WFH {
+			memberByID[day.WFH[i].ID] = day.WFH[i]
+		}
+		for i := range day.Away {
+			memberByID[day.Away[i].Member.ID] = day.Away[i].Member
+		}
+	}
+
+	members := make([]database.TeamMember, 0, len(memberByID))
+	for _, member := range memberByID {
+		members = append(members, member)
+	}
+	sort.Slice(members, func(i, j int) bool {
+		return members[i].Name < members[j].Name
+	})
+
+	days := make([]scheduleMatrixDay, 0, len(presence))
+	for _, day := range presence {
+		days = append(days, scheduleMatrixDay{
+			DateISO:     day.DateISO,
+			DateDisplay: day.DateDisplay,
+			IsToday:     day.IsToday,
+			AtWorkCount: len(day.Present),
+			WFHCount:    len(day.WFH),
+			LeaveCount:  len(day.Away),
+		})
+	}
+
+	rows := make([]scheduleMatrixRow, 0, len(members))
+	for _, member := range members {
+		row := scheduleMatrixRow{Member: member, Cells: make([]scheduleMatrixCell, 0, len(presence))}
+		for _, day := range presence {
+			cell := scheduleMatrixCell{
+				Status:    "none",
+				Label:     "-",
+				IsToday:   day.IsToday,
+				DateISO:   day.DateISO,
+				DateLabel: day.DateDisplay,
+			}
+
+			if isAwayMember(day, member.ID) {
+				cell.Status = "away"
+				cell.Label = "Away"
+			} else if isWFHMember(day, member.ID) {
+				cell.Status = "wfh"
+				cell.Label = "WFH"
+			} else if isPresentMember(day, member.ID) {
+				cell.Status = "onsite"
+				cell.Label = "On-site"
+			}
+
+			if day.Assigned != nil && day.Assigned.ID == member.ID {
+				cell.Assigned = true
+				cell.Swapped = day.AssignedSwapped
+				cell.SwapInfo = day.AssignedSwapInfo
+			}
+
+			row.Cells = append(row.Cells, cell)
+		}
+		rows = append(rows, row)
+	}
+
+	return scheduleMatrix{Days: days, Rows: rows}
+}
+
+func isPresentMember(day presenceDay, memberID string) bool {
+	for i := range day.Present {
+		if day.Present[i].ID == memberID {
+			return true
+		}
+	}
+	return false
+}
+
+func isWFHMember(day presenceDay, memberID string) bool {
+	for i := range day.WFH {
+		if day.WFH[i].ID == memberID {
+			return true
+		}
+	}
+	return false
+}
+
+func isAwayMember(day presenceDay, memberID string) bool {
+	for i := range day.Away {
+		if day.Away[i].Member.ID == memberID {
+			return true
+		}
+	}
+	return false
 }
 
 // getUpcomingHolidays returns upcoming holidays for the configured lookahead days.

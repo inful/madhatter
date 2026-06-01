@@ -62,6 +62,36 @@ type presenceLeave struct {
 	Member database.TeamMember
 }
 
+type scheduleMatrix struct {
+	Days []scheduleMatrixDay
+	Rows []scheduleMatrixRow
+}
+
+type scheduleMatrixDay struct {
+	DateISO     string
+	DateDisplay string
+	IsToday     bool
+	AtWorkCount int
+	WFHCount    int
+	LeaveCount  int
+}
+
+type scheduleMatrixRow struct {
+	Member database.TeamMember
+	Cells  []scheduleMatrixCell
+}
+
+type scheduleMatrixCell struct {
+	Status    string
+	Label     string
+	Assigned  bool
+	Swapped   bool
+	SwapInfo  string
+	IsToday   bool
+	DateISO   string
+	DateLabel string
+}
+
 func NewHandler(db *database.DB, authManager *auth.AuthManager, authMiddleware *auth.Middleware, development bool, holidayChecker func(time.Time) bool) (*Handler, error) {
 	// Parse templates.
 	tmpl, err := parseTemplates()

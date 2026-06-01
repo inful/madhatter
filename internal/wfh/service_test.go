@@ -130,6 +130,34 @@ func TestCheckQuota_UsesCurrentPeriodLimit(t *testing.T) {
 	assert.False(t, hasQuota)
 }
 
+func TestCheckQuota_RecurringDaysReduceBudget(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	svc := NewService(db, testConfig())
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	require.NoError(t, db.SetTeamMemberRecurringWFHDays(ctx, memberID, database.RecurringWFHDays{
+		Monday:   true,
+		Thursday: true,
+	}))
+
+	checkDate := nextWeekday(time.Now().UTC(), time.Friday).Format("2006-01-02")
+	hasQuota, err := svc.CheckQuota(ctx, memberID, checkDate)
+	require.NoError(t, err)
+	assert.False(t, hasQuota)
+}
+
+func nextWeekday(start time.Time, weekday time.Weekday) time.Time {
+	date := start.AddDate(0, 0, 1)
+	for date.Weekday() != weekday {
+		date = date.AddDate(0, 0, 1)
+	}
+	return date
+}
+
 func TestPrioritisePending_SortsByUsageThenCreatedAt(t *testing.T) {
 	ctx := context.Background()
 	db, cleanup := setupWFHTestDB(t)
@@ -230,7 +258,7 @@ func TestSettlePendingRequests_ApprovesHighestPriorityWithinSlots(t *testing.T) 
 	_ = aliceID
 }
 
-func TestSettlePendingRequests_PermanentWFHConsumesRemoteCapacity(t *testing.T) {
+func TestSettlePendingRequests_RecurringWFHConsumesRemoteCapacity(t *testing.T) {
 	ctx := context.Background()
 	db, cleanup := setupWFHTestDB(t)
 	defer cleanup()
@@ -252,7 +280,7 @@ func TestSettlePendingRequests_PermanentWFHConsumesRemoteCapacity(t *testing.T) 
 	daveID, err := db.AddTeamMember(ctx, "Dave", "dave@example.com")
 	require.NoError(t, err)
 
-	require.NoError(t, db.SetTeamMemberPermanentWFH(ctx, daveID, true))
+	require.NoError(t, db.SetTeamMemberRecurringWFHDays(ctx, daveID, database.RecurringWFHDays{Monday: true, Tuesday: true, Wednesday: true, Thursday: true, Friday: true}))
 
 	bobPending, err := db.CreateWFHRequest(ctx, bobID, targetDateStr)
 	require.NoError(t, err)
@@ -279,7 +307,7 @@ func TestSettlePendingRequests_PermanentWFHConsumesRemoteCapacity(t *testing.T) 
 	_ = aliceID
 }
 
-func TestSettlePendingRequests_NoDoubleCountForApprovedPermanentWFH(t *testing.T) {
+func TestSettlePendingRequests_NoDoubleCountForApprovedRecurringWFH(t *testing.T) {
 	ctx := context.Background()
 	db, cleanup := setupWFHTestDB(t)
 	defer cleanup()
@@ -302,7 +330,7 @@ func TestSettlePendingRequests_NoDoubleCountForApprovedPermanentWFH(t *testing.T
 	daveID, err := db.AddTeamMember(ctx, "Dave", "dave@example.com")
 	require.NoError(t, err)
 
-	require.NoError(t, db.SetTeamMemberPermanentWFH(ctx, daveID, true))
+	require.NoError(t, db.SetTeamMemberRecurringWFHDays(ctx, daveID, database.RecurringWFHDays{Monday: true, Tuesday: true, Wednesday: true, Thursday: true, Friday: true}))
 
 	// Seed approved request for permanent-WFH member (legacy/existing data case) and ensure no double counting.
 	daveApproved, err := db.ExecContext(ctx,

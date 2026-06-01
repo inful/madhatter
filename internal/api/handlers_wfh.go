@@ -70,6 +70,8 @@ func wfhDomainToHumaError(err error) error {
 		return huma.Error422UnprocessableEntity(err.Error(), nil)
 	case errors.Is(err, database.ErrWFHMemberNotFound):
 		return huma.Error422UnprocessableEntity(err.Error(), nil)
+	case errors.Is(err, database.ErrWFHRecurringContractDay):
+		return huma.Error409Conflict(err.Error())
 	case errors.Is(err, database.ErrWFHNotApproved):
 		return huma.Error409Conflict(err.Error())
 	case errors.Is(err, database.ErrWFHWithdrawalDeadlinePassed):

@@ -66,6 +66,7 @@ func (h *Handler) registerRoutes() {
 
 		r.HandleFunc("/team", h.handleTeam)
 		r.HandleFunc("/team/{id}/edit", h.handleTeamMemberEdit)
+		r.HandleFunc("/team/{id}/recurring-wfh", h.handleTeamMemberPermanentWFHUpdate)
 		r.HandleFunc("/team/{id}/permanent-wfh", h.handleTeamMemberPermanentWFHUpdate)
 		r.HandleFunc("/team/{id}/delete", h.handleTeamMemberDelete)
 		r.HandleFunc("/team/users/{id}/admin", h.handleUserAdminUpdate)

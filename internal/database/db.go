@@ -93,6 +93,23 @@ func (db *DB) AddTeamMember(ctx context.Context, name, email string) (string, er
 	return id, err
 }
 
+func teamMemberFromSQLC(m sqlc.TeamMember) TeamMember {
+	tm := TeamMember{
+		ID:                    m.ID,
+		Name:                  m.Name,
+		Email:                 m.Email,
+		IsActive:              m.IsActive.Valid && m.IsActive.Int64 == 1,
+		RecurringWFHMonday:    m.RecurringWfhMonday == 1,
+		RecurringWFHTuesday:   m.RecurringWfhTuesday == 1,
+		RecurringWFHWednesday: m.RecurringWfhWednesday == 1,
+		RecurringWFHThursday:  m.RecurringWfhThursday == 1,
+		RecurringWFHFriday:    m.RecurringWfhFriday == 1,
+		CreatedAt:             m.CreatedAt.Time,
+	}
+	tm.IsPermanentWFH = tm.HasPermanentRecurringWFH()
+	return tm
+}
+
 func (db *DB) GetActiveTeamMembers(ctx context.Context) ([]TeamMember, error) {
 	members, err := db.queries.GetActiveTeamMembers(ctx)
 	if err != nil {
@@ -100,15 +117,8 @@ func (db *DB) GetActiveTeamMembers(ctx context.Context) ([]TeamMember, error) {
 	}
 
 	result := make([]TeamMember, len(members))
-	for i, m := range members {
-		result[i] = TeamMember{
-			ID:             m.ID,
-			Name:           m.Name,
-			Email:          m.Email,
-			IsActive:       m.IsActive.Valid && m.IsActive.Int64 == 1,
-			IsPermanentWFH: m.IsPermanentWfh == 1,
-			CreatedAt:      m.CreatedAt.Time,
-		}
+	for i := range members {
+		result[i] = teamMemberFromSQLC(members[i])
 	}
 	return result, nil
 }
@@ -119,14 +129,8 @@ func (db *DB) GetMemberByEmail(ctx context.Context, email string) (*TeamMember, 
 		return nil, err
 	}
 
-	return &TeamMember{
-		ID:             member.ID,
-		Name:           member.Name,
-		Email:          member.Email,
-		IsActive:       member.IsActive.Valid && member.IsActive.Int64 == 1,
-		IsPermanentWFH: member.IsPermanentWfh == 1,
-		CreatedAt:      member.CreatedAt.Time,
-	}, nil
+	tm := teamMemberFromSQLC(member)
+	return &tm, nil
 }
 
 func (db *DB) UpdateTeamMember(ctx context.Context, id, name, email string) error {
@@ -152,18 +156,33 @@ func (db *DB) DeleteTeamMember(ctx context.Context, id string) error {
 }
 
 func (db *DB) SetTeamMemberPermanentWFH(ctx context.Context, id string, isPermanentWFH bool) error {
+	days := RecurringWFHDays{}
+	if isPermanentWFH {
+		days = RecurringWFHDays{Monday: true, Tuesday: true, Wednesday: true, Thursday: true, Friday: true}
+	}
+
+	return db.SetTeamMemberRecurringWFHDays(ctx, id, days)
+}
+
+func (db *DB) SetTeamMemberRecurringWFHDays(ctx context.Context, id string, days RecurringWFHDays) error {
 	if id == "" {
 		return errors.New("id cannot be empty")
 	}
 
-	value := int64(0)
-	if isPermanentWFH {
-		value = 1
+	toInt := func(v bool) int64 {
+		if v {
+			return 1
+		}
+		return 0
 	}
 
-	return db.queries.SetTeamMemberPermanentWFH(ctx, sqlc.SetTeamMemberPermanentWFHParams{
-		IsPermanentWfh: value,
-		ID:             id,
+	return db.queries.SetTeamMemberRecurringWFHDays(ctx, sqlc.SetTeamMemberRecurringWFHDaysParams{
+		RecurringWfhMonday:    toInt(days.Monday),
+		RecurringWfhTuesday:   toInt(days.Tuesday),
+		RecurringWfhWednesday: toInt(days.Wednesday),
+		RecurringWfhThursday:  toInt(days.Thursday),
+		RecurringWfhFriday:    toInt(days.Friday),
+		ID:                    id,
 	})
 }
 
@@ -173,14 +192,8 @@ func (db *DB) GetMemberByID(ctx context.Context, id string) (*TeamMember, error)
 		return nil, err
 	}
 
-	return &TeamMember{
-		ID:             member.ID,
-		Name:           member.Name,
-		Email:          member.Email,
-		IsActive:       member.IsActive.Valid && member.IsActive.Int64 == 1,
-		IsPermanentWFH: member.IsPermanentWfh == 1,
-		CreatedAt:      member.CreatedAt.Time,
-	}, nil
+	tm := teamMemberFromSQLC(member)
+	return &tm, nil
 }
 
 func (db *DB) CreateCalendarSubscription(ctx context.Context, memberID string) (string, error) {
@@ -209,14 +222,8 @@ func (db *DB) GetMemberByToken(ctx context.Context, token string) (*TeamMember, 
 		return nil, err
 	}
 
-	return &TeamMember{
-		ID:             member.ID,
-		Name:           member.Name,
-		Email:          member.Email,
-		IsActive:       member.IsActive.Valid && member.IsActive.Int64 == 1,
-		IsPermanentWFH: member.IsPermanentWfh == 1,
-		CreatedAt:      member.CreatedAt.Time,
-	}, nil
+	tm := teamMemberFromSQLC(member)
+	return &tm, nil
 }
 
 // TouchRotaSubscription records that the rota ICS calendar was fetched for the given token.

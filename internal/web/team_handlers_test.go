@@ -443,7 +443,7 @@ func TestHandleTeamMemberPermanentWFHUpdate_NotFound_Returns404(t *testing.T) {
 	require.NoError(t, err)
 
 	form := url.Values{}
-	form.Set("is_permanent_wfh", "1")
+	form.Set("recurring_wfh_monday", "1")
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/team/members/x/permanent-wfh", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -455,7 +455,7 @@ func TestHandleTeamMemberPermanentWFHUpdate_NotFound_Returns404(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
-func TestHandleTeamMemberPermanentWFHUpdate_ValidPost_UpdatesFlag(t *testing.T) {
+func TestHandleTeamMemberPermanentWFHUpdate_ValidPost_UpdatesRecurringDays(t *testing.T) {
 	db, err := database.New(":memory:")
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
@@ -468,7 +468,8 @@ func TestHandleTeamMemberPermanentWFHUpdate_ValidPost_UpdatesFlag(t *testing.T) 
 	require.NoError(t, err)
 
 	setForm := url.Values{}
-	setForm.Set("is_permanent_wfh", "1")
+	setForm.Set("recurring_wfh_monday", "1")
+	setForm.Set("recurring_wfh_thursday", "1")
 	setReq := httptest.NewRequestWithContext(ctx, http.MethodPost, "/team/members/"+memberID+"/permanent-wfh", strings.NewReader(setForm.Encode()))
 	setReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	setReq = withChiParam(setReq, memberID)
@@ -481,10 +482,14 @@ func TestHandleTeamMemberPermanentWFHUpdate_ValidPost_UpdatesFlag(t *testing.T) 
 
 	member, err := db.GetMemberByID(ctx, memberID)
 	require.NoError(t, err)
-	assert.True(t, member.IsPermanentWFH)
+	assert.True(t, member.RecurringWFHMonday)
+	assert.False(t, member.RecurringWFHTuesday)
+	assert.False(t, member.RecurringWFHWednesday)
+	assert.True(t, member.RecurringWFHThursday)
+	assert.False(t, member.RecurringWFHFriday)
+	assert.False(t, member.IsPermanentWFH)
 
 	unsetForm := url.Values{}
-	unsetForm.Set("is_permanent_wfh", "0")
 	unsetReq := httptest.NewRequestWithContext(ctx, http.MethodPost, "/team/members/"+memberID+"/permanent-wfh", strings.NewReader(unsetForm.Encode()))
 	unsetReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	unsetReq = withChiParam(unsetReq, memberID)
@@ -497,6 +502,11 @@ func TestHandleTeamMemberPermanentWFHUpdate_ValidPost_UpdatesFlag(t *testing.T) 
 
 	member, err = db.GetMemberByID(ctx, memberID)
 	require.NoError(t, err)
+	assert.False(t, member.RecurringWFHMonday)
+	assert.False(t, member.RecurringWFHTuesday)
+	assert.False(t, member.RecurringWFHWednesday)
+	assert.False(t, member.RecurringWFHThursday)
+	assert.False(t, member.RecurringWFHFriday)
 	assert.False(t, member.IsPermanentWFH)
 }
 

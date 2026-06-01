@@ -201,7 +201,7 @@ func TestLoadCurrentUserPresenceStatus_NextWFHUpdatesAfterSettlement(t *testing.
 	assert.Equal(t, farDate, data["CurrentUserNextWFHDay"])
 }
 
-func TestLoadCurrentUserPresenceStatus_PermanentWFH(t *testing.T) {
+func TestLoadCurrentUserPresenceStatus_RecurringWFH(t *testing.T) {
 	ctx := context.Background()
 	db, cleanup := setupPresenceTestDB(t)
 	defer cleanup()
@@ -219,7 +219,12 @@ func TestLoadCurrentUserPresenceStatus_PermanentWFH(t *testing.T) {
 
 	handler.loadCurrentUserPresenceStatus(ctx, data, "alice@example.com")
 
-	assert.Equal(t, currentUserStatusWFH, data["CurrentUserPresenceStatus"])
+	now := time.Now()
+	if now.Weekday() >= time.Monday && now.Weekday() <= time.Friday {
+		assert.Equal(t, currentUserStatusWFH, data["CurrentUserPresenceStatus"])
+	} else {
+		assert.Equal(t, currentUserStatusOnSite, data["CurrentUserPresenceStatus"])
+	}
 	assert.Equal(t, true, data["CurrentUserHasHATDay"])
 }
 

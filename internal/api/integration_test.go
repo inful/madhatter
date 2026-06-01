@@ -204,7 +204,7 @@ func TestPresenceTodayEndpoint(t *testing.T) {
 	assert.False(t, ok)
 }
 
-func TestPresenceTodayEndpoint_PermanentWFHMember(t *testing.T) {
+func TestPresenceTodayEndpoint_RecurringWFHMember(t *testing.T) {
 	server, cleanup := setupTestServer(t)
 	defer cleanup()
 
@@ -227,14 +227,23 @@ func TestPresenceTodayEndpoint_PermanentWFHMember(t *testing.T) {
 		wfhIDs[resp.Body.WFH[i].ID] = struct{}{}
 	}
 	_, ok := wfhIDs[aliceID]
-	assert.True(t, ok)
+	todayDate := time.Now()
+	if todayDate.Weekday() >= time.Monday && todayDate.Weekday() <= time.Friday {
+		assert.True(t, ok)
+	} else {
+		assert.False(t, ok)
+	}
 
 	presentIDs := make(map[string]struct{}, len(resp.Body.Present))
 	for i := range resp.Body.Present {
 		presentIDs[resp.Body.Present[i].ID] = struct{}{}
 	}
 	_, ok = presentIDs[aliceID]
-	assert.False(t, ok)
+	if todayDate.Weekday() >= time.Monday && todayDate.Weekday() <= time.Friday {
+		assert.False(t, ok)
+	} else {
+		assert.True(t, ok)
+	}
 }
 
 func TestScheduleEndpoints(t *testing.T) {

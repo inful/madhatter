@@ -23,6 +23,7 @@ type GetPresenceTodayOutput struct {
 
 func (s *Server) handleGetPresenceToday(ctx context.Context, input *struct{}) (*GetPresenceTodayOutput, error) {
 	_ = input
+	todayDate := time.Now()
 
 	// Check authentication.
 	if s.authMiddleware == nil {
@@ -32,7 +33,7 @@ func (s *Server) handleGetPresenceToday(ctx context.Context, input *struct{}) (*
 		return nil, huma.Error401Unauthorized("Authentication required")
 	}
 
-	dateStr := time.Now().Format("2006-01-02")
+	dateStr := todayDate.Format("2006-01-02")
 
 	members, err := s.db.GetActiveTeamMembers(ctx)
 	if err != nil {
@@ -50,7 +51,7 @@ func (s *Server) handleGetPresenceToday(ctx context.Context, input *struct{}) (*
 		return nil, huma.Error500InternalServerError("Failed to get WFH requests", err)
 	}
 
-	present, away, wfhMembers := buildPresenceListsWithWFH(memberMap, leaveRecords, wfhRequests)
+	present, away, wfhMembers := buildPresenceListsWithWFH(memberMap, leaveRecords, wfhRequests, todayDate)
 
 	assignments, err := s.db.GetAssignmentsByDate(ctx, dateStr)
 	if err != nil {
@@ -84,6 +85,7 @@ func buildPresenceListsWithWFH(
 	memberMap map[string]database.TeamMember,
 	leaveRecords []database.LeaveRecord,
 	wfhRequests []database.WFHRequest,
+	date time.Time,
 ) (present, away, wfhList []database.TeamMember) {
 	onLeave := make(map[string]struct{}, len(leaveRecords))
 	away = make([]database.TeamMember, 0, len(leaveRecords))
@@ -108,7 +110,7 @@ func buildPresenceListsWithWFH(
 	}
 
 	for id, member := range memberMap {
-		if !member.IsPermanentWFH {
+		if !member.IsRecurringWFHOn(date) {
 			continue
 		}
 		if _, awayToday := onLeave[id]; awayToday {

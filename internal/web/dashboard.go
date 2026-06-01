@@ -111,7 +111,7 @@ func (h *Handler) loadCurrentUserPresenceStatus(ctx context.Context, data map[st
 		}
 	}
 
-	if member.IsPermanentWFH {
+	if member.IsRecurringWFHOn(time.Now()) {
 		data["CurrentUserPresenceStatus"] = currentUserStatusWFH
 		return
 	}
@@ -486,7 +486,7 @@ func (h *Handler) getUpcomingPresenceFrom(ctx context.Context, start time.Time) 
 		}
 
 		for i := range members {
-			if members[i].IsPermanentWFH {
+			if members[i].IsRecurringWFHOn(current) {
 				wfhMemberIDs[members[i].ID] = struct{}{}
 			}
 		}

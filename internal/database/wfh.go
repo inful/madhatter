@@ -21,7 +21,8 @@ var (
 	ErrWFHInvalidDate              = errors.New("invalid date format, expected YYYY-MM-DD")
 	ErrWFHDatePassed               = errors.New("WFH date has already passed")
 	ErrWFHMemberNotFound           = errors.New("member not found")
-	ErrWFHPermanentMember          = errors.New("permanent WFH members cannot request WFH days")
+	ErrWFHRecurringContractDay     = errors.New("this weekday is already configured as recurring WFH for the member")
+	ErrWFHPermanentMember          = ErrWFHRecurringContractDay
 	ErrWFHNotApproved              = errors.New("WFH request is not approved")
 )
 
@@ -67,14 +68,19 @@ func (db *DB) CreateWFHRequest(ctx context.Context, memberID, date string) (*WFH
 		}
 		return nil, err
 	}
-	if member.IsPermanentWfh == 1 {
-		return nil, ErrWFHPermanentMember
-	}
-
 	// Validate the date is today or in the future.
 	dateTime, err := time.Parse("2006-01-02", date)
 	if err != nil {
 		return nil, ErrWFHInvalidDate
+	}
+
+	isRecurringWFH := (dateTime.Weekday() == time.Monday && member.RecurringWfhMonday == 1) ||
+		(dateTime.Weekday() == time.Tuesday && member.RecurringWfhTuesday == 1) ||
+		(dateTime.Weekday() == time.Wednesday && member.RecurringWfhWednesday == 1) ||
+		(dateTime.Weekday() == time.Thursday && member.RecurringWfhThursday == 1) ||
+		(dateTime.Weekday() == time.Friday && member.RecurringWfhFriday == 1)
+	if isRecurringWFH {
+		return nil, ErrWFHRecurringContractDay
 	}
 
 	nowUTC := time.Now().UTC()

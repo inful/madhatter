@@ -214,7 +214,13 @@ func (h *Handler) handleTeamMemberPermanentWFHUpdate(w http.ResponseWriter, r *h
 		return
 	}
 
-	isPermanentWFH := r.PostForm.Get("is_permanent_wfh") == "1"
+	days := database.RecurringWFHDays{
+		Monday:    parseCheckboxBool(r.PostForm.Get("recurring_wfh_monday")),
+		Tuesday:   parseCheckboxBool(r.PostForm.Get("recurring_wfh_tuesday")),
+		Wednesday: parseCheckboxBool(r.PostForm.Get("recurring_wfh_wednesday")),
+		Thursday:  parseCheckboxBool(r.PostForm.Get("recurring_wfh_thursday")),
+		Friday:    parseCheckboxBool(r.PostForm.Get("recurring_wfh_friday")),
+	}
 
 	_, err := h.db.GetMemberByID(ctx, memberID)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -226,12 +232,16 @@ func (h *Handler) handleTeamMemberPermanentWFHUpdate(w http.ResponseWriter, r *h
 		return
 	}
 
-	if err := h.db.SetTeamMemberPermanentWFH(ctx, memberID, isPermanentWFH); err != nil {
+	if err := h.db.SetTeamMemberRecurringWFHDays(ctx, memberID, days); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	http.Redirect(w, r, "/team", http.StatusSeeOther)
+}
+
+func parseCheckboxBool(v string) bool {
+	return v == "1" || v == "on" || strings.EqualFold(v, "true")
 }
 
 // guardAdminDemotion returns a non-zero HTTP status and error when demoting isCurrentlyAdmin

@@ -53,6 +53,11 @@ func TestAddTeamMember_Success(t *testing.T) {
 	require.Equal(t, "alice@example.com", members[0].Email)
 	require.True(t, members[0].IsActive)
 	require.False(t, members[0].IsPermanentWFH)
+	require.False(t, members[0].RecurringWFHMonday)
+	require.False(t, members[0].RecurringWFHTuesday)
+	require.False(t, members[0].RecurringWFHWednesday)
+	require.False(t, members[0].RecurringWFHThursday)
+	require.False(t, members[0].RecurringWFHFriday)
 }
 
 func TestSetTeamMemberPermanentWFH(t *testing.T) {
@@ -68,11 +73,44 @@ func TestSetTeamMemberPermanentWFH(t *testing.T) {
 	member, err := db.GetMemberByID(ctx, memberID)
 	require.NoError(t, err)
 	require.True(t, member.IsPermanentWFH)
+	require.True(t, member.RecurringWFHMonday)
+	require.True(t, member.RecurringWFHTuesday)
+	require.True(t, member.RecurringWFHWednesday)
+	require.True(t, member.RecurringWFHThursday)
+	require.True(t, member.RecurringWFHFriday)
 
 	require.NoError(t, db.SetTeamMemberPermanentWFH(ctx, memberID, false))
 
 	member, err = db.GetMemberByID(ctx, memberID)
 	require.NoError(t, err)
+	require.False(t, member.IsPermanentWFH)
+	require.False(t, member.RecurringWFHMonday)
+	require.False(t, member.RecurringWFHTuesday)
+	require.False(t, member.RecurringWFHWednesday)
+	require.False(t, member.RecurringWFHThursday)
+	require.False(t, member.RecurringWFHFriday)
+}
+
+func TestSetTeamMemberRecurringWFHDays(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	require.NoError(t, db.SetTeamMemberRecurringWFHDays(ctx, memberID, RecurringWFHDays{
+		Monday:   true,
+		Thursday: true,
+	}))
+
+	member, err := db.GetMemberByID(ctx, memberID)
+	require.NoError(t, err)
+	require.True(t, member.RecurringWFHMonday)
+	require.False(t, member.RecurringWFHTuesday)
+	require.False(t, member.RecurringWFHWednesday)
+	require.True(t, member.RecurringWFHThursday)
+	require.False(t, member.RecurringWFHFriday)
 	require.False(t, member.IsPermanentWFH)
 }
 
@@ -85,11 +123,19 @@ func TestCreateWFHRequest_PermanentMemberRejected(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, db.SetTeamMemberPermanentWFH(ctx, memberID, true))
 
-	targetDate := time.Now().UTC().AddDate(0, 0, 1).Format("2006-01-02")
+	targetDate := nextWeekday(time.Now().UTC(), time.Monday).Format("2006-01-02")
 	request, err := db.CreateWFHRequest(ctx, memberID, targetDate)
 
 	require.ErrorIs(t, err, ErrWFHPermanentMember)
 	assert.Nil(t, request)
+}
+
+func nextWeekday(start time.Time, weekday time.Weekday) time.Time {
+	date := start.AddDate(0, 0, 1)
+	for date.Weekday() != weekday {
+		date = date.AddDate(0, 0, 1)
+	}
+	return date
 }
 
 func TestAddTeamMember_DuplicateEmail(t *testing.T) {

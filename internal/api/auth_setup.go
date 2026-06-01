@@ -118,15 +118,15 @@ func setupDevelopmentAuth(db *database.DB) (*auth.AuthManager, *auth.Middleware,
 			members = nil
 		}
 
-		for _, member := range members {
-			if _, exists := byEmail[member.Email]; exists {
+		for i := range members {
+			if _, exists := byEmail[members[i].Email]; exists {
 				continue
 			}
 
-			byEmail[member.Email] = auth.DevelopmentLoginUser{
-				Key:   member.Email,
-				Name:  member.Name,
-				Email: member.Email,
+			byEmail[members[i].Email] = auth.DevelopmentLoginUser{
+				Key:   members[i].Email,
+				Name:  members[i].Name,
+				Email: members[i].Email,
 			}
 		}
 

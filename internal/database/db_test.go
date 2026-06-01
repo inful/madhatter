@@ -88,8 +88,7 @@ func TestCreateWFHRequest_PermanentMemberRejected(t *testing.T) {
 	targetDate := time.Now().UTC().AddDate(0, 0, 1).Format("2006-01-02")
 	request, err := db.CreateWFHRequest(ctx, memberID, targetDate)
 
-	require.Error(t, err)
-	assert.ErrorIs(t, err, ErrWFHPermanentMember)
+	require.ErrorIs(t, err, ErrWFHPermanentMember)
 	assert.Nil(t, request)
 }
 

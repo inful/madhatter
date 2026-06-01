@@ -21,6 +21,7 @@ const (
 
 var (
 	ErrSwapNotPending              = errors.New("swap is no longer pending")
+	ErrSwapNotFound                = errors.New("swap not found")
 	ErrSwapDatePassed              = errors.New("one of the HAT days has already passed and cannot be swapped")
 	ErrSwapAssignmentBusy          = errors.New("one of the assignments already has an open swap request")
 	ErrSwapSameAssignment          = errors.New("cannot swap an assignment with itself")
@@ -227,7 +228,7 @@ LIMIT 1
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil
+			return nil, ErrSwapNotFound
 		}
 		return nil, err
 	}

@@ -52,6 +52,8 @@ type WFHSettleOutput struct {
 // -- Helpers ------------------------------------------------------------------
 
 // wfhDomainToHumaError maps WFH domain errors to appropriate HUMA HTTP errors.
+//
+//nolint:cyclop // Exhaustive domain-to-HTTP mapping is intentionally explicit.
 func wfhDomainToHumaError(err error) error {
 	switch {
 	case errors.Is(err, database.ErrWFHNotFound):

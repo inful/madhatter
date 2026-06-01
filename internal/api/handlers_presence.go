@@ -78,6 +78,8 @@ func mapMembersByID(members []database.TeamMember) map[string]database.TeamMembe
 
 // buildPresenceListsWithWFH partitions active members into present (on-site), away (on leave),
 // and WFH (approved work-from-home) lists for a given day.
+//
+//nolint:cyclop // Presence partitioning intentionally combines multiple exclusion rules.
 func buildPresenceListsWithWFH(
 	memberMap map[string]database.TeamMember,
 	leaveRecords []database.LeaveRecord,

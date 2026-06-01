@@ -32,11 +32,11 @@ func TestScheduler_StartStopAndSettle(t *testing.T) {
 	t.Cleanup(scheduler.Stop)
 
 	require.NoError(t, scheduler.Start())
-	assert.Error(t, scheduler.Start())
+	require.Error(t, scheduler.Start())
 
 	require.Eventually(t, func() bool {
-		updated, err := db.GetWFHRequestByID(ctx, request.ID)
-		if err != nil {
+		updated, getErr := db.GetWFHRequestByID(ctx, request.ID)
+		if getErr != nil {
 			return false
 		}
 		return updated.Status == database.WFHStatusApproved
@@ -50,8 +50,8 @@ func TestScheduler_StartStopAndSettle(t *testing.T) {
 
 	require.NoError(t, scheduler.Start())
 	require.Eventually(t, func() bool {
-		updated, err := db.GetWFHRequestByID(ctx, request2.ID)
-		if err != nil {
+		updated, getErr := db.GetWFHRequestByID(ctx, request2.ID)
+		if getErr != nil {
 			return false
 		}
 		return updated.Status == database.WFHStatusApproved

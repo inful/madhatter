@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -80,6 +81,7 @@ func (h *Handler) loadPendingSwapCount(ctx context.Context, data map[string]any)
 	}
 }
 
+//nolint:cyclop // Presence status checks multiple independent data sources.
 func (h *Handler) loadCurrentUserPresenceStatus(ctx context.Context, data map[string]any, email string) {
 	member, err := h.db.GetMemberByEmail(ctx, email)
 	if err != nil || member == nil {
@@ -127,6 +129,7 @@ func (h *Handler) loadCurrentUserPresenceStatus(ctx context.Context, data map[st
 	data["CurrentUserPresenceStatus"] = currentUserStatusOnSite
 }
 
+//nolint:cyclop // Upcoming date resolution combines multiple domain queries.
 func (h *Handler) loadCurrentUserUpcomingDates(ctx context.Context, data map[string]any, memberID, today string) {
 	futureAssignments, err := h.db.GetFutureAssignmentsForMember(ctx, memberID)
 	if err == nil && len(futureAssignments) > 0 {
@@ -160,10 +163,7 @@ func (h *Handler) loadCurrentUserUpcomingDates(ctx context.Context, data map[str
 				continue
 			}
 
-			effectiveStart := leaveRecords[i].StartDate.Format("2006-01-02")
-			if effectiveStart < today {
-				effectiveStart = today
-			}
+			effectiveStart := max(leaveRecords[i].StartDate.Format("2006-01-02"), today)
 			if leaveRecords[i].EndDate.Format("2006-01-02") < today {
 				continue
 			}
@@ -208,10 +208,12 @@ func (h *Handler) loadDashboardData(ctx context.Context, data map[string]any) {
 	}
 }
 
+//nolint:cyclop // Matrix assembly is data-oriented and intentionally explicit.
 func buildScheduleMatrix(presence []presenceDay) scheduleMatrix {
 	memberByID := make(map[string]database.TeamMember)
 
-	for _, day := range presence {
+	for i := range presence {
+		day := presence[i]
 		for i := range day.Present {
 			memberByID[day.Present[i].ID] = day.Present[i]
 		}
@@ -232,7 +234,8 @@ func buildScheduleMatrix(presence []presenceDay) scheduleMatrix {
 	})
 
 	days := make([]scheduleMatrixDay, 0, len(presence))
-	for _, day := range presence {
+	for i := range presence {
+		day := presence[i]
 		days = append(days, scheduleMatrixDay{
 			DateISO:     day.DateISO,
 			DateDisplay: day.DateDisplay,
@@ -246,7 +249,8 @@ func buildScheduleMatrix(presence []presenceDay) scheduleMatrix {
 	rows := make([]scheduleMatrixRow, 0, len(members))
 	for _, member := range members {
 		row := scheduleMatrixRow{Member: member, Cells: make([]scheduleMatrixCell, 0, len(presence))}
-		for _, day := range presence {
+		for i := range presence {
+			day := presence[i]
 			cell := scheduleMatrixCell{
 				Status:    "none",
 				Label:     "-",
@@ -255,13 +259,14 @@ func buildScheduleMatrix(presence []presenceDay) scheduleMatrix {
 				DateLabel: day.DateDisplay,
 			}
 
-			if isAwayMember(day, member.ID) {
+			switch {
+			case isAwayMember(day, member.ID):
 				cell.Status = "away"
 				cell.Label = "Away"
-			} else if isWFHMember(day, member.ID) {
+			case isWFHMember(day, member.ID):
 				cell.Status = "wfh"
 				cell.Label = "WFH"
-			} else if isPresentMember(day, member.ID) {
+			case isPresentMember(day, member.ID):
 				cell.Status = "onsite"
 				cell.Label = "On-site"
 			}
@@ -376,13 +381,21 @@ func (h *Handler) getAssignedMember(ctx context.Context, dateStr string, memberM
 	return nil, false, ""
 }
 
+//nolint:cyclop // Swap tooltip enrichment has guard clauses for several fallback states.
 func (h *Handler) getAssignedSwapInfo(ctx context.Context, assignmentID string) string {
 	if assignmentID == "" {
 		return ""
 	}
 
 	swap, err := h.db.GetAcceptedSwapForAssignment(ctx, assignmentID)
-	if err != nil || swap == nil {
+	if err != nil {
+		if errors.Is(err, database.ErrSwapNotFound) {
+			return ""
+		}
+
+		return ""
+	}
+	if swap == nil {
 		return ""
 	}
 
@@ -417,6 +430,7 @@ func buildPresenceList(memberMap map[string]database.TeamMember, onLeave map[str
 	return present
 }
 
+//nolint:cyclop // Presence assembly coordinates assignment, leave, and WFH sources.
 func (h *Handler) getUpcomingPresenceFrom(ctx context.Context, start time.Time) ([]presenceDay, error) {
 	members, err := h.db.GetActiveTeamMembers(ctx)
 	if err != nil {

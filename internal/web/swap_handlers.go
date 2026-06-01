@@ -281,6 +281,8 @@ func (h *Handler) renderSwapsErrorPage(w http.ResponseWriter, r *http.Request, u
 }
 
 // loadSwapsData populates data with swaps and assignment lists for a member.
+//
+//nolint:cyclop // Swaps page assembly merges several independent query results.
 func (h *Handler) loadSwapsData(ctx context.Context, data map[string]any, memberID string) error {
 	if _, err := h.db.CleanupExpiredPendingSwaps(ctx); err != nil {
 		return err

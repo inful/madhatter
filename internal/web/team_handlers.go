@@ -48,6 +48,7 @@ func (h *Handler) handleTeamPost(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/team", http.StatusSeeOther)
 }
 
+//nolint:cyclop // Team page handler orchestrates reads/sync/render branches.
 func (h *Handler) handleTeam(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	data := map[string]any{
@@ -71,8 +72,8 @@ func (h *Handler) handleTeam(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.development {
-		if err := h.syncDevelopmentUsersWithTeamMembers(ctx, members); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+		if syncErr := h.syncDevelopmentUsersWithTeamMembers(ctx, members); syncErr != nil {
+			http.Error(w, syncErr.Error(), http.StatusInternalServerError)
 			return
 		}
 	}

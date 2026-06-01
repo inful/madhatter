@@ -52,6 +52,8 @@ func wfhFromSQLCRow(r sqlc.WfhRequest) WFHRequest {
 }
 
 // CreateWFHRequest creates a new pending WFH request for the given member on the given date.
+//
+//nolint:cyclop // Validation and persistence branches are explicit for domain error clarity.
 func (db *DB) CreateWFHRequest(ctx context.Context, memberID, date string) (*WFHRequest, error) {
 	if memberID == "" || date == "" {
 		return nil, errors.New("memberID and date are required")

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -64,7 +65,11 @@ func (am *AuthManager) GetSessionManager() *SessionManager {
 func (am *AuthManager) GetDevelopmentUsers(ctx context.Context) ([]DevelopmentLoginUser, error) {
 	provider, err := am.GetProvider("fake")
 	if err != nil {
-		return nil, nil
+		if errors.Is(err, ErrProviderNotFound) {
+			return nil, nil
+		}
+
+		return nil, err
 	}
 
 	type developmentUserLister interface {
@@ -232,7 +237,6 @@ func (am *AuthManager) HandleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 // HandleLoginView renders the login page.
-// TODO: Why is this not using the templating system?
 func (am *AuthManager) HandleLoginView(w http.ResponseWriter, r *http.Request) {
 	// Check if already logged in
 	token, err := am.sessionManager.GetSessionCookie(r)

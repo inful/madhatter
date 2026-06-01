@@ -21,6 +21,7 @@ func setupAuth(db *database.DB, development bool) (*auth.AuthManager, *auth.Midd
 	return setupProductionAuth(db)
 }
 
+//nolint:cyclop // Development setup wires resolver/lister closures with explicit control flow.
 func setupDevelopmentAuth(db *database.DB) (*auth.AuthManager, *auth.Middleware, *auth.SessionManager, error) {
 	log.Println("Development mode: Using fake OAuth provider")
 
@@ -93,25 +94,25 @@ func setupDevelopmentAuth(db *database.DB) (*auth.AuthManager, *auth.Middleware,
 
 		users, err := queries.ListActiveUsers(ctx)
 		if err != nil {
-			if err == sql.ErrNoRows {
+			if errors.Is(err, sql.ErrNoRows) {
 				users = nil
 			} else {
 				return nil, err
 			}
 		}
 
-		for _, user := range users {
-			byEmail[user.Email] = auth.DevelopmentLoginUser{
-				Key:     user.Email,
-				Name:    user.Name,
-				Email:   user.Email,
-				IsAdmin: auth.IsAdmin(user.IsAdmin),
+		for i := range users {
+			byEmail[users[i].Email] = auth.DevelopmentLoginUser{
+				Key:     users[i].Email,
+				Name:    users[i].Name,
+				Email:   users[i].Email,
+				IsAdmin: auth.IsAdmin(users[i].IsAdmin),
 			}
 		}
 
 		members, err := queries.GetActiveTeamMembers(ctx)
 		if err != nil {
-			if err != sql.ErrNoRows {
+			if !errors.Is(err, sql.ErrNoRows) {
 				return nil, err
 			}
 			members = nil

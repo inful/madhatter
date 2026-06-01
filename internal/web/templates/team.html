@@ -60,74 +60,81 @@
             <div class="content">
                 {{range .Members}}
                     <div class="box member-card">
-                        <div class="columns is-mobile is-vcentered">
-                            <div class="column">
+                        <div class="member-layout">
+                            <div>
                                 <strong class="is-size-5">{{.Name}}</strong><br>
                                 <span class="has-text-grey">{{.Email}}</span>
                             </div>
-                            <div class="column is-narrow">
-                                <span class="tag is-success is-light mr-2">
+
+                            <div class="member-meta">
+                                <span class="tag is-success is-light">
                                     <i class="fas fa-check-circle mr-1"></i> Active
                                 </span>
                                 {{if .IsPermanentWFH}}
-                                    <span class="tag is-warning is-light mr-1" title="This member is configured as recurring WFH for every weekday">
+                                    <span class="tag is-warning is-light" title="This member is configured as recurring WFH for every weekday">
                                         <i class="fas fa-house-laptop mr-1"></i> Permanent WFH
                                     </span>
                                 {{end}}
                                 {{if or .RecurringWFHMonday .RecurringWFHTuesday .RecurringWFHWednesday .RecurringWFHThursday .RecurringWFHFriday}}
-                                    <span class="tag is-info is-light mr-1" title="Contractual recurring WFH weekdays">
+                                    <span class="tag is-info is-light" title="Contractual recurring WFH weekdays">
                                         <i class="fas fa-repeat mr-1"></i>
                                         {{if .RecurringWFHMonday}}Mon {{end}}{{if .RecurringWFHTuesday}}Tue {{end}}{{if .RecurringWFHWednesday}}Wed {{end}}{{if .RecurringWFHThursday}}Thu {{end}}{{if .RecurringWFHFriday}}Fri{{end}}
                                     </span>
                                 {{end}}
                                 {{with index $.SubscriptionActivity .ID}}
                                     {{if .RotaActive}}
-                                        <span class="tag is-info is-light mr-1" title="Rota calendar fetched in the last 7 days">
+                                        <span class="tag is-info is-light" title="Rota calendar fetched in the last 7 days">
                                             <i class="fas fa-calendar-check mr-1"></i> Rota
                                         </span>
                                     {{else}}
-                                        <span class="tag is-light mr-1" title="Rota calendar not fetched recently">
+                                        <span class="tag is-light" title="Rota calendar not fetched recently">
                                             <i class="fas fa-calendar-times mr-1"></i> Rota
                                         </span>
                                     {{end}}
                                     {{if .MeetingsActive}}
-                                        <span class="tag is-info is-light mr-1" title="Meetings calendar fetched in the last 7 days">
+                                        <span class="tag is-info is-light" title="Meetings calendar fetched in the last 7 days">
                                             <i class="fas fa-calendar-check mr-1"></i> Meetings
                                         </span>
                                     {{else}}
-                                        <span class="tag is-light mr-1" title="Meetings calendar not fetched recently">
+                                        <span class="tag is-light" title="Meetings calendar not fetched recently">
                                             <i class="fas fa-calendar-times mr-1"></i> Meetings
                                         </span>
                                     {{end}}
                                 {{else}}
-                                    <span class="tag is-light mr-1" title="Rota calendar not fetched recently">
+                                    <span class="tag is-light" title="Rota calendar not fetched recently">
                                         <i class="fas fa-calendar-times mr-1"></i> Rota
                                     </span>
-                                    <span class="tag is-light mr-1" title="Meetings calendar not fetched recently">
+                                    <span class="tag is-light" title="Meetings calendar not fetched recently">
                                         <i class="fas fa-calendar-times mr-1"></i> Meetings
                                     </span>
                                 {{end}}
-                                {{if $.IsAdmin}}
-                                    <form method="POST" action="/team/{{.ID}}/recurring-wfh" style="display: inline-flex; align-items: center; gap: 0.35rem; margin-right: 0.5rem;">
-                                        <label class="checkbox is-size-7"><input type="checkbox" name="recurring_wfh_monday" value="1" {{if .RecurringWFHMonday}}checked{{end}}> Mon</label>
-                                        <label class="checkbox is-size-7"><input type="checkbox" name="recurring_wfh_tuesday" value="1" {{if .RecurringWFHTuesday}}checked{{end}}> Tue</label>
-                                        <label class="checkbox is-size-7"><input type="checkbox" name="recurring_wfh_wednesday" value="1" {{if .RecurringWFHWednesday}}checked{{end}}> Wed</label>
-                                        <label class="checkbox is-size-7"><input type="checkbox" name="recurring_wfh_thursday" value="1" {{if .RecurringWFHThursday}}checked{{end}}> Thu</label>
-                                        <label class="checkbox is-size-7"><input type="checkbox" name="recurring_wfh_friday" value="1" {{if .RecurringWFHFriday}}checked{{end}}> Fri</label>
-                                        <button type="submit" class="button is-small is-link is-light" title="Save recurring contractual WFH weekdays">
-                                            <i class="fas fa-save mr-1"></i> WFH Days
-                                        </button>
-                                    </form>
-                                    <button class="button is-small is-info is-light mr-1" onclick='showEditModal("{{js .ID}}", "{{js .Name}}", "{{js .Email}}")' aria-label="Edit team member">
-                                        <i class="fas fa-edit"></i>
-                                    </button>
-                                    <form method="POST" action="/team/{{.ID}}/delete" style="display: inline;" onsubmit="return confirm(&quot;Are you sure you want to delete {{js .Name}}? This will also remove all associated assignments.&quot;);">
-                                        <button type="submit" class="button is-small is-danger is-light" aria-label="Delete team member">
-                                            <i class="fas fa-trash"></i>
-                                        </button>
-                                    </form>
-                                {{end}}
                             </div>
+
+                            {{if $.IsAdmin}}
+                                <div class="member-admin-row">
+                                    <form method="POST" action="/team/{{.ID}}/recurring-wfh" class="recurring-days-form">
+                                        <label class="checkbox"><input type="checkbox" name="recurring_wfh_monday" value="1" {{if .RecurringWFHMonday}}checked{{end}}> Mon</label>
+                                        <label class="checkbox"><input type="checkbox" name="recurring_wfh_tuesday" value="1" {{if .RecurringWFHTuesday}}checked{{end}}> Tue</label>
+                                        <label class="checkbox"><input type="checkbox" name="recurring_wfh_wednesday" value="1" {{if .RecurringWFHWednesday}}checked{{end}}> Wed</label>
+                                        <label class="checkbox"><input type="checkbox" name="recurring_wfh_thursday" value="1" {{if .RecurringWFHThursday}}checked{{end}}> Thu</label>
+                                        <label class="checkbox"><input type="checkbox" name="recurring_wfh_friday" value="1" {{if .RecurringWFHFriday}}checked{{end}}> Fri</label>
+                                        <button type="submit" class="button is-small is-link is-light" title="Save recurring contractual WFH weekdays">
+                                            <i class="fas fa-save mr-1"></i> Save WFH Days
+                                        </button>
+                                    </form>
+
+                                    <div class="member-actions">
+                                        <button class="button is-small is-info is-light" onclick='showEditModal("{{js .ID}}", "{{js .Name}}", "{{js .Email}}")' aria-label="Edit team member">
+                                            <i class="fas fa-edit"></i>
+                                        </button>
+                                        <form method="POST" action="/team/{{.ID}}/delete" onsubmit="return confirm(&quot;Are you sure you want to delete {{js .Name}}? This will also remove all associated assignments.&quot;);">
+                                            <button type="submit" class="button is-small is-danger is-light" aria-label="Delete team member">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </form>
+                                    </div>
+                                </div>
+                            {{end}}
                         </div>
                     </div>
                 {{end}}
@@ -237,6 +244,70 @@
 <style>
     .member-card { border-left: 4px solid #667eea; transition: transform 0.2s; }
     .member-card:hover { transform: translateX(4px); }
+
+    .member-layout {
+        display: flex;
+        flex-direction: column;
+        gap: 0.6rem;
+    }
+
+    .member-meta {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.35rem;
+    }
+
+    .member-meta .tag {
+        margin: 0;
+    }
+
+    .member-admin-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+    }
+
+    .recurring-days-form {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.35rem 0.65rem;
+        padding: 0.35rem 0.45rem;
+        border-radius: 8px;
+        background: #f7f8ff;
+    }
+
+    .recurring-days-form .checkbox {
+        margin-right: 0;
+        white-space: nowrap;
+        font-size: 0.82rem;
+    }
+
+    .member-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+        margin-left: auto;
+    }
+
+    .member-actions form {
+        margin: 0;
+    }
+
+    @media (max-width: 768px) {
+        .member-admin-row {
+            align-items: flex-start;
+        }
+
+        .member-actions {
+            width: 100%;
+            justify-content: flex-end;
+            margin-left: 0;
+        }
+    }
 </style>
 {{end}}
 

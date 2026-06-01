@@ -88,6 +88,14 @@ func (h *Handler) loadCurrentUserPresenceStatus(ctx context.Context, data map[st
 		return
 	}
 
+	if h.wfhService != nil {
+		quota, quotaErr := h.wfhService.GetQuotaStatus(ctx, member.ID)
+		if quotaErr == nil {
+			data["CurrentUserWFHQuota"] = quota
+			data["CurrentUserWFHQuotaExhausted"] = quota.Remaining <= 0
+		}
+	}
+
 	today := time.Now().Format("2006-01-02")
 	assignments, err := h.db.GetAssignmentsByDate(ctx, today)
 	if err == nil {

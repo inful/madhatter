@@ -125,6 +125,14 @@ The system automatically maintains a 14-day rolling schedule using `ScheduleMain
   - Prevents environment pollution between tests
   - Enforced by golangci-lint's `usetesting` rule
 
+### Time-Bound Tests (Go 1.25+)
+- For any test that waits for time to pass — `time.Sleep`, polling `require.Eventually`, scheduler/ticker tests, goroutine-synchronization tests — use `testing/synctest` instead of real time.
+- Real-time tests are slow or flaky. `synctest` provides fake time and `synctest.Wait()` for deterministic quiescence.
+- Workflow: wrap the test body in `synctest.Test(t, func(t *testing.T) { ... })`, then replace `time.Sleep` / `Eventually` with `synctest.Wait()` after the operation that triggers async work.
+- **I/O is not durably blocking inside a bubble.** For tests that need network I/O, use `httptest.NewServer` (real I/O, run outside the bubble) or inject a stub via a small interface (run inside the bubble).
+- **Mutexes are not durably blocking** — do not write tests that block only on a mutex; ensure time/channel/waitgroup is also involved.
+- See `.claude/skills/testing-synctest/SKILL.md` for the full pattern reference, including the durable-block table and migration checklist.
+
 ### SQLC Migration
 **Key files:**
 - `sqlc.yaml` - sqlc configuration
@@ -407,11 +415,17 @@ madhatter/
 │   ├── holiday/
 │   │   ├── service.go             # Main service
 │   │   ├── scheduler.go           # Background fetcher
+│   │   ├── scheduler_test.go      # Scheduler tests
 │   │   ├── ical.go                # iCal parsing
 │   │   └── store.go               # In-memory storage
 │   ├── calendar/
 │   │   ├── ical.go                # ICS generation
 │   │   └── ical_test.go           # Tests
+│   ├── wfh/
+│   │   ├── service.go             # WFH request settlement service
+│   │   ├── scheduler.go           # Settlement scheduler
+│   │   ├── service_test.go        # Service tests
+│   │   └── scheduler_test.go      # Scheduler tests (uses synctest)
 │   └── web/
 │       ├── handlers.go            # Web UI handlers
 │       └── templates/             # HTML templates
@@ -501,38 +515,7 @@ The following features are planned but not yet implemented:
 ## References
 
 - **Main Documentation**: `README.md`
-- **Audit Report**: `documentation_audit.md`
 - **Holiday Implementation**: `HOLIDAY_IMPLEMENTATION.md`
 - **SQLC Migration**: `SQLC_MIGRATION_GUIDE.md`
 - **Auth Setup**: `AUTH_SETUP.md`
 - **Consolidated Reference**: `CONSOLIDATED_REFERENCE.md`
-
-<!-- gortex:communities:start -->
-<!-- gortex:skills:start -->
-## Community Skills
-
-| Area | Description | Skill |
-|------|-------------|-------|
-| Database 9 Dirs | 1959 symbols | `/gortex-database-9-dirs` |
-| Auth 8 Dirs | 861 symbols | `/gortex-auth-8-dirs` |
-| Web 4 Dirs Error | 664 symbols | `/gortex-web-4-dirs-error` |
-| Database 8 Dirs | 652 symbols | `/gortex-database-8-dirs` |
-| Web 3 Dirs Getfutureassignmentsformember | 438 symbols | `/gortex-web-3-dirs-getfutureassignmentsformember` |
-| Auth 9 Dirs Errorf | 433 symbols | `/gortex-auth-9-dirs-errorf` |
-| Auth 9 Dirs String | 350 symbols | `/gortex-auth-9-dirs-string` |
-| Database 4 Dirs | 342 symbols | `/gortex-database-4-dirs` |
-| Web 3 Dirs Newhandler | 225 symbols | `/gortex-web-3-dirs-newhandler` |
-| Web 3 Dirs Now | 211 symbols | `/gortex-web-3-dirs-now` |
-| Database Sqlc 3 Dirs | 210 symbols | `/gortex-database-sqlc-3-dirs` |
-| Calendar 3 Dirs Addassignment | 197 symbols | `/gortex-calendar-3-dirs-addassignment` |
-| Auth 7 Dirs | 185 symbols | `/gortex-auth-7-dirs` |
-| Wfh 1 Dirs Testsettlependingrequests Appro | 176 symbols | `/gortex-wfh-1-dirs-testsettlependingrequests-appro` |
-| Holiday 8 Dirs | 158 symbols | `/gortex-holiday-8-dirs` |
-| Api 1 Dirs Server | 153 symbols | `/gortex-api-1-dirs-server` |
-| Auth 4 Dirs Testauthmanager Handlerevokeapi | 151 symbols | `/gortex-auth-4-dirs-testauthmanager-handlerevokeapi` |
-| Database Sqlc 1 Dirs Teammember | 127 symbols | `/gortex-database-sqlc-1-dirs-teammember` |
-| Auth 4 Dirs Int64 | 117 symbols | `/gortex-auth-4-dirs-int64` |
-| Database Sqlc Wfhrequest | 111 symbols | `/gortex-database-sqlc-wfhrequest` |
-<!-- gortex:skills:end -->
-
-<!-- gortex:communities:end -->

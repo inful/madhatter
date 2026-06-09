@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -263,45 +264,49 @@ func TestValidateSwapAssignments_SelfTarget_ReturnsErrSwapTargetSelf(t *testing.
 }
 
 func TestValidateSwapAssignments_RequesterDatePassed_ReturnsErrSwapRequesterDatePassed(t *testing.T) {
-	db, cleanup := setupTestDB(t)
-	defer cleanup()
+	synctest.Test(t, func(t *testing.T) {
+		db, cleanup := setupTestDB(t)
+		t.Cleanup(cleanup)
 
-	ctx := context.Background()
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
-	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
-	require.NoError(t, err)
+		ctx := context.Background()
+		aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+		require.NoError(t, err)
+		bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+		require.NoError(t, err)
 
-	pastDate := time.Now().AddDate(0, 0, -3).Format("2006-01-02")
-	futureDate := time.Now().AddDate(0, 0, 7).Format("2006-01-02")
-	aliceAssignmentID, err := db.CreateRotaAssignment(ctx, pastDate, aliceID, false, nil)
-	require.NoError(t, err)
-	bobAssignmentID, err := db.CreateRotaAssignment(ctx, futureDate, bobID, false, nil)
-	require.NoError(t, err)
+		pastDate := time.Now().AddDate(0, 0, -3).Format("2006-01-02")
+		futureDate := time.Now().AddDate(0, 0, 7).Format("2006-01-02")
+		aliceAssignmentID, err := db.CreateRotaAssignment(ctx, pastDate, aliceID, false, nil)
+		require.NoError(t, err)
+		bobAssignmentID, err := db.CreateRotaAssignment(ctx, futureDate, bobID, false, nil)
+		require.NoError(t, err)
 
-	_, _, err = db.ValidateSwapAssignments(ctx, aliceAssignmentID, bobAssignmentID, aliceID)
-	require.ErrorIs(t, err, ErrSwapRequesterDatePassed)
+		_, _, err = db.ValidateSwapAssignments(ctx, aliceAssignmentID, bobAssignmentID, aliceID)
+		require.ErrorIs(t, err, ErrSwapRequesterDatePassed)
+	})
 }
 
 func TestValidateSwapAssignments_TargetDatePassed_ReturnsErrSwapTargetDatePassed(t *testing.T) {
-	db, cleanup := setupTestDB(t)
-	defer cleanup()
+	synctest.Test(t, func(t *testing.T) {
+		db, cleanup := setupTestDB(t)
+		t.Cleanup(cleanup)
 
-	ctx := context.Background()
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
-	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
-	require.NoError(t, err)
+		ctx := context.Background()
+		aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+		require.NoError(t, err)
+		bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+		require.NoError(t, err)
 
-	futureDate := time.Now().AddDate(0, 0, 7).Format("2006-01-02")
-	pastDate := time.Now().AddDate(0, 0, -3).Format("2006-01-02")
-	aliceAssignmentID, err := db.CreateRotaAssignment(ctx, futureDate, aliceID, false, nil)
-	require.NoError(t, err)
-	bobAssignmentID, err := db.CreateRotaAssignment(ctx, pastDate, bobID, false, nil)
-	require.NoError(t, err)
+		futureDate := time.Now().AddDate(0, 0, 7).Format("2006-01-02")
+		pastDate := time.Now().AddDate(0, 0, -3).Format("2006-01-02")
+		aliceAssignmentID, err := db.CreateRotaAssignment(ctx, futureDate, aliceID, false, nil)
+		require.NoError(t, err)
+		bobAssignmentID, err := db.CreateRotaAssignment(ctx, pastDate, bobID, false, nil)
+		require.NoError(t, err)
 
-	_, _, err = db.ValidateSwapAssignments(ctx, aliceAssignmentID, bobAssignmentID, aliceID)
-	require.ErrorIs(t, err, ErrSwapTargetDatePassed)
+		_, _, err = db.ValidateSwapAssignments(ctx, aliceAssignmentID, bobAssignmentID, aliceID)
+		require.ErrorIs(t, err, ErrSwapTargetDatePassed)
+	})
 }
 
 func TestValidateSwapAssignments_Valid_ReturnsAssignments(t *testing.T) {
@@ -341,17 +346,25 @@ func TestValidateSwapAssignmentDates_InvalidTargetDate_ReturnsErrSwapTargetDateI
 }
 
 func TestValidateSwapAssignmentDates_RequesterDateInPast_ReturnsErrSwapRequesterDatePassed(t *testing.T) {
-	past := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
-	future := time.Now().AddDate(0, 0, 7).Format("2006-01-02")
-	err := validateSwapAssignmentDates(past, future)
-	require.ErrorIs(t, err, ErrSwapRequesterDatePassed)
+	synctest.Test(t, func(t *testing.T) {
+		// Use -3 days rather than -1 to keep the test robust against the
+		// boundary where local time and UTC differ by a day. synctest
+		// freezes time inside the bubble, so the comparison is also
+		// deterministic.
+		past := time.Now().AddDate(0, 0, -3).Format("2006-01-02")
+		future := time.Now().AddDate(0, 0, 7).Format("2006-01-02")
+		err := validateSwapAssignmentDates(past, future)
+		require.ErrorIs(t, err, ErrSwapRequesterDatePassed)
+	})
 }
 
 func TestValidateSwapAssignmentDates_TargetDateInPast_ReturnsErrSwapTargetDatePassed(t *testing.T) {
-	future := time.Now().AddDate(0, 0, 7).Format("2006-01-02")
-	past := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
-	err := validateSwapAssignmentDates(future, past)
-	require.ErrorIs(t, err, ErrSwapTargetDatePassed)
+	synctest.Test(t, func(t *testing.T) {
+		future := time.Now().AddDate(0, 0, 7).Format("2006-01-02")
+		past := time.Now().AddDate(0, 0, -3).Format("2006-01-02")
+		err := validateSwapAssignmentDates(future, past)
+		require.ErrorIs(t, err, ErrSwapTargetDatePassed)
+	})
 }
 
 func TestValidateSwapAssignmentDates_BothFuture_ReturnsNil(t *testing.T) {

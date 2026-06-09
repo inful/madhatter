@@ -56,6 +56,16 @@ func (m TeamMember) HasPermanentRecurringWFH() bool {
 		m.RecurringWFHFriday
 }
 
+// HasAnyRecurringWFH reports whether the member has at least one recurring
+// WFH weekday configured. Used by the materializer as a fast-path skip.
+func (m TeamMember) HasAnyRecurringWFH() bool {
+	return m.RecurringWFHMonday ||
+		m.RecurringWFHTuesday ||
+		m.RecurringWFHWednesday ||
+		m.RecurringWFHThursday ||
+		m.RecurringWFHFriday
+}
+
 type LeaveRecord struct {
 	ID            string    `json:"id"`
 	MemberID      string    `json:"member_id"`
@@ -98,6 +108,9 @@ type WFHRequest struct {
 	SettledAt   *time.Time `json:"settled_at,omitempty"`
 	WithdrawnBy *string    `json:"withdrawn_by,omitempty"`
 	WithdrawnAt *time.Time `json:"withdrawn_at,omitempty"`
+	// IsRecurring is true when the row was auto-approved by the recurring-WFH
+	// materializer from a member's contractual weekday schedule.
+	IsRecurring bool `json:"is_recurring"`
 	// Enriched fields (populated by callers).
 	MemberName string `json:"member_name,omitempty"`
 }

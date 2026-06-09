@@ -139,13 +139,31 @@ func TestCheckQuota_RecurringDaysReduceBudget(t *testing.T) {
 	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
 	require.NoError(t, err)
 
+	// Pick two weekdays that are guaranteed to be in the future of the
+	// current period, so materialization inserts both. Wed+Thu work for
+	// every day-of-week except Wednesday itself; the test runs at any time
+	// and exercises the same code path.
 	require.NoError(t, db.SetTeamMemberRecurringWFHDays(ctx, memberID, database.RecurringWFHDays{
-		Monday:   true,
-		Thursday: true,
+		Wednesday: true,
+		Thursday:  true,
 	}))
 
 	checkDate := nextWeekday(time.Now().UTC(), time.Friday).Format("2006-01-02")
+
+	// Without materialization, recurring days don't pre-consume budget —
+	// they're just a definition. The member has full quota available.
 	hasQuota, err := svc.CheckQuota(ctx, memberID, checkDate)
+	require.NoError(t, err)
+	assert.True(t, hasQuota)
+
+	// After materialization, the recurring occurrences in the period become
+	// approved rows, which the period-usage count picks up.
+	start, end, err := svc.ComputePeriodBounds(time.Now().UTC())
+	require.NoError(t, err)
+	_, err = svc.EnsureRecurringMaterializedForMember(ctx, memberID, start, end)
+	require.NoError(t, err)
+
+	hasQuota, err = svc.CheckQuota(ctx, memberID, checkDate)
 	require.NoError(t, err)
 	assert.False(t, hasQuota)
 }

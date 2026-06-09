@@ -27,27 +27,43 @@ var (
 	ErrWFHOnHoliday                = errors.New("WFH requests cannot be made for holidays")
 )
 
-// wfhFromSQLCRow converts a sqlc WfhRequest row to the domain WFHRequest model.
-func wfhFromSQLCRow(r sqlc.WfhRequest) WFHRequest {
+// wfhFields holds the WFH request columns selected by every read query.
+// sqlc v1.31 emits a per-query *Row type, so adapters in this file copy the
+// fields into a wfhFields value before delegating to wfhFromSQLCFields.
+type wfhFields struct {
+	ID          string
+	MemberID    string
+	Date        time.Time
+	Status      string
+	CreatedAt   sql.NullTime
+	SettledAt   sql.NullTime
+	WithdrawnBy sql.NullString
+	WithdrawnAt sql.NullTime
+	IsRecurring int64
+}
+
+// wfhFromSQLCFields converts the canonical column set to the domain WFHRequest.
+func wfhFromSQLCFields(f wfhFields) WFHRequest {
 	req := WFHRequest{
-		ID:       r.ID,
-		MemberID: r.MemberID,
-		Date:     r.Date.Format("2006-01-02"),
-		Status:   r.Status,
+		ID:          f.ID,
+		MemberID:    f.MemberID,
+		Date:        f.Date.Format("2006-01-02"),
+		Status:      f.Status,
+		IsRecurring: f.IsRecurring == 1,
 	}
-	if r.CreatedAt.Valid {
-		req.CreatedAt = r.CreatedAt.Time
+	if f.CreatedAt.Valid {
+		req.CreatedAt = f.CreatedAt.Time
 	}
-	if r.SettledAt.Valid {
-		t := r.SettledAt.Time
+	if f.SettledAt.Valid {
+		t := f.SettledAt.Time
 		req.SettledAt = &t
 	}
-	if r.WithdrawnBy.Valid {
-		s := r.WithdrawnBy.String
+	if f.WithdrawnBy.Valid {
+		s := f.WithdrawnBy.String
 		req.WithdrawnBy = &s
 	}
-	if r.WithdrawnAt.Valid {
-		t := r.WithdrawnAt.Time
+	if f.WithdrawnAt.Valid {
+		t := f.WithdrawnAt.Time
 		req.WithdrawnAt = &t
 	}
 	return req
@@ -61,8 +77,10 @@ func (db *DB) CreateWFHRequest(ctx context.Context, memberID, date string) (*WFH
 		return nil, errors.New("memberID and date are required")
 	}
 
-	// Validate member exists.
-	member, err := db.queries.GetMemberByID(ctx, memberID)
+	// Validate member exists. The struct itself isn't read here — the
+	// existence check is what we need; the column-level recurring flag
+	// lives on the materialized row, not on the request flow.
+	_, err := db.queries.GetMemberByID(ctx, memberID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrWFHMemberNotFound
@@ -75,14 +93,11 @@ func (db *DB) CreateWFHRequest(ctx context.Context, memberID, date string) (*WFH
 		return nil, ErrWFHInvalidDate
 	}
 
-	isRecurringWFH := (dateTime.Weekday() == time.Monday && member.RecurringWfhMonday == 1) ||
-		(dateTime.Weekday() == time.Tuesday && member.RecurringWfhTuesday == 1) ||
-		(dateTime.Weekday() == time.Wednesday && member.RecurringWfhWednesday == 1) ||
-		(dateTime.Weekday() == time.Thursday && member.RecurringWfhThursday == 1) ||
-		(dateTime.Weekday() == time.Friday && member.RecurringWfhFriday == 1)
-	if isRecurringWFH {
-		return nil, ErrWFHRecurringContractDay
-	}
+	// Members can no longer request a date that is on a contractual recurring
+	// weekday; the materializer already inserted an auto-approved row for
+	// that date. The UNIQUE(member_id, date) constraint surfaces this as
+	// ErrWFHDuplicateRequest, which the form translates to a "withdraw your
+	// recurring day first" hint.
 
 	// Reject holidays: a WFH on a non-working day is meaningless — there's no
 	// on-site capacity to consume and no presence to track. Fail fast at the
@@ -115,7 +130,17 @@ func (db *DB) CreateWFHRequest(ctx context.Context, memberID, date string) (*WFH
 	if err != nil {
 		return nil, err
 	}
-	result := wfhFromSQLCRow(row)
+	result := wfhFromSQLCFields(wfhFields{
+		ID:          row.ID,
+		MemberID:    row.MemberID,
+		Date:        row.Date,
+		Status:      row.Status,
+		CreatedAt:   row.CreatedAt,
+		SettledAt:   row.SettledAt,
+		WithdrawnBy: row.WithdrawnBy,
+		WithdrawnAt: row.WithdrawnAt,
+		IsRecurring: row.IsRecurring,
+	})
 	return &result, nil
 }
 
@@ -128,7 +153,17 @@ func (db *DB) GetWFHRequestByID(ctx context.Context, id string) (*WFHRequest, er
 		}
 		return nil, err
 	}
-	result := wfhFromSQLCRow(row)
+	result := wfhFromSQLCFields(wfhFields{
+		ID:          row.ID,
+		MemberID:    row.MemberID,
+		Date:        row.Date,
+		Status:      row.Status,
+		CreatedAt:   row.CreatedAt,
+		SettledAt:   row.SettledAt,
+		WithdrawnBy: row.WithdrawnBy,
+		WithdrawnAt: row.WithdrawnAt,
+		IsRecurring: row.IsRecurring,
+	})
 	return &result, nil
 }
 
@@ -142,7 +177,21 @@ func (db *DB) GetWFHRequestsByDate(ctx context.Context, date string) ([]WFHReque
 	if err != nil {
 		return nil, err
 	}
-	return wfhSliceFromSQLCRows(rows), nil
+	result := make([]WFHRequest, len(rows))
+	for i := range rows {
+		result[i] = wfhFromSQLCFields(wfhFields{
+			ID:          rows[i].ID,
+			MemberID:    rows[i].MemberID,
+			Date:        rows[i].Date,
+			Status:      rows[i].Status,
+			CreatedAt:   rows[i].CreatedAt,
+			SettledAt:   rows[i].SettledAt,
+			WithdrawnBy: rows[i].WithdrawnBy,
+			WithdrawnAt: rows[i].WithdrawnAt,
+			IsRecurring: rows[i].IsRecurring,
+		})
+	}
+	return result, nil
 }
 
 // GetWFHRequestsByDateAndStatus returns WFH requests for a date filtered by status.
@@ -158,7 +207,21 @@ func (db *DB) GetWFHRequestsByDateAndStatus(ctx context.Context, date, status st
 	if err != nil {
 		return nil, err
 	}
-	return wfhSliceFromSQLCRows(rows), nil
+	result := make([]WFHRequest, len(rows))
+	for i := range rows {
+		result[i] = wfhFromSQLCFields(wfhFields{
+			ID:          rows[i].ID,
+			MemberID:    rows[i].MemberID,
+			Date:        rows[i].Date,
+			Status:      rows[i].Status,
+			CreatedAt:   rows[i].CreatedAt,
+			SettledAt:   rows[i].SettledAt,
+			WithdrawnBy: rows[i].WithdrawnBy,
+			WithdrawnAt: rows[i].WithdrawnAt,
+			IsRecurring: rows[i].IsRecurring,
+		})
+	}
+	return result, nil
 }
 
 // GetWFHRequestsByMember returns all WFH requests for a team member.
@@ -167,7 +230,21 @@ func (db *DB) GetWFHRequestsByMember(ctx context.Context, memberID string) ([]WF
 	if err != nil {
 		return nil, err
 	}
-	return wfhSliceFromSQLCRows(rows), nil
+	result := make([]WFHRequest, len(rows))
+	for i := range rows {
+		result[i] = wfhFromSQLCFields(wfhFields{
+			ID:          rows[i].ID,
+			MemberID:    rows[i].MemberID,
+			Date:        rows[i].Date,
+			Status:      rows[i].Status,
+			CreatedAt:   rows[i].CreatedAt,
+			SettledAt:   rows[i].SettledAt,
+			WithdrawnBy: rows[i].WithdrawnBy,
+			WithdrawnAt: rows[i].WithdrawnAt,
+			IsRecurring: rows[i].IsRecurring,
+		})
+	}
+	return result, nil
 }
 
 // GetWFHRequestsUsedInPeriod returns the WFH requests (pending + approved) for a member within a period.
@@ -188,7 +265,43 @@ func (db *DB) GetWFHRequestsUsedInPeriod(ctx context.Context, memberID, periodSt
 	if err != nil {
 		return nil, err
 	}
-	return wfhSliceFromSQLCRows(rows), nil
+	result := make([]WFHRequest, len(rows))
+	for i := range rows {
+		result[i] = wfhFromSQLCFields(wfhFields{
+			ID:          rows[i].ID,
+			MemberID:    rows[i].MemberID,
+			Date:        rows[i].Date,
+			Status:      rows[i].Status,
+			CreatedAt:   rows[i].CreatedAt,
+			SettledAt:   rows[i].SettledAt,
+			WithdrawnBy: rows[i].WithdrawnBy,
+			WithdrawnAt: rows[i].WithdrawnAt,
+			IsRecurring: rows[i].IsRecurring,
+		})
+	}
+	return result, nil
+}
+
+// HasWFHRequestOnDate reports whether any wfh_requests row exists for the
+// (memberID, date) pair in any status. Used by the recurring materializer
+// to preserve explicit user state (withdrawn, cancelled, etc.) when filling
+// gaps in the upcoming schedule.
+func (db *DB) HasWFHRequestOnDate(ctx context.Context, memberID, date string) (bool, error) {
+	dateTime, err := time.Parse("2006-01-02", date)
+	if err != nil {
+		return false, ErrWFHInvalidDate
+	}
+	row, err := db.queries.GetWFHRequestByMemberAndDate(ctx, sqlc.GetWFHRequestByMemberAndDateParams{
+		MemberID: memberID,
+		Date:     dateTime,
+	})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	return row.ID != "", nil
 }
 
 // GetPendingForSettlement returns pending WFH requests with dates on or before the cutoff.
@@ -201,7 +314,21 @@ func (db *DB) GetPendingForSettlement(ctx context.Context, cutoffDate string) ([
 	if err != nil {
 		return nil, err
 	}
-	return wfhSliceFromSQLCRows(rows), nil
+	result := make([]WFHRequest, len(rows))
+	for i := range rows {
+		result[i] = wfhFromSQLCFields(wfhFields{
+			ID:          rows[i].ID,
+			MemberID:    rows[i].MemberID,
+			Date:        rows[i].Date,
+			Status:      rows[i].Status,
+			CreatedAt:   rows[i].CreatedAt,
+			SettledAt:   rows[i].SettledAt,
+			WithdrawnBy: rows[i].WithdrawnBy,
+			WithdrawnAt: rows[i].WithdrawnAt,
+			IsRecurring: rows[i].IsRecurring,
+		})
+	}
+	return result, nil
 }
 
 // GetAllWFHRequests returns all WFH requests ordered by date descending.
@@ -210,7 +337,21 @@ func (db *DB) GetAllWFHRequests(ctx context.Context) ([]WFHRequest, error) {
 	if err != nil {
 		return nil, err
 	}
-	return wfhSliceFromSQLCRows(rows), nil
+	result := make([]WFHRequest, len(rows))
+	for i := range rows {
+		result[i] = wfhFromSQLCFields(wfhFields{
+			ID:          rows[i].ID,
+			MemberID:    rows[i].MemberID,
+			Date:        rows[i].Date,
+			Status:      rows[i].Status,
+			CreatedAt:   rows[i].CreatedAt,
+			SettledAt:   rows[i].SettledAt,
+			WithdrawnBy: rows[i].WithdrawnBy,
+			WithdrawnAt: rows[i].WithdrawnAt,
+			IsRecurring: rows[i].IsRecurring,
+		})
+	}
+	return result, nil
 }
 
 // UpdateWFHRequestStatus updates the status and settled_at timestamp of a WFH request.
@@ -283,6 +424,40 @@ func (db *DB) withdrawWFH(ctx context.Context, id, memberID, actorUserID string,
 	return err
 }
 
+// CreateApprovedRecurringWFHRequest inserts an auto-approved, is_recurring=1
+// row on behalf of the materializer. Bypasses the holiday and member-exists
+// guards in CreateWFHRequest — the materializer iterates the member's own
+// recurring weekdays and the date has already been pre-validated.
+//
+// Returns ErrWFHDuplicateRequest if a row already exists for (memberID, date)
+// — the caller treats that as idempotent success.
+func (db *DB) CreateApprovedRecurringWFHRequest(ctx context.Context, memberID, date string, settledAt time.Time) error {
+	dateTime, err := time.Parse("2006-01-02", date)
+	if err != nil {
+		return ErrWFHInvalidDate
+	}
+
+	nowUTC := time.Now().UTC()
+	today := time.Date(nowUTC.Year(), nowUTC.Month(), nowUTC.Day(), 0, 0, 0, 0, time.UTC)
+	if dateTime.Before(today) {
+		return ErrWFHDatePassed
+	}
+
+	_, err = db.queries.CreateApprovedRecurringWFHRequest(ctx, sqlc.CreateApprovedRecurringWFHRequestParams{
+		ID:        uuid.New().String(),
+		MemberID:  memberID,
+		Date:      dateTime,
+		SettledAt: sql.NullTime{Time: settledAt, Valid: true},
+	})
+	if err != nil {
+		if isUniqueConstraintError(err) {
+			return ErrWFHDuplicateRequest
+		}
+		return err
+	}
+	return nil
+}
+
 // CountApprovedWFHByDate returns the number of approved WFH requests for a given date.
 func (db *DB) CountApprovedWFHByDate(ctx context.Context, date string) (int, error) {
 	dateTime, err := time.Parse("2006-01-02", date)
@@ -291,15 +466,6 @@ func (db *DB) CountApprovedWFHByDate(ctx context.Context, date string) (int, err
 	}
 	count, err := db.queries.CountApprovedWFHByDate(ctx, dateTime)
 	return int(count), err
-}
-
-// wfhSliceFromSQLCRows converts a slice of sqlc rows to domain WFHRequest values.
-func wfhSliceFromSQLCRows(rows []sqlc.WfhRequest) []WFHRequest {
-	result := make([]WFHRequest, len(rows))
-	for i := range rows {
-		result[i] = wfhFromSQLCRow(rows[i])
-	}
-	return result
 }
 
 // isUniqueConstraintError detects SQLite UNIQUE constraint violations.

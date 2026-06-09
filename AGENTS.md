@@ -110,6 +110,20 @@ The system automatically maintains a 14-day rolling schedule using `ScheduleMain
 - `HandleLeaveChange()` - Creates cover assignments when members take leave
 - Web handlers automatically trigger schedule maintenance on key events
 
+### WFH Recurring Materialization
+Recurring-WFH is realized as ordinary approved `wfh_requests` rows with
+`is_recurring=1`. The materializer (`internal/wfh/recurring_materializer.go`)
+walks a date range, finds each active member's contractual weekdays
+(`team_members.recurring_wfh_{mon..fri}`), and inserts any missing rows as
+auto-approved. It runs from:
+- `SettlePendingRequests` (covers the next `SettlementDays`).
+- `handleWFHList` on each page load (covers the current period).
+- `EnsureRecurringMaterializedForMember` for a single member.
+
+Idempotent: the `UNIQUE(member_id, date)` constraint and the pre-insert
+existence check block duplicates. A user-withdrawn recurring row blocks
+re-materialization (the user's intent is preserved).
+
 ### Calendar ICS Generation
 - ICS files are generated with 0o600 permissions
 - Calendar subscriptions use UUID tokens stored in `calendar_subscriptions` table

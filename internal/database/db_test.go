@@ -114,7 +114,7 @@ func TestSetTeamMemberRecurringWFHDays(t *testing.T) {
 	require.False(t, member.IsPermanentWFH)
 }
 
-func TestCreateWFHRequest_PermanentMemberRejected(t *testing.T) {
+func TestCreateWFHRequest_RecurringDayReturnsDuplicateAfterMaterialization(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -123,10 +123,16 @@ func TestCreateWFHRequest_PermanentMemberRejected(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, db.SetTeamMemberPermanentWFH(ctx, memberID, true))
 
-	targetDate := nextWeekday(time.Now().UTC(), time.Monday).Format("2006-01-02")
-	request, err := db.CreateWFHRequest(ctx, memberID, targetDate)
+	targetDate := nextWeekday(time.Now().UTC(), time.Monday)
+	dateStr := targetDate.Format("2006-01-02")
 
-	require.ErrorIs(t, err, ErrWFHPermanentMember)
+	// Simulate the materializer having run for this period.
+	require.NoError(t, db.CreateApprovedRecurringWFHRequest(ctx, memberID, dateStr, time.Now().UTC()))
+
+	// A second ad-hoc request for the same date now collides on UNIQUE
+	// (member_id, date) and is rejected with ErrWFHDuplicateRequest.
+	request, err := db.CreateWFHRequest(ctx, memberID, dateStr)
+	require.ErrorIs(t, err, ErrWFHDuplicateRequest)
 	assert.Nil(t, request)
 }
 

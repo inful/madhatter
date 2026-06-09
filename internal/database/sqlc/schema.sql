@@ -181,6 +181,7 @@ CREATE TABLE IF NOT EXISTS wfh_requests (
     date         DATE NOT NULL,
     status       TEXT NOT NULL DEFAULT 'pending'
                  CHECK (status IN ('pending', 'approved', 'denied', 'cancelled', 'withdrawn')),
+    is_recurring INTEGER NOT NULL DEFAULT 0,
     created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
     settled_at   DATETIME,
     withdrawn_by TEXT,
@@ -190,6 +191,7 @@ CREATE TABLE IF NOT EXISTS wfh_requests (
     UNIQUE(member_id, date)
 );
 
-CREATE INDEX IF NOT EXISTS idx_wfh_requests_date   ON wfh_requests(date);
-CREATE INDEX IF NOT EXISTS idx_wfh_requests_member ON wfh_requests(member_id);
-CREATE INDEX IF NOT EXISTS idx_wfh_requests_status ON wfh_requests(status);
+CREATE INDEX IF NOT EXISTS idx_wfh_requests_date      ON wfh_requests(date);
+CREATE INDEX IF NOT EXISTS idx_wfh_requests_member    ON wfh_requests(member_id);
+CREATE INDEX IF NOT EXISTS idx_wfh_requests_status    ON wfh_requests(status);
+CREATE INDEX IF NOT EXISTS idx_wfh_requests_recurring ON wfh_requests(member_id, date, is_recurring);

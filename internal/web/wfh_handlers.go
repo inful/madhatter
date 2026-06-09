@@ -45,6 +45,20 @@ func (h *Handler) handleWFHList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Materialize any missing recurring occurrences for the current period
+	// before showing the list, so contractual rows appear alongside ad-hoc
+	// ones. Idempotent and bounded to one period — safe to run on each
+	// page load.
+	if h.wfhService != nil {
+		start, end, err := h.wfhService.ComputePeriodBounds(time.Now().UTC())
+		if err == nil {
+			if _, mErr := h.wfhService.EnsureRecurringMaterializedForMember(ctx, memberID, start, end); mErr != nil {
+				// Non-fatal: the user sees a slightly stale list.
+				data["Error"] = "Failed to materialize recurring WFH days: " + mErr.Error()
+			}
+		}
+	}
+
 	requests, err := h.db.GetWFHRequestsByMember(ctx, memberID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

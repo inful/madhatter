@@ -110,19 +110,16 @@ func (s *Service) GetQuotaStatus(ctx context.Context, memberID string) (QuotaSta
 		return QuotaStatus{}, err
 	}
 
-	member, err := s.db.GetMemberByID(ctx, memberID)
-	if err != nil {
-		return QuotaStatus{}, err
-	}
-
 	requests, err := s.db.GetWFHRequestsUsedInPeriod(ctx, memberID,
 		start.Format("2006-01-02"), end.Format("2006-01-02"))
 	if err != nil {
 		return QuotaStatus{}, err
 	}
 
-	recurringUsed := recurringWFHDaysInRange(*member, start, end)
-	used := len(requests) + recurringUsed
+	// Recurring-WFH occurrences are pre-materialized as approved rows by the
+	// materializer, so they're already counted in len(requests). No separate
+	// recurring-day accounting is needed at this layer.
+	used := len(requests)
 	remaining := max(s.cfg.MaxDaysPerPeriod-used, 0)
 
 	return QuotaStatus{
@@ -152,14 +149,6 @@ func (s *Service) CheckQuota(ctx context.Context, memberID, date string) (bool, 
 		return false, database.ErrWFHOnHoliday
 	}
 
-	member, err := s.db.GetMemberByID(ctx, memberID)
-	if err != nil {
-		return false, err
-	}
-	if member.IsRecurringWFHOn(wfhDate) {
-		return false, nil
-	}
-
 	start, end, err := s.ComputePeriodBounds(wfhDate)
 	if err != nil {
 		return false, err
@@ -171,8 +160,11 @@ func (s *Service) CheckQuota(ctx context.Context, memberID, date string) (bool, 
 		return false, err
 	}
 
-	recurringUsed := recurringWFHDaysInRange(*member, start, end)
-	used := len(requests) + recurringUsed
+	// Recurring occurrences are already in len(requests) as pre-approved rows.
+	// A request for a date that is the member's contractual recurring weekday
+	// will fail with ErrWFHDuplicateRequest at the DB layer; we let that error
+	// surface so the form can offer a withdraw-first flow.
+	used := len(requests)
 	return used < s.cfg.MaxDaysPerPeriod, nil
 }
 
@@ -182,6 +174,15 @@ func (s *Service) CheckQuota(ctx context.Context, memberID, date string) (bool, 
 func (s *Service) SettlePendingRequests(ctx context.Context) error {
 	cutoff := time.Now().UTC().AddDate(0, 0, s.cfg.SettlementDays)
 	cutoffStr := cutoff.Format("2006-01-02")
+
+	// Materialize recurring occurrences for the settlement window before
+	// processing pending requests, so approved recurring rows are visible to
+	// the on-site-minimums accounting. Materialization is idempotent and
+	// bounded to the next SettlementDays.
+	today := todayUTC()
+	if _, err := s.EnsureRecurringMaterialized(ctx, today, cutoff); err != nil {
+		log.Printf("WFH recurring materializer: %v\n", err)
+	}
 
 	pending, err := s.db.GetPendingForSettlement(ctx, cutoffStr)
 	if err != nil {
@@ -224,12 +225,14 @@ func (s *Service) settleDate(ctx context.Context, date string, pending []databas
 		return nil
 	}
 
-	onLeaveIDs, recurringWFHIDs, err := s.leaveAndRecurringWFHMemberIDs(ctx, date, members)
+	onLeaveIDs, err := s.leaveMemberIDsForDate(ctx, date)
 	if err != nil {
 		return err
 	}
 
 	// Count already-approved WFH (from previously settled requests not in this batch).
+	// Recurring occurrences are materialized as approved rows too, so they're
+	// counted here and naturally subtract from the available on-site slots.
 	approvedWFH, err := s.db.GetWFHRequestsByDateAndStatus(ctx, date, database.WFHStatusApproved)
 	if err != nil {
 		return err
@@ -239,8 +242,8 @@ func (s *Service) settleDate(ctx context.Context, date string, pending []databas
 	minOnsite := s.minOnsiteCount(totalActive)
 
 	// How many members are already unavailable for on-site duty?
-	// Use unique member IDs to avoid double counting overlap between leave/WFH/recurring-WFH.
-	slotsUsed := countUniqueMembers(onLeaveIDs, recurringWFHIDs, memberIDsFromWFHRequests(approvedWFH))
+	// Use unique member IDs to avoid double counting leave + WFH overlap.
+	slotsUsed := countUniqueMembers(onLeaveIDs, memberIDsFromWFHRequests(approvedWFH))
 	availableSlots := max(totalActive-slotsUsed-minOnsite, 0)
 
 	// Sort pending requests by priority: fewest period-days used → earliest created_at.
@@ -262,34 +265,21 @@ func (s *Service) settleDate(ctx context.Context, date string, pending []databas
 	return nil
 }
 
-func (s *Service) leaveAndRecurringWFHMemberIDs(ctx context.Context, date string, members []database.TeamMember) (map[string]struct{}, map[string]struct{}, error) {
+// leaveMemberIDsForDate returns the set of team-member IDs on leave for date.
+// Recurring-WFH availability is no longer tracked here — the materializer
+// inserts those occurrences as approved wfh_requests rows, so they appear
+// in the approved-WFH set that settleDate counts separately.
+func (s *Service) leaveMemberIDsForDate(ctx context.Context, date string) (map[string]struct{}, error) {
 	leaveRecords, err := s.db.GetLeaveByDate(ctx, date)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	day, err := time.Parse("2006-01-02", date)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	onLeaveIDs := make(map[string]struct{}, len(leaveRecords))
+	ids := make(map[string]struct{}, len(leaveRecords))
 	for i := range leaveRecords {
-		onLeaveIDs[leaveRecords[i].MemberID] = struct{}{}
+		ids[leaveRecords[i].MemberID] = struct{}{}
 	}
-
-	recurringWFHIDs := make(map[string]struct{})
-	for i := range members {
-		if !members[i].IsRecurringWFHOn(day) {
-			continue
-		}
-		if _, away := onLeaveIDs[members[i].ID]; away {
-			continue
-		}
-		recurringWFHIDs[members[i].ID] = struct{}{}
-	}
-
-	return onLeaveIDs, recurringWFHIDs, nil
+	return ids, nil
 }
 
 func memberIDsFromWFHRequests(requests []database.WFHRequest) map[string]struct{} {
@@ -326,6 +316,8 @@ type pendingWithUsage struct {
 }
 
 // prioritisePending sorts pending requests by (usedDays ASC, createdAt ASC).
+// usedDays comes from the period's existing wfh_requests count; recurring
+// occurrences are already in that count as approved rows.
 func (s *Service) prioritisePending(ctx context.Context, date string, pending []database.WFHRequest) ([]database.WFHRequest, error) {
 	wfhDate, err := time.Parse("2006-01-02", date)
 	if err != nil {
@@ -340,16 +332,11 @@ func (s *Service) prioritisePending(ctx context.Context, date string, pending []
 
 	items := make([]pendingWithUsage, 0, len(pending))
 	for i := range pending {
-		member, err := s.db.GetMemberByID(ctx, pending[i].MemberID)
-		if err != nil {
-			return nil, err
-		}
 		used, err := s.db.GetWFHRequestsUsedInPeriod(ctx, pending[i].MemberID, startStr, endStr)
 		if err != nil {
 			return nil, err
 		}
-		usage := len(used) + recurringWFHDaysInRange(*member, start, end)
-		items = append(items, pendingWithUsage{req: pending[i], usedDays: usage})
+		items = append(items, pendingWithUsage{req: pending[i], usedDays: len(used)})
 	}
 
 	sort.SliceStable(items, func(i, j int) bool {
@@ -364,17 +351,6 @@ func (s *Service) prioritisePending(ctx context.Context, date string, pending []
 		result[i] = items[i].req
 	}
 	return result, nil
-}
-
-func recurringWFHDaysInRange(member database.TeamMember, start, end time.Time) int {
-	count := 0
-	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
-		if member.IsRecurringWFHOn(d) {
-			count++
-		}
-	}
-
-	return count
 }
 
 // --- env helpers ---

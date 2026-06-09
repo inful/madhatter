@@ -2,36 +2,40 @@
 INSERT INTO wfh_requests (id, member_id, date, status)
 VALUES (?, ?, ?, 'pending');
 
+-- name: CreateApprovedRecurringWFHRequest :execresult
+INSERT INTO wfh_requests (id, member_id, date, status, is_recurring, settled_at)
+VALUES (?, ?, ?, 'approved', 1, ?);
+
 -- name: GetWFHRequestByID :one
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring
 FROM wfh_requests
 WHERE id = ?;
 
 -- name: GetWFHRequestByMemberAndDate :one
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring
 FROM wfh_requests
 WHERE member_id = ? AND date = ?;
 
 -- name: GetWFHRequestsByDate :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring
 FROM wfh_requests
 WHERE date = ?
 ORDER BY created_at ASC;
 
 -- name: GetWFHRequestsByDateAndStatus :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring
 FROM wfh_requests
 WHERE date = ? AND status = ?
 ORDER BY created_at ASC;
 
 -- name: GetWFHRequestsByMember :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring
 FROM wfh_requests
 WHERE member_id = ?
 ORDER BY date DESC;
 
 -- name: GetWFHRequestsByMemberAndPeriod :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring
 FROM wfh_requests
 WHERE member_id = ?
   AND date >= ?
@@ -40,14 +44,15 @@ WHERE member_id = ?
 ORDER BY date ASC;
 
 -- name: GetPendingWFHRequestsForSettlement :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring
 FROM wfh_requests
 WHERE status = 'pending'
+  AND is_recurring = 0
   AND date <= ?
 ORDER BY date ASC, created_at ASC;
 
 -- name: GetAllWFHRequests :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring
 FROM wfh_requests
 ORDER BY date DESC, created_at DESC;
 

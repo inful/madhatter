@@ -45,11 +45,27 @@
     </header>
     <div class="card-content">
         <div class="content">
-            <p>Pending WFH requests are reviewed in a rolling horizon rather than all at once. The settlement window means the system only decides requests up to a certain number of days ahead, then leaves later requests pending until they move into that window. This helps avoid locking in decisions too far in advance while still giving people timely outcomes for upcoming days.</p>
-            <p>Inside that window, each day is processed against on-site coverage limits. If demand is higher than available WFH slots, requests are prioritized by members who have used fewer WFH days in the current period, then by earlier submission time.</p>
+            <h4 class="title is-6 mb-2">Quota</h4>
+            <p>Each member has a WFH quota per period: a cap on how many work-from-home days count against you. Both ad-hoc requests and contracted recurring weekdays are counted together. When your quota is full, the form blocks new requests until you withdraw an approved one to free a slot.</p>
+            <p>Periods are fixed-length windows aligned to a known Monday. They start and end on the same day-of-week for everyone, so quota usage is comparable across the team.</p>
+
+            <h4 class="title is-6 mb-2 mt-4">On-site coverage</h4>
+            <p>Every day has a minimum number of people who must be physically on site. The minimum is the larger of two values: a percentage of active members and a hard absolute floor. The system uses whichever is higher so a small team can never drop below the absolute floor even when the percentage rounds down.</p>
+            <p>On a given day, members already on leave, members with a recurring weekday, and approved ad-hoc WFH requests all count against that day's on-site capacity. The remaining members are the pool of available WFH slots for that day.</p>
+
+            <h4 class="title is-6 mb-2 mt-4">Settlement</h4>
+            <p>Pending WFH requests are processed in a rolling window a few days ahead, not all at once. The system reviews requests whose dates fall inside that window, decides them against the day's available slots, and leaves anything further out as pending until it enters the window.</p>
+            <p>When more members request WFH on the same day than there are slots, requests are prioritised by who has used the fewest WFH days in the current period. Ties are broken by who submitted first.</p>
+
+            <h4 class="title is-6 mb-2 mt-4">Recurring weekdays</h4>
+            <p>If a member has a weekday set as recurring WFH, the system treats every upcoming occurrence of that weekday in the current period as an approved request. Those rows appear in the WFH list alongside ad-hoc requests, marked with the same Approved status, and the same Withdraw button works on them. Withdrawing a single occurrence frees one quota slot for that period; the next period reverts to the configured schedule.</p>
+
+            <h4 class="title is-6 mb-2 mt-4">Withdrawing</h4>
+            <p>Approved requests can be withdrawn up to a fixed number of hours before the WFH day. The cutoff exists so the on-site roster isn't disrupted the night before. Withdrawals are processed through the same flow whether the user or an admin triggers them.</p>
         </div>
 
         {{if .WFHConfigured}}
+        <h4 class="title is-6 mb-2 mt-4">Current configuration</h4>
         <table class="table is-fullwidth is-striped is-hoverable is-size-7">
             <tbody>
                 <tr>
@@ -58,24 +74,24 @@
                 </tr>
                 <tr>
                     <th>Minimum on-site coverage</th>
-                    <td>{{printf "%.0f" .WFHMinOnsitePercentage}}% and at least {{.WFHMinOnsiteAbsolute}} person(s)</td>
+                    <td>{{printf "%.0f" .WFHMinOnsitePercentage}}% of active members, with a floor of {{.WFHMinOnsiteAbsolute}} person(s)</td>
                 </tr>
                 <tr>
                     <th>WFH quota per period</th>
                     <td>{{.WFHMaxDaysPerPeriod}} day(s)</td>
                 </tr>
                 <tr>
-                    <th>Quota period length</th>
+                    <th>Period length</th>
                     <td>{{.WFHPeriodDays}} day(s)</td>
                 </tr>
                 <tr>
-                    <th>Admin withdrawal cutoff</th>
+                    <th>Withdrawal cutoff</th>
                     <td>{{.WFHWithdrawalHours}} hour(s) before the WFH day</td>
                 </tr>
             </tbody>
         </table>
         {{else}}
-        <div class="notification is-warning is-light">
+        <div class="notification is-warning is-light mt-3">
             <i class="fas fa-triangle-exclamation mr-2"></i>
             WFH service is currently disabled, so settlement rules are not active.
         </div>

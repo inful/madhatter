@@ -50,7 +50,7 @@
             <p>Periods are fixed-length windows aligned to a known Monday. They start and end on the same day-of-week for everyone, so quota usage is comparable across the team.</p>
 
             <h4 class="title is-6 mb-2 mt-4">On-site coverage</h4>
-            <p>Every day has a minimum number of people who must be physically on site. The minimum is the larger of two values: a percentage of active members and a hard absolute floor. The system uses whichever is higher so a small team can never drop below the absolute floor even when the percentage rounds down.</p>
+            <p>Every day has a minimum number of people who must be physically on site. The minimum is the larger of two values: a percentage of active members, and a hard absolute floor. The percentage is rounded up before the comparison so a fractional result never under-counts. The system uses whichever is higher so a small team can never drop below the absolute floor even when the rounded percentage would otherwise allow it.</p>
             <p>On a given day, members already on leave, members with a recurring weekday, and approved ad-hoc WFH requests all count against that day's on-site capacity. The remaining members are the pool of available WFH slots for that day.</p>
 
             <h4 class="title is-6 mb-2 mt-4">Settlement</h4>

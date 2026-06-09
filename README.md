@@ -178,13 +178,13 @@ At least one provider must be configured for production authentication.
 | Variable | Default | Notes |
 | --- | --- | --- |
 | `WFH_ENABLED` | `true` | Enables the WFH feature. |
-| `WFH_MIN_ONSITE_PERCENTAGE` | `50.0` | Minimum percentage of active team members required on-site. |
-| `WFH_MIN_ONSITE_ABSOLUTE` | `1` | Minimum absolute number of on-site team members. |
-| `WFH_MAX_DAYS_PER_PERIOD` | `2` | Max WFH days per quota period, counting pending and approved requests. |
+| `WFH_MIN_ONSITE_PERCENTAGE` | `50.0` | Percentage of active team members that must be on-site; rounded up before comparison with the absolute floor. |
+| `WFH_MIN_ONSITE_ABSOLUTE` | `1` | Hard floor for the on-site minimum; the system uses whichever of this and the rounded-up percentage is higher. |
+| `WFH_MAX_DAYS_PER_PERIOD` | `2` | Max WFH days per quota period, counting pending and approved requests and contractual recurring weekdays. |
 | `WFH_PERIOD_DAYS` | `7` | Length of one WFH quota period. |
 | `WFH_PERIOD_ANCHOR` | `2026-01-05` | Reference date used to compute WFH periods. Must use `YYYY-MM-DD`. |
 | `WFH_SETTLEMENT_DAYS` | `2` | Number of days ahead that pending WFH requests are auto-settled. |
-| `WFH_WITHDRAWAL_HOURS` | `24` | Hours before the WFH day when admins can still withdraw an approved request. |
+| `WFH_WITHDRAWAL_HOURS` | `24` | Hours before the WFH day after which an approved request can no longer be withdrawn by the member or an admin. |
 
 #### Calendar and meetings
 

@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/inful/madhatter/internal/auth"
+	"github.com/inful/madhatter/internal/calendar"
 	"github.com/inful/madhatter/internal/database"
 	"github.com/inful/madhatter/internal/rota"
 	"github.com/inful/madhatter/internal/wfh"
@@ -33,6 +34,7 @@ type Handler struct {
 	authManager    *auth.AuthManager
 	authMiddleware *auth.Middleware
 	holidayChecker func(time.Time) bool
+	holidayLookup  calendar.HolidayLookup
 	development    bool
 	restoreMu      sync.Mutex
 	restoreBusy    atomic.Bool
@@ -130,4 +132,11 @@ func NewHandler(db *database.DB, authManager *auth.AuthManager, authMiddleware *
 // SetWFHService sets the WFH service on the handler.
 func (h *Handler) SetWFHService(svc *wfh.Service) {
 	h.wfhService = svc
+}
+
+// SetHolidayLookup wires a holiday lookup that returns the holiday
+// name for a given date. Used by the calendar package's per-day
+// presence snapshot. nil is allowed (every date is non-holiday).
+func (h *Handler) SetHolidayLookup(l calendar.HolidayLookup) {
+	h.holidayLookup = l
 }

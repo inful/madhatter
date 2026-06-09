@@ -2,6 +2,7 @@ package calendar
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
@@ -542,4 +543,173 @@ func TestICalGenerator_NoAlarmByDefault(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.NotContains(t, icalStr, "BEGIN:VALARM")
+}
+
+func TestAddAssignment_DefaultTemplateMatchesExistingOutput(t *testing.T) {
+	g, err := newSupportGenerator(SupportCalendarOptions{})
+	require.NoError(t, err)
+
+	a := database.RotaAssignment{
+		ID:       "a1",
+		Date:     "2026-06-10",
+		MemberID: "m1",
+	}
+	require.NoError(t, g.AddAssignment(a, "Alice"))
+	out, err := g.Serialize()
+	require.NoError(t, err)
+	assert.Contains(t, out, "HAT day (Alice)")
+	assert.Contains(t, out, "Support duty")
+}
+
+func TestAddAssignment_TemplateOverride_AppliesToDescription(t *testing.T) {
+	tmp := t.TempDir()
+	textPath := filepath.Join(tmp, "support.txt.tmpl")
+	htmlPath := filepath.Join(tmp, "support.html.tmpl")
+	require.NoError(t, writeFile(textPath, "CUSTOM SUPPORT: {{.Summary}} on {{.Date}}"))
+	require.NoError(t, writeFile(htmlPath, "<p>CUSTOM HTML: {{.Summary}} {{.HATName}}</p>"))
+
+	g, err := newSupportGenerator(SupportCalendarOptions{
+		SupportAssignmentTemplateTextPath: textPath,
+		SupportAssignmentTemplateHTMLPath: htmlPath,
+	})
+	require.NoError(t, err)
+
+	snap := &presenceSnapshot{Date: "2026-06-10", HATName: "Alice"}
+	a := database.RotaAssignment{ID: "a1", Date: "2026-06-10", MemberID: "m1"}
+	require.NoError(t, g.AddAssignmentWithSnapshot(a, "Alice", snap))
+
+	out, err := g.Serialize()
+	require.NoError(t, err)
+	assert.Contains(t, out, "CUSTOM SUPPORT: HAT day (Alice) on 2026-06-10")
+}
+
+func TestAddAssignment_TemplateOverride_InvalidPath_ReturnsError(t *testing.T) {
+	_, err := newSupportGenerator(SupportCalendarOptions{
+		SupportAssignmentTemplateTextPath: "/no/such/file.tmpl",
+	})
+	assert.Error(t, err)
+}
+
+func TestAddAssignment_TemplateOverride_InvalidSyntax_ReturnsError(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "broken.tmpl")
+	require.NoError(t, writeFile(path, "{{ .BadSyntax"))
+	_, err := newSupportGenerator(SupportCalendarOptions{
+		SupportAssignmentTemplateTextPath: path,
+	})
+	assert.Error(t, err)
+}
+
+func TestAddLeaveEvent_DefaultTemplateMatchesExistingOutput(t *testing.T) {
+	g, err := newSupportGenerator(SupportCalendarOptions{})
+	require.NoError(t, err)
+
+	date := time.Date(2026, 6, 10, 0, 0, 0, 0, time.UTC)
+	require.NoError(t, g.AddLeaveEvent("Alice", "vacation", date, date))
+	out, err := g.Serialize()
+	require.NoError(t, err)
+	assert.Contains(t, out, "Vacation leave for Alice")
+}
+
+func TestAddLeaveEvent_TemplateOverride_AppliesToDescription(t *testing.T) {
+	tmp := t.TempDir()
+	textPath := filepath.Join(tmp, "leave.txt.tmpl")
+	htmlPath := filepath.Join(tmp, "leave.html.tmpl")
+	require.NoError(t, writeFile(textPath, "CUSTOM LEAVE: {{.MemberName}} ({{.LeaveType}}) for {{.TotalActive}} active"))
+	require.NoError(t, writeFile(htmlPath, "<p>CUSTOM HTML LEAVE: {{.MemberName}}</p>"))
+
+	g, err := newSupportGenerator(SupportCalendarOptions{
+		LeaveTemplateTextPath: textPath,
+		LeaveTemplateHTMLPath: htmlPath,
+	})
+	require.NoError(t, err)
+
+	snap := &presenceSnapshot{Date: "2026-06-10", TotalActive: 7}
+	date := time.Date(2026, 6, 10, 0, 0, 0, 0, time.UTC)
+	require.NoError(t, g.AddLeaveEventWithSnapshot("Alice", "Vacation", date, date, snap))
+
+	out, err := g.Serialize()
+	require.NoError(t, err)
+	assert.Contains(t, out, "CUSTOM LEAVE: Alice (Vacation) for 7 active")
+}
+
+func TestAddHoliday_DefaultTemplateMatchesExistingOutput(t *testing.T) {
+	g, err := newSupportGenerator(SupportCalendarOptions{})
+	require.NoError(t, err)
+
+	date := time.Date(2026, 6, 10, 0, 0, 0, 0, time.UTC)
+	require.NoError(t, g.AddHoliday("Constitution Day", date))
+	out, err := g.Serialize()
+	require.NoError(t, err)
+	assert.Contains(t, out, "Support rota is not scheduled on this day")
+	assert.Contains(t, out, "Office Closed - Constitution Day")
+}
+
+func TestAddHoliday_TemplateOverride_AppliesToDescription(t *testing.T) {
+	tmp := t.TempDir()
+	textPath := filepath.Join(tmp, "holiday.txt.tmpl")
+	htmlPath := filepath.Join(tmp, "holiday.html.tmpl")
+	require.NoError(t, writeFile(textPath, "CUSTOM HOLIDAY: {{.Name}} (WFH: {{len .WFH}}, leave: {{len .OnLeave}})"))
+	require.NoError(t, writeFile(htmlPath, "<p>CUSTOM HTML HOLIDAY: {{.Name}}</p>"))
+
+	g, err := newSupportGenerator(SupportCalendarOptions{
+		HolidayTemplateTextPath: textPath,
+		HolidayTemplateHTMLPath: htmlPath,
+	})
+	require.NoError(t, err)
+
+	snap := &presenceSnapshot{
+		Date:    "2026-06-10",
+		WFH:     []presenceMember{{Name: "Bob"}},
+		OnLeave: []presenceMember{{Name: "Carol"}, {Name: "Dave"}},
+	}
+	date := time.Date(2026, 6, 10, 0, 0, 0, 0, time.UTC)
+	require.NoError(t, g.AddHolidayWithSnapshot("Constitution Day", date, snap))
+
+	out, err := g.Serialize()
+	require.NoError(t, err)
+	assert.Contains(t, out, `CUSTOM HOLIDAY: Constitution Day (WFH: 1\, leave: 2)`)
+}
+
+func TestGenerateSupportCalendar_TemplateSeesAllSnapshotFields(t *testing.T) {
+	tmp := t.TempDir()
+	textPath := filepath.Join(tmp, "support.txt.tmpl")
+	htmlPath := filepath.Join(tmp, "support.html.tmpl")
+
+	templateBody := `{{.Summary}} | active={{.TotalActive}} onsite={{len .OnSite}} leave={{len .OnLeave}} wfh={{len .WFH}} hat={{.HATName}} order={{range .ShuffledOrder}}{{.Name}} {{end}}`
+	require.NoError(t, writeFile(textPath, templateBody))
+	require.NoError(t, writeFile(htmlPath, "<p>{{.Summary}} {{.HATName}}</p>"))
+
+	g, err := newSupportGenerator(SupportCalendarOptions{
+		SupportAssignmentTemplateTextPath: textPath,
+		SupportAssignmentTemplateHTMLPath: htmlPath,
+		ShuffleSeed:                       "test-seed",
+	})
+	require.NoError(t, err)
+
+	snap := &presenceSnapshot{
+		Date:        "2026-06-10",
+		TotalActive: 5,
+		OnSite:      []presenceMember{{Name: "Alice"}, {Name: "Bob"}},
+		OnLeave:     []presenceMember{{Name: "Carol"}},
+		WFH:         []presenceMember{{Name: "Dave"}, {Name: "Eve"}},
+		HATName:     "Alice",
+		ShuffledOrder: []presenceMember{
+			{Name: "Eve"}, {Name: "Bob"}, {Name: "Dave"}, {Name: "Alice"}, {Name: "Carol"},
+		},
+	}
+	a := database.RotaAssignment{ID: "a1", Date: "2026-06-10", MemberID: "m1"}
+	require.NoError(t, g.AddAssignmentWithSnapshot(a, "Alice", snap))
+
+	out, err := g.Serialize()
+	require.NoError(t, err)
+	assert.Contains(t, out, "active=5")
+	assert.Contains(t, out, "onsite=2")
+	assert.Contains(t, out, "leave=1")
+	assert.Contains(t, out, "wfh=2")
+	assert.Contains(t, out, "hat=Alice")
+}
+
+func writeFile(path, contents string) error {
+	return os.WriteFile(path, []byte(contents), 0o600)
 }

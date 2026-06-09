@@ -128,6 +128,7 @@ re-materialization (the user's intent is preserved).
 - ICS files are generated with 0o600 permissions
 - Calendar subscriptions use UUID tokens stored in `calendar_subscriptions` table
 - Uses `github.com/arran4/golang-ical` library
+- **Calendar event descriptions are templated**. Meetings, support assignments, leave, and holidays each have a `text/template` and an `html/template` override wired through environment variables. Built-in defaults reproduce the previous hard-coded output exactly. Support, leave, and holiday templates share a per-day **presence snapshot** (active count, on-site/on-leave/WFH lists, HAT name, stable random order) computed fresh per request from the database. See the "Calendar template overrides" section of the README for the data model and examples.
 
 ### Test Structure
 - Tests are co-located with source files (e.g., `db_test.go` next to `db.go`)

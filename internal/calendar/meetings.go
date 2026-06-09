@@ -4,10 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"hash/fnv"
 	"html/template"
-	"math"
-	"math/rand"
 	"net/url"
 	"os"
 	"sort"
@@ -593,24 +590,5 @@ func getSupportForDate(ctx context.Context, db *database.DB, dateStr string) (st
 }
 
 func shuffledOrder(present []database.TeamMember, seedKey string) []database.TeamMember {
-	if len(present) <= 1 {
-		return append([]database.TeamMember(nil), present...)
-	}
-
-	seed := stableSeed(seedKey)
-	//nolint:gosec // Deterministic shuffle for meeting order; not used for security.
-	rng := rand.New(rand.NewSource(int64(seed & math.MaxInt64)))
-
-	out := append([]database.TeamMember(nil), present...)
-	for i := len(out) - 1; i > 0; i-- {
-		j := rng.Intn(i + 1)
-		out[i], out[j] = out[j], out[i]
-	}
-	return out
-}
-
-func stableSeed(key string) uint64 {
-	h := fnv.New64a()
-	_, _ = h.Write([]byte(key))
-	return h.Sum64()
+	return stableShuffle(present, seedKey)
 }

@@ -198,6 +198,13 @@ At least one provider must be configured for production authentication.
 | `MEETINGS_LINKS_MORNING` | falls back to `MEETINGS_LINKS` | Overrides links for Tue-Fri morning shuffle meetings. |
 | `MEETINGS_LINKS_PROJECT` | falls back to `MEETINGS_LINKS` | Overrides links for Monday project shuffle meetings. |
 | `SUPPORT_DAY_LINKS` | none | Extra links included in support-duty calendar events. |
+| `SUPPORT_DAY_SHUFFLE_SEED` | `support-rota-presence` | Salt for the per-day stable randomisation in support/leave/holiday templates. |
+| `SUPPORT_ASSIGNMENT_TEMPLATE_TEXT_PATH` | built-in template | Optional text/template override for support assignment descriptions. |
+| `SUPPORT_ASSIGNMENT_TEMPLATE_HTML_PATH` | built-in template | Optional html/template override for support assignment descriptions. |
+| `LEAVE_TEMPLATE_TEXT_PATH` | built-in template | Optional text/template override for leave event descriptions. |
+| `LEAVE_TEMPLATE_HTML_PATH` | built-in template | Optional html/template override for leave event descriptions. |
+| `HOLIDAY_TEMPLATE_TEXT_PATH` | built-in template | Optional text/template override for holiday descriptions. |
+| `HOLIDAY_TEMPLATE_HTML_PATH` | built-in template | Optional html/template override for holiday descriptions. |
 
 #### Holidays and database
 
@@ -228,73 +235,124 @@ Notes:
 - Meeting template and link environment variables are read when calendar output is generated.
 - Most other environment variables are loaded during server startup.
 
-### Meeting template overrides
+### Calendar template overrides
 
-The meetings calendar feed supports overriding the per-event descriptions via Go templates.
+Every calendar event description is rendered through a Go template so deployments can tailor the wording for their team. Two templates are supported per event kind — a `text/template` for the iCalendar `DESCRIPTION` and an `html/template` for the `X-ALT-DESC` (Outlook-friendly). Built-in defaults reproduce the project's hard-coded output, so the templates are entirely opt-in.
 
-- Text description: `MEETINGS_TEMPLATE_TEXT_PATH` (uses `text/template`).
-- HTML alternative description (Outlook-friendly): `MEETINGS_TEMPLATE_HTML_PATH` (uses `html/template`).
+#### Environment variables
 
-Both templates receive the same data:
+| Event kind | Text template env var | HTML template env var |
+| --- | --- | --- |
+| Meeting (morning/project) | `MEETINGS_TEMPLATE_TEXT_PATH` | `MEETINGS_TEMPLATE_HTML_PATH` |
+| Support assignment | `SUPPORT_ASSIGNMENT_TEMPLATE_TEXT_PATH` | `SUPPORT_ASSIGNMENT_TEMPLATE_HTML_PATH` |
+| Leave | `LEAVE_TEMPLATE_TEXT_PATH` | `LEAVE_TEMPLATE_HTML_PATH` |
+| Holiday | `HOLIDAY_TEMPLATE_TEXT_PATH` | `HOLIDAY_TEMPLATE_HTML_PATH` |
 
-- `MeetingName` (string)
-- `TeamsURL` (string; only `http`/`https` URLs are passed through, otherwise empty)
-- `Links` ([]struct)
-	- `Label` (string)
-	- `URL` (string)
-	- `HTML` (HTML; only set when provided as raw `<a ...>`)
-	- `Text` (string; suitable for plain-text output)
-- `Present` ([]string)
-- `Away` ([]string)
-- `Support` (string)
-- `Shuffle` ([]string)
-- `Agenda` ([]string)
+Setting any of these to a non-existent or syntactically broken file surfaces a 500-style error on the next calendar request. Leave them unset to keep the built-in defaults.
 
-Notes:
+`SUPPORT_DAY_SHUFFLE_SEED` (default `support-rota-presence`) is the salt for the per-day stable randomisation in support, leave, and holiday templates. Change it to decouple those orderings from each other and from the meetings agenda shuffle.
 
-- The HTML template should output a HTML fragment (it will be wrapped in `<html><body>...</body></html>` in the ICS).
-- Long lines in ICS files may be folded (RFC 5545). This is normal.
-- `MEETINGS_LINKS` is treated as trusted deployment input; if you use raw HTML anchors, they are included as-is.
+#### The presence snapshot
+
+Support, leave, and holiday templates all share one piece of data: the per-day **presence snapshot** for the event's date. The snapshot is computed once per day per request from the database, so every event rendered for the same date sees identical data. A template can use any of the following fields:
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `Date` | `string` | The event's date, `"2006-01-02"`. |
+| `IsWeekend` | `bool` | True for Saturday or Sunday. |
+| `IsHoliday` | `bool` | True when a holiday is configured for the date. |
+| `HolidayName` | `string` | The holiday's name, or empty. |
+| `TotalActive` | `int` | Number of active team members. |
+| `OnSite` | `[]struct` | Active members not on leave and not WFH. Each entry has `ID`, `Name`, `Email`. |
+| `OnLeave` | `[]struct` | Active members on leave that day. |
+| `WFH` | `[]struct` | Active members with an approved WFH that day, including materialised recurring-WFH rows. |
+| `HATName` | `string` | The on-call (HAT) member's name, or empty. |
+| `HATIsCover` | `bool` | True when the on-call is covering for someone else. |
+| `HATMemberID` | `string` | The on-call member's ID. |
+| `ShuffledOrder` | `[]struct` | Stable, per-day random order of present members (driven by `SUPPORT_DAY_SHUFFLE_SEED`). |
+
+The same fields are available on every event kind because the data structs embed the snapshot. A holiday template that prints "Office closed — 5 people on-site, 2 on leave, 1 WFH" can do so with one template, and the same template can be reused for the support day to show the day's on-site count.
+
+The WFH count includes materialised recurring-WFH rows. The materialiser runs once per day per request, so a calendar request that hits a date the WFH feature hasn't materialised yet will see a smaller WFH count; the next calendar request (after a WFH list page load) is correct.
+
+#### Per-event data fields
+
+**Support assignment** — `Summary`, `BaseText` (`"Support duty"` plus optional `"(cover)"` / `" (cover) for leave"`), `IsCover`, `IsCoverForLeave`, `Date`, `Links` (same shape as meetings).
+
+**Leave** — `Summary`, `BaseText` (`"{LeaveType} leave for {MemberName}"`), `MemberID`, `MemberName`, `LeaveType`, `StartDate`, `EndDate`.
+
+**Holiday** — `Summary` (`"Office Closed - {Name}"`), `BaseText` (`"Support rota is not scheduled on this day"`), `Name`, `Date`.
+
+**Meeting** (for completeness) — `MeetingName`, `TeamsURL`, `Links`, `Present` (`[]string`), `Away` (`[]string`), `Support`, `Shuffle` (`[]string`), `Agenda` (`[]string`).
+
+#### HTML helpers
+
+The HTML templates for support, leave, and holiday events have two helper functions pre-registered: `{{htmlHeading "Title"}}` produces `<h3>Title</h3>`, and `{{htmlParagraph "Body"}}` produces `<p>Body</p>`. Custom templates can call them, and the built-in defaults use them too.
+
+#### Example: support-day runbook
+
+A deployment wants the support event to include the team's HAT-day runbook, the day-of HAT name, and a quick stats block. Save the following as a file the `SUPPORT_ASSIGNMENT_TEMPLATE_TEXT_PATH` env var points at.
+
+```gotemplate
+{{.Summary}}
+
+Runbook: https://runbooks.example.com/hat-day
+
+Day stats: {{.TotalActive}} active, {{len .OnSite}} on site, {{len .OnLeave}} on leave, {{len .WFH}} WFH.
+Today's HAT: {{.HATName}}{{if .HATIsCover}} (cover){{end}}.
+```
+
+The same data drives a richer HTML version. Save this as the `SUPPORT_ASSIGNMENT_TEMPLATE_HTML_PATH` target.
+
+```gotemplate
+{{htmlHeading .Summary}}
+<p>Runbook: <a href="https://runbooks.example.com/hat-day">HAT-day runbook</a></p>
+
+<h4>Day stats</h4>
+<ul>
+  <li>Active: {{.TotalActive}}</li>
+  <li>On site: {{len .OnSite}}</li>
+  <li>On leave: {{len .OnLeave}}</li>
+  <li>WFH: {{len .WFH}}</li>
+</ul>
+
+{{if .HATName}}
+<h4>Today's HAT</h4>
+<p>{{.HATName}}{{if .HATIsCover}} (cover){{end}}</p>
+{{end}}
+
+{{if .IsHoliday}}
+<p><em>Office is closed today for {{.HolidayName}}.</em></p>
+{{end}}
+```
+
+#### Example: holiday template with coverage
+
+A deployment wants the holiday event to list who would normally be on site.
+
+```gotemplate
+Office closed: {{.Name}}
+
+If we were open today, we'd have {{len .OnSite}} on site, {{len .OnLeave}} on leave, and {{len .WFH}} WFH.
+Stable order for the day: {{range .ShuffledOrder}}{{.Name}} {{end}}
+```
+
+#### Example: leave template
+
+A deployment wants the leave event to include a back-to-work reminder.
+
+```gotemplate
+{{.BaseText}}
+
+Back-to-work checklist: https://handbook.example.com/back-to-work
+```
+
+#### Notes
+
+- The HTML template should output a HTML fragment; the calendar library wraps it in `<html><body>...</body></html>`.
+- Long lines in iCalendar files are folded per RFC 5545. This is normal.
+- `MEETINGS_LINKS` and `SUPPORT_DAY_LINKS` are trusted deployment input. If you use raw HTML anchors, they are included as-is.
 - If `MEETINGS_LINKS_PROJECT` / `MEETINGS_LINKS_MORNING` are set, they override `MEETINGS_LINKS` for their respective events.
-
-Example text template (`meeting_description.txt.tmpl`):
-
-```gotemplate
-{{.MeetingName}}
-
-Present:
-{{- if .Present }}
-{{- range .Present }}- {{.}}
-{{- end }}
-{{- else }}- (none)
-{{- end }}
-```
-
-Example HTML template (`meeting_description.html.tmpl`):
-
-```gotemplate
-<h3>{{.MeetingName}}</h3>
-{{- if .TeamsURL }}
-<p><a href="{{.TeamsURL}}">Join Teams meeting</a></p>
-{{- end }}
-<h4>Present</h4>
-<ul>
-	{{- if .Present }}
-	{{- range .Present }}<li>{{.}}</li>{{end}}
-	{{- else }}
-	<li>(none)</li>
-	{{- end }}
-</ul>
-
-{{- if .Links }}
-<h4>Links</h4>
-<ul>
-	{{- range .Links }}
-	{{- if .HTML }}<li>{{.HTML}}</li>{{else}}<li><a href="{{.URL}}">{{.Label}}</a></li>{{end}}
-	{{- end }}
-</ul>
-{{- end }}
-```
 
 ### Development Mode
 For local development without OAuth setup:

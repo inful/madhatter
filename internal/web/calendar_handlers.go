@@ -210,7 +210,7 @@ func (h *Handler) handleCalendarICS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	supportDayLinks := calendar.ParseMeetingLinks(os.Getenv("SUPPORT_DAY_LINKS"))
+	opts := h.buildSupportCalendarOptions()
 
 	// Generate ICS content using new calendar library.
 	icsContent, err := calendar.GenerateICalForTokenWithOptions(
@@ -218,7 +218,7 @@ func (h *Handler) handleCalendarICS(w http.ResponseWriter, r *http.Request) {
 		h.db,
 		token,
 		defaultCalendarLookaheadDays,
-		calendar.SupportCalendarOptions{SupportDayLinks: supportDayLinks, WithAlarm: true},
+		opts,
 	)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
@@ -235,6 +235,26 @@ func (h *Handler) handleCalendarICS(w http.ResponseWriter, r *http.Request) {
 
 	// Write ICS content.
 	_, _ = w.Write([]byte(icsContent)) // #nosec G705 -- ICS content is generated server-side and served as text/calendar.
+}
+
+// buildSupportCalendarOptions assembles the SupportCalendarOptions from
+// the operator's environment variables and the wired-in materialiser
+// and holiday lookup. The same options are reused by the team-calendar
+// handler so behavior is consistent.
+func (h *Handler) buildSupportCalendarOptions() calendar.SupportCalendarOptions {
+	return calendar.SupportCalendarOptions{
+		SupportDayLinks:                       calendar.ParseMeetingLinks(os.Getenv("SUPPORT_DAY_LINKS")),
+		WithAlarm:                             true,
+		ShuffleSeed:                           os.Getenv("SUPPORT_DAY_SHUFFLE_SEED"),
+		WFHMaterialiser:                       NewWFHMaterialiser(h.wfhService),
+		HolidayLookup:                         h.holidayLookup,
+		SupportAssignmentTemplateTextPath:     os.Getenv("SUPPORT_ASSIGNMENT_TEMPLATE_TEXT_PATH"),
+		SupportAssignmentTemplateHTMLPath:     os.Getenv("SUPPORT_ASSIGNMENT_TEMPLATE_HTML_PATH"),
+		LeaveTemplateTextPath:                 os.Getenv("LEAVE_TEMPLATE_TEXT_PATH"),
+		LeaveTemplateHTMLPath:                 os.Getenv("LEAVE_TEMPLATE_HTML_PATH"),
+		HolidayTemplateTextPath:               os.Getenv("HOLIDAY_TEMPLATE_TEXT_PATH"),
+		HolidayTemplateHTMLPath:               os.Getenv("HOLIDAY_TEMPLATE_HTML_PATH"),
+	}
 }
 
 func (h *Handler) handleMeetingsCalendarICS(w http.ResponseWriter, r *http.Request) {
@@ -292,11 +312,12 @@ func (h *Handler) handleTeamCalendarICS(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	icsContent, err := calendar.GenerateOthersICalForToken(
+	icsContent, err := calendar.GenerateOthersICalForTokenWithOptions(
 		r.Context(),
 		h.db,
 		token,
 		defaultCalendarLookaheadDays,
+		h.buildSupportCalendarOptions(),
 	)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)

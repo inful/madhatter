@@ -18,7 +18,7 @@ const (
 // Scheduler manages the background job for fetching holidays from iCal URLs.
 type Scheduler struct {
 	store     *Store
-	fetcher   *ICalFetcher
+	fetcher   holidayFetcher
 	urls      []string
 	running   bool
 	stopChan  chan struct{}
@@ -27,6 +27,12 @@ type Scheduler struct {
 	lastFetch time.Time
 	lastError error
 	mu        sync.RWMutex
+}
+
+// holidayFetcher is the subset of ICalFetcher the scheduler needs. Defined as an interface
+// so tests can substitute a stub that avoids HTTP I/O.
+type holidayFetcher interface {
+	FetchMultiple(ctx context.Context, urls []string) ([]Holiday, error)
 }
 
 // NewScheduler creates a new holiday scheduler.

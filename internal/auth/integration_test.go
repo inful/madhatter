@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"path/filepath"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/inful/madhatter/internal/database"
@@ -254,17 +255,19 @@ func TestSessionManager_Integration(t *testing.T) {
 	})
 
 	t.Run("Expired Session", func(t *testing.T) {
-		// Create session with very short duration (1 second)
-		shortSessionManager := NewSessionManager(db.GetQueries(), 1*time.Second)
-		token, err := shortSessionManager.CreateSession(ctx, user.ID)
-		require.NoError(t, err)
+		synctest.Test(t, func(t *testing.T) {
+			// Create session with very short duration (1 second)
+			shortSessionManager := NewSessionManager(db.GetQueries(), 1*time.Second)
+			token, err := shortSessionManager.CreateSession(ctx, user.ID)
+			require.NoError(t, err)
 
-		// Wait for expiration plus buffer
-		time.Sleep(3 * time.Second)
+			// Wait for expiration plus buffer
+			time.Sleep(3 * time.Second)
 
-		// Should no longer be valid (query checks expires_at)
-		_, err = shortSessionManager.ValidateSession(ctx, token)
-		assert.Error(t, err, "Expired session should not validate")
+			// Should no longer be valid (query checks expires_at)
+			_, err = shortSessionManager.ValidateSession(ctx, token)
+			assert.Error(t, err, "Expired session should not validate")
+		})
 	})
 }
 

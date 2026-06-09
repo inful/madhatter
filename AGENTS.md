@@ -506,3 +506,33 @@ The following features are planned but not yet implemented:
 - **SQLC Migration**: `SQLC_MIGRATION_GUIDE.md`
 - **Auth Setup**: `AUTH_SETUP.md`
 - **Consolidated Reference**: `CONSOLIDATED_REFERENCE.md`
+
+<!-- gortex:communities:start -->
+<!-- gortex:skills:start -->
+## Community Skills
+
+| Area | Description | Skill |
+|------|-------------|-------|
+| Database 9 Dirs | 1959 symbols | `/gortex-database-9-dirs` |
+| Auth 8 Dirs | 861 symbols | `/gortex-auth-8-dirs` |
+| Web 4 Dirs Error | 664 symbols | `/gortex-web-4-dirs-error` |
+| Database 8 Dirs | 652 symbols | `/gortex-database-8-dirs` |
+| Web 3 Dirs Getfutureassignmentsformember | 438 symbols | `/gortex-web-3-dirs-getfutureassignmentsformember` |
+| Auth 9 Dirs Errorf | 433 symbols | `/gortex-auth-9-dirs-errorf` |
+| Auth 9 Dirs String | 350 symbols | `/gortex-auth-9-dirs-string` |
+| Database 4 Dirs | 342 symbols | `/gortex-database-4-dirs` |
+| Web 3 Dirs Newhandler | 225 symbols | `/gortex-web-3-dirs-newhandler` |
+| Web 3 Dirs Now | 211 symbols | `/gortex-web-3-dirs-now` |
+| Database Sqlc 3 Dirs | 210 symbols | `/gortex-database-sqlc-3-dirs` |
+| Calendar 3 Dirs Addassignment | 197 symbols | `/gortex-calendar-3-dirs-addassignment` |
+| Auth 7 Dirs | 185 symbols | `/gortex-auth-7-dirs` |
+| Wfh 1 Dirs Testsettlependingrequests Appro | 176 symbols | `/gortex-wfh-1-dirs-testsettlependingrequests-appro` |
+| Holiday 8 Dirs | 158 symbols | `/gortex-holiday-8-dirs` |
+| Api 1 Dirs Server | 153 symbols | `/gortex-api-1-dirs-server` |
+| Auth 4 Dirs Testauthmanager Handlerevokeapi | 151 symbols | `/gortex-auth-4-dirs-testauthmanager-handlerevokeapi` |
+| Database Sqlc 1 Dirs Teammember | 127 symbols | `/gortex-database-sqlc-1-dirs-teammember` |
+| Auth 4 Dirs Int64 | 117 symbols | `/gortex-auth-4-dirs-int64` |
+| Database Sqlc Wfhrequest | 111 symbols | `/gortex-database-sqlc-wfhrequest` |
+<!-- gortex:skills:end -->
+
+<!-- gortex:communities:end -->

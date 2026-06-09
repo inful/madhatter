@@ -72,6 +72,8 @@ func wfhDomainToHumaError(err error) error {
 		return huma.Error422UnprocessableEntity(err.Error(), nil)
 	case errors.Is(err, database.ErrWFHRecurringContractDay):
 		return huma.Error409Conflict(err.Error())
+	case errors.Is(err, database.ErrWFHOnHoliday):
+		return huma.Error422UnprocessableEntity(err.Error(), nil)
 	case errors.Is(err, database.ErrWFHNotApproved):
 		return huma.Error409Conflict(err.Error())
 	case errors.Is(err, database.ErrWFHWithdrawalDeadlinePassed):
@@ -121,7 +123,7 @@ func (s *Server) handleRequestWFH(ctx context.Context, input *CreateWFHInput) (*
 	if s.wfhService != nil {
 		hasQuota, quotaErr := s.wfhService.CheckQuota(ctx, memberID, input.Body.Date)
 		if quotaErr != nil {
-			if errors.Is(quotaErr, database.ErrWFHInvalidDate) {
+			if errors.Is(quotaErr, database.ErrWFHInvalidDate) || errors.Is(quotaErr, database.ErrWFHOnHoliday) {
 				return nil, wfhDomainToHumaError(quotaErr)
 			}
 

@@ -19,6 +19,28 @@ import (
 type DB struct {
 	queries *sqlc.Queries
 	db      *sql.DB
+	// holidayChecker, if set, reports whether a given UTC date (year/month/day
+	// at midnight UTC) falls on a holiday. Used by feature layers to reject
+	// state that would be meaningless on non-working days.
+	holidayChecker func(time.Time) bool
+}
+
+// HolidayChecker is the function signature for checking whether a date is a holiday.
+type HolidayChecker func(time.Time) bool
+
+// SetHolidayChecker installs a holiday checker used by features that should
+// refuse to operate on holidays (e.g. WFH requests). Pass nil to disable.
+func (db *DB) SetHolidayChecker(checker HolidayChecker) {
+	db.holidayChecker = checker
+}
+
+// IsHoliday reports whether the given date falls on a holiday according to the
+// installed checker. Returns false if no checker is installed.
+func (db *DB) IsHoliday(date time.Time) bool {
+	if db.holidayChecker == nil {
+		return false
+	}
+	return db.holidayChecker(date)
 }
 
 func New(path string) (*DB, error) {

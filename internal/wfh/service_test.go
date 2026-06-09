@@ -363,3 +363,57 @@ func TestSettlePendingRequests_NoDoubleCountForApprovedRecurringWFH(t *testing.T
 	assert.Equal(t, database.WFHStatusApproved, bobReq.Status)
 	assert.Equal(t, database.WFHStatusDenied, carolReq.Status)
 }
+
+func TestCreateWFHRequest_RejectsHoliday(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	t.Cleanup(cleanup)
+
+	holidayDate := nextBusinessDay(time.Now().UTC().AddDate(0, 0, 5))
+	db.SetHolidayChecker(func(d time.Time) bool {
+		return d.Format("2006-01-02") == holidayDate.Format("2006-01-02")
+	})
+
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	_, err = db.CreateWFHRequest(ctx, memberID, holidayDate.Format("2006-01-02"))
+	require.ErrorIs(t, err, database.ErrWFHOnHoliday)
+}
+
+func TestCreateWFHRequest_AllowsNonHolidayWhenCheckerSet(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	t.Cleanup(cleanup)
+
+	holidayDate := nextBusinessDay(time.Now().UTC().AddDate(0, 0, 5))
+	db.SetHolidayChecker(func(d time.Time) bool {
+		return d.Format("2006-01-02") == holidayDate.Format("2006-01-02")
+	})
+
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	nonHoliday := nextBusinessDay(holidayDate.AddDate(0, 0, 1))
+	_, err = db.CreateWFHRequest(ctx, memberID, nonHoliday.Format("2006-01-02"))
+	assert.NoError(t, err)
+}
+
+func TestCheckQuota_RejectsHoliday(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	t.Cleanup(cleanup)
+
+	holidayDate := nextBusinessDay(time.Now().UTC().AddDate(0, 0, 5))
+	db.SetHolidayChecker(func(d time.Time) bool {
+		return d.Format("2006-01-02") == holidayDate.Format("2006-01-02")
+	})
+
+	svc := NewService(db, testConfig())
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	hasQuota, err := svc.CheckQuota(ctx, memberID, holidayDate.Format("2006-01-02"))
+	require.ErrorIs(t, err, database.ErrWFHOnHoliday)
+	assert.False(t, hasQuota)
+}

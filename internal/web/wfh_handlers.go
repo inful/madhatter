@@ -256,6 +256,8 @@ func (h *Handler) handleWFHAdminSettle(w http.ResponseWriter, r *http.Request) {
 }
 
 // wfhWebErrorMessage returns a user-facing message for WFH domain errors.
+//
+//nolint:cyclop // Exhaustive domain-to-message mapping; each sentinel is a case.
 func wfhWebErrorMessage(err error) string {
 	switch {
 	case errors.Is(err, database.ErrWFHNotFound):
@@ -270,6 +272,8 @@ func wfhWebErrorMessage(err error) string {
 		return "The selected date has already passed."
 	case errors.Is(err, database.ErrWFHRecurringContractDay):
 		return "This date falls on your contractual recurring WFH day."
+	case errors.Is(err, database.ErrWFHOnHoliday):
+		return "WFH requests cannot be made for holidays."
 	case errors.Is(err, database.ErrWFHNotApproved):
 		return "Only approved WFH requests can be withdrawn."
 	case errors.Is(err, database.ErrWFHWithdrawalDeadlinePassed):

@@ -71,6 +71,12 @@ func NewServer(db *database.DB, development bool) (*Server, error) {
 		holidayService = nil
 	}
 
+	// Wire the holiday checker into the DB so any feature that needs to
+	// reject state on holidays (e.g. WFH requests) can consult it.
+	if holidayService != nil {
+		db.SetHolidayChecker(holidayService.ShouldSkipDate)
+	}
+
 	// Create engine and set holiday checker
 	engine := rota.NewEngine(db)
 	if holidayService != nil {

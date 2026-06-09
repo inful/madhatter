@@ -24,6 +24,7 @@ var (
 	ErrWFHRecurringContractDay     = errors.New("this weekday is already configured as recurring WFH for the member")
 	ErrWFHPermanentMember          = ErrWFHRecurringContractDay
 	ErrWFHNotApproved              = errors.New("WFH request is not approved")
+	ErrWFHOnHoliday                = errors.New("WFH requests cannot be made for holidays")
 )
 
 // wfhFromSQLCRow converts a sqlc WfhRequest row to the domain WFHRequest model.
@@ -81,6 +82,13 @@ func (db *DB) CreateWFHRequest(ctx context.Context, memberID, date string) (*WFH
 		(dateTime.Weekday() == time.Friday && member.RecurringWfhFriday == 1)
 	if isRecurringWFH {
 		return nil, ErrWFHRecurringContractDay
+	}
+
+	// Reject holidays: a WFH on a non-working day is meaningless — there's no
+	// on-site capacity to consume and no presence to track. Fail fast at the
+	// data layer so the invariant is enforced regardless of the caller.
+	if db.IsHoliday(dateTime) {
+		return nil, ErrWFHOnHoliday
 	}
 
 	nowUTC := time.Now().UTC()

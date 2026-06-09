@@ -146,6 +146,12 @@ func (s *Service) CheckQuota(ctx context.Context, memberID, date string) (bool, 
 		return false, database.ErrWFHInvalidDate
 	}
 
+	// Holidays are not valid WFH days. Mirror the DB-layer guard so forms
+	// can disable the date picker and surface a clear error to the user.
+	if s.db.IsHoliday(wfhDate) {
+		return false, database.ErrWFHOnHoliday
+	}
+
 	member, err := s.db.GetMemberByID(ctx, memberID)
 	if err != nil {
 		return false, err

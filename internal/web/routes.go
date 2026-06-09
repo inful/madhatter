@@ -57,6 +57,7 @@ func (h *Handler) registerRoutes() {
 		r.HandleFunc("/wfh", h.handleWFHList)
 		r.HandleFunc("/wfh/request", h.handleWFHRequest)
 		r.Post("/wfh/{id}/cancel", h.handleWFHCancel)
+		r.Post("/wfh/{id}/withdraw", h.handleWFHSelfWithdraw)
 	})
 
 	// Admin routes (require authentication and admin privileges).

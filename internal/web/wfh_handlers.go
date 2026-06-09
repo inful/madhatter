@@ -8,11 +8,13 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/inful/madhatter/internal/auth"
 	"github.com/inful/madhatter/internal/database"
+	"github.com/inful/madhatter/internal/wfh"
 )
 
 const (
-	maxWFHFormBytes  = 1 << 20
-	errNotTeamMember = "You are not registered as a team member."
+	maxWFHFormBytes        = 1 << 20
+	errNotTeamMember       = "You are not registered as a team member."
+	defaultWithdrawalHours = 24
 )
 
 // wfhBaseData builds the common data map for WFH templates.
@@ -48,7 +50,9 @@ func (h *Handler) handleWFHList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	data["Requests"] = requests
+
+	data["Requests"] = enrichWFHRequests(requests, h.wfhService)
+	data["WithdrawalHours"] = wfhWithdrawalHours(h.wfhService)
 
 	// Quota status.
 	if h.wfhService != nil {
@@ -167,10 +171,62 @@ func (h *Handler) handleWFHCancel(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/wfh", http.StatusSeeOther)
 }
 
+// handleWFHSelfWithdraw lets the current user withdraw their own approved WFH
+// request, subject to the configured withdrawal deadline.
+func (h *Handler) handleWFHSelfWithdraw(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id := chi.URLParam(r, "id")
+
+	user := mustGetUser(ctx)
+	memberID := h.resolveMemberID(ctx, user.Email)
+	if memberID == "" {
+		http.Error(w, "Not a team member", http.StatusForbidden)
+		return
+	}
+
+	withdrawalHours := 24
+	if h.wfhService != nil {
+		withdrawalHours = h.wfhService.Config().WithdrawalHours
+	}
+
+	if err := h.db.WithdrawOwnWFHRequest(ctx, id, memberID, withdrawalHours); err != nil {
+		http.Error(w, wfhWebErrorMessage(err), http.StatusBadRequest)
+		return
+	}
+
+	http.Redirect(w, r, "/wfh", http.StatusSeeOther)
+}
+
 // enrichedWFHRequest wraps a WFHRequest with a CanWithdraw flag for admin display.
 type enrichedWFHRequest struct {
 	database.WFHRequest
 	CanWithdraw bool
+}
+
+// wfhWithdrawalHours returns the configured withdrawal window, falling back to
+// the default 24h when the WFH service is not initialized.
+func wfhWithdrawalHours(svc *wfh.Service) int {
+	if svc != nil {
+		return svc.Config().WithdrawalHours
+	}
+	return defaultWithdrawalHours
+}
+
+// enrichWFHRequests attaches the CanWithdraw flag to each request based on its
+// status and the current withdrawal deadline. nil-safe.
+func enrichWFHRequests(requests []database.WFHRequest, svc *wfh.Service) []enrichedWFHRequest {
+	enriched := make([]enrichedWFHRequest, len(requests))
+	for i := range requests {
+		canWithdraw := false
+		if requests[i].Status == database.WFHStatusApproved && svc != nil {
+			d, parseErr := time.Parse("2006-01-02", requests[i].Date)
+			if parseErr == nil {
+				canWithdraw = svc.CanWithdraw(d)
+			}
+		}
+		enriched[i] = enrichedWFHRequest{WFHRequest: requests[i], CanWithdraw: canWithdraw}
+	}
+	return enriched
 }
 
 // handleWFHAdminPage shows the admin WFH management page.
@@ -190,28 +246,14 @@ func (h *Handler) handleWFHAdminPage(w http.ResponseWriter, r *http.Request) {
 	for _, m := range members {
 		memberMap[m.ID] = m.Name
 	}
-
-	withdrawalHours := 24
-	if h.wfhService != nil {
-		withdrawalHours = h.wfhService.Config().WithdrawalHours
-	}
-
-	enriched := make([]enrichedWFHRequest, len(requests))
 	for i := range requests {
 		if name, ok := memberMap[requests[i].MemberID]; ok {
 			requests[i].MemberName = name
 		}
-		canWith := false
-		if requests[i].Status == database.WFHStatusApproved && h.wfhService != nil {
-			d, parseErr := time.Parse("2006-01-02", requests[i].Date)
-			if parseErr == nil {
-				canWith = h.wfhService.CanWithdraw(d)
-			}
-		}
-		enriched[i] = enrichedWFHRequest{WFHRequest: requests[i], CanWithdraw: canWith}
 	}
-	data["Requests"] = enriched
-	data["WithdrawalHours"] = withdrawalHours
+
+	data["Requests"] = enrichWFHRequests(requests, h.wfhService)
+	data["WithdrawalHours"] = wfhWithdrawalHours(h.wfhService)
 
 	if err := h.tmpl.ExecuteTemplate(w, "wfh_manage.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

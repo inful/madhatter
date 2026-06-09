@@ -81,9 +81,10 @@
                 {{end}}
             </a>
             {{if .CurrentUserWFHQuotaExhausted}}
-                <button class="button is-success is-light action-btn" disabled title="WFH quota has been used for the current period">
+                <a href="/wfh" class="button is-success is-light action-btn"
+                    title="WFH quota is used. Visit the WFH page to withdraw an approved request and free a slot.">
                     <i class="fas fa-home mr-1"></i> WFH
-                </button>
+                </a>
             {{else}}
                 <a href="/wfh" class="button is-success action-btn">
                     <i class="fas fa-home mr-1"></i> WFH

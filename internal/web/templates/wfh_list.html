@@ -57,7 +57,7 @@
         </div>
         {{else}}
         <div class="notification is-warning is-light mt-3">
-            <i class="fas fa-exclamation-circle mr-2"></i> You have used your full WFH quota for this period.
+            <i class="fas fa-exclamation-circle mr-2"></i> You have used your full WFH quota for this period. You can withdraw an approved request below to free up a slot.
         </div>
         {{end}}
     </div>
@@ -118,6 +118,20 @@
                                     <span>Cancel</span>
                                 </button>
                             </form>
+                            {{else if eq .Status "approved"}}
+                                {{if .CanWithdraw}}
+                                <form method="post" action="/wfh/{{.ID}}/withdraw" style="display:inline">
+                                    <button type="submit" class="button is-small is-warning is-light"
+                                        onclick="return confirm('Withdraw this approved WFH request? Quota will be freed.')">
+                                        <span class="icon"><i class="fas fa-undo"></i></span>
+                                        <span>Withdraw</span>
+                                    </button>
+                                </form>
+                                {{else}}
+                                <span class="tag is-light" title="Withdrawal window of {{$.WithdrawalHours}} hours before the WFH day has passed">
+                                    <i class="fas fa-lock mr-1"></i> Locked
+                                </span>
+                                {{end}}
                             {{end}}
                         </td>
                     </tr>

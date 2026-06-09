@@ -242,12 +242,28 @@ func (db *DB) CancelWFHRequest(ctx context.Context, id, memberID string) error {
 // WithdrawWFHRequest withdraws an approved WFH request (admin action) if the withdrawal
 // deadline has not yet passed.
 func (db *DB) WithdrawWFHRequest(ctx context.Context, id, adminUserID string, withdrawalHours int) error {
+	return db.withdrawWFH(ctx, id, "", adminUserID, withdrawalHours)
+}
+
+// WithdrawOwnWFHRequest withdraws an approved WFH request on behalf of the owning
+// member. Enforces ownership (MemberID must match) and the withdrawal deadline.
+func (db *DB) WithdrawOwnWFHRequest(ctx context.Context, id, memberID string, withdrawalHours int) error {
+	return db.withdrawWFH(ctx, id, memberID, "", withdrawalHours)
+}
+
+// withdrawWFH is the shared implementation for admin and self-withdrawal. The
+// memberID, when non-empty, is enforced as the owning member. The actorUserID
+// is recorded as withdrawn_by.
+func (db *DB) withdrawWFH(ctx context.Context, id, memberID, actorUserID string, withdrawalHours int) error {
 	req, err := db.GetWFHRequestByID(ctx, id)
 	if err != nil {
 		return err
 	}
 	if req.Status != WFHStatusApproved {
 		return ErrWFHNotApproved
+	}
+	if memberID != "" && req.MemberID != memberID {
+		return ErrWFHNotOwner
 	}
 
 	// Check withdrawal deadline: must be called at least withdrawalHours before midnight of the WFH day.
@@ -261,7 +277,7 @@ func (db *DB) WithdrawWFHRequest(ctx context.Context, id, adminUserID string, wi
 	}
 
 	_, err = db.queries.UpdateWFHRequestWithdrawn(ctx, sqlc.UpdateWFHRequestWithdrawnParams{
-		WithdrawnBy: sql.NullString{String: adminUserID, Valid: true},
+		WithdrawnBy: sql.NullString{String: actorUserID, Valid: actorUserID != ""},
 		ID:          id,
 	})
 	return err

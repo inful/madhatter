@@ -77,3 +77,13 @@ func UnsubscribeURL(baseURL, memberID, secret string) string {
 	}
 	return baseURL + "/unsubscribe?token=" + NewUnsubscribeToken(memberID, secret).String()
 }
+
+// UnsubscribeURLFactory returns a closure that builds per-member
+// unsubscribe URLs. The renderer and the web layer both need a
+// "give me the URL for member X" function, so the closure captures
+// the baseURL + secret once at startup.
+func UnsubscribeURLFactory(baseURL, secret string) func(memberID string) string {
+	return func(memberID string) string {
+		return UnsubscribeURL(baseURL, memberID, secret)
+	}
+}

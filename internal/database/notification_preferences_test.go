@@ -31,8 +31,9 @@ func TestNotificationPreferences_DefaultsToEnabled(t *testing.T) {
 	assert.True(t, enabled, "a member with no preference row should be enabled by default")
 
 	pref, err := db.GetNotificationPreference(ctx, m.ID)
-	require.NoError(t, err)
-	assert.Nil(t, pref, "GetNotificationPreference returns nil for the absence of a row")
+	require.ErrorIs(t, err, ErrNoNotificationPreference,
+		"GetNotificationPreference returns ErrNoNotificationPreference for the absence of a row")
+	assert.Nil(t, pref)
 }
 
 // TestNotificationPreferences_DisableEnableRoundtrip verifies the
@@ -99,6 +100,7 @@ func TestNotificationPreferences_CascadeOnMemberDelete(t *testing.T) {
 
 	require.NoError(t, db.DeleteTeamMember(ctx, m.ID))
 	pref, err = db.GetNotificationPreference(ctx, m.ID)
-	require.NoError(t, err)
-	assert.Nil(t, pref, "preference row should be cascaded away with the member")
+	require.ErrorIs(t, err, ErrNoNotificationPreference,
+		"preference row should be cascaded away with the member")
+	assert.Nil(t, pref)
 }

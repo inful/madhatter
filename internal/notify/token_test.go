@@ -11,7 +11,6 @@ func TestUnsubscribeToken_Roundtrip(t *testing.T) {
 	t.Parallel()
 	cases := []string{"alice-123", "bob", "x", strings.Repeat("a", 64)}
 	for _, id := range cases {
-		id := id
 		t.Run(id, func(t *testing.T) {
 			t.Parallel()
 			tok := NewUnsubscribeToken(id, testSecret)
@@ -41,7 +40,6 @@ func TestUnsubscribeToken_Tampered(t *testing.T) {
 		{"extra-dot", "alice.foo.bar"},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			if _, err := VerifyUnsubscribeToken(tc.mutated, testSecret); err == nil {

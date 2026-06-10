@@ -133,32 +133,10 @@ type recipientRef struct {
 // disabled email are silently skipped.
 func (n *ChannelNotifier) enqueue(ctx context.Context, eventKind string, event any, recipients []recipientRef) {
 	for _, r := range recipients {
-		email, name, err := n.resolver.ResolveByID(ctx, r.id)
-		if err != nil || email == "" {
-			n.logger.Warn("notify: skip unknown recipient",
-				slog.String("event_kind", eventKind),
-				slog.String("member_id", r.id),
-				slog.String("err", errMsg(err)))
+		email, name, ok := n.resolveRecipient(ctx, eventKind, r)
+		if !ok {
 			continue
 		}
-		enabled, err := n.resolver.EmailEnabled(ctx, r.id)
-		if err != nil {
-			n.logger.Warn("notify: preference lookup failed; defaulting to enabled",
-				slog.String("event_kind", eventKind),
-				slog.String("member_id", r.id),
-				slog.String("err", err.Error()))
-			enabled = true
-		}
-		if !enabled {
-			n.logger.Debug("notify: skip unsubscribed recipient",
-				slog.String("event_kind", eventKind),
-				slog.String("member_id", r.id))
-			continue
-		}
-		if r.name != "" {
-			name = r.name
-		}
-
 		subject, body, err := n.renderer.render(eventKind, event, r.id)
 		if err != nil {
 			n.logger.Warn("notify: render failed",
@@ -188,6 +166,42 @@ func (n *ChannelNotifier) enqueue(ctx context.Context, eventKind string, event a
 			}
 		}
 	}
+}
+
+// resolveRecipient looks up the email and display name for a
+// recipient and checks whether they have unsubscribed. Returns
+// (email, name, true) on success; on any failure (unknown id,
+// empty email, unsubscribed) it logs the reason and returns
+// (ok=false) so the caller can continue. A preference-lookup
+// error is treated as "enabled" so a transient DB blip doesn't
+// silently drop notifications.
+func (n *ChannelNotifier) resolveRecipient(ctx context.Context, eventKind string, r recipientRef) (email, name string, ok bool) {
+	email, name, err := n.resolver.ResolveByID(ctx, r.id)
+	if err != nil || email == "" {
+		n.logger.Warn("notify: skip unknown recipient",
+			slog.String("event_kind", eventKind),
+			slog.String("member_id", r.id),
+			slog.String("err", errMsg(err)))
+		return "", "", false
+	}
+	enabled, err := n.resolver.EmailEnabled(ctx, r.id)
+	if err != nil {
+		n.logger.Warn("notify: preference lookup failed; defaulting to enabled",
+			slog.String("event_kind", eventKind),
+			slog.String("member_id", r.id),
+			slog.String("err", err.Error()))
+		enabled = true
+	}
+	if !enabled {
+		n.logger.Debug("notify: skip unsubscribed recipient",
+			slog.String("event_kind", eventKind),
+			slog.String("member_id", r.id))
+		return "", "", false
+	}
+	if r.name != "" {
+		name = r.name
+	}
+	return email, name, true
 }
 
 func errMsg(err error) string {

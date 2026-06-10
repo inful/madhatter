@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -20,15 +21,21 @@ type NotificationPreference struct {
 	UpdatedAt    time.Time
 }
 
+// ErrNoNotificationPreference is returned by
+// GetNotificationPreference when the member has no preference row.
+// Callers should treat the absence as "default" (email enabled).
+var ErrNoNotificationPreference = errors.New("no notification preference")
+
 // GetNotificationPreference returns the preference row for a member.
-// Returns (nil, nil) when the member has never changed their
-// preference — the absence of a row means "default" (email enabled).
-// A real error is returned only when the underlying query fails.
+// Returns ErrNoNotificationPreference when the member has never
+// changed their preference — the absence of a row means "default"
+// (email enabled). A real error is returned only when the
+// underlying query fails for some other reason.
 func (db *DB) GetNotificationPreference(ctx context.Context, memberID string) (*NotificationPreference, error) {
 	row, err := db.queries.GetNotificationPreference(ctx, memberID)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNoNotificationPreference
 		}
 		return nil, err
 	}

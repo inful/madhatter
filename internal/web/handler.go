@@ -44,6 +44,16 @@ type Handler struct {
 	pendingRestore map[string]pendingRestoreItem
 	wfhService     *wfh.Service
 	notifier       notify.Notifier
+
+	// Unsubscribe plumbing. The secret is shared with the renderer
+	// and the email channel via unsubscribeURLFn so URLs minted
+	// for the email body and the List-Unsubscribe header come from
+	// the same key. publicBaseURL is the externally-visible origin
+	// (e.g. https://rota.example.com); when empty, unsubscribe
+	// URLs are suppressed in templates.
+	unsubscribeSecret string
+	publicBaseURL     string
+	unsubscribeURLFn  func(memberID string) string
 }
 
 type pendingRestoreItem struct {

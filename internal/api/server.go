@@ -654,10 +654,16 @@ func (s *Server) buildNotifier(db *database.DB) (*notify.ChannelNotifier, *notif
 	resolver := notify.NewStaticResolver(chans...)
 	worker := notify.NewWorker(db, resolver, cfg.Outbox, nil)
 
-	// Build the renderer and the recipient resolver.
-	// Unsubscribe URL injection is wired in a follow-up step; for
-	// now the renderer leaves .UnsubscribeURL blank.
-	r, err := notify.NewRenderer(cfg.BaseURL, nil)
+	// Build the renderer. The unsubscribe URL factory is wired
+	// when the server's signing secret is available; if the secret
+	// is missing the renderer silently drops the link (templates
+	// guard the footer on .UnsubscribeURL being non-empty).
+	secret := os.Getenv("SESSION_SECRET")
+	var unsubFn func(string) string
+	if secret != "" {
+		unsubFn = notify.UnsubscribeURLFactory(cfg.PublicBaseURL, secret)
+	}
+	r, err := notify.NewRenderer(cfg.BaseURL, unsubFn)
 	if err != nil {
 		return nil, nil, fmt.Errorf("build renderer: %w", err)
 	}

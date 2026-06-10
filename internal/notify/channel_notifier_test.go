@@ -158,8 +158,7 @@ func TestChannelNotifier_StartStopIsIdempotent(t *testing.T) {
 func TestChannelNotifier_DisabledRecipient_NotEnqueued(t *testing.T) {
 	db, cleanup := setupNotifyDB(t)
 	defer cleanup()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	r, err := newRenderer("https://x", nil)
 	require.NoError(t, err)

@@ -17,6 +17,11 @@ type Config struct {
 	// BaseURL is used in templates for "view in dashboard" links.
 	BaseURL string
 
+	// PublicBaseURL is the externally-visible origin used for
+	// absolute URLs in emails (one-click unsubscribe links). Falls
+	// back to BaseURL when unset.
+	PublicBaseURL string
+
 	// EnabledChannels lists the channel names whose outbox rows should
 	// be written. In v1, the only valid value is "email". Unknown
 	// channel names are ignored by the notifier.
@@ -76,8 +81,20 @@ func LoadConfigFromEnv() Config {
 	} else if emailEnabled {
 		enabledChannels = []string{ChannelEmail}
 	}
+	baseURL := getEnvOrDefault("NOTIFY_BASE_URL", "http://localhost:8080")
+	// PublicBaseURL is the externally-visible origin used for
+	// absolute URLs in emails (one-click unsubscribe links). In
+	// production this should be the public HTTPS host; in dev
+	// we fall back to BaseURL. The fallback is intentional so
+	// --development mode produces working links without extra
+	// config.
+	publicBaseURL := os.Getenv("NOTIFY_PUBLIC_BASE_URL")
+	if publicBaseURL == "" {
+		publicBaseURL = baseURL
+	}
 	return Config{
-		BaseURL:         getEnvOrDefault("NOTIFY_BASE_URL", "http://localhost:8080"),
+		BaseURL:         baseURL,
+		PublicBaseURL:   publicBaseURL,
 		EnabledChannels: enabledChannels,
 		Email: EmailConfig{
 			Enabled:  emailEnabled,

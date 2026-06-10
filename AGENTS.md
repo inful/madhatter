@@ -133,9 +133,9 @@ re-materialization (the user's intent is preserved).
 ### Notifications
 - `internal/notify` is the public API producer code uses (`notify.Notifier`). Methods never return an error and never block on network I/O — handlers call them and return.
 - Production notifier writes to the `notification_outbox` table (migration 000013). A worker goroutine drains the table, dispatches to the registered channel, and reschedules failures with exponential backoff capped at 1h.
-- Today the only delivery channel is **email**, built on `github.com/nikoksr/notify/service/mail`. The architecture is designed for multiple channels: `internal/notify/channels/` is the registry; adding Slack or Teams is a self-contained addition with no producer-code changes.
+- Today the only delivery channel is **email**, built on `github.com/jordan-wright/email` + `net/smtp` (the `nikoksr/notify/service/mail` shim was dropped because it doesn't expose MIME headers for `List-Unsubscribe`). The architecture is designed for multiple channels: `internal/notify/channels/` is the registry; adding Slack or Teams is a self-contained addition with no producer-code changes.
 - Templates are `text/template` (plain text, no multipart) bundled via `//go:embed` and overridable per-event via `NOTIFY_<EVENT>_TXT_PATH` / `_SUBJECT_TXT_PATH` env vars, mirroring the calendar event-template pattern.
-- See `docs/NOTIFICATIONS.md` for the full reference: what fires when, env vars, ops queries, the "add a new channel" checklist.
+- One-click unsubscribe: every email body gets a per-recipient footer link and the email carries `List-Unsubscribe` / `List-Unsubscribe-Post` headers (RFC 8058). Tokens are HMAC-signed with `SESSION_SECRET`; the public one-click endpoint is `GET /unsubscribe?token=…` and the resume endpoint is `POST /unsubscribe/resume`. Per-member state lives in `notification_preferences` (migration 000014); the absence of a row is "default enabled". See `docs/NOTIFICATIONS.md` for the full reference: what fires when, env vars, ops queries, the "add a new channel" checklist.
 
 ### Test Structure
 - Tests are co-located with source files (e.g., `db_test.go` next to `db.go`)

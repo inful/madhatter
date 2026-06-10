@@ -64,7 +64,56 @@ variables explicitly.
 
 | Variable | Default | Description |
 |---|---|---|
-| `NOTIFY_BASE_URL` | `http://localhost:8080` | Used in templates for "view in dashboard" links. |
+| `NOTIFY_BASE_URL` | `http://localhost:8080` | Used in templates for "view in dashboard" links. May be the internal address. |
+| `NOTIFY_PUBLIC_BASE_URL` | _(falls back to `NOTIFY_BASE_URL`)_ | Externally-visible origin used for absolute URLs in emails (one-click unsubscribe links). Should be the public HTTPS host users actually visit. In dev, leave unset to use the same value as `NOTIFY_BASE_URL`. |
+
+### Unsubscribing
+
+Members can opt out of email notifications with a one-click link in
+every email body and on the email's `List-Unsubscribe` header
+(RFC 8058). Both use the same HMAC-signed token, so the
+`SESSION_SECRET` env var (already required at server startup) is
+the only signing key in play.
+
+The flow:
+
+1. The renderer mints a per-recipient URL:
+   `{NOTIFY_PUBLIC_BASE_URL}/unsubscribe?token={member_id}.{hmac}`.
+   The token has no expiry; revocation happens by either rotating
+   `SESSION_SECRET` or by the member re-enabling notifications.
+2. The email channel stamps the same URL on
+   `List-Unsubscribe: <URL>` and
+   `List-Unsubscribe-Post: List-Unsubscribe=One-Click`. Mail
+   clients that support RFC 8058 show a one-click "unsubscribe"
+   button without opening the link.
+3. The `/unsubscribe` handler verifies the HMAC, sets
+   `notification_preferences.email_enabled = 0`, and renders a
+   small confirmation page. Invalid tokens, missing tokens, and
+   tokens for deleted members all show the same
+   "link no longer valid" page so attackers can't tell signatures
+   from typos.
+4. `ChannelNotifier` consults `notification_preferences` on every
+   dispatch. A disabled member is silently skipped (no outbox
+   row written, no channel call). A transient DB blip on the
+   preference read defaults to "enabled" so SMTP hiccups don't
+   silently drop notifications.
+
+The confirmation page links to `/unsubscribe/resume` (POST) so a
+member who clicked by accident can re-enable without logging in.
+The resume endpoint also verifies the token, so it's safe to expose
+publicly.
+
+The absence of a `notification_preferences` row is treated as
+"enabled" (the default for new members). A single index on
+`email_enabled = 0` keeps the disabled-row scan cheap; the common
+path (enabled member, no row) stays at one query.
+
+There is no admin override today: the only way to re-enable a
+member who lost their token is to delete the
+`notification_preferences` row directly in the database, or for
+the member to use the resume link from the same email.
+
+### Adding a new channel
 
 ### Channel list
 
@@ -195,5 +244,10 @@ No producer code changes; producer code only knows the
 | Outbox worker (drain + retry) | `internal/notify/outbox_worker.go` |
 | Email channel | `internal/notify/channels/email/email.go` |
 | Log channel (dev fallback) | `internal/notify/channels/log/log.go` |
+| Unsubscribe token utility | `internal/notify/token.go` |
+| Per-member preferences | `internal/database/notification_preferences.go` |
+| One-click unsubscribe web handler | `internal/web/unsubscribe_handler.go` |
 | Outbox schema | `migrations/000013_add_notification_outbox.{up,down}.sql` |
+| Per-row unsubscribe URL column | `migrations/000015_add_outbox_unsubscribe_url.{up,down}.sql` |
+| Per-member preferences schema | `migrations/000014_add_notification_preferences.{up,down}.sql` |
 | Server wiring | `internal/api/server.go` (`buildNotifier`) |

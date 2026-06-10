@@ -25,9 +25,20 @@ type renderer struct {
 	bodyTpl    map[string]*template.Template
 }
 
-// newRenderer parses the bundled templates and applies any
-// env-var-supplied overrides. baseURL is substituted into the templates
-// as {{.BaseURL}} — useful for "view in dashboard" links.
+// NewRenderer parses the bundled templates and applies any
+// env-var-supplied overrides. baseURL is substituted into the
+// templates as {{.BaseURL}} — useful for "view in dashboard" links.
+// Exposed so the api package can build a renderer with the runtime
+// BaseURL from Config; tests use newRenderer directly via the
+// internal helper.
+func NewRenderer(baseURL string) (*renderer, error) {
+	return newRenderer(baseURL)
+}
+
+// newRenderer is the package-private implementation. Kept named
+// distinctly from the exported NewRenderer so the call sites read
+// consistently and tests can use the internal helper without an
+// indirection.
 func newRenderer(baseURL string) (*renderer, error) {
 	r := &renderer{
 		baseURL:    baseURL,

@@ -22,6 +22,9 @@ func (s *Server) registerWebRoutes(development bool) error {
 		webHandler.SetWFHService(s.wfhService)
 		webHandler.SetHolidayLookup(web.NewHolidayLookup(s.holidayService))
 	}
+	if s.notifier != nil {
+		webHandler.SetNotifier(s.notifier)
+	}
 
 	// Development mode: The web handler's registerDevelopmentRoutes will handle the fake login view.
 	// No need to register it separately here.

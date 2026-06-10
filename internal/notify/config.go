@@ -63,11 +63,24 @@ const (
 // for values that cannot be defaulted (e.g. missing SMTP host when
 // email is enabled).
 func LoadConfigFromEnv() Config {
+	// Default channel list depends on whether email is enabled: when
+	// no env vars are set, the default is to leave the channel list
+	// empty (i.e. log-only mode) and let the server register a
+	// LogChannel so handlers don't fail. Operators who want email
+	// must set NOTIFY_CHANNELS=email AND NOTIFY_EMAIL_ENABLED=true.
+	channels := os.Getenv("NOTIFY_CHANNELS")
+	emailEnabled := getEnvBool("NOTIFY_EMAIL_ENABLED", false)
+	var enabledChannels []string
+	if channels != "" {
+		enabledChannels = splitCSV(channels)
+	} else if emailEnabled {
+		enabledChannels = []string{ChannelEmail}
+	}
 	return Config{
 		BaseURL:         getEnvOrDefault("NOTIFY_BASE_URL", "http://localhost:8080"),
-		EnabledChannels: splitCSV(getEnvOrDefault("NOTIFY_CHANNELS", ChannelEmail)),
+		EnabledChannels: enabledChannels,
 		Email: EmailConfig{
-			Enabled:  getEnvBool("NOTIFY_EMAIL_ENABLED", false),
+			Enabled:  emailEnabled,
 			Host:     os.Getenv("NOTIFY_SMTP_HOST"),
 			User:     os.Getenv("NOTIFY_SMTP_USER"),
 			Password: os.Getenv("NOTIFY_SMTP_PASSWORD"),

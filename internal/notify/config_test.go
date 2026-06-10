@@ -21,7 +21,7 @@ func TestLoadConfigFromEnv_Defaults(t *testing.T) {
 	cfg := LoadConfigFromEnv()
 
 	assert.Equal(t, "http://localhost:8080", cfg.BaseURL)
-	assert.Equal(t, []string{ChannelEmail}, cfg.EnabledChannels)
+	assert.Empty(t, cfg.EnabledChannels, "channel list defaults to empty when email is disabled")
 	assert.False(t, cfg.Email.Enabled)
 	assert.Equal(t, "MadHatter Rota <noreply@example.com>", cfg.Email.From)
 	assert.Equal(t, 30*time.Second, cfg.Outbox.PollInterval)

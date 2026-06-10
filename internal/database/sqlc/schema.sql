@@ -217,3 +217,16 @@ CREATE TABLE IF NOT EXISTS notification_outbox (
 CREATE INDEX IF NOT EXISTS idx_outbox_pending_due
     ON notification_outbox(status, next_attempt_at)
     WHERE status = 'pending';
+
+-- Notification Preferences (per-member unsubscribe)
+CREATE TABLE IF NOT EXISTS notification_preferences (
+    member_id       TEXT PRIMARY KEY,
+    email_enabled   INTEGER NOT NULL DEFAULT 1,
+    disabled_at     DATETIME,
+    updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (member_id) REFERENCES team_members(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_notification_preferences_disabled
+    ON notification_preferences(email_enabled)
+    WHERE email_enabled = 0;

@@ -94,8 +94,6 @@ type fakeNotifier struct {
 	wfhStateChanges  int
 	coverAssignments int
 	lastSwapEvent    notify.SwapEvent
-	lastWFHEvent     notify.WFHEvent   //nolint:unused
-	lastCoverEvent   notify.CoverEvent //nolint:unused
 }
 
 func (f *fakeNotifier) SwapRequested(_ context.Context, e notify.SwapEvent) {
@@ -126,18 +124,16 @@ func (f *fakeNotifier) SwapCancelled(_ context.Context, e notify.SwapEvent) {
 	f.lastSwapEvent = e
 }
 
-func (f *fakeNotifier) WFHStateChanged(_ context.Context, e notify.WFHEvent) {
+func (f *fakeNotifier) WFHStateChanged(_ context.Context, _ notify.WFHEvent) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.wfhStateChanges++
-	f.lastWFHEvent = e
 }
 
-func (f *fakeNotifier) CoverAssigned(_ context.Context, e notify.CoverEvent) {
+func (f *fakeNotifier) CoverAssigned(_ context.Context, _ notify.CoverEvent) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.coverAssignments++
-	f.lastCoverEvent = e
 }
 
 // mustGetMemberID looks up a team member by email and returns their

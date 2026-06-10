@@ -346,7 +346,7 @@ func (e *Engine) processLeaveDate(ctx context.Context, d time.Time, members []da
 	cover, err := e.findCover(members, allLeaves, startIndex)
 	if err != nil {
 		// Skip if no cover available - this is intentional
-		return "", -1, nil //nolint:nilerr
+		return "", -1, nil //nolint:nilerr // no cover available is a valid outcome, not an error
 	}
 
 	if err := e.createCoverAssignment(ctx, dateStr, cover.ID, originalAssignmentID); err != nil {

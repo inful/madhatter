@@ -29,6 +29,7 @@ A comprehensive support duty management system with automatic scheduling, leave 
 - **Event-driven updates**: Schedule updates triggered on team changes, leave reports
 - **Dual-mode generation**: Fill gaps vs. regenerate from scratch
 - **Presence tracking**: Visual indicators for who's available and on leave
+- **Email notifications**: Team members are emailed on HAT-swap requests, WFH state changes, and cover assignments. See [NOTIFICATIONS.md](docs/NOTIFICATIONS.md).
 
 ## Quick Start
 

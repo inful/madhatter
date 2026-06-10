@@ -695,6 +695,17 @@ func (r dbRecipientResolver) ResolveByID(ctx context.Context, memberID string) (
 	return m.Email, m.Name, nil
 }
 
+// EmailEnabled implements notify.RecipientResolver. Returns true
+// when the member has not disabled email. A lookup error is
+// returned to the caller, which then defaults to "enabled" (so a
+// transient DB issue never silently drops notifications).
+func (r dbRecipientResolver) EmailEnabled(ctx context.Context, memberID string) (bool, error) {
+	if memberID == "" {
+		return true, nil
+	}
+	return r.db.IsNotificationEmailEnabled(ctx, memberID)
+}
+
 // rotaCoverAdapter bridges rota.CoverNotifier (which uses a local
 // CoverEvent) to notify.ChannelNotifier (which uses the production
 // CoverEvent). The two structs have identical fields but live in

@@ -42,7 +42,8 @@ func (c *recordingChannel) Sent() []channels.OutboundMessage {
 }
 
 type stubResolver struct {
-	byID map[string]fakeRecipient
+	byID     map[string]fakeRecipient
+	disabled map[string]bool
 }
 
 func (s stubResolver) ResolveByID(_ context.Context, id string) (string, string, error) {
@@ -51,6 +52,13 @@ func (s stubResolver) ResolveByID(_ context.Context, id string) (string, string,
 		return "", "", errUnknownMember
 	}
 	return r.email, r.name, nil
+}
+
+// EmailEnabled implements notify.RecipientResolver. By default
+// every member is enabled; tests opt specific members out via
+// the disabled map.
+func (s stubResolver) EmailEnabled(_ context.Context, id string) (bool, error) {
+	return !s.disabled[id], nil
 }
 
 var errUnknownMember = stringError("unknown")
@@ -67,7 +75,7 @@ func TestChannelNotifier_EnqueuesOneRowPerRecipientPerChannel(t *testing.T) {
 	resolver := stubResolver{byID: map[string]fakeRecipient{
 		"tgt": {email: "tgt@example.com", name: "Target"},
 	}}
-	r, err := newRenderer("https://x")
+	r, err := newRenderer("https://x", nil)
 	require.NoError(t, err)
 
 	ch := &recordingChannel{}
@@ -101,7 +109,7 @@ func TestChannelNotifier_UnknownRecipient_Skipped(t *testing.T) {
 	ctx := context.Background()
 
 	resolver := stubResolver{byID: map[string]fakeRecipient{}}
-	r, err := newRenderer("https://x")
+	r, err := newRenderer("https://x", nil)
 	require.NoError(t, err)
 
 	ch := &recordingChannel{}
@@ -129,7 +137,7 @@ func TestChannelNotifier_StartStopIsIdempotent(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	r, err := newRenderer("https://x")
+	r, err := newRenderer("https://x", nil)
 	require.NoError(t, err)
 	ch := &recordingChannel{}
 	worker := NewWorker(db, NewStaticResolver(ch), OutboxConfig{
@@ -141,6 +149,50 @@ func TestChannelNotifier_StartStopIsIdempotent(t *testing.T) {
 	cancel()
 	n.Stop()
 	n.Stop() // no-op
+}
+
+// TestChannelNotifier_DisabledRecipient_NotEnqueued verifies the
+// end-to-end unsubscribe path through the outbox: when
+// EmailEnabled returns false, no outbox row is written and the
+// recipient's email never reaches the worker.
+func TestChannelNotifier_DisabledRecipient_NotEnqueued(t *testing.T) {
+	db, cleanup := setupNotifyDB(t)
+	defer cleanup()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	r, err := newRenderer("https://x", nil)
+	require.NoError(t, err)
+	ch := &recordingChannel{}
+	worker := NewWorker(db, NewStaticResolver(ch), OutboxConfig{
+		PollInterval: time.Hour, MaxAttempts: 5, BackoffBase: time.Second,
+	}, nil)
+
+	resolver := stubResolver{
+		byID: map[string]fakeRecipient{
+			"tgt": {email: "tgt@example.com", name: "Target"},
+		},
+		disabled: map[string]bool{"tgt": true},
+	}
+	n := NewChannelNotifier(db, resolver, r, worker, []string{"test"}, nil)
+
+	n.SwapRequested(ctx, SwapEvent{
+		SwapID:         "swap-1",
+		TargetMemberID: "tgt",
+		TargetName:     "Target",
+		RequesterName:  "Requester",
+		RequesterDate:  "2026-09-01",
+		TargetDate:     "2026-09-15",
+	})
+
+	// Drive a single drain via the worker to make sure no row is
+	// sitting in the outbox.
+	worker.drain(ctx)
+	assert.Empty(t, ch.Sent(), "no channel call when recipient has unsubscribed")
+
+	rows, err := db.ClaimDueOutboxEntries(ctx, 10)
+	require.NoError(t, err)
+	assert.Empty(t, rows, "no outbox row written for an unsubscribed recipient")
 }
 
 // setupNotifyDB creates a temp database for notify tests.

@@ -129,7 +129,8 @@ type recipientRef struct {
 // enqueue resolves each recipient, renders the event, and writes one
 // outbox row per enabled channel. Recipient resolution failures are
 // logged and skipped. Outbox write failures are logged and dropped
-// (we do not block the calling handler).
+// (we do not block the calling handler). Recipients that have
+// disabled email are silently skipped.
 func (n *ChannelNotifier) enqueue(ctx context.Context, eventKind string, event any, recipients []recipientRef) {
 	for _, r := range recipients {
 		email, name, err := n.resolver.ResolveByID(ctx, r.id)
@@ -138,6 +139,20 @@ func (n *ChannelNotifier) enqueue(ctx context.Context, eventKind string, event a
 				slog.String("event_kind", eventKind),
 				slog.String("member_id", r.id),
 				slog.String("err", errMsg(err)))
+			continue
+		}
+		enabled, err := n.resolver.EmailEnabled(ctx, r.id)
+		if err != nil {
+			n.logger.Warn("notify: preference lookup failed; defaulting to enabled",
+				slog.String("event_kind", eventKind),
+				slog.String("member_id", r.id),
+				slog.String("err", err.Error()))
+			enabled = true
+		}
+		if !enabled {
+			n.logger.Debug("notify: skip unsubscribed recipient",
+				slog.String("event_kind", eventKind),
+				slog.String("member_id", r.id))
 			continue
 		}
 		if r.name != "" {

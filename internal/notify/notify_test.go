@@ -13,7 +13,9 @@ import (
 
 // fakeResolver is a minimal RecipientResolver for tests.
 type fakeResolver struct {
-	byID map[string]fakeRecipient
+	byID       map[string]fakeRecipient
+	disabled   map[string]bool
+	enabledErr error
 }
 
 type fakeRecipient struct {
@@ -27,6 +29,16 @@ func (f fakeResolver) ResolveByID(_ context.Context, memberID string) (string, s
 		return "", "", fmt.Errorf("not found: %s", memberID)
 	}
 	return r.email, r.name, nil
+}
+
+// EmailEnabled implements notify.RecipientResolver. The disabled
+// map lets tests opt specific members out. A non-nil enabledErr
+// simulates a transient DB failure.
+func (f fakeResolver) EmailEnabled(_ context.Context, memberID string) (bool, error) {
+	if f.enabledErr != nil {
+		return true, f.enabledErr
+	}
+	return !f.disabled[memberID], nil
 }
 
 // fakeChannel records every Send call.
@@ -203,4 +215,59 @@ func TestLogNotifier_CoverAssigned_NotifiesCoverMember(t *testing.T) {
 	assert.Contains(t, got.Subject, "Alice")
 	assert.Contains(t, got.Body, "2026-09-01")
 	assert.Contains(t, got.Body, "2026-09-05")
+}
+
+// TestLogNotifier_DisabledRecipient_Skipped verifies the one-click
+// unsubscribe path: when EmailEnabled returns false, the channel
+// is not called and no outbox row would be written.
+func TestLogNotifier_DisabledRecipient_Skipped(t *testing.T) {
+	t.Parallel()
+	email := &fakeChannel{name: "email"}
+	resolver := fakeResolver{
+		byID: map[string]fakeRecipient{
+			"req": {email: "req@example.com", name: "Requester"},
+			"tgt": {email: "tgt@example.com", name: "Target"},
+		},
+		disabled: map[string]bool{"tgt": true},
+	}
+	n := NewLogNotifier(resolver, nil, email)
+
+	n.SwapRequested(context.Background(), SwapEvent{
+		SwapID:            "swap-1",
+		RequesterMemberID: "req",
+		RequesterName:     "Requester",
+		TargetMemberID:    "tgt",
+		TargetName:        "Target",
+		RequesterDate:     "2026-09-01",
+		TargetDate:        "2026-09-15",
+	})
+
+	assert.Equal(t, 0, email.Calls(), "disabled recipient must not produce a Send call")
+}
+
+// TestLogNotifier_PreferenceLookupError_DefaultsEnabled verifies
+// the safety net: a transient DB failure during EmailEnabled
+// must not silently drop notifications. The notifier logs and
+// continues with the message.
+func TestLogNotifier_PreferenceLookupError_DefaultsEnabled(t *testing.T) {
+	t.Parallel()
+	email := &fakeChannel{name: "email"}
+	resolver := fakeResolver{
+		byID: map[string]fakeRecipient{
+			"tgt": {email: "tgt@example.com", name: "Target"},
+		},
+		enabledErr: errors.New("simulated DB blip"),
+	}
+	n := NewLogNotifier(resolver, nil, email)
+
+	n.SwapRequested(context.Background(), SwapEvent{
+		SwapID:         "swap-1",
+		TargetMemberID: "tgt",
+		TargetName:     "Target",
+		RequesterName:  "Requester",
+		RequesterDate:  "2026-09-01",
+		TargetDate:     "2026-09-15",
+	})
+
+	assert.Equal(t, 1, email.Calls(), "transient preference error must default to enabled, not drop the message")
 }

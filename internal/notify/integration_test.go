@@ -30,7 +30,7 @@ func TestChannelNotifier_EndToEnd_WritesOutboxRowsForRealRecipient(t *testing.T)
 	require.NoError(t, err)
 
 	// Real renderer and worker, with a fake channel.
-	r, err := NewRenderer("https://rota.example.com")
+	r, err := NewRenderer("https://rota.example.com", nil)
 	require.NoError(t, err)
 	fc := &endToEndChannel{name: "test"}
 	worker := NewWorker(db, NewStaticResolver(fc), OutboxConfig{
@@ -79,7 +79,7 @@ func TestChannelNotifier_EndToEnd_TwoEnabledChannels_WritesTwoRows(t *testing.T)
 	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
 	require.NoError(t, err)
 
-	r, err := NewRenderer("https://x")
+	r, err := NewRenderer("https://x", nil)
 	require.NoError(t, err)
 	emailCh := &endToEndChannel{name: "email"}
 	logCh := &endToEndChannel{name: "log"}
@@ -142,7 +142,7 @@ func TestResolver_RoundTrip_WorkerDeliversOutboxRows(t *testing.T) {
 	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
 	require.NoError(t, err)
 
-	r, err := NewRenderer("https://x")
+	r, err := NewRenderer("https://x", nil)
 	require.NoError(t, err)
 	ch := &endToEndChannel{name: "test"}
 	worker := NewWorker(db, NewStaticResolver(ch), OutboxConfig{
@@ -199,6 +199,16 @@ func (r dbRecipientResolver) ResolveByID(ctx context.Context, memberID string) (
 		return "", "", errNotFound
 	}
 	return m.Email, m.Name, nil
+}
+
+// EmailEnabled implements notify.RecipientResolver by looking up
+// the notification_preferences row. Mirrors the production
+// dbRecipientResolver.
+func (r dbRecipientResolver) EmailEnabled(ctx context.Context, memberID string) (bool, error) {
+	if memberID == "" {
+		return true, nil
+	}
+	return r.db.IsNotificationEmailEnabled(ctx, memberID)
 }
 
 var errNotFound = memberNotFoundError("member not found")

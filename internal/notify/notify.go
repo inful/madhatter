@@ -64,8 +64,18 @@ type outboundMessage struct {
 // RecipientResolver turns a member_id into a recipient. The production
 // resolver looks up team_members.email; the test resolver can return
 // canned values.
+//
+// EmailEnabled is a separate hook so the production resolver can
+// consult notification_preferences (a small per-event cache cost)
+// without the test resolver having to implement the lookup. The
+// zero-value behavior is "enabled" so resolvers that only implement
+// ResolveByID continue to work.
 type RecipientResolver interface {
 	ResolveByID(ctx context.Context, memberID string) (email, name string, err error)
+	// EmailEnabled returns false when the member has unsubscribed
+	// from email notifications. Implementations that don't track
+	// preferences can leave this at the default (return true).
+	EmailEnabled(ctx context.Context, memberID string) (bool, error)
 }
 
 // NewLogNotifier returns a LogNotifier that calls the given channels
@@ -173,6 +183,10 @@ func (n *LogNotifier) dispatch(
 		if err != nil || email == "" {
 			// Skip silently; production log would have a structured
 			// warning, but LogNotifier is the test/dev path.
+			continue
+		}
+		enabled, _ := resolver.EmailEnabled(ctx, r.memberID)
+		if !enabled {
 			continue
 		}
 		if r.nameHint != "" {

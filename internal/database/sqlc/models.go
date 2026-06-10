@@ -52,19 +52,20 @@ type LeaveRecord struct {
 }
 
 type NotificationOutbox struct {
-	ID            string         `json:"id"`
-	EventKind     string         `json:"event_kind"`
-	Channel       string         `json:"channel"`
-	Recipient     string         `json:"recipient"`
-	RecipientName sql.NullString `json:"recipient_name"`
-	Subject       string         `json:"subject"`
-	Body          string         `json:"body"`
-	Attempts      int64          `json:"attempts"`
-	LastError     sql.NullString `json:"last_error"`
-	NextAttemptAt time.Time      `json:"next_attempt_at"`
-	Status        string         `json:"status"`
-	CreatedAt     time.Time      `json:"created_at"`
-	SentAt        sql.NullTime   `json:"sent_at"`
+	ID             string         `json:"id"`
+	EventKind      string         `json:"event_kind"`
+	Channel        string         `json:"channel"`
+	Recipient      string         `json:"recipient"`
+	RecipientName  sql.NullString `json:"recipient_name"`
+	Subject        string         `json:"subject"`
+	Body           string         `json:"body"`
+	UnsubscribeUrl sql.NullString `json:"unsubscribe_url"`
+	Attempts       int64          `json:"attempts"`
+	LastError      sql.NullString `json:"last_error"`
+	NextAttemptAt  time.Time      `json:"next_attempt_at"`
+	Status         string         `json:"status"`
+	CreatedAt      time.Time      `json:"created_at"`
+	SentAt         sql.NullTime   `json:"sent_at"`
 }
 
 type NotificationPreference struct {

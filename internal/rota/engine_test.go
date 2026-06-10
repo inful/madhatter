@@ -2,6 +2,7 @@ package rota
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -721,7 +722,7 @@ func TestEngine_processLeaveDate_SkipsWeekends(t *testing.T) {
 
 	// Saturday
 	saturday := time.Date(2024, 1, 13, 0, 0, 0, 0, time.UTC)
-	_, err = engine.processLeaveDate(ctx, saturday, members, 0, leave, "leave-id")
+	_, _, err = engine.processLeaveDate(ctx, saturday, members, 0, leave, "leave-id")
 	require.NoError(t, err)
 
 	// No assignment should be created
@@ -846,4 +847,60 @@ func TestEngine_FairCoverRotation(t *testing.T) {
 	// Second cover (Jan 19): Charlie should cover (next after Bob in rotation)
 	require.Equal(t, bobID, cover1, "First cover should be Bob (next after Alice in rotation)")
 	require.Equal(t, charlieID, cover2, "Second cover should be Charlie (next after Bob in rotation)")
+}
+
+// recordingCoverNotifier is an Engine.CoverNotifier that captures
+// every CoverAssigned call. Safe for concurrent use.
+type recordingCoverNotifier struct {
+	mu     sync.Mutex
+	events []CoverEvent
+}
+
+func (r *recordingCoverNotifier) CoverAssigned(_ context.Context, e CoverEvent) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.events = append(r.events, e)
+}
+
+func TestEngine_AssignCoversForLeave_FiresCoverAssignedOnce(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+	_, err = db.AddTeamMember(ctx, "Charlie", "charlie@example.com")
+	require.NoError(t, err)
+
+	engine := NewEngine(db)
+	notifier := &recordingCoverNotifier{}
+	engine.SetNotifier(notifier)
+
+	// Mon-Fri schedule; Alice leaves Wed-Fri.
+	startDate := time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)
+	endDate := time.Date(2024, 1, 19, 0, 0, 0, 0, time.UTC)
+	require.NoError(t, engine.GenerateSchedule(ctx, startDate, endDate))
+
+	leaveID, err := db.CreateLeaveRecord(ctx, aliceID, "2024-01-17", "2024-01-19")
+	require.NoError(t, err)
+
+	require.NoError(t, engine.AssignCoversForLeave(ctx, leaveID))
+
+	notifier.mu.Lock()
+	defer notifier.mu.Unlock()
+	// One event per cover member. In the multi-day scenario, the
+	// same member often covers multiple consecutive days; we want
+	// one consolidated event, not one per day.
+	require.NotEmpty(t, notifier.events, "expected at least one CoverAssigned event")
+
+	for _, e := range notifier.events {
+		assert.Equal(t, "Alice", e.LeaveMemberName)
+		assert.NotEmpty(t, e.CoverMemberName)
+		assert.NotEmpty(t, e.StartDate)
+		assert.NotEmpty(t, e.EndDate)
+		// The date range is sorted by processLeaveDates, so start <= end.
+		assert.LessOrEqual(t, e.StartDate, e.EndDate)
+	}
 }

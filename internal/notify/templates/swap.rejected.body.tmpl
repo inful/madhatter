@@ -1,0 +1,18 @@
+Hi {{.RequesterName}},
+
+{{.TargetName}} has rejected your HAT-day swap request.
+
+  Your HAT day:      {{.RequesterDate}}
+  Their HAT day:     {{.TargetDate}}
+{{- if .Reason}}
+
+  Reason:            {{.Reason}}
+{{- end}}
+
+  {{.BaseURL}}/swaps
+
+— MadHatter Rota
+{{- if .UnsubscribeURL}}
+
+To stop receiving these emails: {{.UnsubscribeURL}}
+{{- end }}

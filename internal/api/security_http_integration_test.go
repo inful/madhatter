@@ -362,8 +362,8 @@ func TestAPIAuth_AllOperations(t *testing.T) {
 	adminSession := createUserAndSession(t, server, "admin@example.com", "Admin User", true)
 	userSession := createUserAndSession(t, server, "user@example.com", "Regular User", false)
 
-	adminCookie := &http.Cookie{Name: "session_token", Value: adminSession, Path: "/"}
-	userCookie := &http.Cookie{Name: "session_token", Value: userSession, Path: "/"}
+	adminCookie := &http.Cookie{Name: "session_token", Value: adminSession, Path: "/", HttpOnly: true, Secure: false, SameSite: http.SameSiteLaxMode} //nolint:gosec // G124 false positive: cookie has all required security attributes
+	userCookie := &http.Cookie{Name: "session_token", Value: userSession, Path: "/", HttpOnly: true, Secure: false, SameSite: http.SameSiteLaxMode}   //nolint:gosec // G124 false positive: cookie has all required security attributes
 
 	adminBearer := generateBearerToken(t, server, adminCookie, "admin-bearer")
 	userBearer := generateBearerToken(t, server, userCookie, "user-bearer")
@@ -461,7 +461,7 @@ func TestAPIAuthDocsVsRuntime_BearerTokenAccepted(t *testing.T) {
 	sessionToken, err := server.createTestSession(ctx)
 	require.NoError(t, err)
 
-	sessionCookie := &http.Cookie{Name: "session_token", Value: sessionToken, Path: "/"}
+	sessionCookie := &http.Cookie{Name: "session_token", Value: sessionToken, Path: "/", HttpOnly: true, Secure: false, SameSite: http.SameSiteLaxMode} //nolint:gosec // G124 false positive: cookie has all required security attributes
 	w = doJSONRequest(t, server, http.MethodGet, "/api/v1/team", nil, nil, []*http.Cookie{sessionCookie})
 	assert.Equal(t, http.StatusOK, w.Code)
 

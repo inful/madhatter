@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/inful/madhatter/internal/auth"
 	"github.com/inful/madhatter/internal/database"
 	"github.com/inful/madhatter/internal/database/sqlc"
+	"github.com/inful/madhatter/internal/notify"
 	"github.com/inful/madhatter/internal/rota"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -81,6 +83,70 @@ func seedSchedule(t *testing.T, db *database.DB) {
 	require.NoError(t, eng.GenerateSchedule(context.Background(), start, end))
 }
 
+// fakeNotifier records every event the handler dispatches. Safe for
+// concurrent use.
+type fakeNotifier struct {
+	mu               sync.Mutex
+	swapRequested    int
+	swapAccepted     int
+	swapRejected     int
+	swapCancelled    int
+	wfhStateChanges  int
+	coverAssignments int
+	lastSwapEvent    notify.SwapEvent
+}
+
+func (f *fakeNotifier) SwapRequested(_ context.Context, e notify.SwapEvent) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.swapRequested++
+	f.lastSwapEvent = e
+}
+
+func (f *fakeNotifier) SwapAccepted(_ context.Context, e notify.SwapEvent) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.swapAccepted++
+	f.lastSwapEvent = e
+}
+
+func (f *fakeNotifier) SwapRejected(_ context.Context, e notify.SwapEvent) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.swapRejected++
+	f.lastSwapEvent = e
+}
+
+func (f *fakeNotifier) SwapCancelled(_ context.Context, e notify.SwapEvent) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.swapCancelled++
+	f.lastSwapEvent = e
+}
+
+func (f *fakeNotifier) WFHStateChanged(_ context.Context, _ notify.WFHEvent) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.wfhStateChanges++
+}
+
+func (f *fakeNotifier) CoverAssigned(_ context.Context, _ notify.CoverEvent) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.coverAssignments++
+}
+
+// mustGetMemberID looks up a team member by email and returns their
+// id, failing the test if not found. Convenience for tests that
+// need to set up a swap with a known email.
+func mustGetMemberID(t *testing.T, db *database.DB, email string) string {
+	t.Helper()
+	m, err := db.GetMemberByEmail(context.Background(), email)
+	require.NoError(t, err)
+	require.NotNil(t, m)
+	return m.ID
+}
+
 // ---------------------------------------------------------------------------
 // swapValidationErrorMessage — error mapping tests
 // ---------------------------------------------------------------------------
@@ -117,7 +183,7 @@ func TestHandleSwaps_NoAuth_Panics(t *testing.T) {
 
 	h := newSwapHandler(t, db)
 
-	req := httptest.NewRequest(http.MethodGet, "/swaps", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/swaps", nil)
 	w := httptest.NewRecorder()
 
 	// safeRequireAuth middleware guarantees user is in context before the handler
@@ -133,7 +199,7 @@ func TestHandleSwaps_NotATeamMember_ShowsError(t *testing.T) {
 
 	h := newSwapHandler(t, db)
 
-	req := httptest.NewRequest(http.MethodGet, "/swaps", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/swaps", nil)
 	req = withUser(req, "nobody@example.com", "Nobody", false)
 	w := httptest.NewRecorder()
 
@@ -156,7 +222,7 @@ func TestHandleSwaps_TeamMember_RendersPage(t *testing.T) {
 
 	h := newSwapHandler(t, db)
 
-	req := httptest.NewRequest(http.MethodGet, "/swaps", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/swaps", nil)
 	req = withUser(req, "alice@example.com", "Alice", false)
 	w := httptest.NewRecorder()
 
@@ -183,7 +249,7 @@ func TestHandleSwaps_Post_MissingIDs_ShowsError(t *testing.T) {
 	h := newSwapHandler(t, db)
 
 	form := url.Values{}
-	req := httptest.NewRequest(http.MethodPost, "/swaps", strings.NewReader(form.Encode()))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/swaps", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req = withUser(req, "alice@example.com", "Alice", false)
 	w := httptest.NewRecorder()
@@ -216,7 +282,7 @@ func TestHandleSwaps_Post_SameIDs_ShowsError(t *testing.T) {
 		"requester_assignment_id": {aid},
 		"target_assignment_id":    {aid},
 	}
-	req := httptest.NewRequest(http.MethodPost, "/swaps", strings.NewReader(form.Encode()))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/swaps", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req = withUser(req, "alice@example.com", "Alice", false)
 	w := httptest.NewRecorder()
@@ -254,7 +320,7 @@ func TestHandleSwaps_Post_NotOwner_ShowsError(t *testing.T) {
 		"requester_assignment_id": {bobAssignments[0].ID},
 		"target_assignment_id":    {aliceAssignments[0].ID},
 	}
-	req := httptest.NewRequest(http.MethodPost, "/swaps", strings.NewReader(form.Encode()))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/swaps", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req = withUser(req, "alice@example.com", "Alice", false)
 	w := httptest.NewRecorder()
@@ -291,7 +357,7 @@ func TestHandleSwaps_Post_ValidSwap_Redirects(t *testing.T) {
 		"requester_assignment_id": {aliceAssignments[0].ID},
 		"target_assignment_id":    {bobAssignments[0].ID},
 	}
-	req := httptest.NewRequest(http.MethodPost, "/swaps", strings.NewReader(form.Encode()))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/swaps", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req = withUser(req, "alice@example.com", "Alice", false)
 	w := httptest.NewRecorder()
@@ -301,6 +367,47 @@ func TestHandleSwaps_Post_ValidSwap_Redirects(t *testing.T) {
 
 	assert.Equal(t, http.StatusSeeOther, w.Code)
 	assert.Equal(t, "/swaps", w.Header().Get("Location"))
+}
+
+func TestHandleSwaps_Post_ValidSwap_NotifiesTarget(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupSwapTestDB(t)
+	defer cleanup()
+
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	seedSchedule(t, db)
+
+	aliceAssignments, err := db.GetFutureAssignmentsForMember(ctx, mustGetMemberID(t, db, "alice@example.com"))
+	require.NoError(t, err)
+	require.NotEmpty(t, aliceAssignments)
+	bobAssignments, err := db.GetFutureAssignmentsForMember(ctx, mustGetMemberID(t, db, "bob@example.com"))
+	require.NoError(t, err)
+	require.NotEmpty(t, bobAssignments)
+
+	form := url.Values{
+		"requester_assignment_id": {aliceAssignments[0].ID},
+		"target_assignment_id":    {bobAssignments[0].ID},
+	}
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/swaps", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req = withUser(req, "alice@example.com", "Alice", false)
+	w := httptest.NewRecorder()
+
+	h := newSwapHandler(t, db)
+	notifier := &fakeNotifier{}
+	h.SetNotifier(notifier)
+	h.handleSwaps(w, req)
+
+	assert.Equal(t, http.StatusSeeOther, w.Code)
+	assert.Equal(t, 1, notifier.swapRequested)
+	assert.Equal(t, "Alice", notifier.lastSwapEvent.RequesterName)
+	assert.Equal(t, "Bob", notifier.lastSwapEvent.TargetName)
+	assert.Equal(t, aliceAssignments[0].Date, notifier.lastSwapEvent.RequesterDate)
+	assert.Equal(t, bobAssignments[0].Date, notifier.lastSwapEvent.TargetDate)
 }
 
 func TestHandleSwaps_Post_DuplicateSwap_ShowsError(t *testing.T) {
@@ -336,7 +443,7 @@ func TestHandleSwaps_Post_DuplicateSwap_ShowsError(t *testing.T) {
 		"requester_assignment_id": {aliceAID},
 		"target_assignment_id":    {bobAID},
 	}
-	req := httptest.NewRequest(http.MethodPost, "/swaps", strings.NewReader(form.Encode()))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/swaps", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req = withUser(req, "alice@example.com", "Alice", false)
 	w := httptest.NewRecorder()
@@ -370,7 +477,7 @@ func TestHandleSwaps_GetPendingOutgoingSwap_ShowsCancelButton(t *testing.T) {
 	_, err = db.CreateHatSwap(ctx, aliceAssignments[0].ID, bobAssignments[0].ID, aliceID, bobID)
 	require.NoError(t, err)
 
-	req := httptest.NewRequest(http.MethodGet, "/swaps", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/swaps", nil)
 	req = withUser(req, "alice@example.com", "Alice", false)
 	w := httptest.NewRecorder()
 
@@ -391,7 +498,7 @@ func TestHandleSwapCancel_NoAuth_Panics(t *testing.T) {
 
 	h := newSwapHandler(t, db)
 
-	req := httptest.NewRequest(http.MethodPost, "/swaps/some-id/cancel", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/swaps/some-id/cancel", nil)
 	req = withChiParam(req, "some-id")
 	w := httptest.NewRecorder()
 
@@ -410,7 +517,7 @@ func TestHandleSwapCancel_SwapNotFound_404(t *testing.T) {
 
 	h := newSwapHandler(t, db)
 
-	req := httptest.NewRequest(http.MethodPost, "/swaps/nonexistent/cancel", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/swaps/nonexistent/cancel", nil)
 	req = withUser(req, "alice@example.com", "Alice", false)
 	req = withChiParam(req, "nonexistent")
 	w := httptest.NewRecorder()
@@ -447,7 +554,7 @@ func TestHandleSwapCancel_NotRequester_403(t *testing.T) {
 	// Bob (target) tries to cancel Alice's (requester) request.
 	h := newSwapHandler(t, db)
 
-	req := httptest.NewRequest(http.MethodPost, "/swaps/"+swapID+"/cancel", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/swaps/"+swapID+"/cancel", nil)
 	req = withUser(req, "bob@example.com", "Bob", false)
 	req = withChiParam(req, swapID)
 	w := httptest.NewRecorder()
@@ -485,7 +592,7 @@ func TestHandleSwapCancel_AlreadyAccepted_400(t *testing.T) {
 
 	h := newSwapHandler(t, db)
 
-	req := httptest.NewRequest(http.MethodPost, "/swaps/"+swapID+"/cancel", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/swaps/"+swapID+"/cancel", nil)
 	req = withUser(req, "alice@example.com", "Alice", false)
 	req = withChiParam(req, swapID)
 	w := httptest.NewRecorder()
@@ -521,7 +628,7 @@ func TestHandleSwapCancel_Valid_Redirects(t *testing.T) {
 
 	h := newSwapHandler(t, db)
 
-	req := httptest.NewRequest(http.MethodPost, "/swaps/"+swapID+"/cancel", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/swaps/"+swapID+"/cancel", nil)
 	req = withUser(req, "alice@example.com", "Alice", false)
 	req = withChiParam(req, swapID)
 	w := httptest.NewRecorder()
@@ -546,7 +653,7 @@ func TestHandleSwapAccept_NoAuth_Panics(t *testing.T) {
 
 	h := newSwapHandler(t, db)
 
-	req := httptest.NewRequest(http.MethodPost, "/swaps/some-id/accept", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/swaps/some-id/accept", nil)
 	req = withChiParam(req, "some-id")
 	w := httptest.NewRecorder()
 
@@ -582,7 +689,7 @@ func TestHandleSwapAccept_NotTarget_403(t *testing.T) {
 	// Alice (requester) tries to accept her own request.
 	h := newSwapHandler(t, db)
 
-	req := httptest.NewRequest(http.MethodPost, "/swaps/"+swapID+"/accept", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/swaps/"+swapID+"/accept", nil)
 	req = withUser(req, "alice@example.com", "Alice", false)
 	req = withChiParam(req, swapID)
 	w := httptest.NewRecorder()
@@ -621,7 +728,7 @@ func TestHandleSwapAccept_Valid_ExecutesSwapAndRedirects(t *testing.T) {
 
 	h := newSwapHandler(t, db)
 
-	req := httptest.NewRequest(http.MethodPost, "/swaps/"+swapID+"/accept", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/swaps/"+swapID+"/accept", nil)
 	req = withUser(req, "bob@example.com", "Bob", false)
 	req = withChiParam(req, swapID)
 	w := httptest.NewRecorder()
@@ -661,7 +768,7 @@ func TestHandleSwapAccept_PastAssignments_RendersSwapsPageErrorAndCancelsSwap(t 
 	require.NoError(t, err)
 
 	h := newSwapHandler(t, db)
-	req := httptest.NewRequest(http.MethodPost, "/swaps/"+swapID+"/accept", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/swaps/"+swapID+"/accept", nil)
 	req = withUser(req, "bob@example.com", "Bob", false)
 	req = withChiParam(req, swapID)
 	w := httptest.NewRecorder()
@@ -712,7 +819,7 @@ func TestHandleSwapReject_NotTarget_403(t *testing.T) {
 	// Alice (requester) tries to reject.
 	h := newSwapHandler(t, db)
 
-	req := httptest.NewRequest(http.MethodPost, "/swaps/"+swapID+"/reject", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/swaps/"+swapID+"/reject", nil)
 	req = withUser(req, "alice@example.com", "Alice", false)
 	req = withChiParam(req, swapID)
 	w := httptest.NewRecorder()
@@ -748,7 +855,7 @@ func TestHandleSwapReject_Valid_SetsStatusAndRedirects(t *testing.T) {
 
 	h := newSwapHandler(t, db)
 
-	req := httptest.NewRequest(http.MethodPost, "/swaps/"+swapID+"/reject", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/swaps/"+swapID+"/reject", nil)
 	req = withUser(req, "bob@example.com", "Bob", false)
 	req = withChiParam(req, swapID)
 	w := httptest.NewRecorder()
@@ -773,7 +880,7 @@ func TestHandleSwapAdminDelete_NoAuth_Panics(t *testing.T) {
 
 	h := newSwapHandler(t, db)
 
-	req := httptest.NewRequest(http.MethodPost, "/swaps/some-id/delete", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/swaps/some-id/delete", nil)
 	req = withChiParam(req, "some-id")
 	w := httptest.NewRecorder()
 
@@ -792,7 +899,7 @@ func TestHandleSwapAdminDelete_NonAdmin_403(t *testing.T) {
 
 	h := newSwapHandler(t, db)
 
-	req := httptest.NewRequest(http.MethodPost, "/swaps/some-id/delete", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/swaps/some-id/delete", nil)
 	req = withUser(req, "alice@example.com", "Alice", false)
 	req = withChiParam(req, "some-id")
 	w := httptest.NewRecorder()
@@ -828,7 +935,7 @@ func TestHandleSwapAdminDelete_Valid_Redirects(t *testing.T) {
 
 	h := newSwapHandler(t, db)
 
-	req := httptest.NewRequest(http.MethodPost, "/swaps/"+swapID+"/delete", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/swaps/"+swapID+"/delete", nil)
 	req = withUser(req, "admin@example.com", "Admin", true)
 	req = withChiParam(req, swapID)
 	w := httptest.NewRecorder()

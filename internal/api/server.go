@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -23,6 +24,10 @@ import (
 	"github.com/inful/madhatter/internal/database"
 	"github.com/inful/madhatter/internal/database/sqlc"
 	"github.com/inful/madhatter/internal/holiday"
+	"github.com/inful/madhatter/internal/notify"
+	"github.com/inful/madhatter/internal/notify/channels"
+	emailchannel "github.com/inful/madhatter/internal/notify/channels/email"
+	logchannel "github.com/inful/madhatter/internal/notify/channels/log"
 	"github.com/inful/madhatter/internal/rota"
 	"github.com/inful/madhatter/internal/wfh"
 )
@@ -49,6 +54,8 @@ type Server struct {
 	holidayService *holiday.Service
 	wfhService     *wfh.Service
 	wfhScheduler   *wfh.Scheduler
+	notifier       *notify.ChannelNotifier
+	notifyWorker   *notify.Worker
 	//nolint:containedctx // Context is used for graceful shutdown
 	cleanupCtx    context.Context
 	cleanupCancel context.CancelFunc
@@ -94,13 +101,16 @@ func NewServer(db *database.DB, development bool) (*Server, error) {
 	}
 
 	// Initialize WFH service.
-	wfhCfg := wfh.LoadConfigFromEnv()
-	if wfhCfg.Enabled {
-		s.wfhService = wfh.NewService(db, wfhCfg)
-		s.wfhScheduler = wfh.NewScheduler(s.wfhService)
-		if err := s.wfhScheduler.Start(); err != nil {
-			log.Printf("Warning: Failed to start WFH scheduler: %v\n", err)
-		}
+	s.setupWFHService(db)
+
+	// Build the notification system. In --development mode (or when
+	// NOTIFY_EMAIL_ENABLED is false), only a LogChannel is registered;
+	// every "send" writes to slog and the worker is a no-op. In
+	// production the email channel is registered and the worker
+	// drains the outbox into SMTP. The notifier itself is always
+	// installed, so handlers can call it unconditionally.
+	if err := s.setupNotifier(db); err != nil {
+		return nil, err
 	}
 
 	// Apply authentication middleware to the router BEFORE creating HUMA API
@@ -111,9 +121,22 @@ func NewServer(db *database.DB, development bool) (*Server, error) {
 	}
 
 	// Create HUMA API with Chi adapter and security scheme documentation
-	config := huma.DefaultConfig("Support Rota API", "1.0.0")
+	s.api = humachi.New(router, buildHumaConfig())
 
-	// Configure OpenAPI security schemes
+	// Register all operations
+	s.registerOperations(development)
+	if err := s.registerWebRoutes(development); err != nil {
+		return nil, err
+	}
+
+	return s, nil
+}
+
+// buildHumaConfig returns the HUMA config with the OpenAPI security
+// schemes documented. Extracted to keep NewServer's cyclomatic
+// complexity below the lint limit.
+func buildHumaConfig() huma.Config {
+	config := huma.DefaultConfig("Support Rota API", "1.0.0")
 	config.Components.SecuritySchemes = map[string]*huma.SecurityScheme{
 		// Session-based authentication (web interface)
 		"sessionAuth": {
@@ -127,19 +150,49 @@ func NewServer(db *database.DB, development bool) (*Server, error) {
 			Type:         "http",
 			Scheme:       "bearer",
 			BearerFormat: "API Token",
-			Description:  "API token authentication using Bearer tokens. Generated via /api/v1/tokens/generate endpoint.",
+			Description:  "Token-based authentication using Bearer tokens. Generated via /api/v1/tokens/generate endpoint.",
 		},
 	}
+	return config
+}
 
-	s.api = humachi.New(router, config)
-
-	// Register all operations
-	s.registerOperations(development)
-	if err := s.registerWebRoutes(development); err != nil {
-		return nil, err
+// setupWFHService initializes the WFH service and scheduler when
+// WFH is enabled in config. Failures to start the scheduler are
+// logged but do not abort server construction. Extracted from
+// NewServer for cyclomatic complexity.
+func (s *Server) setupWFHService(db *database.DB) {
+	wfhCfg := wfh.LoadConfigFromEnv()
+	if !wfhCfg.Enabled {
+		return
 	}
+	s.wfhService = wfh.NewService(db, wfhCfg)
+	s.wfhScheduler = wfh.NewScheduler(s.wfhService)
+	if startErr := s.wfhScheduler.Start(); startErr != nil {
+		log.Printf("Warning: Failed to start WFH scheduler: %v\n", startErr)
+	}
+}
 
-	return s, nil
+// setupNotifier builds the notification system and wires it into
+// the consumers. In --development mode (or when
+// NOTIFY_EMAIL_ENABLED is false), only a LogChannel is registered;
+// in production the email channel is registered and the worker
+// drains the outbox into SMTP. Returns the underlying error
+// (wrapped) when building fails so NewServer can fail fast.
+func (s *Server) setupNotifier(db *database.DB) error {
+	notifier, worker, err := s.buildNotifier(db)
+	if err != nil {
+		return fmt.Errorf("build notifier: %w", err)
+	}
+	s.notifier = notifier
+	s.notifyWorker = worker
+
+	if s.wfhService != nil {
+		s.wfhService.SetNotifier(s.notifier)
+	}
+	if s.engine != nil {
+		s.engine.SetNotifier(rotaCoverAdapter{inner: s.notifier})
+	}
+	return nil
 }
 
 func (s *Server) setupSessionCleanup(ctx context.Context) {
@@ -219,11 +272,21 @@ func (s *Server) stopCleanup() {
 	if s.wfhScheduler != nil {
 		s.wfhScheduler.Stop()
 	}
+	// The notifier worker is cancelled via s.cleanupCtx; nothing
+	// more to do here. The goroutine exits when the context is
+	// cancelled.
 }
 
 func (s *Server) Start(ctx context.Context, port string) error {
 	s.setupSessionCleanup(ctx)
 	s.startLeaveCleanup()
+	if s.notifyWorker != nil {
+		// Run the outbox worker under the same lifecycle context as
+		// the rest of the background tasks; cancellation via
+		// s.stopCleanup() (or parent ctx cancel) stops it cleanly.
+		//nolint:contextcheck // cleanupCtx is properly cancelled in stopCleanup
+		go s.notifyWorker.Run(s.cleanupCtx)
+	}
 	defer s.stopCleanup()
 
 	// Use http.Server with timeouts for production
@@ -555,6 +618,120 @@ func (s *Server) handleCleanupExpiredTokens(ctx context.Context, input *struct{}
 	resp := &CleanupExpiredTokensOutput{}
 	resp.Body.Message = "Expired tokens cleaned up successfully"
 	return resp, nil
+}
+
+// buildNotifier wires the notification system: a resolver that maps
+// member_id to email, a renderer for templates, a worker that
+// dispatches outbox rows to registered channels, and a ChannelNotifier
+// that producer code calls. Returns the notifier and worker; the
+// caller is responsible for starting the worker.
+func (s *Server) buildNotifier(db *database.DB) (*notify.ChannelNotifier, *notify.Worker, error) {
+	cfg := notify.LoadConfigFromEnv()
+	if err := cfg.Validate(); err != nil {
+		return nil, nil, err
+	}
+
+	// Pick the channel set based on config.
+	var chans []channels.Channel
+	if cfg.Email.Enabled {
+		ch := emailchannel.New(
+			cfg.Email.Host,
+			cfg.Email.From,
+			cfg.Email.Identity,
+			cfg.Email.User,
+			cfg.Email.Password,
+		)
+		chans = append(chans, ch)
+		log.Printf("notify: email channel registered (host=%s, from=%s)", cfg.Email.Host, cfg.Email.From)
+	} else {
+		// No email configured — register a log channel so handlers'
+		// calls don't fail. This is the --development mode default.
+		chans = append(chans, logchannel.New(nil))
+		log.Println("notify: log channel registered (email disabled)")
+	}
+
+	// Build the worker. Its goroutine is started by Start().
+	resolver := notify.NewStaticResolver(chans...)
+	worker := notify.NewWorker(db, resolver, cfg.Outbox, nil)
+
+	// Build the renderer. The unsubscribe URL factory is wired
+	// when the server's signing secret is available; if the secret
+	// is missing the renderer silently drops the link (templates
+	// guard the footer on .UnsubscribeURL being non-empty).
+	secret := os.Getenv("SESSION_SECRET")
+	var unsubFn func(string) string
+	if secret != "" {
+		unsubFn = notify.UnsubscribeURLFactory(cfg.PublicBaseURL, secret)
+	}
+	r, err := notify.NewRenderer(cfg.BaseURL, unsubFn)
+	if err != nil {
+		return nil, nil, fmt.Errorf("build renderer: %w", err)
+	}
+
+	notifier := notify.NewChannelNotifier(
+		db,
+		dbRecipientResolver{db: db},
+		r,
+		worker,
+		cfg.EnabledChannels,
+		nil,
+	)
+	return notifier, worker, nil
+}
+
+// dbRecipientResolver resolves a member_id to an email address and
+// display name by looking up team_members. Used by the production
+// ChannelNotifier.
+type dbRecipientResolver struct {
+	db *database.DB
+}
+
+// ResolveByID implements notify.RecipientResolver.
+func (r dbRecipientResolver) ResolveByID(ctx context.Context, memberID string) (string, string, error) {
+	if memberID == "" {
+		return "", "", errors.New("empty member id")
+	}
+	m, err := r.db.GetMemberByID(ctx, memberID)
+	if err != nil {
+		return "", "", err
+	}
+	if m == nil {
+		return "", "", errors.New("member not found: " + memberID)
+	}
+	return m.Email, m.Name, nil
+}
+
+// EmailEnabled implements notify.RecipientResolver. Returns true
+// when the member has not disabled email. A lookup error is
+// returned to the caller, which then defaults to "enabled" (so a
+// transient DB issue never silently drops notifications).
+func (r dbRecipientResolver) EmailEnabled(ctx context.Context, memberID string) (bool, error) {
+	if memberID == "" {
+		return true, nil
+	}
+	return r.db.IsNotificationEmailEnabled(ctx, memberID)
+}
+
+// rotaCoverAdapter bridges rota.CoverNotifier (which uses a local
+// CoverEvent) to notify.ChannelNotifier (which uses the production
+// CoverEvent). The two structs have identical fields but live in
+// different packages to avoid an import cycle.
+type rotaCoverAdapter struct {
+	inner *notify.ChannelNotifier
+}
+
+// CoverAssigned implements rota.CoverNotifier.
+func (a rotaCoverAdapter) CoverAssigned(ctx context.Context, e rota.CoverEvent) {
+	a.inner.CoverAssigned(ctx, notify.CoverEvent{
+		LeaveID:         e.LeaveID,
+		LeaveMemberID:   e.LeaveMemberID,
+		LeaveMemberName: e.LeaveMemberName,
+		CoverMemberID:   e.CoverMemberID,
+		CoverMemberName: e.CoverMemberName,
+		StartDate:       e.StartDate,
+		EndDate:         e.EndDate,
+		ResolvedBy:      e.ResolvedBy,
+	})
 }
 
 // generateSecureToken generates a cryptographically secure API token.

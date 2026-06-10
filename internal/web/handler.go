@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"html/template"
 	"sync"
 	"sync/atomic"
@@ -10,6 +11,7 @@ import (
 	"github.com/inful/madhatter/internal/auth"
 	"github.com/inful/madhatter/internal/calendar"
 	"github.com/inful/madhatter/internal/database"
+	"github.com/inful/madhatter/internal/notify"
 	"github.com/inful/madhatter/internal/rota"
 	"github.com/inful/madhatter/internal/wfh"
 )
@@ -41,6 +43,17 @@ type Handler struct {
 	pendingMu      sync.Mutex
 	pendingRestore map[string]pendingRestoreItem
 	wfhService     *wfh.Service
+	notifier       notify.Notifier
+
+	// Unsubscribe plumbing. The secret is shared with the renderer
+	// and the email channel via unsubscribeURLFn so URLs minted
+	// for the email body and the List-Unsubscribe header come from
+	// the same key. publicBaseURL is the externally-visible origin
+	// (e.g. https://rota.example.com); when empty, unsubscribe
+	// URLs are suppressed in templates.
+	unsubscribeSecret string
+	publicBaseURL     string
+	unsubscribeURLFn  func(memberID string) string
 }
 
 type pendingRestoreItem struct {
@@ -134,9 +147,40 @@ func (h *Handler) SetWFHService(svc *wfh.Service) {
 	h.wfhService = svc
 }
 
+// SetNotifier wires the notification dispatcher. Handlers call into
+// it after state changes that should email a user. nil is treated as
+// "no notifier wired" — handlers tolerate this so tests can omit the
+// dependency.
+func (h *Handler) SetNotifier(n notify.Notifier) {
+	h.notifier = n
+}
+
+// notifierOrNil returns the installed notifier, or a no-op when none
+// is wired. The no-op satisfies the notify.Notifier interface but
+// drops every event, so handlers can call it unconditionally.
+func (h *Handler) notifierOrNil() notify.Notifier {
+	if h.notifier == nil {
+		return notifyNoop{}
+	}
+	return h.notifier
+}
+
 // SetHolidayLookup wires a holiday lookup that returns the holiday
 // name for a given date. Used by the calendar package's per-day
 // presence snapshot. nil is allowed (every date is non-holiday).
 func (h *Handler) SetHolidayLookup(l calendar.HolidayLookup) {
 	h.holidayLookup = l
 }
+
+// notifyNoop is the no-op notifier used when a handler is constructed
+// without a real Notifier (e.g. in some unit tests). It exists so
+// handlers can call h.notifierOrNil().SwapXxx(...) without nil checks
+// at every call site.
+type notifyNoop struct{}
+
+func (notifyNoop) SwapRequested(_ context.Context, _ notify.SwapEvent)  {}
+func (notifyNoop) SwapAccepted(_ context.Context, _ notify.SwapEvent)   {}
+func (notifyNoop) SwapRejected(_ context.Context, _ notify.SwapEvent)   {}
+func (notifyNoop) SwapCancelled(_ context.Context, _ notify.SwapEvent)  {}
+func (notifyNoop) WFHStateChanged(_ context.Context, _ notify.WFHEvent) {}
+func (notifyNoop) CoverAssigned(_ context.Context, _ notify.CoverEvent) {}

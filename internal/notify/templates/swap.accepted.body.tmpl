@@ -1,0 +1,16 @@
+Hi {{.RequesterName}},
+
+Your HAT-day swap with {{.TargetName}} has been accepted.
+
+  {{.RequesterName}}'s day: {{.RequesterDate}}
+  {{.TargetName}}'s day:  {{.TargetDate}}
+
+The rota has been updated.
+
+  {{.BaseURL}}/
+
+— MadHatter Rota
+{{- if .UnsubscribeURL}}
+
+To stop receiving these emails: {{.UnsubscribeURL}}
+{{- end }}

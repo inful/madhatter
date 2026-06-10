@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/inful/madhatter/internal/database"
+	"github.com/inful/madhatter/internal/notify"
 )
 
 const (
@@ -61,13 +62,21 @@ func LoadConfigFromEnv() Config {
 
 // Service orchestrates WFH request settlement and quota management.
 type Service struct {
-	db  *database.DB
-	cfg Config
+	db       *database.DB
+	cfg      Config
+	notifier notify.Notifier
 }
 
 // NewService creates a new WFH service with the given database and configuration.
 func NewService(db *database.DB, cfg Config) *Service {
 	return &Service{db: db, cfg: cfg}
+}
+
+// SetNotifier wires a notifier that the service calls after each WFH
+// state transition (settlement approve/deny, admin withdraw). nil
+// disables notifications; tests can omit the dependency.
+func (s *Service) SetNotifier(n notify.Notifier) {
+	s.notifier = n
 }
 
 // Config returns the service configuration.
@@ -260,9 +269,43 @@ func (s *Service) settleDate(ctx context.Context, date string, pending []databas
 		}
 		if err := s.db.UpdateWFHRequestStatus(ctx, prioritized[i].ID, status); err != nil {
 			log.Printf("WFH: failed to update request %s to %s: %v\n", prioritized[i].ID, status, err)
+			continue
 		}
+		s.fireWFHStateChanged(ctx, prioritized[i], database.WFHStatusPending, status, "system")
 	}
 	return nil
+}
+
+// fireWFHStateChanged invokes the wired notifier (if any) with the
+// new WFH state. nil notifier is a no-op.
+func (s *Service) fireWFHStateChanged(ctx context.Context, req database.WFHRequest, oldStatus, newStatus, actorName string) {
+	if s.notifier == nil {
+		return
+	}
+	s.notifier.WFHStateChanged(ctx, notify.WFHEvent{
+		RequestID:  req.ID,
+		MemberID:   req.MemberID,
+		MemberName: s.resolveMemberName(ctx, req.MemberID),
+		Date:       req.Date,
+		OldStatus:  oldStatus,
+		NewStatus:  newStatus,
+		ActorName:  actorName,
+	})
+}
+
+// resolveMemberName looks up a member's display name for the
+// notification. Returns "" if the member is not found; the notifier
+// itself skips recipients with empty addresses but a missing name
+// is non-fatal.
+func (s *Service) resolveMemberName(ctx context.Context, memberID string) string {
+	if memberID == "" {
+		return ""
+	}
+	m, err := s.db.GetMemberByID(ctx, memberID)
+	if err != nil || m == nil {
+		return ""
+	}
+	return m.Name
 }
 
 // leaveMemberIDsForDate returns the set of team-member IDs on leave for date.

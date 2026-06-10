@@ -1,0 +1,19 @@
+Hi,
+
+Your Work-From-Home request for {{.Date}} has been {{.NewStatus}}.
+{{- if .OldStatus}}
+
+  Status: {{.OldStatus}} -> {{.NewStatus}}
+{{- end}}
+{{- if .ActorName}}
+
+  Action by: {{.ActorName}}
+{{- end}}
+
+  {{.BaseURL}}/wfh
+
+— MadHatter Rota
+{{- if .UnsubscribeURL}}
+
+To stop receiving these emails: {{.UnsubscribeURL}}
+{{- end }}

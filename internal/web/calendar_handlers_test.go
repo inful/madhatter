@@ -91,7 +91,7 @@ func newCalendarTestHandler(t *testing.T, db *database.DB) *Handler {
 // params are populated. Returns the recorded response.
 func doCalendar(t *testing.T, h *Handler, path string) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(http.MethodGet, path, nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, path, nil)
 	rr := httptest.NewRecorder()
 	h.Router().ServeHTTP(rr, req)
 	return rr

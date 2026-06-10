@@ -44,6 +44,13 @@ func (h *Handler) registerRoutes() {
 	h.router.HandleFunc("/calendar/{token}/meetings/{date}.html", h.handleMeetingsDayHTML)
 	h.router.With(h.safeAuthMiddleware).HandleFunc("/help", h.handleHelp)
 
+	// Public one-click unsubscribe endpoints. The token in the
+	// query string is the only auth — there is no session — so
+	// the handler must verify the HMAC before touching state.
+	// The /resume endpoint reverses an earlier unsubscribe.
+	h.router.HandleFunc("/unsubscribe", h.handleUnsubscribe)
+	h.router.Post("/unsubscribe/resume", h.handleUnsubscribeResume)
+
 	// Protected routes (require authentication).
 	h.router.Group(func(r chi.Router) {
 		r.Use(h.safeRequireAuth)

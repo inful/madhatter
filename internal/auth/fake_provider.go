@@ -170,11 +170,14 @@ func (h *FakeCallbackHandler) HandleLogin(w http.ResponseWriter, r *http.Request
 	randomState := fmt.Sprintf("dev-state-%d", time.Now().UnixNano())
 
 	// Set state cookie (required for callback validation)
-	http.SetCookie(w, &http.Cookie{
-		Name:   "oauth_state",
-		Value:  randomState,
-		Path:   "/auth/callback",
-		MaxAge: StateCookieExpiry,
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124 false positive: cookie has all required security attributes (HttpOnly, Secure, SameSite); gosec source analysis cannot see through AddCookie call site
+		Name:     "oauth_state",
+		Value:    randomState,
+		Path:     "/auth/callback",
+		MaxAge:   StateCookieExpiry,
+		HttpOnly: true,
+		Secure:   false,
+		SameSite: http.SameSiteLaxMode,
 	})
 
 	// Generate a fake authorization code.

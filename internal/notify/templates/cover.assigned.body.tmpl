@@ -1,0 +1,16 @@
+Hi,
+
+You have been assigned to cover the rota for {{.LeaveMemberName}}
+from {{.StartDate}} to {{.EndDate}}.
+{{- if eq .ResolvedBy "leave_edit"}}
+
+(Another leave was edited and the cover assignment rotated to you.)
+{{- end}}
+
+  {{.BaseURL}}/
+
+— MadHatter Rota
+{{- if .UnsubscribeURL}}
+
+To stop receiving these emails: {{.UnsubscribeURL}}
+{{- end }}

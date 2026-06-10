@@ -79,6 +79,12 @@ func (db *DB) ExecContext(ctx context.Context, query string, args ...any) (sql.R
 	return db.db.ExecContext(ctx, query, args...)
 }
 
+// QueryContext runs a read-only SQL query. Exposed mainly for tests and
+// one-off inspection; production code should use the typed sqlc queries.
+func (db *DB) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	return db.db.QueryContext(ctx, query, args...)
+}
+
 // CreateBackup creates a consistent SQLite database snapshot and returns its bytes.
 func (db *DB) CreateBackup(ctx context.Context) ([]byte, error) {
 	backupPath := filepath.Join(os.TempDir(), fmt.Sprintf("madhatter-backup-%d.db", time.Now().UnixNano()))

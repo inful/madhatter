@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/inful/madhatter/internal/auth"
 	"github.com/inful/madhatter/internal/database"
+	"github.com/inful/madhatter/internal/notify"
 	"github.com/inful/madhatter/internal/wfh"
 )
 
@@ -286,10 +287,29 @@ func (h *Handler) handleWFHAdminWithdraw(w http.ResponseWriter, r *http.Request)
 		withdrawalHours = h.wfhService.Config().WithdrawalHours
 	}
 
+	// Load the request before withdrawal so the notifier has the
+	// member_id and date. After the UPDATE, the request is still
+	// readable but its status is already 'withdrawn'.
+	req, err := h.db.GetWFHRequestByID(ctx, id)
+	if err != nil {
+		http.Error(w, wfhWebErrorMessage(err), http.StatusBadRequest)
+		return
+	}
+
 	if err := h.db.WithdrawWFHRequest(ctx, id, user.UserID, withdrawalHours); err != nil {
 		http.Error(w, wfhWebErrorMessage(err), http.StatusBadRequest)
 		return
 	}
+
+	h.notifierOrNil().WFHStateChanged(ctx, notify.WFHEvent{
+		RequestID:  req.ID,
+		MemberID:   req.MemberID,
+		MemberName: h.memberName(ctx, req.MemberID),
+		Date:       req.Date,
+		OldStatus:  database.WFHStatusApproved,
+		NewStatus:  database.WFHStatusWithdrawn,
+		ActorName:  user.Name,
+	})
 
 	http.Redirect(w, r, "/admin/wfh", http.StatusSeeOther)
 }

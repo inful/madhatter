@@ -195,3 +195,39 @@ CREATE INDEX IF NOT EXISTS idx_wfh_requests_date      ON wfh_requests(date);
 CREATE INDEX IF NOT EXISTS idx_wfh_requests_member    ON wfh_requests(member_id);
 CREATE INDEX IF NOT EXISTS idx_wfh_requests_status    ON wfh_requests(status);
 CREATE INDEX IF NOT EXISTS idx_wfh_requests_recurring ON wfh_requests(member_id, date, is_recurring);
+
+-- Notification Outbox
+CREATE TABLE IF NOT EXISTS notification_outbox (
+    id              TEXT PRIMARY KEY,
+    event_kind      TEXT NOT NULL,
+    channel         TEXT NOT NULL,
+    recipient       TEXT NOT NULL,
+    recipient_name  TEXT,
+    subject         TEXT NOT NULL,
+    body            TEXT NOT NULL,
+    unsubscribe_url TEXT,
+    attempts        INTEGER NOT NULL DEFAULT 0,
+    last_error      TEXT,
+    next_attempt_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    status          TEXT NOT NULL DEFAULT 'pending'
+                    CHECK (status IN ('pending', 'sent', 'dead')),
+    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    sent_at         DATETIME
+);
+
+CREATE INDEX IF NOT EXISTS idx_outbox_pending_due
+    ON notification_outbox(status, next_attempt_at)
+    WHERE status = 'pending';
+
+-- Notification Preferences (per-member unsubscribe)
+CREATE TABLE IF NOT EXISTS notification_preferences (
+    member_id       TEXT PRIMARY KEY,
+    email_enabled   INTEGER NOT NULL DEFAULT 1,
+    disabled_at     DATETIME,
+    updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (member_id) REFERENCES team_members(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_notification_preferences_disabled
+    ON notification_preferences(email_enabled)
+    WHERE email_enabled = 0;

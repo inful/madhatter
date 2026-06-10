@@ -5,10 +5,12 @@ import (
 	"math"
 	"path/filepath"
 	"runtime"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/inful/madhatter/internal/database"
+	"github.com/inful/madhatter/internal/notify"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -351,7 +353,8 @@ func TestSettlePendingRequests_NoDoubleCountForApprovedRecurringWFH(t *testing.T
 	require.NoError(t, db.SetTeamMemberRecurringWFHDays(ctx, daveID, database.RecurringWFHDays{Monday: true, Tuesday: true, Wednesday: true, Thursday: true, Friday: true}))
 
 	// Seed approved request for permanent-WFH member (legacy/existing data case) and ensure no double counting.
-	daveApproved, err := db.ExecContext(ctx,
+	daveApproved, err := db.ExecContext(
+		ctx,
 		"INSERT INTO wfh_requests (id, member_id, date, status) VALUES (?, ?, ?, ?)",
 		"dave-approved-1", daveID, targetDateStr, database.WFHStatusApproved,
 	)
@@ -434,4 +437,84 @@ func TestCheckQuota_RejectsHoliday(t *testing.T) {
 	hasQuota, err := svc.CheckQuota(ctx, memberID, holidayDate.Format("2006-01-02"))
 	require.ErrorIs(t, err, database.ErrWFHOnHoliday)
 	assert.False(t, hasQuota)
+}
+
+// recordingNotifier is a notify.Notifier that records every
+// WFHStateChanged call. Used to assert settlement fires notifications
+// for each settled request.
+type recordingNotifier struct {
+	mu     sync.Mutex
+	events []notify.WFHEvent
+}
+
+func (r *recordingNotifier) WFHStateChanged(_ context.Context, e notify.WFHEvent) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.events = append(r.events, e)
+}
+func (r *recordingNotifier) SwapRequested(_ context.Context, _ notify.SwapEvent)  {}
+func (r *recordingNotifier) SwapAccepted(_ context.Context, _ notify.SwapEvent)   {}
+func (r *recordingNotifier) SwapRejected(_ context.Context, _ notify.SwapEvent)   {}
+func (r *recordingNotifier) SwapCancelled(_ context.Context, _ notify.SwapEvent)  {}
+func (r *recordingNotifier) CoverAssigned(_ context.Context, _ notify.CoverEvent) {}
+
+func TestSettlePendingRequests_FiresNotifierForEachTransition(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	cfg := testConfig()
+	cfg.MinOnsitePercentage = 50
+	cfg.MinOnsiteAbsolute = 1
+	svc := NewService(db, cfg)
+
+	today := nextBusinessDay(time.Now().UTC())
+	targetDate := nextBusinessDay(today.AddDate(0, 0, 1))
+	targetDateStr := targetDate.Format("2006-01-02")
+	todayStr := today.Format("2006-01-02")
+
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+	carolID, err := db.AddTeamMember(ctx, "Carol", "carol@example.com")
+	require.NoError(t, err)
+	daveID, err := db.AddTeamMember(ctx, "Dave", "dave@example.com")
+	require.NoError(t, err)
+
+	// Dave on leave so on-site capacity is reduced.
+	_, err = db.CreateLeaveRecord(ctx, daveID, targetDateStr, targetDateStr)
+	require.NoError(t, err)
+
+	// Bob's earlier WFH today reduces available slots for tomorrow.
+	bobUsed, err := db.CreateWFHRequest(ctx, bobID, todayStr)
+	require.NoError(t, err)
+	require.NoError(t, db.UpdateWFHRequestStatus(ctx, bobUsed.ID, database.WFHStatusApproved))
+
+	// Bob and Carol request WFH for tomorrow; only one will be approved.
+	bobPending, err := db.CreateWFHRequest(ctx, bobID, targetDateStr)
+	require.NoError(t, err)
+	carolPending, err := db.CreateWFHRequest(ctx, carolID, targetDateStr)
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, "UPDATE wfh_requests SET created_at = ? WHERE id = ?", "2026-01-01 08:00:00", bobPending.ID)
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, "UPDATE wfh_requests SET created_at = ? WHERE id = ?", "2026-01-01 09:00:00", carolPending.ID)
+	require.NoError(t, err)
+
+	notifier := &recordingNotifier{}
+	svc.SetNotifier(notifier)
+
+	require.NoError(t, svc.SettlePendingRequests(ctx))
+
+	notifier.mu.Lock()
+	defer notifier.mu.Unlock()
+	require.Len(t, notifier.events, 2)
+
+	statuses := []string{notifier.events[0].NewStatus, notifier.events[1].NewStatus}
+	assert.ElementsMatch(t, []string{database.WFHStatusApproved, database.WFHStatusDenied}, statuses)
+
+	actors := []string{notifier.events[0].ActorName, notifier.events[1].ActorName}
+	for _, a := range actors {
+		assert.Equal(t, "system", a)
+	}
 }

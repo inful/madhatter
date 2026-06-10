@@ -1,0 +1,94 @@
+{{define "calendar_meetings_day.html"}}
+{{template "base" .}}
+{{end}}
+
+{{define "calendar_meetings_day_styles"}}
+<style>
+    .meeting-card {
+        border: 1px solid rgba(102, 126, 234, 0.18);
+        background: linear-gradient(180deg, rgba(102, 126, 234, 0.05) 0%, rgba(255, 255, 255, 0.96) 100%);
+        box-shadow: 0 6px 14px rgba(25, 35, 70, 0.08);
+    }
+    .meeting-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        align-items: center;
+    }
+    .meeting-time {
+        font-weight: 700;
+        color: #2d3748;
+    }
+    .meeting-text {
+        white-space: pre-wrap;
+        font-family: monospace;
+        font-size: 0.85rem;
+        background: rgba(0, 0, 0, 0.04);
+        padding: 0.75rem;
+        border-radius: 4px;
+        margin-top: 0.5rem;
+    }
+    .meeting-html {
+        margin-top: 0.5rem;
+    }
+    .empty-state {
+        text-align: center;
+        padding: 2rem;
+        color: #718096;
+    }
+</style>
+{{end}}
+
+{{define "calendar_meetings_day_scripts"}}
+{{end}}
+
+{{define "calendar_meetings_day_title"}}Meetings on {{.Date}}{{end}}
+
+{{define "calendar_meetings_day_content"}}
+{{template "user_card" .}}
+{{template "page_header" (dict "Title" (printf "Meetings on %s" .Date) "Icon" "fas fa-comments" "BackHref" "/" "BackLabel" "Dashboard")}}
+
+<div class="card">
+    <header class="card-header">
+        <p class="card-header-title">
+            <i class="fas fa-calendar-day mr-2"></i> {{.Date}}
+        </p>
+        <p class="card-header-icon">
+            <a href="/calendar/{{.Token}}/meetings.ics" class="button is-small is-light" title="Subscribe to the full meetings calendar">
+                <span class="icon"><i class="fas fa-calendar-plus"></i></span>
+                <span>Subscribe</span>
+            </a>
+        </p>
+    </header>
+    <div class="card-content">
+        {{if .Meetings}}
+            {{range .Meetings}}
+            <div class="meeting-card p-4 mb-4">
+                <div class="meeting-meta">
+                    <span class="meeting-time">
+                        <i class="fas fa-clock mr-1"></i> {{.StartTime}}–{{.EndTime}}
+                    </span>
+                    <span class="tag is-info is-light">{{.Name}}</span>
+                    {{if .TeamsURL}}
+                    <a class="tag is-link is-light" href="{{.TeamsURL}}" target="_blank" rel="noopener">
+                        <i class="fas fa-video mr-1"></i> Teams
+                    </a>
+                    {{end}}
+                </div>
+                {{if .HTML}}
+                <div class="meeting-html content">{{.HTML}}</div>
+                {{end}}
+                {{if .Text}}
+                <pre class="meeting-text">{{.Text}}</pre>
+                {{end}}
+            </div>
+            {{end}}
+        {{else}}
+            <div class="empty-state">
+                <p><i class="fas fa-coffee"></i> No meetings scheduled on this day (weekend or non-business day).</p>
+            </div>
+        {{end}}
+    </div>
+</div>
+{{end}}
+

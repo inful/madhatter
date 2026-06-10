@@ -10,7 +10,9 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/inful/madhatter/internal/auth"
+	"github.com/inful/madhatter/internal/database"
 	"github.com/inful/madhatter/internal/database/sqlc"
 )
 
@@ -46,6 +48,7 @@ func (h *Handler) handleTeamPost(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/team", http.StatusSeeOther)
 }
 
+//nolint:cyclop // Team page handler orchestrates reads/sync/render branches.
 func (h *Handler) handleTeam(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	data := map[string]any{
@@ -67,6 +70,14 @@ func (h *Handler) handleTeam(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	if h.development {
+		if syncErr := h.syncDevelopmentUsersWithTeamMembers(ctx, members); syncErr != nil {
+			http.Error(w, syncErr.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
 	users, err := h.db.GetQueries().ListActiveUsers(ctx)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -106,6 +117,33 @@ func (h *Handler) handleTeam(w http.ResponseWriter, r *http.Request) {
 	if err := h.tmpl.ExecuteTemplate(w, "team.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+func (h *Handler) syncDevelopmentUsersWithTeamMembers(ctx context.Context, members []database.TeamMember) error {
+	for _, member := range members {
+		_, err := h.db.GetQueries().GetUserByEmail(ctx, member.Email)
+		if err == nil {
+			continue
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+
+		_, createErr := h.db.GetQueries().CreateUser(ctx, sqlc.CreateUserParams{
+			ID:         uuid.New().String(),
+			Email:      member.Email,
+			Name:       member.Name,
+			Provider:   "fake",
+			ProviderID: member.Email,
+			IsAdmin:    sql.NullInt64{Int64: 0, Valid: true},
+			IsActive:   sql.NullInt64{Int64: 1, Valid: true},
+		})
+		if createErr != nil {
+			return createErr
+		}
+	}
+
+	return nil
 }
 
 // validateTeamMemberInput validates name and email inputs.
@@ -159,6 +197,51 @@ func (h *Handler) handleTeamMemberEdit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, "/team", http.StatusSeeOther)
+}
+
+func (h *Handler) handleTeamMemberPermanentWFHUpdate(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	memberID := chi.URLParam(r, "id")
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxTeamFormBytes)
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	days := database.RecurringWFHDays{
+		Monday:    parseCheckboxBool(r.PostForm.Get("recurring_wfh_monday")),
+		Tuesday:   parseCheckboxBool(r.PostForm.Get("recurring_wfh_tuesday")),
+		Wednesday: parseCheckboxBool(r.PostForm.Get("recurring_wfh_wednesday")),
+		Thursday:  parseCheckboxBool(r.PostForm.Get("recurring_wfh_thursday")),
+		Friday:    parseCheckboxBool(r.PostForm.Get("recurring_wfh_friday")),
+	}
+
+	_, err := h.db.GetMemberByID(ctx, memberID)
+	if errors.Is(err, sql.ErrNoRows) {
+		http.Error(w, "team member not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := h.db.SetTeamMemberRecurringWFHDays(ctx, memberID, days); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, "/team", http.StatusSeeOther)
+}
+
+func parseCheckboxBool(v string) bool {
+	return v == "1" || v == "on" || strings.EqualFold(v, "true")
 }
 
 // guardAdminDemotion returns a non-zero HTTP status and error when demoting isCurrentlyAdmin

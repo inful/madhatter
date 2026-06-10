@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html/template"
 	"strings"
+	texttemplate "text/template"
 	"time"
 	"unicode"
 
@@ -43,11 +44,41 @@ type ICalGenerator struct {
 
 	supportDayLinks []MeetingLink
 	withAlarm       bool
+
+	supportAssignmentTextTemplate *texttemplate.Template
+	supportAssignmentHTMLTemplate *template.Template
+	leaveTextTemplate             *texttemplate.Template
+	leaveHTMLTemplate             *template.Template
+	holidayTextTemplate           *texttemplate.Template
+	holidayHTMLTemplate           *template.Template
 }
 
 type SupportCalendarOptions struct {
 	SupportDayLinks []MeetingLink
 	WithAlarm       bool
+
+	// ShuffleSeed drives the per-day stable randomisation in the
+	// snapshot. Empty = built-in default.
+	ShuffleSeed string
+
+	// WFHMaterialiser, when non-nil, is invoked once per day before
+	// the snapshot is built. Used to make sure recurring-WFH rows are
+	// present in the WFH query.
+	WFHMaterialiser WFHMaterialiser
+
+	// HolidayLookup, when non-nil, supplies the holiday name for a
+	// given date in the snapshot. nil is allowed (every date is
+	// non-holiday).
+	HolidayLookup HolidayLookup
+
+	// Template overrides. Empty values fall back to built-in defaults
+	// that reproduce today's hard-coded output exactly.
+	SupportAssignmentTemplateTextPath string
+	SupportAssignmentTemplateHTMLPath string
+	LeaveTemplateTextPath             string
+	LeaveTemplateHTMLPath             string
+	HolidayTemplateTextPath           string
+	HolidayTemplateHTMLPath           string
 }
 
 // NewICalGeneratorWithMetadata creates a new iCalendar generator with custom metadata.
@@ -84,8 +115,144 @@ func (g *ICalGenerator) WithAlarm() *ICalGenerator {
 	return g
 }
 
-// AddAssignment adds a rota assignment as a calendar event.
+// WithShuffleSeed is a no-op kept for API stability. The shuffle seed
+// is read from SupportCalendarOptions by the public generator
+// functions.
+func (g *ICalGenerator) WithShuffleSeed(string) *ICalGenerator { return g }
+
+// WithWFHMaterialiser is a no-op kept for API stability. The materialiser
+// is read from SupportCalendarOptions by the public generator
+// functions.
+func (g *ICalGenerator) WithWFHMaterialiser(WFHMaterialiser) *ICalGenerator { return g }
+
+// WithHolidayLookup is a no-op kept for API stability. The lookup is
+// read from SupportCalendarOptions by the public generator functions.
+func (g *ICalGenerator) WithHolidayLookup(HolidayLookup) *ICalGenerator { return g }
+
+// WithSupportAssignmentTemplate loads the operator's text and HTML
+// templates for the support-assignment event kind. Both arguments may
+// be empty, in which case the built-in defaults are used.
+func (g *ICalGenerator) WithSupportAssignmentTemplate(textPath, htmlPath string) (*ICalGenerator, error) {
+	tmpl, err := loadSupportAssignmentText(textPath)
+	if err != nil {
+		return nil, err
+	}
+	g.supportAssignmentTextTemplate = tmpl
+
+	htmlTmpl, err := loadSupportAssignmentHTML(htmlPath)
+	if err != nil {
+		return nil, err
+	}
+	g.supportAssignmentHTMLTemplate = htmlTmpl
+	return g, nil
+}
+
+// WithLeaveTemplate loads the operator's text and HTML templates for
+// the leave-event kind.
+func (g *ICalGenerator) WithLeaveTemplate(textPath, htmlPath string) (*ICalGenerator, error) {
+	tmpl, err := loadLeaveText(textPath)
+	if err != nil {
+		return nil, err
+	}
+	g.leaveTextTemplate = tmpl
+
+	htmlTmpl, err := loadLeaveHTML(htmlPath)
+	if err != nil {
+		return nil, err
+	}
+	g.leaveHTMLTemplate = htmlTmpl
+	return g, nil
+}
+
+// WithHolidayTemplate loads the operator's text and HTML templates for
+// the holiday-event kind.
+func (g *ICalGenerator) WithHolidayTemplate(textPath, htmlPath string) (*ICalGenerator, error) {
+	tmpl, err := loadHolidayText(textPath)
+	if err != nil {
+		return nil, err
+	}
+	g.holidayTextTemplate = tmpl
+
+	htmlTmpl, err := loadHolidayHTML(htmlPath)
+	if err != nil {
+		return nil, err
+	}
+	g.holidayHTMLTemplate = htmlTmpl
+	return g, nil
+}
+
+// resolvedSupportAssignmentTextTemplate returns the configured template
+// or the built-in default.
+func (g *ICalGenerator) resolvedSupportAssignmentTextTemplate() *texttemplate.Template {
+	if g.supportAssignmentTextTemplate == nil {
+		return defaultSupportAssignmentTextTemplate
+	}
+	return g.supportAssignmentTextTemplate
+}
+
+// resolvedSupportAssignmentHTMLTemplate returns the configured HTML
+// template or the built-in default.
+func (g *ICalGenerator) resolvedSupportAssignmentHTMLTemplate() *template.Template {
+	if g.supportAssignmentHTMLTemplate == nil {
+		return defaultSupportAssignmentHTMLTemplate
+	}
+	return g.supportAssignmentHTMLTemplate
+}
+
+// resolvedLeaveTextTemplate returns the configured text template or
+// the built-in default.
+func (g *ICalGenerator) resolvedLeaveTextTemplate() *texttemplate.Template {
+	if g.leaveTextTemplate == nil {
+		return defaultLeaveTextTemplate
+	}
+	return g.leaveTextTemplate
+}
+
+// resolvedLeaveHTMLTemplate returns the configured HTML template or
+// the built-in default.
+func (g *ICalGenerator) resolvedLeaveHTMLTemplate() *template.Template {
+	if g.leaveHTMLTemplate == nil {
+		return defaultLeaveHTMLTemplate
+	}
+	return g.leaveHTMLTemplate
+}
+
+// resolvedHolidayTextTemplate returns the configured text template or
+// the built-in default.
+func (g *ICalGenerator) resolvedHolidayTextTemplate() *texttemplate.Template {
+	if g.holidayTextTemplate == nil {
+		return defaultHolidayTextTemplate
+	}
+	return g.holidayTextTemplate
+}
+
+// resolvedHolidayHTMLTemplate returns the configured HTML template or
+// the built-in default.
+func (g *ICalGenerator) resolvedHolidayHTMLTemplate() *template.Template {
+	if g.holidayHTMLTemplate == nil {
+		return defaultHolidayHTMLTemplate
+	}
+	return g.holidayHTMLTemplate
+}
+
+// AddAssignment adds a rota assignment as a calendar event using the
+// built-in templates. Callers that have a per-day snapshot should
+// prefer AddAssignmentWithSnapshot, which exposes the snapshot fields
+// to the templates.
+//
+// This method remains for callers (and tests) that don't have a
+// snapshot. It uses a zero-value snapshot so template authors who
+// reference snapshot fields see empty lists / empty strings.
 func (g *ICalGenerator) AddAssignment(assignment database.RotaAssignment, memberName string) error {
+	return g.AddAssignmentWithSnapshot(assignment, memberName, &presenceSnapshot{Date: assignment.Date})
+}
+
+// AddAssignmentWithSnapshot adds a rota assignment as a calendar event
+// and renders the description via the configured support-assignment
+// templates. The snapshot is embedded in the template data so
+// operators can reference per-day fields (on-site count, HAT name,
+// stable order, etc.) from their templates.
+func (g *ICalGenerator) AddAssignmentWithSnapshot(assignment database.RotaAssignment, memberName string, snap *presenceSnapshot) error {
 	event := g.calendar.AddEvent(fmt.Sprintf("%s@supportrota", assignment.ID))
 
 	// Parse the assignment date
@@ -107,26 +274,40 @@ func (g *ICalGenerator) AddAssignment(assignment database.RotaAssignment, member
 	}
 	event.SetSummary(summary)
 
-	// Set description.
-	baseDescription := "Support duty"
+	// Build the template data. The base text and link list are
+	// computed the same way as before; the snapshot's embedded fields
+	// give templates access to per-day presence.
+	baseText := "Support duty"
 	if assignment.IsCover {
-		baseDescription += " (cover)"
+		baseText += " (cover)"
 		if assignment.OriginalAssignmentID != nil {
-			baseDescription += " for leave"
+			baseText += " for leave"
 		}
 	}
+	if snap == nil {
+		snap = &presenceSnapshot{Date: assignment.Date}
+	}
+	data := supportAssignmentData{
+		presenceSnapshot: *snap,
+		Summary:          summary,
+		BaseText:         baseText,
+		IsCover:          assignment.IsCover,
+		IsCoverForLeave:  assignment.IsCover && assignment.OriginalAssignmentID != nil,
+		Date:             assignment.Date,
+		Links:            buildMeetingLinkTemplateData(g.supportDayLinks),
+	}
 
-	textDescription := baseDescription
-	if len(g.supportDayLinks) > 0 {
-		textDescription += formatLinksText(g.supportDayLinks)
+	textDescription, err := renderTemplate(g.resolvedSupportAssignmentTextTemplate(), "supportText", data)
+	if err != nil {
+		return fmt.Errorf("render support text: %w", err)
 	}
 	event.SetDescription(textDescription)
 
-	htmlDesc := htmlHeading(summary) + htmlParagraph(baseDescription)
-	if len(g.supportDayLinks) > 0 {
-		htmlDesc += formatLinksHTML(g.supportDayLinks)
+	htmlDescription, err := renderHTMLTemplate(g.resolvedSupportAssignmentHTMLTemplate(), "supportHTML", data)
+	if err != nil {
+		return fmt.Errorf("render support HTML: %w", err)
 	}
-	setAltDescHTML(event, htmlDesc)
+	setAltDescHTML(event, htmlDescription)
 
 	// Do not mark as busy.
 	event.SetTimeTransparency(ics.TransparencyTransparent)
@@ -151,166 +332,51 @@ func (g *ICalGenerator) AddAssignment(assignment database.RotaAssignment, member
 	return nil
 }
 
-func formatLinksText(links []MeetingLink) string {
-	var b strings.Builder
-	first := true
-	for _, l := range links {
-		label, urlStr := meetingLinkLabelAndURL(l)
-		if label == "" {
-			continue
-		}
-		if first {
-			b.WriteString("\n\nLinks:\n")
-			first = false
-		}
-		b.WriteString("- ")
-		b.WriteString(label)
-		if urlStr != "" {
-			b.WriteString(": ")
-			b.WriteString(urlStr)
-		}
-		b.WriteString("\n")
-	}
-	return b.String()
-}
-
-func meetingLinkLabelAndURL(link MeetingLink) (label string, urlStr string) {
-	label = strings.TrimSpace(link.Label)
-	urlStr = safeHTTPURL(strings.TrimSpace(link.URL))
-	if label != "" {
-		return label, urlStr
-	}
-
-	if strings.TrimSpace(string(link.HTML)) == "" {
-		return "", ""
-	}
-
-	extractedLabel, extractedURL := extractAnchorLabelAndURL(string(link.HTML))
-	if extractedLabel == "" {
-		extractedLabel = "(HTML link)"
-	}
-	if extractedURL != "" {
-		extractedURL = safeHTTPURL(extractedURL)
-	}
-	return extractedLabel, extractedURL
-}
-
-func extractAnchorLabelAndURL(htmlAnchor string) (label string, urlStr string) {
-	// Best-effort extraction for plain-text description.
-	// We intentionally keep this simple and dependency-free.
-
-	urlStr = extractHrefFromAnchor(htmlAnchor)
-
-	start := strings.Index(htmlAnchor, ">")
-	if start != -1 {
-		end := strings.Index(strings.ToLower(htmlAnchor[start+1:]), "</a")
-		if end != -1 {
-			label = strings.TrimSpace(stripHTMLTags(htmlAnchor[start+1 : start+1+end]))
-		}
-	}
-
-	return label, urlStr
-}
-
-func extractHrefFromAnchor(htmlAnchor string) string {
-	lower := strings.ToLower(htmlAnchor)
-	hrefIdx := strings.Index(lower, "href=")
-	if hrefIdx < 0 {
-		return ""
-	}
-
-	rest := strings.TrimSpace(htmlAnchor[hrefIdx+len("href="):])
-	if rest == "" {
-		return ""
-	}
-
-	quote := rest[0]
-	if quote == '\'' || quote == '"' {
-		rest = rest[1:]
-		before, _, ok := strings.Cut(rest, string(quote))
-		if !ok {
-			return ""
-		}
-		return before
-	}
-
-	// Unquoted value; stop at space or '>':
-	end := len(rest)
-	if i := strings.IndexAny(rest, " >"); i != -1 {
-		end = i
-	}
-	return rest[:end]
-}
-
-func stripHTMLTags(s string) string {
-	var b strings.Builder
-	b.Grow(len(s))
-	inTag := false
-	for _, r := range s {
-		switch {
-		case r == '<':
-			inTag = true
-		case r == '>':
-			inTag = false
-		case !inTag:
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
-}
-
-func formatLinksHTML(links []MeetingLink) string {
-	var b strings.Builder
-	builtAny := false
-
-	for _, l := range links {
-		if strings.TrimSpace(string(l.HTML)) != "" {
-			if !builtAny {
-				b.WriteString("<h4>Links</h4>")
-				builtAny = true
-			}
-			b.WriteString("<p>")
-			b.WriteString(string(l.HTML))
-			b.WriteString("</p>")
-			continue
-		}
-
-		label := strings.TrimSpace(l.Label)
-		urlStr := safeHTTPURL(strings.TrimSpace(l.URL))
-		if label == "" || urlStr == "" {
-			continue
-		}
-		if !builtAny {
-			b.WriteString("<h4>Links</h4>")
-			builtAny = true
-		}
-		b.WriteString("<p><a href=\"")
-		b.WriteString(template.HTMLEscapeString(urlStr))
-		b.WriteString("\">")
-		b.WriteString(template.HTMLEscapeString(label))
-		b.WriteString("</a></p>")
-	}
-
-	return b.String()
-}
-
-// AddLeaveEvent adds a leave/absence event to the calendar.
+// AddLeaveEvent adds a leave/absence event to the calendar using the
+// built-in templates. Callers that have a per-day snapshot should
+// prefer AddLeaveEventWithSnapshot.
 func (g *ICalGenerator) AddLeaveEvent(memberName string, leaveType string, startDate, endDate time.Time) error {
+	return g.AddLeaveEventWithSnapshot(memberName, leaveType, startDate, endDate, &presenceSnapshot{Date: startDate.Format("2006-01-02")})
+}
+
+// AddLeaveEventWithSnapshot renders a leave event with the configured
+// leave templates. The snapshot is embedded in the template data so
+// operators can reference per-day fields.
+func (g *ICalGenerator) AddLeaveEventWithSnapshot(memberName string, leaveType string, startDate, endDate time.Time, snap *presenceSnapshot) error {
 	event := g.calendar.AddEvent(fmt.Sprintf("leave-%s-%d", strings.ToLower(memberName), startDate.Unix()))
 
 	// Set event times (all day event)
 	event.SetAllDayStartAt(startDate)
 	event.SetAllDayEndAt(endDate.Add(hoursPerDay * time.Hour)) // End date is exclusive in iCalendar
 
-	// Set summary
-	event.SetSummary(fmt.Sprintf("%s - %s", memberName, titleCase(leaveType)))
+	summary := fmt.Sprintf("%s - %s", memberName, titleCase(leaveType))
+	baseText := fmt.Sprintf("%s leave for %s", titleCase(leaveType), memberName)
+	event.SetSummary(summary)
 
-	// Set description
-	event.SetDescription(fmt.Sprintf("%s leave for %s", titleCase(leaveType), memberName))
-	setAltDescHTML(
-		event,
-		htmlHeading(fmt.Sprintf("%s - %s", memberName, titleCase(leaveType)))+htmlParagraph(fmt.Sprintf("%s leave for %s", titleCase(leaveType), memberName)),
-	)
+	if snap == nil {
+		snap = &presenceSnapshot{Date: startDate.Format("2006-01-02")}
+	}
+	data := leaveData{
+		presenceSnapshot: *snap,
+		Summary:          summary,
+		BaseText:         baseText,
+		MemberName:       memberName,
+		LeaveType:        titleCase(leaveType),
+		StartDate:        startDate.Format("2006-01-02"),
+		EndDate:          endDate.Format("2006-01-02"),
+	}
+
+	textDescription, err := renderTemplate(g.resolvedLeaveTextTemplate(), "leaveText", data)
+	if err != nil {
+		return fmt.Errorf("render leave text: %w", err)
+	}
+	event.SetDescription(textDescription)
+
+	htmlDescription, err := renderHTMLTemplate(g.resolvedLeaveHTMLTemplate(), "leaveHTML", data)
+	if err != nil {
+		return fmt.Errorf("render leave HTML: %w", err)
+	}
+	setAltDescHTML(event, htmlDescription)
 
 	// Set status to tentative for leave
 	event.SetStatus(ics.ObjectStatusTentative)
@@ -321,23 +387,49 @@ func (g *ICalGenerator) AddLeaveEvent(memberName string, leaveType string, start
 	return nil
 }
 
-// AddHoliday adds a holiday/closed day event.
+// AddHoliday adds a holiday/closed day event to the calendar using the
+// built-in templates. Callers with a snapshot should prefer
+// AddHolidayWithSnapshot.
 func (g *ICalGenerator) AddHoliday(name string, date time.Time) error {
+	return g.AddHolidayWithSnapshot(name, date, &presenceSnapshot{Date: date.Format("2006-01-02")})
+}
+
+// AddHolidayWithSnapshot renders a holiday event with the configured
+// holiday templates. The snapshot is embedded in the template data so
+// operators can reference per-day fields.
+func (g *ICalGenerator) AddHolidayWithSnapshot(name string, date time.Time, snap *presenceSnapshot) error {
 	event := g.calendar.AddEvent(fmt.Sprintf("holiday-%d", date.Unix()))
 
 	// Set event as all day
 	event.SetAllDayStartAt(date)
 	event.SetAllDayEndAt(date.Add(hoursPerDay * time.Hour))
 
-	// Set summary
-	event.SetSummary(fmt.Sprintf("Office Closed - %s", name))
+	summary := fmt.Sprintf("Office Closed - %s", name)
+	baseText := "Support rota is not scheduled on this day"
+	event.SetSummary(summary)
 
-	// Set description
-	event.SetDescription("Support rota is not scheduled on this day")
-	setAltDescHTML(
-		event,
-		htmlHeading(fmt.Sprintf("Office Closed - %s", name))+htmlParagraph("Support rota is not scheduled on this day"),
-	)
+	if snap == nil {
+		snap = &presenceSnapshot{Date: date.Format("2006-01-02")}
+	}
+	data := holidayData{
+		presenceSnapshot: *snap,
+		Summary:          summary,
+		BaseText:         baseText,
+		Name:             name,
+		Date:             date.Format("2006-01-02"),
+	}
+
+	textDescription, err := renderTemplate(g.resolvedHolidayTextTemplate(), "holidayText", data)
+	if err != nil {
+		return fmt.Errorf("render holiday text: %w", err)
+	}
+	event.SetDescription(textDescription)
+
+	htmlDescription, err := renderHTMLTemplate(g.resolvedHolidayHTMLTemplate(), "holidayHTML", data)
+	if err != nil {
+		return fmt.Errorf("render holiday HTML: %w", err)
+	}
+	setAltDescHTML(event, htmlDescription)
 
 	// Set status to canceled
 	event.SetStatus(ics.ObjectStatusCancelled)
@@ -364,9 +456,9 @@ func (g *ICalGenerator) SerializeBytes() ([]byte, error) {
 
 // GenerateICalFromAssignmentsWithOptions creates a complete iCalendar file from rota assignments.
 func GenerateICalFromAssignmentsWithOptions(assignments []database.RotaAssignment, memberName string, opts SupportCalendarOptions) (string, error) {
-	generator := NewICalGenerator().WithSupportDayLinks(opts.SupportDayLinks)
-	if opts.WithAlarm {
-		generator = generator.WithAlarm()
+	generator, err := newSupportGenerator(opts)
+	if err != nil {
+		return "", err
 	}
 
 	for _, assignment := range assignments {
@@ -376,6 +468,33 @@ func GenerateICalFromAssignmentsWithOptions(assignments []database.RotaAssignmen
 	}
 
 	return generator.Serialize()
+}
+
+// newSupportGenerator builds an ICalGenerator preconfigured with the
+// support-assignment template paths and any other options. Used by
+// every public generator function in this file.
+func newSupportGenerator(opts SupportCalendarOptions) (*ICalGenerator, error) {
+	generator := NewICalGenerator().
+		WithSupportDayLinks(opts.SupportDayLinks).
+		WithShuffleSeed(opts.ShuffleSeed).
+		WithWFHMaterialiser(opts.WFHMaterialiser).
+		WithHolidayLookup(opts.HolidayLookup)
+	if opts.WithAlarm {
+		generator = generator.WithAlarm()
+	}
+	generator, err := generator.WithSupportAssignmentTemplate(opts.SupportAssignmentTemplateTextPath, opts.SupportAssignmentTemplateHTMLPath)
+	if err != nil {
+		return nil, err
+	}
+	generator, err = generator.WithLeaveTemplate(opts.LeaveTemplateTextPath, opts.LeaveTemplateHTMLPath)
+	if err != nil {
+		return nil, err
+	}
+	generator, err = generator.WithHolidayTemplate(opts.HolidayTemplateTextPath, opts.HolidayTemplateHTMLPath)
+	if err != nil {
+		return nil, err
+	}
+	return generator, nil
 }
 
 func GenerateICalFromAssignments(assignments []database.RotaAssignment, memberName string) (string, error) {
@@ -400,8 +519,38 @@ func GenerateICalForTokenWithOptions(ctx context.Context, db *database.DB, token
 		return "", fmt.Errorf("failed to get assignments: %w", err)
 	}
 
-	// Generate iCalendar
-	icalContent, err := GenerateICalFromAssignmentsWithOptions(assignments, member.Name, opts)
+	generator, err := newSupportGenerator(opts)
+	if err != nil {
+		return "", err
+	}
+
+	// Build a per-day snapshot once per date and reuse it across all
+	// events added for that date.
+	builder := newPresenceBuilder(db, opts.WFHMaterialiser, opts.HolidayLookup, opts.ShuffleSeed)
+	snapshotByDate := make(map[string]*presenceSnapshot, lookaheadDays)
+	snapshotFor := func(dateStr string) (*presenceSnapshot, error) {
+		if s, ok := snapshotByDate[dateStr]; ok {
+			return s, nil
+		}
+		s, sErr := builder.Build(ctx, dateStr)
+		if sErr != nil {
+			return nil, sErr
+		}
+		snapshotByDate[dateStr] = s
+		return s, nil
+	}
+
+	for _, assignment := range assignments {
+		snap, sErr := snapshotFor(assignment.Date)
+		if sErr != nil {
+			return "", fmt.Errorf("build snapshot for %s: %w", assignment.Date, sErr)
+		}
+		if addErr := generator.AddAssignmentWithSnapshot(assignment, member.Name, snap); addErr != nil {
+			return "", fmt.Errorf("failed to add assignment: %w", addErr)
+		}
+	}
+
+	icalContent, err := generator.Serialize()
 	if err != nil {
 		return "", fmt.Errorf("failed to generate iCalendar: %w", err)
 	}
@@ -412,6 +561,13 @@ func GenerateICalForTokenWithOptions(ctx context.Context, db *database.DB, token
 // GenerateOthersICalForToken generates iCalendar content for all upcoming
 // assignments except the token owner's.
 func GenerateOthersICalForToken(ctx context.Context, db *database.DB, token string, lookaheadDays int) (string, error) {
+	return GenerateOthersICalForTokenWithOptions(ctx, db, token, lookaheadDays, SupportCalendarOptions{})
+}
+
+// GenerateOthersICalForTokenWithOptions is the operator-configurable
+// version that threads support templates and per-day presence into
+// every team member's assignment event.
+func GenerateOthersICalForTokenWithOptions(ctx context.Context, db *database.DB, token string, lookaheadDays int, opts SupportCalendarOptions) (string, error) {
 	member, err := db.GetMemberByToken(ctx, token)
 	if err != nil {
 		return "", fmt.Errorf("invalid token: %w", err)
@@ -441,7 +597,7 @@ func GenerateOthersICalForToken(ctx context.Context, db *database.DB, token stri
 		others = append(others, assignment)
 	}
 
-	icalContent, err := GenerateTeamCalendar(others, memberNames)
+	icalContent, err := GenerateTeamCalendarWithOptions(ctx, db, others, memberNames, opts)
 	if err != nil {
 		return "", fmt.Errorf("failed to generate iCalendar: %w", err)
 	}
@@ -451,7 +607,39 @@ func GenerateOthersICalForToken(ctx context.Context, db *database.DB, token stri
 
 // GenerateTeamCalendar generates a calendar with all team members' assignments.
 func GenerateTeamCalendar(assignments []database.RotaAssignment, members map[string]string) (string, error) {
-	generator := NewICalGenerator()
+	return GenerateTeamCalendarWithOptions(context.Background(), nil, assignments, members, SupportCalendarOptions{})
+}
+
+// GenerateTeamCalendarWithOptions generates a calendar with all team
+// members' assignments, applying the operator's template overrides
+// and the per-day presence snapshot. db may be nil; in that case the
+// snapshot is empty (event-adders pass it through to templates
+// regardless).
+func GenerateTeamCalendarWithOptions(ctx context.Context, db *database.DB, assignments []database.RotaAssignment, members map[string]string, opts SupportCalendarOptions) (string, error) {
+	generator, err := newSupportGenerator(opts)
+	if err != nil {
+		return "", err
+	}
+
+	var builder *presenceBuilder
+	if db != nil {
+		builder = newPresenceBuilder(db, opts.WFHMaterialiser, opts.HolidayLookup, opts.ShuffleSeed)
+	}
+	snapshotByDate := make(map[string]*presenceSnapshot)
+	snapshotFor := func(dateStr string) *presenceSnapshot {
+		if builder == nil {
+			return &presenceSnapshot{Date: dateStr}
+		}
+		if s, ok := snapshotByDate[dateStr]; ok {
+			return s
+		}
+		s, err := builder.Build(ctx, dateStr)
+		if err != nil {
+			return &presenceSnapshot{Date: dateStr}
+		}
+		snapshotByDate[dateStr] = s
+		return s
+	}
 
 	for _, assignment := range assignments {
 		memberName, ok := members[assignment.MemberID]
@@ -459,7 +647,8 @@ func GenerateTeamCalendar(assignments []database.RotaAssignment, members map[str
 			memberName = "Unknown"
 		}
 
-		if err := generator.AddAssignment(assignment, memberName); err != nil {
+		snap := snapshotFor(assignment.Date)
+		if err := generator.AddAssignmentWithSnapshot(assignment, memberName, snap); err != nil {
 			return "", fmt.Errorf("failed to add assignment: %w", err)
 		}
 	}

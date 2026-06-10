@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -40,6 +41,8 @@ func (h *Handler) registerRoutes() {
 	h.router.HandleFunc("/calendar/{token}/ics", h.handleCalendarICS)
 	h.router.HandleFunc("/calendar/{token}/team.ics", h.handleTeamCalendarICS)
 	h.router.HandleFunc("/calendar/{token}/meetings.ics", h.handleMeetingsCalendarICS)
+	h.router.HandleFunc("/calendar/{token}/meetings/{date}.html", h.handleMeetingsDayHTML)
+	h.router.With(h.safeAuthMiddleware).HandleFunc("/help", h.handleHelp)
 
 	// Protected routes (require authentication).
 	h.router.Group(func(r chi.Router) {
@@ -51,6 +54,11 @@ func (h *Handler) registerRoutes() {
 		r.Post("/swaps/{id}/cancel", h.handleSwapCancel)
 		r.Post("/swaps/{id}/accept", h.handleSwapAccept)
 		r.Post("/swaps/{id}/reject", h.handleSwapReject)
+
+		r.HandleFunc("/wfh", h.handleWFHList)
+		r.HandleFunc("/wfh/request", h.handleWFHRequest)
+		r.Post("/wfh/{id}/cancel", h.handleWFHCancel)
+		r.Post("/wfh/{id}/withdraw", h.handleWFHSelfWithdraw)
 	})
 
 	// Admin routes (require authentication and admin privileges).
@@ -60,6 +68,8 @@ func (h *Handler) registerRoutes() {
 
 		r.HandleFunc("/team", h.handleTeam)
 		r.HandleFunc("/team/{id}/edit", h.handleTeamMemberEdit)
+		r.HandleFunc("/team/{id}/recurring-wfh", h.handleTeamMemberPermanentWFHUpdate)
+		r.HandleFunc("/team/{id}/permanent-wfh", h.handleTeamMemberPermanentWFHUpdate)
 		r.HandleFunc("/team/{id}/delete", h.handleTeamMemberDelete)
 		r.HandleFunc("/team/users/{id}/admin", h.handleUserAdminUpdate)
 		r.HandleFunc("/leave/manage", h.handleLeaveManagement)
@@ -71,6 +81,9 @@ func (h *Handler) registerRoutes() {
 		r.HandleFunc("/calendar/subscriptions", h.handleCalendarSubscriptions)
 		r.HandleFunc("/calendar/subscriptions/cleanup", h.handleCalendarSubscriptionsCleanup)
 		r.Post("/swaps/{id}/delete", h.handleSwapAdminDelete)
+		r.Get("/admin/wfh", h.handleWFHAdminPage)
+		r.Post("/admin/wfh/{id}/withdraw", h.handleWFHAdminWithdraw)
+		r.Post("/admin/wfh/settle", h.handleWFHAdminSettle)
 	})
 }
 
@@ -98,7 +111,7 @@ func (h *Handler) handleDevelopmentLogin(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Show development mode login page.
-	h.renderDevelopmentLogin(w)
+	h.renderDevelopmentLogin(w, r.Context())
 }
 
 func (h *Handler) isUserLoggedIn(r *http.Request) bool {
@@ -111,10 +124,14 @@ func (h *Handler) isUserLoggedIn(r *http.Request) bool {
 	return err == nil
 }
 
-func (h *Handler) renderDevelopmentLogin(w http.ResponseWriter) {
+func (h *Handler) renderDevelopmentLogin(w http.ResponseWriter, ctx context.Context) {
 	w.Header().Set("Content-Type", "text/html")
+	users, err := h.authManager.GetDevelopmentUsers(ctx)
+	if err != nil {
+		users = nil
+	}
 	// Use shared HTML from auth package to eliminate duplication.
-	_, _ = w.Write([]byte(auth.GetDevelopmentLoginHTML()))
+	_, _ = w.Write([]byte(auth.GetDevelopmentLoginHTMLWithUsers(users)))
 }
 
 // Router returns the underlying chi router.

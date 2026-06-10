@@ -204,6 +204,48 @@ func TestPresenceTodayEndpoint(t *testing.T) {
 	assert.False(t, ok)
 }
 
+func TestPresenceTodayEndpoint_RecurringWFHMember(t *testing.T) {
+	server, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	ctx := createTestContext(t, server)
+
+	aliceID, err := server.db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	require.NoError(t, server.db.SetTeamMemberPermanentWFH(ctx, aliceID, true))
+
+	today := time.Now().Format("2006-01-02")
+	_, err = server.db.CreateRotaAssignment(ctx, today, aliceID, false, nil)
+	require.NoError(t, err)
+
+	resp, err := server.handleGetPresenceToday(ctx, &struct{}{})
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+
+	wfhIDs := make(map[string]struct{}, len(resp.Body.WFH))
+	for i := range resp.Body.WFH {
+		wfhIDs[resp.Body.WFH[i].ID] = struct{}{}
+	}
+	_, ok := wfhIDs[aliceID]
+	todayDate := time.Now()
+	if todayDate.Weekday() >= time.Monday && todayDate.Weekday() <= time.Friday {
+		assert.True(t, ok)
+	} else {
+		assert.False(t, ok)
+	}
+
+	presentIDs := make(map[string]struct{}, len(resp.Body.Present))
+	for i := range resp.Body.Present {
+		presentIDs[resp.Body.Present[i].ID] = struct{}{}
+	}
+	_, ok = presentIDs[aliceID]
+	if todayDate.Weekday() >= time.Monday && todayDate.Weekday() <= time.Friday {
+		assert.False(t, ok)
+	} else {
+		assert.True(t, ok)
+	}
+}
+
 func TestScheduleEndpoints(t *testing.T) {
 	server, cleanup := setupTestServer(t)
 	defer cleanup()
@@ -347,15 +389,21 @@ func TestCalendarEndpoints(t *testing.T) {
 	})
 
 	t.Run("GetICSFeed", func(t *testing.T) {
-		// First generate a schedule for the current month
+		// Generate schedule from today forward to ensure there are upcoming assignments.
 		now := time.Now().UTC()
-		startDate := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
-		endDate := time.Date(now.Year(), now.Month()+1, 0, 0, 0, 0, 0, time.UTC)
+		startDate := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+		endDate := startDate.AddDate(0, 0, 30)
 		err := server.engine.GenerateSchedule(ctx, startDate, endDate)
 		require.NoError(t, err)
 
+		// Select a member that definitely has an upcoming assignment to avoid time-sensitive flakes.
+		futureAssignments, err := server.db.GetFutureAssignments(ctx)
+		require.NoError(t, err)
+		require.NotEmpty(t, futureAssignments)
+		testMemberID := futureAssignments[0].MemberID
+
 		// Then create subscription
-		token, err := server.db.CreateCalendarSubscription(ctx, aliceID)
+		token, err := server.db.CreateCalendarSubscription(ctx, testMemberID)
 		require.NoError(t, err)
 
 		// Use the full router to properly handle URL parameters
@@ -391,7 +439,8 @@ func TestHUMAAPIIntegration(t *testing.T) {
 
 	t.Run("TeamAPI", func(t *testing.T) {
 		// Test POST /api/v1/team
-		resp := api.Post("/api/v1/team",
+		resp := api.Post(
+			"/api/v1/team",
 			map[string]string{
 				"name":  "John Doe",
 				"email": "john@example.com",
@@ -408,7 +457,8 @@ func TestHUMAAPIIntegration(t *testing.T) {
 
 	t.Run("TeamAPIList", func(t *testing.T) {
 		// Test GET /api/v1/team
-		resp := api.Get("/api/v1/team",
+		resp := api.Get(
+			"/api/v1/team",
 			"Cookie: session_token="+sessionToken,
 		)
 		assert.Equal(t, 200, resp.Code)
@@ -421,7 +471,8 @@ func TestHUMAAPIIntegration(t *testing.T) {
 
 	t.Run("TeamAPIUpdate", func(t *testing.T) {
 		// First, add a team member
-		addResp := api.Post("/api/v1/team",
+		addResp := api.Post(
+			"/api/v1/team",
 			map[string]string{
 				"name":  "Jane Doe",
 				"email": "jane@example.com",
@@ -435,7 +486,8 @@ func TestHUMAAPIIntegration(t *testing.T) {
 		memberID := addBody["id"].(string)
 
 		// Now update the team member
-		updateResp := api.Put("/api/v1/team/"+memberID,
+		updateResp := api.Put(
+			"/api/v1/team/"+memberID,
 			map[string]string{
 				"name":  "Jane Smith",
 				"email": "jane.smith@example.com",
@@ -451,7 +503,8 @@ func TestHUMAAPIIntegration(t *testing.T) {
 
 	t.Run("TeamAPIDelete", func(t *testing.T) {
 		// First, add a team member to delete
-		addResp := api.Post("/api/v1/team",
+		addResp := api.Post(
+			"/api/v1/team",
 			map[string]string{
 				"name":  "Bob Johnson",
 				"email": "bob@example.com",
@@ -465,7 +518,8 @@ func TestHUMAAPIIntegration(t *testing.T) {
 		memberID := addBody["id"].(string)
 
 		// Now delete the team member
-		deleteResp := api.Delete("/api/v1/team/"+memberID,
+		deleteResp := api.Delete(
+			"/api/v1/team/"+memberID,
 			"Cookie: session_token="+sessionToken,
 		)
 		assert.Equal(t, 200, deleteResp.Code)

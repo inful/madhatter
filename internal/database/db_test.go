@@ -7,7 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -50,6 +52,96 @@ func TestAddTeamMember_Success(t *testing.T) {
 	require.Equal(t, "Alice Johnson", members[0].Name)
 	require.Equal(t, "alice@example.com", members[0].Email)
 	require.True(t, members[0].IsActive)
+	require.False(t, members[0].IsPermanentWFH)
+	require.False(t, members[0].RecurringWFHMonday)
+	require.False(t, members[0].RecurringWFHTuesday)
+	require.False(t, members[0].RecurringWFHWednesday)
+	require.False(t, members[0].RecurringWFHThursday)
+	require.False(t, members[0].RecurringWFHFriday)
+}
+
+func TestSetTeamMemberPermanentWFH(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	require.NoError(t, db.SetTeamMemberPermanentWFH(ctx, memberID, true))
+
+	member, err := db.GetMemberByID(ctx, memberID)
+	require.NoError(t, err)
+	require.True(t, member.IsPermanentWFH)
+	require.True(t, member.RecurringWFHMonday)
+	require.True(t, member.RecurringWFHTuesday)
+	require.True(t, member.RecurringWFHWednesday)
+	require.True(t, member.RecurringWFHThursday)
+	require.True(t, member.RecurringWFHFriday)
+
+	require.NoError(t, db.SetTeamMemberPermanentWFH(ctx, memberID, false))
+
+	member, err = db.GetMemberByID(ctx, memberID)
+	require.NoError(t, err)
+	require.False(t, member.IsPermanentWFH)
+	require.False(t, member.RecurringWFHMonday)
+	require.False(t, member.RecurringWFHTuesday)
+	require.False(t, member.RecurringWFHWednesday)
+	require.False(t, member.RecurringWFHThursday)
+	require.False(t, member.RecurringWFHFriday)
+}
+
+func TestSetTeamMemberRecurringWFHDays(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	require.NoError(t, db.SetTeamMemberRecurringWFHDays(ctx, memberID, RecurringWFHDays{
+		Monday:   true,
+		Thursday: true,
+	}))
+
+	member, err := db.GetMemberByID(ctx, memberID)
+	require.NoError(t, err)
+	require.True(t, member.RecurringWFHMonday)
+	require.False(t, member.RecurringWFHTuesday)
+	require.False(t, member.RecurringWFHWednesday)
+	require.True(t, member.RecurringWFHThursday)
+	require.False(t, member.RecurringWFHFriday)
+	require.False(t, member.IsPermanentWFH)
+}
+
+func TestCreateWFHRequest_RecurringDayReturnsDuplicateAfterMaterialization(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	require.NoError(t, db.SetTeamMemberPermanentWFH(ctx, memberID, true))
+
+	targetDate := nextWeekday(time.Now().UTC(), time.Monday)
+	dateStr := targetDate.Format("2006-01-02")
+
+	// Simulate the materializer having run for this period.
+	require.NoError(t, db.CreateApprovedRecurringWFHRequest(ctx, memberID, dateStr, time.Now().UTC()))
+
+	// A second ad-hoc request for the same date now collides on UNIQUE
+	// (member_id, date) and is rejected with ErrWFHDuplicateRequest.
+	request, err := db.CreateWFHRequest(ctx, memberID, dateStr)
+	require.ErrorIs(t, err, ErrWFHDuplicateRequest)
+	assert.Nil(t, request)
+}
+
+func nextWeekday(start time.Time, weekday time.Weekday) time.Time {
+	date := start.AddDate(0, 0, 1)
+	for date.Weekday() != weekday {
+		date = date.AddDate(0, 0, 1)
+	}
+	return date
 }
 
 func TestAddTeamMember_DuplicateEmail(t *testing.T) {

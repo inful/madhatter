@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/inful/madhatter/internal/auth"
 	"github.com/inful/madhatter/internal/database"
+	"github.com/inful/madhatter/internal/database/sqlc"
 )
 
 // resolveMemberID resolves the team member ID for the currently logged-in user.
@@ -37,7 +38,7 @@ func (h *Handler) handleSwaps(w http.ResponseWriter, r *http.Request) {
 
 	if memberID == "" {
 		delete(data, "MemberID")
-		data["Error"] = "You are not registered as a team member."
+		data["Error"] = errNotTeamMember
 		if err := h.tmpl.ExecuteTemplate(w, "swaps.html", data); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
@@ -175,13 +176,14 @@ func (h *Handler) handleSwapAccept(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if swap.Status != database.SwapStatusPending {
-		http.Error(w, "swap is no longer pending", http.StatusBadRequest)
+		h.renderSwapsErrorPage(w, r, user, memberID, "This swap is no longer pending.")
 		return
 	}
 
 	if err := h.db.ExecuteSwap(ctx, swapID); err != nil {
 		if errors.Is(err, database.ErrSwapDatePassed) || errors.Is(err, database.ErrSwapNotPending) {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			_, _ = h.db.CleanupExpiredPendingSwaps(ctx)
+			h.renderSwapsErrorPage(w, r, user, memberID, "This swap has expired because one of the HAT days has already passed.")
 			return
 		}
 
@@ -267,8 +269,25 @@ func (h *Handler) renderSwapsPage(w http.ResponseWriter, r *http.Request, data m
 	}
 }
 
+func (h *Handler) renderSwapsErrorPage(w http.ResponseWriter, r *http.Request, user *sqlc.GetSessionByTokenRow, memberID, errMsg string) {
+	data := map[string]any{
+		"Template": "swaps",
+		"User":     user,
+		"IsAdmin":  auth.IsAdminSession(user),
+		"MemberID": memberID,
+	}
+
+	h.renderSwapsPage(w, r, data, memberID, errMsg)
+}
+
 // loadSwapsData populates data with swaps and assignment lists for a member.
+//
+//nolint:cyclop // Swaps page assembly merges several independent query results.
 func (h *Handler) loadSwapsData(ctx context.Context, data map[string]any, memberID string) error {
+	if _, err := h.db.CleanupExpiredPendingSwaps(ctx); err != nil {
+		return err
+	}
+
 	swaps, err := h.db.GetSwapsForMember(ctx, memberID)
 	if err != nil {
 		return err

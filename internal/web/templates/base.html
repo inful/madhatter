@@ -74,6 +74,159 @@
             background: #f8f9fa;
             border-radius: 8px;
         }
+
+        .global-user-menu.card {
+            margin-bottom: 1rem;
+        }
+
+        .global-user-menu .card-content {
+            padding: 0.8rem 1rem;
+        }
+
+        .global-user-menu .menu-name {
+            font-size: 1.02rem;
+            line-height: 1.25;
+        }
+
+        .global-user-menu .menu-email {
+            margin-top: 0.15rem;
+            font-size: 0.8rem;
+        }
+
+        .global-user-menu .menu-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
+        }
+
+        .global-user-menu .button.is-small {
+            height: 1.95em;
+            padding-left: 0.7rem;
+            padding-right: 0.7rem;
+            font-size: 0.78rem;
+        }
+
+        .user-pane.card {
+            margin-bottom: 1rem;
+        }
+
+        .user-pane .card-content {
+            padding: 0.85rem 1rem;
+        }
+
+        .user-pane .user-name {
+            font-size: 1.05rem;
+            line-height: 1.25;
+        }
+
+        .user-pane .user-email {
+            margin-top: 0.2rem;
+            font-size: 0.8rem !important;
+        }
+
+        .user-pane .column.is-narrow {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .user-pane .button.is-small {
+            height: 1.95em;
+            padding-left: 0.7rem;
+            padding-right: 0.7rem;
+            font-size: 0.78rem;
+        }
+
+        .page-header {
+            margin-bottom: 0.85rem;
+        }
+
+        .page-header .title.is-2 {
+            margin-bottom: 0;
+            letter-spacing: -0.02em;
+            font-size: clamp(2rem, 4.2vw, 2.45rem);
+            line-height: 1.06;
+        }
+
+        .page-header .title.is-2 i {
+            margin-right: 0.3rem;
+        }
+
+        @media (max-width: 640px) {
+            .global-user-menu .columns.is-mobile {
+                align-items: flex-start;
+            }
+
+            .global-user-menu .menu-actions {
+                width: 100%;
+                justify-content: flex-start;
+                margin-top: 0.45rem;
+                flex-wrap: wrap;
+            }
+
+            .page-header {
+                margin-bottom: 0.7rem;
+            }
+
+            .page-header .title.is-2 {
+                font-size: 1.8rem;
+            }
+
+            .user-pane .columns.is-mobile {
+                align-items: flex-start;
+            }
+
+            .user-pane .column.is-narrow {
+                width: 100%;
+                justify-content: flex-start;
+                margin-top: 0.5rem;
+            }
+        }
+
+        @media (min-width: 769px) and (max-width: 1100px) {
+            .global-user-menu.card {
+                margin-bottom: 0.75rem;
+            }
+
+            .global-user-menu .card-content {
+                padding: 0.65rem 0.8rem;
+            }
+
+            .global-user-menu .menu-name {
+                font-size: 0.95rem;
+                line-height: 1.15;
+            }
+
+            .global-user-menu .menu-email {
+                font-size: 0.74rem;
+                line-height: 1.1;
+            }
+
+            .global-user-menu .tag {
+                margin-top: 0.3rem !important;
+                font-size: 0.68rem;
+                height: 1.6em;
+            }
+
+            .global-user-menu .menu-actions {
+                gap: 0.35rem;
+            }
+
+            .global-user-menu .button.is-small {
+                height: 1.85em;
+                font-size: 0.72rem;
+                padding-left: 0.56rem;
+                padding-right: 0.56rem;
+            }
+
+            .page-header {
+                margin-bottom: 0.65rem;
+            }
+
+            .page-header .title.is-2 {
+                font-size: clamp(1.75rem, 3vw, 2.1rem);
+            }
+        }
     </style>
     {{if .Template}}
         {{render (printf "%s_styles" .Template) .}}
@@ -87,6 +240,7 @@
             <div class="hero-body">
                 <div class="container">
                     {{if .Template}}
+                        {{template "global_user_menu" .}}
                         {{render (printf "%s_content" .Template) .}}
                     {{else}}
                         {{template "login_content" .}}
@@ -104,23 +258,26 @@
 </html>
 {{end}}
 
-{{define "user_card"}}
+{{define "global_user_menu"}}
 {{if .User}}
-<div class="card">
+<div class="card global-user-menu">
     <div class="card-content">
         <div class="columns is-vcentered is-mobile">
             <div class="column">
-                <p class="has-text-weight-semibold">
+                <p class="has-text-weight-semibold menu-name">
                     <i class="fas fa-user-circle mr-2"></i>{{.User.Name}}
                 </p>
-                <p class="is-size-7 has-text-grey">{{.User.Email}}</p>
+                <p class="has-text-grey menu-email">{{.User.Email}}</p>
                 {{if .IsAdmin}}
                     <span class="tag is-danger is-light mt-1">
                         <i class="fas fa-shield-alt mr-1"></i> Admin
                     </span>
                 {{end}}
             </div>
-            <div class="column is-narrow">
+            <div class="column is-narrow menu-actions">
+                <a href="/help" class="button is-small is-info is-light">
+                    <i class="fas fa-book mr-1"></i> Help
+                </a>
                 <a href="/auth/logout" class="button is-small is-danger is-light">
                     <i class="fas fa-sign-out-alt mr-1"></i> Logout
                 </a>
@@ -131,8 +288,11 @@
 {{end}}
 {{end}}
 
+{{define "user_card"}}
+{{end}}
+
 {{define "page_header"}}
-<div class="level is-mobile">
+<div class="level is-mobile page-header">
     <div class="level-left">
         <div class="level-item">
             <h1 class="title is-2 has-text-primary">

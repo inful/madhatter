@@ -8,8 +8,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/inful/madhatter/internal/auth"
+	"github.com/inful/madhatter/internal/calendar"
 	"github.com/inful/madhatter/internal/database"
 	"github.com/inful/madhatter/internal/rota"
+	"github.com/inful/madhatter/internal/wfh"
 )
 
 const (
@@ -32,11 +34,13 @@ type Handler struct {
 	authManager    *auth.AuthManager
 	authMiddleware *auth.Middleware
 	holidayChecker func(time.Time) bool
+	holidayLookup  calendar.HolidayLookup
 	development    bool
 	restoreMu      sync.Mutex
 	restoreBusy    atomic.Bool
 	pendingMu      sync.Mutex
 	pendingRestore map[string]pendingRestoreItem
+	wfhService     *wfh.Service
 }
 
 type pendingRestoreItem struct {
@@ -45,17 +49,49 @@ type pendingRestoreItem struct {
 }
 
 type presenceDay struct {
-	DateISO         string
-	DateDisplay     string
-	IsToday         bool
-	Assigned        *database.TeamMember
-	AssignedSwapped bool
-	Present         []database.TeamMember
-	Away            []presenceLeave
+	DateISO          string
+	DateDisplay      string
+	IsToday          bool
+	Assigned         *database.TeamMember
+	AssignedSwapped  bool
+	AssignedSwapInfo string
+	Present          []database.TeamMember
+	WFH              []database.TeamMember
+	Away             []presenceLeave
 }
 
 type presenceLeave struct {
 	Member database.TeamMember
+}
+
+type scheduleMatrix struct {
+	Days []scheduleMatrixDay
+	Rows []scheduleMatrixRow
+}
+
+type scheduleMatrixDay struct {
+	DateISO     string
+	DateDisplay string
+	IsToday     bool
+	AtWorkCount int
+	WFHCount    int
+	LeaveCount  int
+}
+
+type scheduleMatrixRow struct {
+	Member database.TeamMember
+	Cells  []scheduleMatrixCell
+}
+
+type scheduleMatrixCell struct {
+	Status    string
+	Label     string
+	Assigned  bool
+	Swapped   bool
+	SwapInfo  string
+	IsToday   bool
+	DateISO   string
+	DateLabel string
 }
 
 func NewHandler(db *database.DB, authManager *auth.AuthManager, authMiddleware *auth.Middleware, development bool, holidayChecker func(time.Time) bool) (*Handler, error) {
@@ -91,4 +127,16 @@ func NewHandler(db *database.DB, authManager *auth.AuthManager, authMiddleware *
 	}
 
 	return h, nil
+}
+
+// SetWFHService sets the WFH service on the handler.
+func (h *Handler) SetWFHService(svc *wfh.Service) {
+	h.wfhService = svc
+}
+
+// SetHolidayLookup wires a holiday lookup that returns the holiday
+// name for a given date. Used by the calendar package's per-day
+// presence snapshot. nil is allowed (every date is non-holiday).
+func (h *Handler) SetHolidayLookup(l calendar.HolidayLookup) {
+	h.holidayLookup = l
 }

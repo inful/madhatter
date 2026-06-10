@@ -110,10 +110,25 @@ The system automatically maintains a 14-day rolling schedule using `ScheduleMain
 - `HandleLeaveChange()` - Creates cover assignments when members take leave
 - Web handlers automatically trigger schedule maintenance on key events
 
+### WFH Recurring Materialization
+Recurring-WFH is realized as ordinary approved `wfh_requests` rows with
+`is_recurring=1`. The materializer (`internal/wfh/recurring_materializer.go`)
+walks a date range, finds each active member's contractual weekdays
+(`team_members.recurring_wfh_{mon..fri}`), and inserts any missing rows as
+auto-approved. It runs from:
+- `SettlePendingRequests` (covers the next `SettlementDays`).
+- `handleWFHList` on each page load (covers the current period).
+- `EnsureRecurringMaterializedForMember` for a single member.
+
+Idempotent: the `UNIQUE(member_id, date)` constraint and the pre-insert
+existence check block duplicates. A user-withdrawn recurring row blocks
+re-materialization (the user's intent is preserved).
+
 ### Calendar ICS Generation
 - ICS files are generated with 0o600 permissions
 - Calendar subscriptions use UUID tokens stored in `calendar_subscriptions` table
 - Uses `github.com/arran4/golang-ical` library
+- **Calendar event descriptions are templated**. Meetings, support assignments, leave, and holidays each have a `text/template` and an `html/template` override wired through environment variables. Built-in defaults reproduce the previous hard-coded output exactly. Support, leave, and holiday templates share a per-day **presence snapshot** (active count, on-site/on-leave/WFH lists, HAT name, stable random order) computed fresh per request from the database. See the "Calendar template overrides" section of the README for the data model and examples.
 
 ### Test Structure
 - Tests are co-located with source files (e.g., `db_test.go` next to `db.go`)
@@ -124,6 +139,14 @@ The system automatically maintains a 14-day rolling schedule using `ScheduleMain
   - No need for manual defer cleanup functions
   - Prevents environment pollution between tests
   - Enforced by golangci-lint's `usetesting` rule
+
+### Time-Bound Tests (Go 1.25+)
+- For any test that waits for time to pass — `time.Sleep`, polling `require.Eventually`, scheduler/ticker tests, goroutine-synchronization tests — use `testing/synctest` instead of real time.
+- Real-time tests are slow or flaky. `synctest` provides fake time and `synctest.Wait()` for deterministic quiescence.
+- Workflow: wrap the test body in `synctest.Test(t, func(t *testing.T) { ... })`, then replace `time.Sleep` / `Eventually` with `synctest.Wait()` after the operation that triggers async work.
+- **I/O is not durably blocking inside a bubble.** For tests that need network I/O, use `httptest.NewServer` (real I/O, run outside the bubble) or inject a stub via a small interface (run inside the bubble).
+- **Mutexes are not durably blocking** — do not write tests that block only on a mutex; ensure time/channel/waitgroup is also involved.
+- See `.claude/skills/testing-synctest/SKILL.md` for the full pattern reference, including the durable-block table and migration checklist.
 
 ### SQLC Migration
 **Key files:**
@@ -407,11 +430,17 @@ madhatter/
 │   ├── holiday/
 │   │   ├── service.go             # Main service
 │   │   ├── scheduler.go           # Background fetcher
+│   │   ├── scheduler_test.go      # Scheduler tests
 │   │   ├── ical.go                # iCal parsing
 │   │   └── store.go               # In-memory storage
 │   ├── calendar/
 │   │   ├── ical.go                # ICS generation
 │   │   └── ical_test.go           # Tests
+│   ├── wfh/
+│   │   ├── service.go             # WFH request settlement service
+│   │   ├── scheduler.go           # Settlement scheduler
+│   │   ├── service_test.go        # Service tests
+│   │   └── scheduler_test.go      # Scheduler tests (uses synctest)
 │   └── web/
 │       ├── handlers.go            # Web UI handlers
 │       └── templates/             # HTML templates
@@ -501,7 +530,6 @@ The following features are planned but not yet implemented:
 ## References
 
 - **Main Documentation**: `README.md`
-- **Audit Report**: `documentation_audit.md`
 - **Holiday Implementation**: `HOLIDAY_IMPLEMENTATION.md`
 - **SQLC Migration**: `SQLC_MIGRATION_GUIDE.md`
 - **Auth Setup**: `AUTH_SETUP.md`

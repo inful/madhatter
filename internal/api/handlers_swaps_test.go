@@ -36,7 +36,8 @@ func TestSwapAPI_CreateSwapWithOwnAssignments_Returns422(t *testing.T) {
 	require.NoError(t, err)
 
 	api := humatest.Wrap(t, server.api)
-	resp := api.Post("/api/v1/swaps",
+	resp := api.Post(
+		"/api/v1/swaps",
 		map[string]string{
 			"requester_assignment_id": a1,
 			"target_assignment_id":    a2,

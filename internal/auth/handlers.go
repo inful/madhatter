@@ -1,9 +1,11 @@
 package auth
 
 import (
+	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -57,6 +59,29 @@ func (am *AuthManager) GetProvider(name string) (Provider, error) {
 // GetSessionManager returns the session manager.
 func (am *AuthManager) GetSessionManager() *SessionManager {
 	return am.sessionManager
+}
+
+// GetDevelopmentUsers returns selectable users for development-mode login.
+func (am *AuthManager) GetDevelopmentUsers(ctx context.Context) ([]DevelopmentLoginUser, error) {
+	provider, err := am.GetProvider("fake")
+	if err != nil {
+		if errors.Is(err, ErrProviderNotFound) {
+			return nil, nil
+		}
+
+		return nil, err
+	}
+
+	type developmentUserLister interface {
+		ListDevelopmentUsers(context.Context) ([]DevelopmentLoginUser, error)
+	}
+
+	lister, ok := provider.(developmentUserLister)
+	if !ok {
+		return nil, nil
+	}
+
+	return lister.ListDevelopmentUsers(ctx)
 }
 
 // HandleLogin initiates the OAuth2 flow.

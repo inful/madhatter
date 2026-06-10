@@ -24,6 +24,7 @@ import (
 	"github.com/inful/madhatter/internal/database/sqlc"
 	"github.com/inful/madhatter/internal/holiday"
 	"github.com/inful/madhatter/internal/rota"
+	"github.com/inful/madhatter/internal/wfh"
 )
 
 const (
@@ -46,6 +47,8 @@ type Server struct {
 	authMiddleware *auth.Middleware
 	sessionManager *auth.SessionManager
 	holidayService *holiday.Service
+	wfhService     *wfh.Service
+	wfhScheduler   *wfh.Scheduler
 	//nolint:containedctx // Context is used for graceful shutdown
 	cleanupCtx    context.Context
 	cleanupCancel context.CancelFunc
@@ -68,6 +71,12 @@ func NewServer(db *database.DB, development bool) (*Server, error) {
 		holidayService = nil
 	}
 
+	// Wire the holiday checker into the DB so any feature that needs to
+	// reject state on holidays (e.g. WFH requests) can consult it.
+	if holidayService != nil {
+		db.SetHolidayChecker(holidayService.ShouldSkipDate)
+	}
+
 	// Create engine and set holiday checker
 	engine := rota.NewEngine(db)
 	if holidayService != nil {
@@ -82,6 +91,16 @@ func NewServer(db *database.DB, development bool) (*Server, error) {
 		authMiddleware: authMiddleware,
 		sessionManager: sessionManager,
 		holidayService: holidayService,
+	}
+
+	// Initialize WFH service.
+	wfhCfg := wfh.LoadConfigFromEnv()
+	if wfhCfg.Enabled {
+		s.wfhService = wfh.NewService(db, wfhCfg)
+		s.wfhScheduler = wfh.NewScheduler(s.wfhService)
+		if err := s.wfhScheduler.Start(); err != nil {
+			log.Printf("Warning: Failed to start WFH scheduler: %v\n", err)
+		}
 	}
 
 	// Apply authentication middleware to the router BEFORE creating HUMA API
@@ -196,6 +215,9 @@ func (s *Server) stopCleanup() {
 	}
 	if s.sessionManager != nil {
 		s.sessionManager.StopCleanup()
+	}
+	if s.wfhScheduler != nil {
+		s.wfhScheduler.Stop()
 	}
 }
 

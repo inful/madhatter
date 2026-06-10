@@ -322,3 +322,136 @@ func TestGenerateMeetingsICalForToken_UsesDifferentLinksPerMeetingType(t *testin
 	require.Contains(t, morningBlock, "https://example.com/morning")
 	require.NotContains(t, morningBlock, "https://example.com/project")
 }
+
+func TestGenerateMeetingsForDate_WeekdayReturnsOneMeeting(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	require.True(t, ok)
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	t.Setenv("MIGRATIONS_PATH", filepath.Join(repoRoot, "migrations"))
+
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	db, err := database.New(filepath.Join(tmpDir, "test.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	_, err = db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	memberID, err := db.AddTeamMember(ctx, "Token Owner", "token@example.com")
+	require.NoError(t, err)
+	token, err := db.CreateCalendarSubscription(ctx, memberID)
+	require.NoError(t, err)
+	_ = token
+
+	// Tuesday 2026-01-13 is a business day with the morning meeting.
+	day, err := GenerateMeetingsForDate(
+		ctx, db, "2026-01-13",
+		MeetingsOptions{Timezone: "UTC", SeedSalt: "test"},
+		func(t time.Time) bool { return t.Weekday() != time.Saturday && t.Weekday() != time.Sunday },
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "2026-01-13", day.Date)
+	require.Len(t, day.Meetings, 1)
+	assert.Equal(t, "Morning Shuffle", day.Meetings[0].Name)
+	assert.Equal(t, "09:30", day.Meetings[0].StartTime)
+	assert.Equal(t, "09:45", day.Meetings[0].EndTime)
+	assert.NotEmpty(t, day.Meetings[0].Text)
+	assert.NotEmpty(t, string(day.Meetings[0].HTML))
+}
+
+func TestGenerateMeetingsForDate_MondayReturnsProjectMeeting(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	require.True(t, ok)
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	t.Setenv("MIGRATIONS_PATH", filepath.Join(repoRoot, "migrations"))
+
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	db, err := database.New(filepath.Join(tmpDir, "test.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	_, err = db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	memberID, err := db.AddTeamMember(ctx, "Token Owner", "token@example.com")
+	require.NoError(t, err)
+	_, err = db.CreateCalendarSubscription(ctx, memberID)
+	require.NoError(t, err)
+
+	// Monday 2026-01-12 has the project meeting.
+	day, err := GenerateMeetingsForDate(
+		ctx, db, "2026-01-12",
+		MeetingsOptions{Timezone: "UTC", SeedSalt: "test"},
+		func(t time.Time) bool { return t.Weekday() != time.Saturday && t.Weekday() != time.Sunday },
+	)
+	require.NoError(t, err)
+	require.Len(t, day.Meetings, 1)
+	assert.Equal(t, "Project shuffle", day.Meetings[0].Name)
+}
+
+func TestGenerateMeetingsForDate_WeekendReturnsNoMeetings(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	require.True(t, ok)
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	t.Setenv("MIGRATIONS_PATH", filepath.Join(repoRoot, "migrations"))
+
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	db, err := database.New(filepath.Join(tmpDir, "test.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	// Saturday 2026-01-17.
+	day, err := GenerateMeetingsForDate(
+		ctx, db, "2026-01-17",
+		MeetingsOptions{Timezone: "UTC", SeedSalt: "test"},
+		func(t time.Time) bool { return t.Weekday() != time.Saturday && t.Weekday() != time.Sunday },
+	)
+	require.NoError(t, err)
+	assert.Empty(t, day.Meetings)
+}
+
+func TestGenerateMeetingsForDate_InvalidDate(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	require.True(t, ok)
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	t.Setenv("MIGRATIONS_PATH", filepath.Join(repoRoot, "migrations"))
+
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	db, err := database.New(filepath.Join(tmpDir, "test.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	_, err = GenerateMeetingsForDate(
+		ctx, db, "not-a-date",
+		MeetingsOptions{Timezone: "UTC"},
+		func(t time.Time) bool { return true },
+	)
+	assert.Error(t, err)
+}
+
+func TestGenerateMeetingsForDate_InvalidToken(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	require.True(t, ok)
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	t.Setenv("MIGRATIONS_PATH", filepath.Join(repoRoot, "migrations"))
+
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	db, err := database.New(filepath.Join(tmpDir, "test.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	// Note: GenerateMeetingsForDate doesn't validate the token. The
+	// caller's handler (handleMeetingsDayHTML) is responsible for
+	// that. The test is here to confirm the calendar-package
+	// function focuses on rendering, not authorization.
+	day, err := GenerateMeetingsForDate(
+		ctx, db, "2026-01-13",
+		MeetingsOptions{Timezone: "UTC"},
+		func(t time.Time) bool { return t.Weekday() != time.Saturday && t.Weekday() != time.Sunday },
+	)
+	require.NoError(t, err)
+	assert.NotNil(t, day)
+}

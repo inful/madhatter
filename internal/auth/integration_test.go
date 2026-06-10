@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"path/filepath"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/inful/madhatter/internal/database"
@@ -90,6 +91,19 @@ func TestUserService_GetOrCreateUser(t *testing.T) {
 		_, err := userService.GetOrCreateUser(ctx, userInfo, "gitlab") // Different provider
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "already exists with provider")
+	})
+
+	t.Run("Same Email Fake Provider - Should Reuse Existing User", func(t *testing.T) {
+		userInfo := &UserInfo{
+			ID:    "dev-selected-user",
+			Email: "user1@example.com", // Existing user from forgejo
+			Name:  "User One",
+		}
+
+		user, err := userService.GetOrCreateUser(ctx, userInfo, "fake")
+		require.NoError(t, err)
+		assert.Equal(t, "user1@example.com", user.Email)
+		assert.Equal(t, "forgejo", user.Provider)
 	})
 }
 
@@ -241,17 +255,19 @@ func TestSessionManager_Integration(t *testing.T) {
 	})
 
 	t.Run("Expired Session", func(t *testing.T) {
-		// Create session with very short duration (1 second)
-		shortSessionManager := NewSessionManager(db.GetQueries(), 1*time.Second)
-		token, err := shortSessionManager.CreateSession(ctx, user.ID)
-		require.NoError(t, err)
+		synctest.Test(t, func(t *testing.T) {
+			// Create session with very short duration (1 second)
+			shortSessionManager := NewSessionManager(db.GetQueries(), 1*time.Second)
+			token, err := shortSessionManager.CreateSession(ctx, user.ID)
+			require.NoError(t, err)
 
-		// Wait for expiration plus buffer
-		time.Sleep(3 * time.Second)
+			// Wait for expiration plus buffer
+			time.Sleep(3 * time.Second)
 
-		// Should no longer be valid (query checks expires_at)
-		_, err = shortSessionManager.ValidateSession(ctx, token)
-		assert.Error(t, err, "Expired session should not validate")
+			// Should no longer be valid (query checks expires_at)
+			_, err = shortSessionManager.ValidateSession(ctx, token)
+			assert.Error(t, err, "Expired session should not validate")
+		})
 	})
 }
 

@@ -2,6 +2,7 @@ package web
 
 import (
 	"html/template"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
@@ -109,6 +110,7 @@ func TestAllTemplatesParse(t *testing.T) {
 		"schedule_generate.html",
 		"database_restore.html",
 		"calendar.html",
+		"help.html",
 	}
 
 	for _, tmpl := range templates {
@@ -214,6 +216,7 @@ func TestAllTemplatesWithData(t *testing.T) {
 		{"ScheduleGenerate", "schedule_generate.html", generateData},
 		{"Calendar", "calendar.html", calendarData},
 		{"CalendarShowResult", "calendar.html", calendarShowResultData},
+		{"Help", "help.html", map[string]any{"Template": "help"}},
 		{"Login", "login.html", loginData},
 	}
 
@@ -230,4 +233,23 @@ func TestAllTemplatesWithData(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestHandleHelp_Returns200(t *testing.T) {
+	mockDB := &database.DB{}
+	mockAuthManager := &auth.AuthManager{}
+	mockMiddleware := &auth.Middleware{}
+
+	handler, err := NewHandler(mockDB, mockAuthManager, mockMiddleware, false, nil)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest(http.MethodGet, "/help", nil)
+	w := httptest.NewRecorder()
+
+	handler.handleHelp(w, req)
+
+	assert.Equal(t, 200, w.Code)
+	assert.Contains(t, w.Body.String(), "User Guide")
+	assert.Contains(t, w.Body.String(), "HAT Day Swaps")
+	assert.Contains(t, w.Body.String(), "How WFH Is Settled")
 }

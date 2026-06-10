@@ -17,11 +17,13 @@ type GetPresenceTodayOutput struct {
 		SupportIsCover bool                  `json:"support_is_cover"`
 		Present        []database.TeamMember `json:"present"`
 		Away           []database.TeamMember `json:"away"`
+		WFH            []database.TeamMember `json:"wfh"`
 	}
 }
 
 func (s *Server) handleGetPresenceToday(ctx context.Context, input *struct{}) (*GetPresenceTodayOutput, error) {
 	_ = input
+	todayDate := time.Now()
 
 	// Check authentication.
 	if s.authMiddleware == nil {
@@ -31,7 +33,7 @@ func (s *Server) handleGetPresenceToday(ctx context.Context, input *struct{}) (*
 		return nil, huma.Error401Unauthorized("Authentication required")
 	}
 
-	dateStr := time.Now().Format("2006-01-02")
+	dateStr := todayDate.Format("2006-01-02")
 
 	members, err := s.db.GetActiveTeamMembers(ctx)
 	if err != nil {
@@ -43,7 +45,13 @@ func (s *Server) handleGetPresenceToday(ctx context.Context, input *struct{}) (*
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to get leave records", err)
 	}
-	present, away := buildPresenceLists(memberMap, leaveRecords)
+
+	wfhRequests, err := s.db.GetWFHRequestsByDateAndStatus(ctx, dateStr, database.WFHStatusApproved)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("Failed to get WFH requests", err)
+	}
+
+	present, away, wfhMembers := buildPresenceListsWithWFH(memberMap, leaveRecords, wfhRequests, todayDate)
 
 	assignments, err := s.db.GetAssignmentsByDate(ctx, dateStr)
 	if err != nil {
@@ -57,6 +65,7 @@ func (s *Server) handleGetPresenceToday(ctx context.Context, input *struct{}) (*
 	resp.Body.SupportIsCover = supportIsCover
 	resp.Body.Present = present
 	resp.Body.Away = away
+	resp.Body.WFH = wfhMembers
 	return resp, nil
 }
 
@@ -68,7 +77,16 @@ func mapMembersByID(members []database.TeamMember) map[string]database.TeamMembe
 	return memberMap
 }
 
-func buildPresenceLists(memberMap map[string]database.TeamMember, leaveRecords []database.LeaveRecord) (present []database.TeamMember, away []database.TeamMember) {
+// buildPresenceListsWithWFH partitions active members into present (on-site), away (on leave),
+// and WFH (approved work-from-home) lists for a given day.
+//
+//nolint:cyclop // Presence partitioning intentionally combines multiple exclusion rules.
+func buildPresenceListsWithWFH(
+	memberMap map[string]database.TeamMember,
+	leaveRecords []database.LeaveRecord,
+	wfhRequests []database.WFHRequest,
+	date time.Time,
+) (present, away, wfhList []database.TeamMember) {
 	onLeave := make(map[string]struct{}, len(leaveRecords))
 	away = make([]database.TeamMember, 0, len(leaveRecords))
 	for i := range leaveRecords {
@@ -80,9 +98,37 @@ func buildPresenceLists(memberMap map[string]database.TeamMember, leaveRecords [
 		away = append(away, member)
 	}
 
-	present = make([]database.TeamMember, 0, len(memberMap)-len(onLeave))
+	onWFH := make(map[string]struct{}, len(wfhRequests))
+	wfhList = make([]database.TeamMember, 0, len(wfhRequests))
+	for i := range wfhRequests {
+		member, ok := memberMap[wfhRequests[i].MemberID]
+		if !ok {
+			continue
+		}
+		onWFH[wfhRequests[i].MemberID] = struct{}{}
+		wfhList = append(wfhList, member)
+	}
+
+	for id, member := range memberMap {
+		if !member.IsRecurringWFHOn(date) {
+			continue
+		}
+		if _, awayToday := onLeave[id]; awayToday {
+			continue
+		}
+		if _, exists := onWFH[id]; exists {
+			continue
+		}
+		onWFH[id] = struct{}{}
+		wfhList = append(wfhList, member)
+	}
+
+	present = make([]database.TeamMember, 0, len(memberMap))
 	for id, member := range memberMap {
 		if _, absent := onLeave[id]; absent {
+			continue
+		}
+		if _, remote := onWFH[id]; remote {
 			continue
 		}
 		present = append(present, member)
@@ -90,8 +136,9 @@ func buildPresenceLists(memberMap map[string]database.TeamMember, leaveRecords [
 
 	sort.Slice(present, func(i, j int) bool { return present[i].Name < present[j].Name })
 	sort.Slice(away, func(i, j int) bool { return away[i].Name < away[j].Name })
+	sort.Slice(wfhList, func(i, j int) bool { return wfhList[i].Name < wfhList[j].Name })
 
-	return present, away
+	return present, away, wfhList
 }
 
 func selectSupportMember(assignments []database.RotaAssignment, memberMap map[string]database.TeamMember) (*database.TeamMember, bool) {

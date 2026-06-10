@@ -4,10 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"hash/fnv"
 	"html/template"
-	"math"
-	"math/rand"
 	"net/url"
 	"os"
 	"sort"
@@ -295,17 +292,12 @@ func addMorningMeetingEvent(ctx context.Context, db *database.DB, g *ICalGenerat
 		event.SetURL(opts.TeamsURL)
 	}
 
-	description, err := buildMeetingDescription(ctx, db, dateStr, morningMeetingSummary, morningMeetingSeedKey, true, opts)
+	rendered, err := renderMorningMeeting(ctx, db, day, loc, opts)
 	if err != nil {
 		return err
 	}
-	event.SetDescription(description)
-
-	htmlDesc, err := buildMeetingDescriptionHTML(ctx, db, dateStr, morningMeetingSummary, morningMeetingSeedKey, true, opts)
-	if err != nil {
-		return err
-	}
-	setAltDescHTML(event, htmlDesc)
+	event.SetDescription(rendered.Text)
+	setAltDescHTML(event, string(rendered.HTML))
 	return nil
 }
 
@@ -328,17 +320,12 @@ func addProjectMeetingEvent(ctx context.Context, db *database.DB, g *ICalGenerat
 		event.SetURL(opts.TeamsURL)
 	}
 
-	description, err := buildMeetingDescription(ctx, db, dateStr, projectMeetingSummary, projectMeetingSeedKey, false, opts)
+	rendered, err := renderProjectMeeting(ctx, db, day, loc, opts)
 	if err != nil {
 		return err
 	}
-	event.SetDescription(description)
-
-	htmlDesc, err := buildMeetingDescriptionHTML(ctx, db, dateStr, projectMeetingSummary, projectMeetingSeedKey, false, opts)
-	if err != nil {
-		return err
-	}
-	setAltDescHTML(event, htmlDesc)
+	event.SetDescription(rendered.Text)
+	setAltDescHTML(event, string(rendered.HTML))
 	return nil
 }
 
@@ -593,24 +580,125 @@ func getSupportForDate(ctx context.Context, db *database.DB, dateStr string) (st
 }
 
 func shuffledOrder(present []database.TeamMember, seedKey string) []database.TeamMember {
-	if len(present) <= 1 {
-		return append([]database.TeamMember(nil), present...)
-	}
-
-	seed := stableSeed(seedKey)
-	//nolint:gosec // Deterministic shuffle for meeting order; not used for security.
-	rng := rand.New(rand.NewSource(int64(seed & math.MaxInt64)))
-
-	out := append([]database.TeamMember(nil), present...)
-	for i := len(out) - 1; i > 0; i-- {
-		j := rng.Intn(i + 1)
-		out[i], out[j] = out[j], out[i]
-	}
-	return out
+	return stableShuffle(present, seedKey)
 }
 
-func stableSeed(key string) uint64 {
-	h := fnv.New64a()
-	_, _ = h.Write([]byte(key))
-	return h.Sum64()
+// DayMeetings is the rendered output for a single date's meetings.
+// Used by the web layer to display meetings on the dashboard.
+type DayMeetings struct {
+	Date     string
+	Meetings []MeetingRender
+}
+
+// MeetingRender is one meeting's rendered text and HTML for a date.
+// Both fields are produced by the operator's meetings templates; the
+// text is suitable for preformatted blocks, the HTML for
+// passthrough rendering in a host html/template page.
+type MeetingRender struct {
+	Name      string
+	StartTime string
+	EndTime   string
+	Text      string
+	HTML      template.HTML
+	TeamsURL  string
+}
+
+// GenerateMeetingsForDate returns the rendered meetings for a single
+// date. The date is parsed in the configured timezone; weekends and
+// non-business days return an empty result. Used by the web layer to
+// show a per-day view of the meetings calendar.
+func GenerateMeetingsForDate(
+	ctx context.Context,
+	db *database.DB,
+	dateStr string,
+	opts MeetingsOptions,
+	isBusinessDay func(time.Time) bool,
+) (*DayMeetings, error) {
+	opts = opts.normalized()
+	loc, err := time.LoadLocation(opts.Timezone)
+	if err != nil {
+		loc = time.UTC
+	}
+
+	day, err := time.ParseInLocation(meetingDateLayout, dateStr, loc)
+	if err != nil {
+		return nil, fmt.Errorf("parse date %q: %w", dateStr, err)
+	}
+
+	if isBusinessDay != nil && !isBusinessDay(day) {
+		return &DayMeetings{Date: dateStr, Meetings: nil}, nil
+	}
+
+	result := &DayMeetings{Date: dateStr}
+	switch day.Weekday() {
+	case time.Monday:
+		m, err := renderProjectMeeting(ctx, db, day, loc, opts)
+		if err != nil {
+			return nil, err
+		}
+		result.Meetings = []MeetingRender{m}
+	case time.Tuesday, time.Wednesday, time.Thursday, time.Friday:
+		m, err := renderMorningMeeting(ctx, db, day, loc, opts)
+		if err != nil {
+			return nil, err
+		}
+		result.Meetings = []MeetingRender{m}
+	case time.Saturday, time.Sunday:
+		// No meetings on weekends. The isBusinessDay check above
+		// already returns an empty result for non-business days, so
+		// this branch is mostly defensive.
+	}
+	return result, nil
+}
+
+// renderMorningMeeting produces the rendered text and HTML for a
+// morning-shuffle meeting on the given day.
+func renderMorningMeeting(ctx context.Context, db *database.DB, day time.Time, loc *time.Location, opts MeetingsOptions) (MeetingRender, error) {
+	dateStr := day.In(loc).Format(meetingDateLayout)
+	startAt := time.Date(day.Year(), day.Month(), day.Day(), meetingStartHour, meetingStartMinute, 0, 0, loc)
+	endAt := startAt.Add(morningMeetingMinutes * time.Minute)
+
+	text, err := buildMeetingDescription(ctx, db, dateStr, morningMeetingSummary, morningMeetingSeedKey, true, opts)
+	if err != nil {
+		return MeetingRender{}, err
+	}
+	html, err := buildMeetingDescriptionHTML(ctx, db, dateStr, morningMeetingSummary, morningMeetingSeedKey, true, opts)
+	if err != nil {
+		return MeetingRender{}, err
+	}
+
+	return MeetingRender{
+		Name:      morningMeetingSummary,
+		StartTime: startAt.Format("15:04"),
+		EndTime:   endAt.Format("15:04"),
+		Text:      text,
+		HTML:      template.HTML(html), //nolint:gosec // html was produced by html/template and is already escaped.
+		TeamsURL:  opts.TeamsURL,
+	}, nil
+}
+
+// renderProjectMeeting produces the rendered text and HTML for a
+// project-shuffle meeting on the given day.
+func renderProjectMeeting(ctx context.Context, db *database.DB, day time.Time, loc *time.Location, opts MeetingsOptions) (MeetingRender, error) {
+	dateStr := day.In(loc).Format(meetingDateLayout)
+	startAt := time.Date(day.Year(), day.Month(), day.Day(), meetingStartHour, meetingStartMinute, 0, 0, loc)
+	endAt := startAt.Add(projectMeetingMinutes * time.Minute)
+
+	text, err := buildMeetingDescription(ctx, db, dateStr, projectMeetingSummary, projectMeetingSeedKey, false, opts)
+	if err != nil {
+		return MeetingRender{}, err
+	}
+	html, err := buildMeetingDescriptionHTML(ctx, db, dateStr, projectMeetingSummary, projectMeetingSeedKey, false, opts)
+	if err != nil {
+		return MeetingRender{}, err
+	}
+
+	return MeetingRender{
+		Name:      projectMeetingSummary,
+		StartTime: startAt.Format("15:04"),
+		EndTime:   endAt.Format("15:04"),
+		Text:      text,
+		HTML:      template.HTML(html), //nolint:gosec // html was produced by html/template and is already escaped.
+		TeamsURL:  opts.TeamsURL,
+	}, nil
 }

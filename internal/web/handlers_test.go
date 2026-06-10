@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"html/template"
 	"net/http"
 	"net/http/httptest"
@@ -243,7 +244,7 @@ func TestHandleHelp_Returns200(t *testing.T) {
 	handler, err := NewHandler(mockDB, mockAuthManager, mockMiddleware, false, nil)
 	require.NoError(t, err)
 
-	req := httptest.NewRequest(http.MethodGet, "/help", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/help", nil)
 	w := httptest.NewRecorder()
 
 	handler.handleHelp(w, req)

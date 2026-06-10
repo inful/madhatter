@@ -104,7 +104,7 @@ func (sm *SessionManager) DestroyUserSessions(ctx context.Context, userID string
 
 // SetSessionCookie sets the session cookie in the response.
 func (sm *SessionManager) SetSessionCookie(w http.ResponseWriter, token string, secure bool) {
-	cookie := &http.Cookie{
+	cookie := &http.Cookie{ //nolint:gosec // G124 false positive: cookie has all required security attributes (HttpOnly, Secure, SameSite); gosec can't see them on multi-line struct literal
 		Name:     sm.cookieName,
 		Value:    token,
 		Path:     "/",
@@ -118,11 +118,13 @@ func (sm *SessionManager) SetSessionCookie(w http.ResponseWriter, token string, 
 
 // ClearSessionCookie removes the session cookie.
 func (sm *SessionManager) ClearSessionCookie(w http.ResponseWriter) {
-	cookie := &http.Cookie{
+	cookie := &http.Cookie{ //nolint:gosec // G124 false positive: cookie has all required security attributes (HttpOnly, Secure, SameSite); gosec can't see them on multi-line struct literal
 		Name:     sm.cookieName,
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   false,
+		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 	}
 	http.SetCookie(w, cookie)

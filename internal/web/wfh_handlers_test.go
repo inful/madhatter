@@ -44,7 +44,7 @@ func TestHandleWFHList_MaterializesRecurringRows(t *testing.T) {
 	h.wfhService = svc
 
 	// First GET: materializer runs, recurring rows appear.
-	rec := httptest.NewRequest(http.MethodGet, "/wfh", nil)
+	rec := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/wfh", nil)
 	rec = withUser(rec, "alice@example.com", "Alice", false)
 	rr := httptest.NewRecorder()
 	h.handleWFHList(rr, rec)
@@ -59,7 +59,7 @@ func TestHandleWFHList_MaterializesRecurringRows(t *testing.T) {
 	}
 
 	// Second GET: idempotent — no new rows.
-	rec2 := httptest.NewRequest(http.MethodGet, "/wfh", nil)
+	rec2 := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/wfh", nil)
 	rec2 = withUser(rec2, "alice@example.com", "Alice", false)
 	rr2 := httptest.NewRecorder()
 	h.handleWFHList(rr2, rec2)

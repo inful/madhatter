@@ -26,7 +26,7 @@ func TestHandleDatabaseBackup_NonAdmin_Forbidden(t *testing.T) {
 	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
 	require.NoError(t, err)
 
-	req := httptest.NewRequest(http.MethodGet, "/admin/database/backup", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/admin/database/backup", nil)
 	req = req.WithContext(context.WithValue(req.Context(), auth.UserContextKey, &sqlc.GetSessionByTokenRow{
 		Email:   "user@example.com",
 		Name:    "User",
@@ -51,7 +51,7 @@ func TestHandleDatabaseBackup_Admin_DownloadsSQLiteFile(t *testing.T) {
 	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
 	require.NoError(t, err)
 
-	req := httptest.NewRequest(http.MethodGet, "/admin/database/backup", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/admin/database/backup", nil)
 	req = req.WithContext(context.WithValue(req.Context(), auth.UserContextKey, &sqlc.GetSessionByTokenRow{
 		Email:   "admin@example.com",
 		Name:    "Admin",
@@ -75,7 +75,7 @@ func TestHandleDatabaseRestore_NonAdmin_Forbidden(t *testing.T) {
 	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
 	require.NoError(t, err)
 
-	req := httptest.NewRequest(http.MethodGet, "/admin/database/restore", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/admin/database/restore", nil)
 	req = req.WithContext(context.WithValue(req.Context(), auth.UserContextKey, &sqlc.GetSessionByTokenRow{
 		Email:   "user@example.com",
 		Name:    "User",
@@ -97,7 +97,7 @@ func TestHandleDatabaseRestore_GetAdmin_RendersForm(t *testing.T) {
 	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
 	require.NoError(t, err)
 
-	req := httptest.NewRequest(http.MethodGet, "/admin/database/restore", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/admin/database/restore", nil)
 	req = req.WithContext(context.WithValue(req.Context(), auth.UserContextKey, &sqlc.GetSessionByTokenRow{
 		Email:   "admin@example.com",
 		Name:    "Admin",
@@ -133,7 +133,7 @@ func TestHandleDatabaseRestore_PostAdmin_ValidBackup(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, writer.Close())
 
-	req := httptest.NewRequest(http.MethodPost, "/admin/database/restore", body)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/admin/database/restore", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req = req.WithContext(context.WithValue(req.Context(), auth.UserContextKey, &sqlc.GetSessionByTokenRow{
 		Email:   "admin@example.com",
@@ -164,7 +164,7 @@ func TestHandleDatabaseRestore_PostAdmin_InvalidBackup(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, writer.Close())
 
-	req := httptest.NewRequest(http.MethodPost, "/admin/database/restore", body)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/admin/database/restore", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req = req.WithContext(context.WithValue(req.Context(), auth.UserContextKey, &sqlc.GetSessionByTokenRow{
 		Email:   "admin@example.com",
@@ -202,7 +202,7 @@ func TestHandleDatabaseRestore_PostAdmin_ApplyWithoutConfirmation(t *testing.T) 
 	require.NoError(t, writer.WriteField("mode", "apply"))
 	require.NoError(t, writer.Close())
 
-	req := httptest.NewRequest(http.MethodPost, "/admin/database/restore", body)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/admin/database/restore", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req = req.WithContext(context.WithValue(req.Context(), auth.UserContextKey, &sqlc.GetSessionByTokenRow{
 		Email:   "admin@example.com",
@@ -244,7 +244,7 @@ func TestHandleDatabaseRestore_PostAdmin_ApplyWithConfirmation(t *testing.T) {
 	require.NoError(t, writer.WriteField("confirm_overwrite", "on"))
 	require.NoError(t, writer.Close())
 
-	req := httptest.NewRequest(http.MethodPost, "/admin/database/restore", body)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/admin/database/restore", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req = req.WithContext(context.WithValue(req.Context(), auth.UserContextKey, &sqlc.GetSessionByTokenRow{
 		Email:   "admin@example.com",
@@ -290,7 +290,7 @@ func TestHandleDatabaseRestore_ValidateThenApply_WithoutReupload(t *testing.T) {
 	require.NoError(t, validateWriter.WriteField("mode", "validate"))
 	require.NoError(t, validateWriter.Close())
 
-	validateReq := httptest.NewRequest(http.MethodPost, "/admin/database/restore", validateBody)
+	validateReq := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/admin/database/restore", validateBody)
 	validateReq.Header.Set("Content-Type", validateWriter.FormDataContentType())
 	validateReq = validateReq.WithContext(context.WithValue(validateReq.Context(), auth.UserContextKey, &sqlc.GetSessionByTokenRow{
 		Email:   "admin@example.com",
@@ -316,7 +316,7 @@ func TestHandleDatabaseRestore_ValidateThenApply_WithoutReupload(t *testing.T) {
 	require.NoError(t, applyWriter.WriteField("validated_token", validatedToken))
 	require.NoError(t, applyWriter.Close())
 
-	applyReq := httptest.NewRequest(http.MethodPost, "/admin/database/restore", applyBody)
+	applyReq := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/admin/database/restore", applyBody)
 	applyReq.Header.Set("Content-Type", applyWriter.FormDataContentType())
 	applyReq = applyReq.WithContext(context.WithValue(applyReq.Context(), auth.UserContextKey, &sqlc.GetSessionByTokenRow{
 		Email:   "admin@example.com",
@@ -361,7 +361,7 @@ func TestHandleDatabaseRestore_PostAdmin_Apply_WhenRestoreBusy_ReturnsConflict(t
 	require.NoError(t, writer.WriteField("confirm_overwrite", "on"))
 	require.NoError(t, writer.Close())
 
-	req := httptest.NewRequest(http.MethodPost, "/admin/database/restore", body)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/admin/database/restore", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req = req.WithContext(context.WithValue(req.Context(), auth.UserContextKey, &sqlc.GetSessionByTokenRow{
 		Email:   "admin@example.com",

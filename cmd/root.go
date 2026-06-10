@@ -102,7 +102,7 @@ func Execute() {
 }
 
 func serveCommand(ctx context.Context, db *database.DB) {
-	server, err := api.NewServer(db, CLI.Serve.Development) //nolint:contextcheck
+	server, err := api.NewServer(db, CLI.Serve.Development) //nolint:contextcheck // ctx is reserved for the long-running server lifecycle; the constructor uses its own short-lived contexts
 	if err != nil {
 		log.Fatalf("Failed to create server: %v\n", err)
 	}

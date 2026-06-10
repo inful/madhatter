@@ -14,8 +14,9 @@ import (
 )
 
 const (
-	maxRestoreUploadBytes  = 50 << 20
-	pendingRestoreTokenTTL = 30 * time.Minute
+	maxRestoreUploadBytes   = 50 << 20
+	maxMultipartMemoryLimit = 32 << 10
+	pendingRestoreTokenTTL  = 30 * time.Minute
 )
 
 func (h *Handler) handleDatabaseBackup(w http.ResponseWriter, r *http.Request) {
@@ -63,7 +64,7 @@ func (h *Handler) handleDatabaseRestore(w http.ResponseWriter, r *http.Request) 
 
 func (h *Handler) handleDatabaseRestorePost(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxRestoreUploadBytes)
-	if err := r.ParseMultipartForm(maxRestoreUploadBytes); err != nil {
+	if err := r.ParseMultipartForm(maxMultipartMemoryLimit); err != nil { //nolint:gosec // bounded by MaxBytesReader above
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}

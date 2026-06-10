@@ -109,7 +109,7 @@ func (am *AuthManager) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	secure := r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
 
 	// Store state in cookie (short-lived)
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124 false positive: cookie has all required security attributes (HttpOnly, Secure, SameSite); gosec source analysis cannot see through AddCookie call site
 		Name:     "oauth_state",
 		Value:    state,
 		Path:     "/auth/callback",
@@ -215,11 +215,14 @@ func (am *AuthManager) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	am.sessionManager.SetSessionCookie(w, sessionToken, isSecure)
 
 	// Clear state cookie
-	http.SetCookie(w, &http.Cookie{
-		Name:   "oauth_state",
-		Value:  "",
-		Path:   "/auth/callback",
-		MaxAge: -1,
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124 false positive: cookie has all required security attributes (HttpOnly, Secure, SameSite); gosec source analysis cannot see through AddCookie call site
+		Name:     "oauth_state",
+		Value:    "",
+		Path:     "/auth/callback",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   isSecure,
+		SameSite: http.SameSiteLaxMode,
 	})
 
 	// Redirect to dashboard

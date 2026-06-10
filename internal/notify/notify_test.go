@@ -88,8 +88,11 @@ func TestLogNotifier_SwapRequested_NotifiesTargetOnly(t *testing.T) {
 	assert.Equal(t, "tgt@example.com", got[0].Recipient)
 	assert.Equal(t, "Target", got[0].RecipientName)
 	assert.Equal(t, EventSwapRequested, got[0].EventKind)
-	assert.Contains(t, got[0].Subject, "HAT swap request from Requester")
+	assert.Contains(t, got[0].Subject, "Requester")
+	assert.Contains(t, got[0].Body, "Target")
 	assert.Contains(t, got[0].Body, "Requester")
+	assert.Contains(t, got[0].Body, "2026-07-01")
+	assert.Contains(t, got[0].Body, "2026-07-15")
 }
 
 func TestLogNotifier_SwapAccepted_NotifiesBothParties(t *testing.T) {
@@ -121,7 +124,7 @@ func TestLogNotifier_ChannelDisabled_NotCalled(t *testing.T) {
 		"tgt": {email: "tgt@example.com", name: "Target"},
 	}}
 	// Disable the email channel; the notifier should skip it.
-	n := NewLogNotifier(resolver, map[string]bool{"email": false}, email)
+	n := NewLogNotifier(resolver, map[string]bool{ChannelEmail: false}, email)
 
 	n.SwapRequested(context.Background(), SwapEvent{
 		SwapID:            "swap-1",
@@ -137,7 +140,7 @@ func TestLogNotifier_ChannelDisabled_NotCalled(t *testing.T) {
 }
 
 func TestLogNotifier_UnknownRecipient_Skipped(t *testing.T) {
-	email := &fakeChannel{name: "email"}
+	email := &fakeChannel{name: ChannelEmail}
 	resolver := fakeResolver{byID: map[string]fakeRecipient{}} // empty
 	n := NewLogNotifier(resolver, nil, email)
 
@@ -155,7 +158,7 @@ func TestLogNotifier_UnknownRecipient_Skipped(t *testing.T) {
 }
 
 func TestLogNotifier_WFHStateChanged_NotifiesRequester(t *testing.T) {
-	email := &fakeChannel{name: "email"}
+	email := &fakeChannel{name: ChannelEmail}
 	resolver := fakeResolver{byID: map[string]fakeRecipient{
 		"req": {email: "req@example.com", name: "Requester"},
 	}}
@@ -179,7 +182,7 @@ func TestLogNotifier_WFHStateChanged_NotifiesRequester(t *testing.T) {
 }
 
 func TestLogNotifier_CoverAssigned_NotifiesCoverMember(t *testing.T) {
-	email := &fakeChannel{name: "email"}
+	email := &fakeChannel{name: ChannelEmail}
 	resolver := fakeResolver{byID: map[string]fakeRecipient{
 		"cover": {email: "cover@example.com", name: "Cover"},
 	}}

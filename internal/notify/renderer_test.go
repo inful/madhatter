@@ -1,0 +1,153 @@
+package notify
+
+import (
+	"os"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+//nolint:goconst // test fixtures intentionally reuse sample names and dates
+func TestRenderer_RendersAllEventKinds(t *testing.T) {
+	r, err := newRenderer("https://rota.example.com")
+	require.NoError(t, err)
+
+	cases := []struct {
+		name        string
+		kind        string
+		event       any
+		wantSubject []string // substrings the subject must contain
+		wantBody    []string // substrings the body must contain
+	}{
+		{
+			name: "swap.requested",
+			kind: EventSwapRequested,
+			event: SwapEvent{
+				RequesterName: "Alice", TargetName: "Bob",
+				RequesterDate: "2026-07-01", TargetDate: "2026-07-15",
+			},
+			wantSubject: []string{"Alice"},
+			wantBody:    []string{"Alice", "Bob", "2026-07-01", "2026-07-15", "https://rota.example.com/swaps"},
+		},
+		{
+			name: "swap.accepted",
+			kind: EventSwapAccepted,
+			event: SwapEvent{
+				RequesterName: "Alice", TargetName: "Bob",
+				RequesterDate: "2026-07-01", TargetDate: "2026-07-15",
+			},
+			wantSubject: []string{"Bob"},
+			wantBody:    []string{"Alice", "Bob"},
+		},
+		{
+			name: "swap.rejected",
+			kind: EventSwapRejected,
+			event: SwapEvent{
+				RequesterName: "Alice", TargetName: "Bob",
+				RequesterDate: "2026-07-01", TargetDate: "2026-07-15",
+			},
+			wantSubject: []string{"Bob"},
+			wantBody:    []string{"Bob", "Alice"},
+		},
+		{
+			name: "swap.cancelled",
+			kind: EventSwapCancelled,
+			event: SwapEvent{
+				RequesterName: "Alice", TargetName: "Bob",
+				RequesterDate: "2026-07-01", TargetDate: "2026-07-15",
+			},
+			wantSubject: []string{"Alice"},
+			wantBody:    []string{"Alice", "Bob"},
+		},
+		{
+			name: "wfh.state_changed",
+			kind: EventWFHStateChange,
+			event: WFHEvent{
+				Date:      "2026-08-01",
+				OldStatus: "pending",
+				NewStatus: "approved",
+				ActorName: "system",
+			},
+			wantSubject: []string{"2026-08-01", "approved"},
+			wantBody:    []string{"2026-08-01", "pending", "approved", "system"},
+		},
+		{
+			name: "cover.assigned",
+			kind: EventCoverAssigned,
+			event: CoverEvent{
+				LeaveMemberName: "Alice",
+				StartDate:       "2026-09-01",
+				EndDate:         "2026-09-05",
+			},
+			wantSubject: []string{"Alice", "2026-09-01"},
+			wantBody:    []string{"Alice", "2026-09-01", "2026-09-05"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			subject, body, err := r.render(tc.kind, tc.event)
+			require.NoError(t, err)
+			assert.NotEmpty(t, subject)
+			assert.NotEmpty(t, body)
+			for _, s := range tc.wantSubject {
+				assert.Contains(t, subject, s,
+					"subject %q missing substring %q", subject, s)
+			}
+			for _, s := range tc.wantBody {
+				assert.Contains(t, body, s,
+					"body missing substring %q", s)
+			}
+		})
+	}
+}
+
+func TestRenderer_OverrideViaEnvVar(t *testing.T) {
+	dir := t.TempDir()
+	override := dir + "/swap.requested.subject.tmpl"
+	require.NoError(t, writeFile(override, "OVERRIDE: {{.RequesterName}} is asking you"))
+
+	t.Setenv("NOTIFY_SWAP_REQUESTED_SUBJECT_TXT_PATH", override)
+
+	r, err := newRenderer("https://x")
+	require.NoError(t, err)
+
+	subject, _, err := r.render(EventSwapRequested, SwapEvent{
+		RequesterName: "Alice", TargetName: "Bob",
+		RequesterDate: "2026-07-01", TargetDate: "2026-07-15",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "OVERRIDE: Alice is asking you", subject)
+}
+
+func TestRenderer_OverrideFileMissing_ReturnsError(t *testing.T) {
+	t.Setenv("NOTIFY_SWAP_REQUESTED_SUBJECT_TXT_PATH", "/no/such/file")
+
+	_, err := newRenderer("https://x")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "NOTIFY_SWAP_REQUESTED_SUBJECT_TXT_PATH")
+}
+
+func TestRenderer_EnvKeyFor(t *testing.T) {
+	cases := map[string]string{
+		EventSwapRequested:  "NOTIFY_SWAP_REQUESTED_TXT_PATH",
+		EventSwapAccepted:   "NOTIFY_SWAP_ACCEPTED_TXT_PATH",
+		EventSwapRejected:   "NOTIFY_SWAP_REJECTED_TXT_PATH",
+		EventSwapCancelled:  "NOTIFY_SWAP_CANCELLED_TXT_PATH",
+		EventWFHStateChange: "NOTIFY_WFH_STATE_CHANGED_TXT_PATH",
+		EventCoverAssigned:  "NOTIFY_COVER_ASSIGNED_TXT_PATH",
+	}
+	for kind, want := range cases {
+		assert.Equal(t, want, envKeyFor(kind, "body"),
+			"envKeyFor(%q, body)", kind)
+		assert.Equal(t, want[:len(want)-len("_TXT_PATH")]+"_SUBJECT_TXT_PATH",
+			envKeyFor(kind, "subject"),
+			"envKeyFor(%q, subject)", kind)
+	}
+}
+
+// writeFile is a tiny helper to keep the override test self-contained.
+func writeFile(path, content string) error {
+	return os.WriteFile(path, []byte(content), 0o600)
+}

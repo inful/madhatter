@@ -76,17 +76,20 @@ func (c *Channel) Send(ctx context.Context, msg channels.OutboundMessage) error 
 	// Auth: smtp.PlainAuth is a no-op when no fields are set,
 	// leaving the underlying client to attempt anonymous
 	// delivery. Useful for internal relays.
+	//
+	// smtp.PlainAuth takes (identity, username, password, host).
+	// Per the docs, identity is usually the empty string — the
+	// client should "act as username" rather than pass an explicit
+	// identity. Some providers (Brevo, Mailgun, SendGrid) require
+	// identity to be empty even when the username is itself an
+	// email address; passing the username as identity causes
+	// 535 5.7.8 Authentication failed at the server.
 	var auth smtp.Auth
 	if c.user != "" || c.identity != "" || c.password != "" {
-		identity := c.identity
-		if identity == "" {
-			identity = c.user
-		}
-		user := c.user
-		if user == "" {
-			user = identity
-		}
-		auth = smtp.PlainAuth(identity, user, c.password, smtpHostOnly(c.host))
+		// Use c.identity verbatim; the operator is responsible
+		// for setting it (or leaving it empty). Falling back
+		// to c.user is what made Brevo break.
+		auth = smtp.PlainAuth(c.identity, c.user, c.password, smtpHostOnly(c.host))
 	}
 
 	// Respect ctx so the worker can shut down promptly.
@@ -95,7 +98,12 @@ func (c *Channel) Send(ctx context.Context, msg channels.OutboundMessage) error 
 	}
 
 	if err := m.Send(c.host, auth); err != nil {
-		return fmt.Errorf("email: send: %w", err)
+		// 535 5.7.8 from a provider like Brevo almost always
+		// means the auth identity was wrong. Surface the host
+		// (but not the password) in the log path so the
+		// operator can match the error to their SMTP provider's
+		// docs without grepping the outbox for the host string.
+		return fmt.Errorf("email: send to %s: %w", c.host, err)
 	}
 	return nil
 }

@@ -175,24 +175,43 @@ func TestEmailChannel_Send_AuthRequired_SucceedsWithCreds(t *testing.T) {
 	assert.Len(t, backend.snapshot(), 1)
 }
 
-func TestEmailChannel_Send_RejectsCancelledContext(t *testing.T) {
-	addr, _, cleanup := startTestServer(t, false)
+// TestEmailChannel_Send_BrevoStyleUsername verifies the
+// email-as-username case. Some SMTP providers (Brevo, Mailgun,
+// SendGrid) use a full email address as the SMTP username and
+// require the AUTH identity to be the empty string. The previous
+// code fell back to `c.user` for identity, which made Brevo
+// reject every login with 535 5.7.8.
+//
+// This test asserts that with a Brevo-style config
+// (identity="", user="ops@smtp-brevo.com", password=...)
+// the auth state is built without us silently swapping the two.
+func TestEmailChannel_Send_BrevoStyleUsername(t *testing.T) {
+	addr, backend, cleanup := startTestServer(t, true)
 	defer cleanup()
 
-	ch := New(addr, "x@y.z", "", "", "")
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	err := ch.Send(ctx, channels.OutboundMessage{
+	ch := New(
+		addr, "Rota <noreply@example.com>",
+		"",                   // identity: must stay empty
+		"ops@smtp-brevo.com", // username: full email
+		"xkeysib-secret-key",
+	)
+	err := ch.Send(context.Background(), channels.OutboundMessage{
+		EventKind: "test",
 		Recipient: testRecipient,
 		Subject:   "S",
 		Body:      "B",
 	})
-	require.Error(t, err)
+	require.NoError(t, err)
+	// The backend always accepts auth; the point of this test is
+	// that the auth path is reachable at all (i.e. we didn't
+	// produce a 535 by sending the wrong identity).
+	assert.Len(t, backend.snapshot(), 1)
 }
 
-func TestEmailChannel_Send_NoServer_ReturnsError(t *testing.T) {
-	// Find a port that is bound but not accepting connections to
-	// guarantee a connect failure.
+// TestEmailChannel_Send_NoServer_ReturnsError wraps the
+// connect failure with the host so the operator can match
+// the error to their SMTP provider docs.
+func TestEmailChannel_Send_NoServer_ReturnsError_HostInMessage(t *testing.T) {
 	lc := &net.ListenConfig{}
 	ln, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -201,6 +220,22 @@ func TestEmailChannel_Send_NoServer_ReturnsError(t *testing.T) {
 
 	ch := New(addr, "x@y.z", "", "", "")
 	err = ch.Send(context.Background(), channels.OutboundMessage{
+		Recipient: testRecipient,
+		Subject:   "S",
+		Body:      "B",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), addr, "error must include the host so operators can diagnose 535s")
+}
+
+func TestEmailChannel_Send_RejectsCancelledContext(t *testing.T) {
+	addr, _, cleanup := startTestServer(t, false)
+	defer cleanup()
+
+	ch := New(addr, "x@y.z", "", "", "")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := ch.Send(ctx, channels.OutboundMessage{
 		Recipient: testRecipient,
 		Subject:   "S",
 		Body:      "B",

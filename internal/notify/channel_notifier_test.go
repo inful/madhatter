@@ -194,6 +194,71 @@ func TestChannelNotifier_DisabledRecipient_NotEnqueued(t *testing.T) {
 	assert.Empty(t, rows, "no outbox row written for an unsubscribed recipient")
 }
 
+// TestChannelNotifier_MalformedRecipient_NotEnqueued verifies that
+// a recipient whose email doesn't parse as a single RFC 5322
+// address is dropped at enqueue time, not after the worker has
+// burned 5 retries on it. This is the defensive fix for the
+// data-entry problem where a stray env-var name (e.g.
+// "NOTIFY_BASE_URL") ended up in team_members.email.
+func TestChannelNotifier_MalformedRecipient_NotEnqueued(t *testing.T) {
+	db, cleanup := setupNotifyDB(t)
+	defer cleanup()
+	ctx := t.Context()
+
+	r, err := newRenderer("https://x", nil)
+	require.NoError(t, err)
+	ch := &recordingChannel{}
+	worker := NewWorker(db, NewStaticResolver(ch), OutboxConfig{
+		PollInterval: time.Hour, MaxAttempts: 5, BackoffBase: time.Second,
+	}, nil)
+
+	resolver := stubResolver{
+		byID: map[string]fakeRecipient{
+			"alice": {email: "alice@example.com", name: "Alice"},
+			"bad":   {email: "NOTIFY_BASE_URL", name: "Bad"},
+			"trail": {email: "trail@example.com NOTIFY_BASE_URL", name: "Trail"},
+		},
+	}
+	n := NewChannelNotifier(db, resolver, r, worker, []string{"test"}, nil)
+
+	n.CoverAssigned(ctx, CoverEvent{
+		LeaveID:         "leave-1",
+		LeaveMemberID:   "alice",
+		LeaveMemberName: "Alice",
+		CoverMemberID:   "bad",
+		CoverMemberName: "Bad",
+		StartDate:       "2026-09-01",
+		EndDate:         "2026-09-05",
+	})
+	n.CoverAssigned(ctx, CoverEvent{
+		LeaveID:         "leave-1",
+		LeaveMemberID:   "alice",
+		LeaveMemberName: "Alice",
+		CoverMemberID:   "trail",
+		CoverMemberName: "Trail",
+		StartDate:       "2026-09-01",
+		EndDate:         "2026-09-05",
+	})
+	// Sanity: a well-formed recipient still goes through.
+	n.CoverAssigned(ctx, CoverEvent{
+		LeaveID:         "leave-1",
+		LeaveMemberID:   "alice",
+		LeaveMemberName: "Alice",
+		CoverMemberID:   "alice",
+		CoverMemberName: "Alice",
+		StartDate:       "2026-09-01",
+		EndDate:         "2026-09-05",
+	})
+
+	worker.drain(ctx)
+	require.Len(t, ch.Sent(), 1, "only the well-formed recipient should be sent")
+	assert.Equal(t, "alice@example.com", ch.Sent()[0].Recipient)
+
+	rows, err := db.ClaimDueOutboxEntries(ctx, 10)
+	require.NoError(t, err)
+	assert.Empty(t, rows, "no outbox row written for malformed recipients")
+}
+
 // setupNotifyDB creates a temp database for notify tests.
 func setupNotifyDB(t *testing.T) (*database.DB, func()) {
 	t.Helper()

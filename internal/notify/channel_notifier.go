@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/mail"
 	"sync"
 
 	"github.com/inful/madhatter/internal/database"
@@ -171,10 +172,17 @@ func (n *ChannelNotifier) enqueue(ctx context.Context, eventKind string, event a
 // resolveRecipient looks up the email and display name for a
 // recipient and checks whether they have unsubscribed. Returns
 // (email, name, true) on success; on any failure (unknown id,
-// empty email, unsubscribed) it logs the reason and returns
-// (ok=false) so the caller can continue. A preference-lookup
-// error is treated as "enabled" so a transient DB blip doesn't
-// silently drop notifications.
+// empty or malformed email, unsubscribed) it logs the reason and
+// returns (ok=false) so the caller can continue. A preference-
+// lookup error is treated as "enabled" so a transient DB blip
+// doesn't silently drop notifications.
+//
+// The malformed-email check uses net/mail.ParseAddress, the same
+// parser the email channel uses downstream. Catching the
+// rejection at enqueue time turns a 5-retry, 30-minute failure
+// loop into an immediate skip — important for data-entry
+// problems (e.g. a stray env-var name typed into the team form)
+// that would otherwise burn outbox rows for hours.
 func (n *ChannelNotifier) resolveRecipient(ctx context.Context, eventKind string, r recipientRef) (email, name string, ok bool) {
 	email, name, err := n.resolver.ResolveByID(ctx, r.id)
 	if err != nil || email == "" {
@@ -182,6 +190,14 @@ func (n *ChannelNotifier) resolveRecipient(ctx context.Context, eventKind string
 			slog.String("event_kind", eventKind),
 			slog.String("member_id", r.id),
 			slog.String("err", errMsg(err)))
+		return "", "", false
+	}
+	if _, parseErr := mail.ParseAddress(email); parseErr != nil {
+		n.logger.Warn("notify: skip recipient with malformed email",
+			slog.String("event_kind", eventKind),
+			slog.String("member_id", r.id),
+			slog.String("email", email),
+			slog.String("err", parseErr.Error()))
 		return "", "", false
 	}
 	enabled, err := n.resolver.EmailEnabled(ctx, r.id)

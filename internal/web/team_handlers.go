@@ -34,7 +34,18 @@ func (h *Handler) handleTeamPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err := h.db.AddTeamMember(ctx, r.PostForm.Get("name"), r.PostForm.Get("email"))
+	name := strings.TrimSpace(r.PostForm.Get("name"))
+	email := strings.TrimSpace(r.PostForm.Get("email"))
+
+	// Validate at handler level so an admin typing an env-var
+	// name (or any other non-address) into the email field gets
+	// immediate feedback, not a 30-minute outbox retry loop.
+	if err := validateTeamMemberInput(name, email); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	_, err := h.db.AddTeamMember(ctx, name, email)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

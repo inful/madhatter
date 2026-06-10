@@ -130,11 +130,12 @@ func (w *Worker) dispatch(ctx context.Context, row database.OutboxEntry) {
 	}
 
 	msg := channels.OutboundMessage{
-		EventKind:     row.EventKind,
-		Recipient:     row.Recipient,
-		RecipientName: row.RecipientName,
-		Subject:       row.Subject,
-		Body:          row.Body,
+		EventKind:      row.EventKind,
+		Recipient:      row.Recipient,
+		RecipientName:  row.RecipientName,
+		Subject:        row.Subject,
+		Body:           row.Body,
+		UnsubscribeURL: row.UnsubscribeURL,
 	}
 	err := ch.Send(ctx, msg)
 	if err == nil {

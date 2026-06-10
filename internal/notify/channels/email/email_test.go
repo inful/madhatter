@@ -218,3 +218,51 @@ func TestSmtpHostOnly(t *testing.T) {
 		assert.Equal(t, want, smtpHostOnly(in), "smtpHostOnly(%q)", in)
 	}
 }
+
+// TestEmailChannel_Send_UnsubscribeHeader_Applied verifies that
+// the channel emits RFC 8058 List-Unsubscribe and
+// List-Unsubscribe-Post headers when the producer supplies an
+// UnsubscribeURL. The headers are not added when the URL is
+// empty, so callers that don't track unsubscribe state don't
+// get noisy headers in their delivery.
+func TestEmailChannel_Send_UnsubscribeHeader_Applied(t *testing.T) {
+	addr, backend, cleanup := startTestServer(t, false)
+	defer cleanup()
+
+	ch := New(addr, "Rota <noreply@example.com>", "", "", "")
+	const unsubURL = "https://rota.example.com/unsubscribe?token=abc"
+	err := ch.Send(context.Background(), channels.OutboundMessage{
+		Recipient:      testRecipient,
+		Subject:        "S",
+		Body:           "B",
+		UnsubscribeURL: unsubURL,
+	})
+	require.NoError(t, err)
+
+	got := backend.snapshot()
+	require.Len(t, got, 1)
+	body := got[0].body
+	assert.Contains(t, body, "List-Unsubscribe: <"+unsubURL+">")
+	assert.Contains(t, body, "List-Unsubscribe-Post: List-Unsubscribe=One-Click")
+}
+
+// TestEmailChannel_Send_NoUnsubscribeURL_NoHeader is the negative
+// case: when the producer doesn't supply an UnsubscribeURL, the
+// channel must not add unsubscribe headers of its own.
+func TestEmailChannel_Send_NoUnsubscribeURL_NoHeader(t *testing.T) {
+	addr, backend, cleanup := startTestServer(t, false)
+	defer cleanup()
+
+	ch := New(addr, "Rota <noreply@example.com>", "", "", "")
+	err := ch.Send(context.Background(), channels.OutboundMessage{
+		Recipient: testRecipient,
+		Subject:   "S",
+		Body:      "B",
+	})
+	require.NoError(t, err)
+
+	got := backend.snapshot()
+	require.Len(t, got, 1)
+	assert.NotContains(t, got[0].body, "List-Unsubscribe")
+	assert.NotContains(t, got[0].body, "List-Unsubscribe-Post")
+}

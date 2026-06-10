@@ -21,6 +21,7 @@ func TestNotificationOutbox_EnqueueAndGet(t *testing.T) {
 		"Alice",
 		"Test subject",
 		"Test body",
+		"", // no unsubscribe URL
 	)
 	require.NoError(t, err)
 	require.NotEmpty(t, id)
@@ -51,12 +52,38 @@ func TestNotificationOutbox_EnqueueEmptyRecipientName_StoredAsEmpty(t *testing.T
 		"", // no display name
 		"Subject",
 		"Body",
+		"", // no unsubscribe URL
 	)
 	require.NoError(t, err)
 
 	got, err := db.GetOutboxEntry(ctx, id)
 	require.NoError(t, err)
 	assert.Empty(t, got.RecipientName)
+	assert.Empty(t, got.UnsubscribeURL)
+}
+
+// TestNotificationOutbox_UnsubscribeURL_Roundtrip verifies that
+// the per-row unsubscribe URL survives the enqueue/claim roundtrip.
+// The email channel uses it to stamp the List-Unsubscribe header.
+func TestNotificationOutbox_UnsubscribeURL_Roundtrip(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	const url = "https://rota.example.com/unsubscribe?token=alice-id"
+	id, err := db.EnqueueOutboxEntry(ctx,
+		"e", OutboxChannelEmail, "alice@example.com", "Alice", "s", "b", url)
+	require.NoError(t, err)
+
+	got, err := db.GetOutboxEntry(ctx, id)
+	require.NoError(t, err)
+	assert.Equal(t, url, got.UnsubscribeURL)
+
+	// The URL must also survive the claim path.
+	claimed, err := db.ClaimDueOutboxEntries(ctx, 10)
+	require.NoError(t, err)
+	require.Len(t, claimed, 1)
+	assert.Equal(t, url, claimed[0].UnsubscribeURL)
 }
 
 func TestNotificationOutbox_ClaimDue_OnlyReturnsDueRows(t *testing.T) {
@@ -65,11 +92,11 @@ func TestNotificationOutbox_ClaimDue_OnlyReturnsDueRows(t *testing.T) {
 	ctx := context.Background()
 
 	// One row that's due now.
-	dueID, err := db.EnqueueOutboxEntry(ctx, "e", OutboxChannelEmail, "a@x", "A", "s", "b")
+	dueID, err := db.EnqueueOutboxEntry(ctx, "e", OutboxChannelEmail, "a@x", "A", "s", "b", "")
 	require.NoError(t, err)
 
 	// One row whose next_attempt_at is in the future (manually pushed).
-	futureID, err := db.EnqueueOutboxEntry(ctx, "e", OutboxChannelEmail, "b@x", "B", "s", "b")
+	futureID, err := db.EnqueueOutboxEntry(ctx, "e", OutboxChannelEmail, "b@x", "B", "s", "b", "")
 	require.NoError(t, err)
 	future := time.Now().Add(time.Hour)
 	require.NoError(t, db.MarkOutboxFailed(ctx, futureID, "transient", future))
@@ -86,7 +113,7 @@ func TestNotificationOutbox_ClaimDue_RespectsLimit(t *testing.T) {
 	ctx := context.Background()
 
 	for range 5 {
-		_, err := db.EnqueueOutboxEntry(ctx, "e", OutboxChannelEmail, "a@x", "A", "s", "b")
+		_, err := db.EnqueueOutboxEntry(ctx, "e", OutboxChannelEmail, "a@x", "A", "s", "b", "")
 		require.NoError(t, err)
 	}
 
@@ -100,7 +127,7 @@ func TestNotificationOutbox_MarkSent_TransitionsToSent(t *testing.T) {
 	defer cleanup()
 	ctx := context.Background()
 
-	id, err := db.EnqueueOutboxEntry(ctx, "e", OutboxChannelEmail, "a@x", "A", "s", "b")
+	id, err := db.EnqueueOutboxEntry(ctx, "e", OutboxChannelEmail, "a@x", "A", "s", "b", "")
 	require.NoError(t, err)
 
 	require.NoError(t, db.MarkOutboxSent(ctx, id))
@@ -117,7 +144,7 @@ func TestNotificationOutbox_MarkFailed_IncrementsAttemptsAndSchedulesRetry(t *te
 	defer cleanup()
 	ctx := context.Background()
 
-	id, err := db.EnqueueOutboxEntry(ctx, "e", OutboxChannelEmail, "a@x", "A", "s", "b")
+	id, err := db.EnqueueOutboxEntry(ctx, "e", OutboxChannelEmail, "a@x", "A", "s", "b", "")
 	require.NoError(t, err)
 
 	next := time.Now().Add(5 * time.Minute)
@@ -136,7 +163,7 @@ func TestNotificationOutbox_MarkDead_TransitionsToDead(t *testing.T) {
 	defer cleanup()
 	ctx := context.Background()
 
-	id, err := db.EnqueueOutboxEntry(ctx, "e", OutboxChannelEmail, "a@x", "A", "s", "b")
+	id, err := db.EnqueueOutboxEntry(ctx, "e", OutboxChannelEmail, "a@x", "A", "s", "b", "")
 	require.NoError(t, err)
 
 	now := time.Now()
@@ -154,7 +181,7 @@ func TestNotificationOutbox_FailedRowsAreDueAfterNextAttempt(t *testing.T) {
 	defer cleanup()
 	ctx := context.Background()
 
-	id, err := db.EnqueueOutboxEntry(ctx, "e", OutboxChannelEmail, "a@x", "A", "s", "b")
+	id, err := db.EnqueueOutboxEntry(ctx, "e", OutboxChannelEmail, "a@x", "A", "s", "b", "")
 	require.NoError(t, err)
 
 	// Schedule a retry in the past; the row should be picked up.
@@ -173,7 +200,7 @@ func TestNotificationOutbox_DeadRowsAreNotClaimed(t *testing.T) {
 	defer cleanup()
 	ctx := context.Background()
 
-	id, err := db.EnqueueOutboxEntry(ctx, "e", OutboxChannelEmail, "a@x", "A", "s", "b")
+	id, err := db.EnqueueOutboxEntry(ctx, "e", OutboxChannelEmail, "a@x", "A", "s", "b", "")
 	require.NoError(t, err)
 	require.NoError(t, db.MarkOutboxDead(ctx, id, "gave up", time.Now()))
 

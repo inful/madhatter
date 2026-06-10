@@ -13,19 +13,20 @@ import (
 // It mirrors the SQLC-generated struct but uses plain Go types where possible
 // so callers don't have to deal with sql.NullString / sql.NullTime.
 type OutboxEntry struct {
-	ID            string
-	EventKind     string
-	Channel       string
-	Recipient     string
-	RecipientName string
-	Subject       string
-	Body          string
-	Attempts      int
-	LastError     string
-	NextAttemptAt time.Time
-	Status        string
-	CreatedAt     time.Time
-	SentAt        *time.Time
+	ID             string
+	EventKind      string
+	Channel        string
+	Recipient      string
+	RecipientName  string
+	Subject        string
+	Body           string
+	UnsubscribeURL string
+	Attempts       int
+	LastError      string
+	NextAttemptAt  time.Time
+	Status         string
+	CreatedAt      time.Time
+	SentAt         *time.Time
 }
 
 // OutboxChannel is the set of supported channel identifiers written to
@@ -43,25 +44,30 @@ const (
 )
 
 // EnqueueOutboxEntry writes a new outbox row and returns the generated ID.
-// The caller supplies an explicit ID via uuid.New().String() if it needs to
-// reference the row later; for the common fire-and-forget case, leave id
-// empty and a fresh UUID is generated.
-func (db *DB) EnqueueOutboxEntry(ctx context.Context, eventKind, channel, recipient, recipientName, subject, body string) (string, error) {
+// unsubscribeURL is the per-recipient one-click unsubscribe URL the email
+// channel stamps on the List-Unsubscribe header at send time; pass ""
+// when the producer doesn't track per-recipient unsubscribe state.
+func (db *DB) EnqueueOutboxEntry(ctx context.Context, eventKind, channel, recipient, recipientName, subject, body, unsubscribeURL string) (string, error) {
 	id := uuid.New().String()
 
 	var rn sql.NullString
 	if recipientName != "" {
 		rn = sql.NullString{String: recipientName, Valid: true}
 	}
+	var uu sql.NullString
+	if unsubscribeURL != "" {
+		uu = sql.NullString{String: unsubscribeURL, Valid: true}
+	}
 
 	if _, err := db.queries.CreateOutboxEntry(ctx, sqlc.CreateOutboxEntryParams{
-		ID:            id,
-		EventKind:     eventKind,
-		Channel:       channel,
-		Recipient:     recipient,
-		RecipientName: rn,
-		Subject:       subject,
-		Body:          body,
+		ID:             id,
+		EventKind:      eventKind,
+		Channel:        channel,
+		Recipient:      recipient,
+		RecipientName:  rn,
+		Subject:        subject,
+		Body:           body,
+		UnsubscribeUrl: uu,
 	}); err != nil {
 		return "", err
 	}
@@ -154,18 +160,19 @@ func (db *DB) QueryOutboxRowsForTest(ctx context.Context, limit int) ([]string, 
 
 func outboxFromSQLC(r sqlc.NotificationOutbox) OutboxEntry {
 	e := OutboxEntry{
-		ID:            r.ID,
-		EventKind:     r.EventKind,
-		Channel:       r.Channel,
-		Recipient:     r.Recipient,
-		RecipientName: r.RecipientName.String,
-		Subject:       r.Subject,
-		Body:          r.Body,
-		Attempts:      int(r.Attempts),
-		LastError:     r.LastError.String,
-		NextAttemptAt: r.NextAttemptAt.UTC(),
-		Status:        r.Status,
-		CreatedAt:     r.CreatedAt.UTC(),
+		ID:             r.ID,
+		EventKind:      r.EventKind,
+		Channel:        r.Channel,
+		Recipient:      r.Recipient,
+		RecipientName:  r.RecipientName.String,
+		Subject:        r.Subject,
+		Body:           r.Body,
+		UnsubscribeURL: r.UnsubscribeUrl.String,
+		Attempts:       int(r.Attempts),
+		LastError:      r.LastError.String,
+		NextAttemptAt:  r.NextAttemptAt.UTC(),
+		Status:         r.Status,
+		CreatedAt:      r.CreatedAt.UTC(),
 	}
 	if r.SentAt.Valid {
 		t := r.SentAt.Time.UTC()

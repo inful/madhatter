@@ -1,7 +1,7 @@
 -- name: CreateOutboxEntry :execresult
 INSERT INTO notification_outbox (
-    id, event_kind, channel, recipient, recipient_name, subject, body
-) VALUES (?, ?, ?, ?, ?, ?, ?);
+    id, event_kind, channel, recipient, recipient_name, subject, body, unsubscribe_url
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 
 -- name: ClaimDueOutboxEntries :many
 -- Atomically claim a batch of due rows by bumping next_attempt_at far into
@@ -12,7 +12,7 @@ INSERT INTO notification_outbox (
 -- same YYYY-MM-DD HH:MM:SS form that datetime('now') returns, so the
 -- comparison is meaningful. Without this normalisation SQLite compares
 -- strings and 'T' > ' ' lexically, so no row would ever be due.
-SELECT id, event_kind, channel, recipient, recipient_name, subject, body,
+SELECT id, event_kind, channel, recipient, recipient_name, subject, body, unsubscribe_url,
        attempts, last_error, next_attempt_at, status, created_at, sent_at
 FROM notification_outbox
 WHERE status = 'pending'
@@ -39,7 +39,7 @@ SET status = 'dead', attempts = attempts + 1,
 WHERE id = ?;
 
 -- name: GetOutboxEntry :one
-SELECT id, event_kind, channel, recipient, recipient_name, subject, body,
+SELECT id, event_kind, channel, recipient, recipient_name, subject, body, unsubscribe_url,
        attempts, last_error, next_attempt_at, status, created_at, sent_at
 FROM notification_outbox
 WHERE id = ?;

@@ -26,4 +26,16 @@ type OutboundMessage struct {
 	RecipientName string
 	Subject       string
 	Body          string
+
+	// Headers is an optional set of additional message headers.
+	// Channels that don't support arbitrary headers (most don't)
+	// should ignore it; channels that do (email) apply it to the
+	// outbound message. Keys are canonical (e.g. "List-Unsubscribe").
+	Headers map[string]string
+
+	// UnsubscribeURL is the one-click unsubscribe URL for the
+	// recipient. The email channel uses it both as a List-Unsubscribe
+	// header value (RFC 8058) and embeds it in the rendered body
+	// footer by way of the renderer. Other channels can ignore it.
+	UnsubscribeURL string
 }

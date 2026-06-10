@@ -167,9 +167,18 @@ func (n *ChannelNotifier) enqueue(ctx context.Context, eventKind string, event a
 			continue
 		}
 
+		// unsubscribeURL is filled in by the renderer; the email
+		// channel stamps it on the List-Unsubscribe header at
+		// send time. Default to "" so non-email channels are not
+		// confused.
+		unsubscribeURL := ""
+		if n.renderer.unsubscribeFn != nil {
+			unsubscribeURL = n.renderer.unsubscribeFn(r.id)
+		}
+
 		for channelName := range n.enabled {
 			if _, err := n.db.EnqueueOutboxEntry(ctx,
-				eventKind, channelName, email, name, subject, body,
+				eventKind, channelName, email, name, subject, body, unsubscribeURL,
 			); err != nil {
 				n.logger.Warn("notify: enqueue outbox row failed",
 					slog.String("event_kind", eventKind),

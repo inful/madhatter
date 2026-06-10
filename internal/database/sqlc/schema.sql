@@ -205,6 +205,7 @@ CREATE TABLE IF NOT EXISTS notification_outbox (
     recipient_name  TEXT,
     subject         TEXT NOT NULL,
     body            TEXT NOT NULL,
+    unsubscribe_url TEXT,
     attempts        INTEGER NOT NULL DEFAULT 0,
     last_error      TEXT,
     next_attempt_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

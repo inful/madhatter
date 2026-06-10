@@ -12,7 +12,7 @@ import (
 )
 
 const claimDueOutboxEntries = `-- name: ClaimDueOutboxEntries :many
-SELECT id, event_kind, channel, recipient, recipient_name, subject, body,
+SELECT id, event_kind, channel, recipient, recipient_name, subject, body, unsubscribe_url,
        attempts, last_error, next_attempt_at, status, created_at, sent_at
 FROM notification_outbox
 WHERE status = 'pending'
@@ -46,6 +46,7 @@ func (q *Queries) ClaimDueOutboxEntries(ctx context.Context, limit int64) ([]Not
 			&i.RecipientName,
 			&i.Subject,
 			&i.Body,
+			&i.UnsubscribeUrl,
 			&i.Attempts,
 			&i.LastError,
 			&i.NextAttemptAt,
@@ -68,18 +69,19 @@ func (q *Queries) ClaimDueOutboxEntries(ctx context.Context, limit int64) ([]Not
 
 const createOutboxEntry = `-- name: CreateOutboxEntry :execresult
 INSERT INTO notification_outbox (
-    id, event_kind, channel, recipient, recipient_name, subject, body
-) VALUES (?, ?, ?, ?, ?, ?, ?)
+    id, event_kind, channel, recipient, recipient_name, subject, body, unsubscribe_url
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreateOutboxEntryParams struct {
-	ID            string         `json:"id"`
-	EventKind     string         `json:"event_kind"`
-	Channel       string         `json:"channel"`
-	Recipient     string         `json:"recipient"`
-	RecipientName sql.NullString `json:"recipient_name"`
-	Subject       string         `json:"subject"`
-	Body          string         `json:"body"`
+	ID             string         `json:"id"`
+	EventKind      string         `json:"event_kind"`
+	Channel        string         `json:"channel"`
+	Recipient      string         `json:"recipient"`
+	RecipientName  sql.NullString `json:"recipient_name"`
+	Subject        string         `json:"subject"`
+	Body           string         `json:"body"`
+	UnsubscribeUrl sql.NullString `json:"unsubscribe_url"`
 }
 
 func (q *Queries) CreateOutboxEntry(ctx context.Context, arg CreateOutboxEntryParams) (sql.Result, error) {
@@ -91,11 +93,12 @@ func (q *Queries) CreateOutboxEntry(ctx context.Context, arg CreateOutboxEntryPa
 		arg.RecipientName,
 		arg.Subject,
 		arg.Body,
+		arg.UnsubscribeUrl,
 	)
 }
 
 const getOutboxEntry = `-- name: GetOutboxEntry :one
-SELECT id, event_kind, channel, recipient, recipient_name, subject, body,
+SELECT id, event_kind, channel, recipient, recipient_name, subject, body, unsubscribe_url,
        attempts, last_error, next_attempt_at, status, created_at, sent_at
 FROM notification_outbox
 WHERE id = ?
@@ -112,6 +115,7 @@ func (q *Queries) GetOutboxEntry(ctx context.Context, id string) (NotificationOu
 		&i.RecipientName,
 		&i.Subject,
 		&i.Body,
+		&i.UnsubscribeUrl,
 		&i.Attempts,
 		&i.LastError,
 		&i.NextAttemptAt,

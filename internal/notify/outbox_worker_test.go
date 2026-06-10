@@ -59,7 +59,7 @@ func (c *workerFakeChannel) Calls() int {
 func enqueueSampleOutbox(t *testing.T, db *database.DB) {
 	t.Helper()
 	_, err := db.EnqueueOutboxEntry(context.Background(),
-		"test.event", "test", "alice@example.com", "Recipient", "hi", "hello")
+		"test.event", "test", "alice@example.com", "Recipient", "hi", "hello", "")
 	require.NoError(t, err)
 }
 

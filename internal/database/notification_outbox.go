@@ -124,6 +124,34 @@ func (db *DB) GetOutboxEntry(ctx context.Context, id string) (OutboxEntry, error
 	return outboxFromSQLC(r), nil
 }
 
+// ListOutboxIDs returns up to limit outbox row IDs ordered by
+// created_at. Intended for tests; production code should use the typed
+// queries.
+func (db *DB) ListOutboxIDs(ctx context.Context, limit int) ([]string, error) {
+	rows, err := db.QueryContext(ctx,
+		"SELECT id FROM notification_outbox ORDER BY created_at LIMIT ?", limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// QueryOutboxRowsForTest is a test-only helper that returns the first
+// up-to-limit outbox row IDs. Used by notify package tests to find
+// a row to inspect after a manual drain.
+func (db *DB) QueryOutboxRowsForTest(ctx context.Context, limit int) ([]string, error) {
+	return db.ListOutboxIDs(ctx, limit)
+}
+
 func outboxFromSQLC(r sqlc.NotificationOutbox) OutboxEntry {
 	e := OutboxEntry{
 		ID:            r.ID,

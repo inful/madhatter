@@ -1,4 +1,3 @@
-//nolint:goconst // test fixtures intentionally reuse sample names, dates, and IDs
 package notify
 
 import (

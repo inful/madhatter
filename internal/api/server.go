@@ -101,14 +101,7 @@ func NewServer(db *database.DB, development bool) (*Server, error) {
 	}
 
 	// Initialize WFH service.
-	wfhCfg := wfh.LoadConfigFromEnv()
-	if wfhCfg.Enabled {
-		s.wfhService = wfh.NewService(db, wfhCfg)
-		s.wfhScheduler = wfh.NewScheduler(s.wfhService)
-		if err := s.wfhScheduler.Start(); err != nil {
-			log.Printf("Warning: Failed to start WFH scheduler: %v\n", err)
-		}
-	}
+	s.setupWFHService(db)
 
 	// Build the notification system. In --development mode (or when
 	// NOTIFY_EMAIL_ENABLED is false), only a LogChannel is registered;
@@ -116,19 +109,8 @@ func NewServer(db *database.DB, development bool) (*Server, error) {
 	// production the email channel is registered and the worker
 	// drains the outbox into SMTP. The notifier itself is always
 	// installed, so handlers can call it unconditionally.
-	notifier, notifierWorker, err := s.buildNotifier(db)
-	if err != nil {
-		return nil, fmt.Errorf("build notifier: %w", err)
-	}
-	s.notifier = notifier
-	s.notifyWorker = notifierWorker
-
-	// Wire the notifier into consumers.
-	if s.wfhService != nil && s.notifier != nil {
-		s.wfhService.SetNotifier(s.notifier)
-	}
-	if s.engine != nil && s.notifier != nil {
-		s.engine.SetNotifier(rotaCoverAdapter{inner: s.notifier})
+	if err := s.setupNotifier(db); err != nil {
+		return nil, err
 	}
 
 	// Apply authentication middleware to the router BEFORE creating HUMA API
@@ -139,9 +121,22 @@ func NewServer(db *database.DB, development bool) (*Server, error) {
 	}
 
 	// Create HUMA API with Chi adapter and security scheme documentation
-	config := huma.DefaultConfig("Support Rota API", "1.0.0")
+	s.api = humachi.New(router, buildHumaConfig())
 
-	// Configure OpenAPI security schemes
+	// Register all operations
+	s.registerOperations(development)
+	if err := s.registerWebRoutes(development); err != nil {
+		return nil, err
+	}
+
+	return s, nil
+}
+
+// buildHumaConfig returns the HUMA config with the OpenAPI security
+// schemes documented. Extracted to keep NewServer's cyclomatic
+// complexity below the lint limit.
+func buildHumaConfig() huma.Config {
+	config := huma.DefaultConfig("Support Rota API", "1.0.0")
 	config.Components.SecuritySchemes = map[string]*huma.SecurityScheme{
 		// Session-based authentication (web interface)
 		"sessionAuth": {
@@ -155,19 +150,49 @@ func NewServer(db *database.DB, development bool) (*Server, error) {
 			Type:         "http",
 			Scheme:       "bearer",
 			BearerFormat: "API Token",
-			Description:  "API token authentication using Bearer tokens. Generated via /api/v1/tokens/generate endpoint.",
+			Description:  "Token-based authentication using Bearer tokens. Generated via /api/v1/tokens/generate endpoint.",
 		},
 	}
+	return config
+}
 
-	s.api = humachi.New(router, config)
-
-	// Register all operations
-	s.registerOperations(development)
-	if err := s.registerWebRoutes(development); err != nil {
-		return nil, err
+// setupWFHService initializes the WFH service and scheduler when
+// WFH is enabled in config. Failures to start the scheduler are
+// logged but do not abort server construction. Extracted from
+// NewServer for cyclomatic complexity.
+func (s *Server) setupWFHService(db *database.DB) {
+	wfhCfg := wfh.LoadConfigFromEnv()
+	if !wfhCfg.Enabled {
+		return
 	}
+	s.wfhService = wfh.NewService(db, wfhCfg)
+	s.wfhScheduler = wfh.NewScheduler(s.wfhService)
+	if startErr := s.wfhScheduler.Start(); startErr != nil {
+		log.Printf("Warning: Failed to start WFH scheduler: %v\n", startErr)
+	}
+}
 
-	return s, nil
+// setupNotifier builds the notification system and wires it into
+// the consumers. In --development mode (or when
+// NOTIFY_EMAIL_ENABLED is false), only a LogChannel is registered;
+// in production the email channel is registered and the worker
+// drains the outbox into SMTP. Returns the underlying error
+// (wrapped) when building fails so NewServer can fail fast.
+func (s *Server) setupNotifier(db *database.DB) error {
+	notifier, worker, err := s.buildNotifier(db)
+	if err != nil {
+		return fmt.Errorf("build notifier: %w", err)
+	}
+	s.notifier = notifier
+	s.notifyWorker = worker
+
+	if s.wfhService != nil {
+		s.wfhService.SetNotifier(s.notifier)
+	}
+	if s.engine != nil {
+		s.engine.SetNotifier(rotaCoverAdapter{inner: s.notifier})
+	}
+	return nil
 }
 
 func (s *Server) setupSessionCleanup(ctx context.Context) {

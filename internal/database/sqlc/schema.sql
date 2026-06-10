@@ -195,3 +195,25 @@ CREATE INDEX IF NOT EXISTS idx_wfh_requests_date      ON wfh_requests(date);
 CREATE INDEX IF NOT EXISTS idx_wfh_requests_member    ON wfh_requests(member_id);
 CREATE INDEX IF NOT EXISTS idx_wfh_requests_status    ON wfh_requests(status);
 CREATE INDEX IF NOT EXISTS idx_wfh_requests_recurring ON wfh_requests(member_id, date, is_recurring);
+
+-- Notification Outbox
+CREATE TABLE IF NOT EXISTS notification_outbox (
+    id              TEXT PRIMARY KEY,
+    event_kind      TEXT NOT NULL,
+    channel         TEXT NOT NULL,
+    recipient       TEXT NOT NULL,
+    recipient_name  TEXT,
+    subject         TEXT NOT NULL,
+    body            TEXT NOT NULL,
+    attempts        INTEGER NOT NULL DEFAULT 0,
+    last_error      TEXT,
+    next_attempt_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    status          TEXT NOT NULL DEFAULT 'pending'
+                    CHECK (status IN ('pending', 'sent', 'dead')),
+    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    sent_at         DATETIME
+);
+
+CREATE INDEX IF NOT EXISTS idx_outbox_pending_due
+    ON notification_outbox(status, next_attempt_at)
+    WHERE status = 'pending';

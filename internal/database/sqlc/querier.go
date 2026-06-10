@@ -13,6 +13,9 @@ import (
 type Querier interface {
 	ActivateTeamMember(ctx context.Context, id string) error
 	AddTeamMember(ctx context.Context, arg AddTeamMemberParams) (sql.Result, error)
+	// Atomically claim a batch of due rows by bumping next_attempt_at far into
+	// the future, so concurrent workers don't pick the same row.
+	ClaimDueOutboxEntries(ctx context.Context, limit int64) ([]NotificationOutbox, error)
 	CleanupExpiredTokens(ctx context.Context) (sql.Result, error)
 	CountAdmins(ctx context.Context) (int64, error)
 	CountApprovedWFHByDate(ctx context.Context, date time.Time) (int64, error)
@@ -23,6 +26,7 @@ type Querier interface {
 	CreateHatSwap(ctx context.Context, arg CreateHatSwapParams) (sql.Result, error)
 	CreateLeaveRecord(ctx context.Context, arg CreateLeaveRecordParams) (sql.Result, error)
 	CreateOAuthToken(ctx context.Context, arg CreateOAuthTokenParams) (OauthToken, error)
+	CreateOutboxEntry(ctx context.Context, arg CreateOutboxEntryParams) (sql.Result, error)
 	CreateRotaAssignment(ctx context.Context, arg CreateRotaAssignmentParams) (sql.Result, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
@@ -69,6 +73,7 @@ type Querier interface {
 	GetMostRecentCoverAssignment(ctx context.Context) (GetMostRecentCoverAssignmentRow, error)
 	GetOAuthToken(ctx context.Context, arg GetOAuthTokenParams) (OauthToken, error)
 	GetOpenSwapForAssignment(ctx context.Context, arg GetOpenSwapForAssignmentParams) (HatSwap, error)
+	GetOutboxEntry(ctx context.Context, id string) (NotificationOutbox, error)
 	GetPendingSwapsForMember(ctx context.Context, targetMemberID string) ([]HatSwap, error)
 	GetPendingWFHRequestsForSettlement(ctx context.Context, date time.Time) ([]GetPendingWFHRequestsForSettlementRow, error)
 	GetSessionByToken(ctx context.Context, token string) (GetSessionByTokenRow, error)
@@ -88,6 +93,9 @@ type Querier interface {
 	ListActiveUsers(ctx context.Context) ([]User, error)
 	ListAdminUsers(ctx context.Context) ([]User, error)
 	MarkAssignmentSwapped(ctx context.Context, id string) error
+	MarkOutboxDead(ctx context.Context, arg MarkOutboxDeadParams) (sql.Result, error)
+	MarkOutboxFailed(ctx context.Context, arg MarkOutboxFailedParams) (sql.Result, error)
+	MarkOutboxSent(ctx context.Context, id string) (sql.Result, error)
 	SetTeamMemberPermanentWFH(ctx context.Context, arg SetTeamMemberPermanentWFHParams) error
 	SetTeamMemberRecurringWFHDays(ctx context.Context, arg SetTeamMemberRecurringWFHDaysParams) error
 	TouchMeetingsSubscription(ctx context.Context, token string) error

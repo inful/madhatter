@@ -15,6 +15,29 @@ type HolidayChecker func(date time.Time) bool
 type Engine struct {
 	db             *database.DB
 	holidayChecker HolidayChecker
+	notifier       CoverNotifier
+}
+
+// CoverNotifier is the subset of the notify.Notifier interface that
+// the engine needs. The engine fires CoverAssigned after a leave has
+// been processed and covers assigned. nil disables notifications;
+// tests can omit the dependency.
+type CoverNotifier interface {
+	CoverAssigned(ctx context.Context, e CoverEvent)
+}
+
+// CoverEvent is the engine-local mirror of notify.CoverEvent, kept
+// here to avoid an import cycle. The api adapter translates this to
+// the production event in step 13.
+type CoverEvent struct {
+	LeaveID         string
+	LeaveMemberID   string
+	LeaveMemberName string
+	CoverMemberID   string
+	CoverMemberName string
+	StartDate       string
+	EndDate         string
+	ResolvedBy      string
 }
 
 var errMemberNotScheduled = errors.New("member not scheduled for this date")
@@ -29,6 +52,12 @@ func NewEngine(db *database.DB) *Engine {
 // SetHolidayChecker sets a function that checks if dates are holidays.
 func (e *Engine) SetHolidayChecker(checker HolidayChecker) {
 	e.holidayChecker = checker
+}
+
+// SetNotifier wires a notifier that the engine calls after assigning
+// covers. nil disables notifications; tests can omit the dependency.
+func (e *Engine) SetNotifier(n CoverNotifier) {
+	e.notifier = n
 }
 
 // GenerateSchedule creates round-robin assignments for a date range.
@@ -169,7 +198,49 @@ func (e *Engine) AssignCoversForLeave(ctx context.Context, leaveID string) error
 	// Pass the leave start date to query the right time range
 	startIndex := e.getNextCoverIndex(ctx, members, leave.StartDate)
 
-	return e.processLeaveDates(ctx, leave, members, startIndex, leaveID)
+	coverDates, err := e.processLeaveDates(ctx, leave, members, startIndex, leaveID)
+	if err != nil {
+		return err
+	}
+
+	e.fireCoverAssigned(ctx, leave, members, coverDates)
+	return nil
+}
+
+// fireCoverAssigned emits one CoverAssigned event per cover member,
+// with the date range they were assigned. The notifier itself
+// resolves the email address; the engine only knows the member_id
+// and the dates.
+func (e *Engine) fireCoverAssigned(ctx context.Context, leave *database.LeaveRecord, members []database.TeamMember, coverDates map[string][]string) {
+	if e.notifier == nil || len(coverDates) == 0 {
+		return
+	}
+	leaveName := memberNameByID(members, leave.MemberID)
+	for coverID, dates := range coverDates {
+		if len(dates) == 0 {
+			continue
+		}
+		e.notifier.CoverAssigned(ctx, CoverEvent{
+			LeaveID:         leave.ID,
+			LeaveMemberID:   leave.MemberID,
+			LeaveMemberName: leaveName,
+			CoverMemberID:   coverID,
+			CoverMemberName: memberNameByID(members, coverID),
+			StartDate:       dates[0],
+			EndDate:         dates[len(dates)-1],
+		})
+	}
+}
+
+// memberNameByID looks up a member name in a slice. Returns "" if
+// not found. Used to build CoverEvent payloads without a DB lookup.
+func memberNameByID(members []database.TeamMember, id string) string {
+	for i := range members {
+		if members[i].ID == id {
+			return members[i].Name
+		}
+	}
+	return ""
 }
 
 // findMemberIndex finds the index of a member in the members slice.
@@ -207,20 +278,30 @@ func (e *Engine) getNextCoverIndex(ctx context.Context, members []database.TeamM
 	return -1
 }
 
-// processLeaveDates processes each day of leave and creates cover assignments.
-func (e *Engine) processLeaveDates(ctx context.Context, leave *database.LeaveRecord, members []database.TeamMember, startIndex int, leaveID string) error {
+// processLeaveDates processes each day of leave and creates cover
+// assignments. It returns a map from cover member_id to the list of
+// dates (ascending) on which that member was assigned cover. Skipped
+// dates (weekends, holidays, days with no cover available) are
+// omitted. The caller uses the map to fire one CoverAssigned event
+// per cover member with their full date range.
+func (e *Engine) processLeaveDates(ctx context.Context, leave *database.LeaveRecord, members []database.TeamMember, startIndex int, leaveID string) (map[string][]string, error) {
+	coverDates := make(map[string][]string)
 	currentIndex := startIndex
 	for d := leave.StartDate; d.Before(leave.EndDate.AddDate(0, 0, 1)); d = d.AddDate(0, 0, 1) {
-		newIndex, err := e.processLeaveDate(ctx, d, members, currentIndex, leave, leaveID)
+		coverID, newIndex, err := e.processLeaveDate(ctx, d, members, currentIndex, leave, leaveID)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		// Update index for next day to continue fair rotation
 		if newIndex != -1 {
 			currentIndex = newIndex
 		}
+		if coverID != "" {
+			dateStr := d.Format("2006-01-02")
+			coverDates[coverID] = append(coverDates[coverID], dateStr)
+		}
 	}
-	return nil
+	return coverDates, nil
 }
 
 // processLeaveDate handles a single day of leave and returns the index of the cover member.
@@ -239,42 +320,45 @@ func (e *Engine) shouldSkipDate(d time.Time) bool {
 	return false
 }
 
-func (e *Engine) processLeaveDate(ctx context.Context, d time.Time, members []database.TeamMember, startIndex int, leave *database.LeaveRecord, leaveID string) (int, error) {
+// processLeaveDate handles a single day of leave and returns the
+// cover member's id (empty if the day was skipped or no cover was
+// found) and the index of that cover member for the rotation.
+func (e *Engine) processLeaveDate(ctx context.Context, d time.Time, members []database.TeamMember, startIndex int, leave *database.LeaveRecord, leaveID string) (string, int, error) {
 	if e.shouldSkipDate(d) {
-		return -1, nil
+		return "", -1, nil
 	}
 
 	dateStr := d.Format("2006-01-02")
 	originalAssignmentID, err := e.ensureOriginalAssignment(ctx, dateStr, leave)
 	if errors.Is(err, errMemberNotScheduled) {
-		return -1, nil
+		return "", -1, nil
 	}
 	if err != nil {
-		return -1, err
+		return "", -1, err
 	}
 
 	// Get all leave records for this date to exclude them from cover selection
 	allLeaves, err := e.db.GetLeaveByDate(ctx, dateStr)
 	if err != nil {
-		return -1, err
+		return "", -1, err
 	}
 
 	cover, err := e.findCover(members, allLeaves, startIndex)
 	if err != nil {
 		// Skip if no cover available - this is intentional
-		return -1, nil //nolint:nilerr
+		return "", -1, nil //nolint:nilerr
 	}
 
 	if err := e.createCoverAssignment(ctx, dateStr, cover.ID, originalAssignmentID); err != nil {
-		return -1, err
+		return "", -1, err
 	}
 
 	if err := e.db.UpdateLeaveStatus(ctx, leaveID, "assigned"); err != nil {
-		return -1, err
+		return "", -1, err
 	}
 
-	// Return the index of the cover member for next iteration
-	return e.findMemberIndex(members, cover.ID), nil
+	// Return the cover member's id and the index for next iteration.
+	return cover.ID, e.findMemberIndex(members, cover.ID), nil
 }
 
 // isLeaveActive returns true if the status still requires cover assignments.

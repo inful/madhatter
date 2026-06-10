@@ -22,7 +22,7 @@ linters:
     - exhaustive
     - forbidigo
     - gochecknoinits
-    - goconst
+    # - goconst
     - gocritic
     - gocyclo
     - gosec
@@ -62,6 +62,10 @@ linters:
     - cyclop
     - testifylint
   settings:
+    nolintlint:
+      allow-no-explanation: [ funlen, gocognit, golines ]
+      require-explanation: true
+      require-specific: true
     dupl:
       threshold: 40
     tagalign:

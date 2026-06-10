@@ -77,8 +77,8 @@ func (db *DB) ClaimDueOutboxEntries(ctx context.Context, limit int) ([]OutboxEnt
 		return nil, err
 	}
 	out := make([]OutboxEntry, 0, len(rows))
-	for _, r := range rows {
-		out = append(out, outboxFromSQLC(r))
+	for i := range rows {
+		out = append(out, outboxFromSQLC(rows[i]))
 	}
 	return out, nil
 }
@@ -91,22 +91,24 @@ func (db *DB) MarkOutboxSent(ctx context.Context, id string) error {
 
 // MarkOutboxFailed records a transient delivery failure and schedules the
 // next retry at nextAttempt. It does not change status (the row stays
-// 'pending' so the worker re-picks it up).
+// 'pending' so the worker re-picks it up). The nextAttempt timestamp
+// is normalized to UTC because SQLite compares against CURRENT_TIMESTAMP
+// in UTC.
 func (db *DB) MarkOutboxFailed(ctx context.Context, id, lastError string, nextAttempt time.Time) error {
 	_, err := db.queries.MarkOutboxFailed(ctx, sqlc.MarkOutboxFailedParams{
 		LastError:     sql.NullString{String: lastError, Valid: lastError != ""},
-		NextAttemptAt: nextAttempt,
+		NextAttemptAt: nextAttempt.UTC(),
 		ID:            id,
 	})
 	return err
 }
 
 // MarkOutboxDead marks the row terminally failed. Used when retries are
-// exhausted.
+// exhausted. The at timestamp is normalized to UTC.
 func (db *DB) MarkOutboxDead(ctx context.Context, id, lastError string, at time.Time) error {
 	_, err := db.queries.MarkOutboxDead(ctx, sqlc.MarkOutboxDeadParams{
 		LastError:     sql.NullString{String: lastError, Valid: lastError != ""},
-		NextAttemptAt: at,
+		NextAttemptAt: at.UTC(),
 		ID:            id,
 	})
 	return err
@@ -133,12 +135,12 @@ func outboxFromSQLC(r sqlc.NotificationOutbox) OutboxEntry {
 		Body:          r.Body,
 		Attempts:      int(r.Attempts),
 		LastError:     r.LastError.String,
-		NextAttemptAt: r.NextAttemptAt,
+		NextAttemptAt: r.NextAttemptAt.UTC(),
 		Status:        r.Status,
-		CreatedAt:     r.CreatedAt,
+		CreatedAt:     r.CreatedAt.UTC(),
 	}
 	if r.SentAt.Valid {
-		t := r.SentAt.Time
+		t := r.SentAt.Time.UTC()
 		e.SentAt = &t
 	}
 	return e

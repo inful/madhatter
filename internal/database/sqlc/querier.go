@@ -15,6 +15,12 @@ type Querier interface {
 	AddTeamMember(ctx context.Context, arg AddTeamMemberParams) (sql.Result, error)
 	// Atomically claim a batch of due rows by bumping next_attempt_at far into
 	// the future, so concurrent workers don't pick the same row.
+	//
+	// The datetime() wrapper normalises the stored ISO-8601 value (which the
+	// ncruces/go-sqlite3 driver writes for time.Time arguments) into the
+	// same YYYY-MM-DD HH:MM:SS form that datetime('now') returns, so the
+	// comparison is meaningful. Without this normalisation SQLite compares
+	// strings and 'T' > ' ' lexically, so no row would ever be due.
 	ClaimDueOutboxEntries(ctx context.Context, limit int64) ([]NotificationOutbox, error)
 	CleanupExpiredTokens(ctx context.Context) (sql.Result, error)
 	CountAdmins(ctx context.Context) (int64, error)

@@ -9,6 +9,7 @@ import (
 	"github.com/inful/madhatter/internal/auth"
 	"github.com/inful/madhatter/internal/database"
 	"github.com/inful/madhatter/internal/database/sqlc"
+	"github.com/inful/madhatter/internal/notify"
 )
 
 // resolveMemberID resolves the team member ID for the currently logged-in user.
@@ -20,6 +21,41 @@ func (h *Handler) resolveMemberID(ctx context.Context, email string) string {
 	}
 
 	return member.ID
+}
+
+// memberName returns the display name for a member id, or "" if the
+// member doesn't exist. Used to populate the RequesterName/TargetName
+// fields on the notify event without making the handler do a second
+// lookup if the name is already on hand.
+func (h *Handler) memberName(ctx context.Context, memberID string) string {
+	if memberID == "" {
+		return ""
+	}
+	member, err := h.db.GetMemberByID(ctx, memberID)
+	if err != nil || member == nil {
+		return ""
+	}
+	return member.Name
+}
+
+// enrichSwapForNotify loads the missing RequesterDate/TargetDate
+// fields on a freshly-fetched swap. We can't always use the cached
+// version from GetEnrichedSwaps because the handlers receive a single
+// swap, not a list.
+func (h *Handler) enrichSwapForNotify(ctx context.Context, swap *database.HatSwap) {
+	if swap == nil {
+		return
+	}
+	if swap.RequesterAssignmentID != "" && swap.RequesterDate == "" {
+		if a, err := h.db.GetAssignmentByID(ctx, swap.RequesterAssignmentID); err == nil && a != nil {
+			swap.RequesterDate = a.Date
+		}
+	}
+	if swap.TargetAssignmentID != "" && swap.TargetDate == "" {
+		if a, err := h.db.GetAssignmentByID(ctx, swap.TargetAssignmentID); err == nil && a != nil {
+			swap.TargetDate = a.Date
+		}
+	}
 }
 
 func (h *Handler) handleSwaps(w http.ResponseWriter, r *http.Request) {
@@ -90,6 +126,17 @@ func (h *Handler) handleSwapRequestPost(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
+	user := mustGetUser(ctx)
+	h.notifierOrNil().SwapRequested(ctx, notify.SwapEvent{
+		RequesterMemberID: reqAssignment.MemberID,
+		RequesterName:     h.memberName(ctx, reqAssignment.MemberID),
+		TargetMemberID:    tgtAssignment.MemberID,
+		TargetName:        h.memberName(ctx, tgtAssignment.MemberID),
+		RequesterDate:     reqAssignment.Date,
+		TargetDate:        tgtAssignment.Date,
+		ActorName:         user.Name,
+	})
+
 	http.Redirect(w, r, "/swaps", http.StatusSeeOther)
 }
 
@@ -153,6 +200,18 @@ func (h *Handler) handleSwapCancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.enrichSwapForNotify(ctx, swap)
+	h.notifierOrNil().SwapCancelled(ctx, notify.SwapEvent{
+		SwapID:            swapID,
+		RequesterMemberID: swap.RequesterMemberID,
+		RequesterName:     h.memberName(ctx, swap.RequesterMemberID),
+		TargetMemberID:    swap.TargetMemberID,
+		TargetName:        h.memberName(ctx, swap.TargetMemberID),
+		RequesterDate:     swap.RequesterDate,
+		TargetDate:        swap.TargetDate,
+		ActorName:         user.Name,
+	})
+
 	http.Redirect(w, r, "/swaps", http.StatusSeeOther)
 }
 
@@ -191,6 +250,18 @@ func (h *Handler) handleSwapAccept(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.enrichSwapForNotify(ctx, swap)
+	h.notifierOrNil().SwapAccepted(ctx, notify.SwapEvent{
+		SwapID:            swapID,
+		RequesterMemberID: swap.RequesterMemberID,
+		RequesterName:     h.memberName(ctx, swap.RequesterMemberID),
+		TargetMemberID:    swap.TargetMemberID,
+		TargetName:        h.memberName(ctx, swap.TargetMemberID),
+		RequesterDate:     swap.RequesterDate,
+		TargetDate:        swap.TargetDate,
+		ActorName:         user.Name,
+	})
+
 	http.Redirect(w, r, "/swaps", http.StatusSeeOther)
 }
 
@@ -227,6 +298,18 @@ func (h *Handler) handleSwapReject(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	h.enrichSwapForNotify(ctx, swap)
+	h.notifierOrNil().SwapRejected(ctx, notify.SwapEvent{
+		SwapID:            swapID,
+		RequesterMemberID: swap.RequesterMemberID,
+		RequesterName:     h.memberName(ctx, swap.RequesterMemberID),
+		TargetMemberID:    swap.TargetMemberID,
+		TargetName:        h.memberName(ctx, swap.TargetMemberID),
+		RequesterDate:     swap.RequesterDate,
+		TargetDate:        swap.TargetDate,
+		ActorName:         user.Name,
+	})
 
 	http.Redirect(w, r, "/swaps", http.StatusSeeOther)
 }

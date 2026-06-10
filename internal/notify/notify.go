@@ -178,7 +178,7 @@ func (n *LogNotifier) dispatch(
 		if r.nameHint != "" {
 			name = r.nameHint
 		}
-		subject, body, err := renderEvent(eventKind, event)
+		subject, body, err := renderEvent(eventKind, event, r.memberID)
 		if err != nil {
 			continue
 		}

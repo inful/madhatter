@@ -5,8 +5,8 @@ package notify
 // notifier-construction time. Production code writes pre-rendered
 // (subject, body) to the outbox via the renderer in renderer.go; the
 // worker later picks it up and never re-renders.
-var renderEvent = func(eventKind string, event any) (subject, body string, err error) {
-	return defaultRenderer.render(eventKind, event)
+var renderEvent = func(eventKind string, event any, recipientMemberID string) (subject, body string, err error) {
+	return defaultRenderer.render(eventKind, event, recipientMemberID)
 }
 
 // defaultRenderer is the package-level renderer used by LogNotifier. It
@@ -18,7 +18,7 @@ var renderEvent = func(eventKind string, event any) (subject, body string, err e
 // stores the rendered strings so the worker doesn't need to know about
 // templates.
 var defaultRenderer = func() *renderer {
-	r, err := newRenderer("http://localhost:8080")
+	r, err := newRenderer("http://localhost:8080", nil)
 	if err != nil {
 		// Bundled templates should never fail to parse. If they do,
 		// it's a build-time problem and we want to crash early.

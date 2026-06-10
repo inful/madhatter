@@ -12,3 +12,7 @@ Hi {{.RequesterName}},
   {{.BaseURL}}/swaps
 
 — MadHatter Rota
+{{- if .UnsubscribeURL}}
+
+To stop receiving these emails: {{.UnsubscribeURL}}
+{{- end }}

@@ -20,30 +20,37 @@ var embeddedTemplates embed.FS
 // vars. When unset, the bundled template is used. The pattern mirrors
 // the calendar event-template override documented in AGENTS.md.
 type renderer struct {
-	baseURL    string
-	subjectTpl map[string]*template.Template
-	bodyTpl    map[string]*template.Template
+	baseURL       string
+	subjectTpl    map[string]*template.Template
+	bodyTpl       map[string]*template.Template
+	unsubscribeFn func(memberID string) string
 }
 
 // NewRenderer parses the bundled templates and applies any
 // env-var-supplied overrides. baseURL is substituted into the
 // templates as {{.BaseURL}} — useful for "view in dashboard" links.
+// unsubscribeURL, when non-empty, is a function that returns the
+// per-recipient unsubscribe URL given a member ID. The result is
+// injected as {{.UnsubscribeURL}} in body templates; an empty
+// function leaves the field blank so default templates can still
+// render in dev mode without a configured secret.
 // Exposed so the api package can build a renderer with the runtime
 // BaseURL from Config; tests use newRenderer directly via the
 // internal helper.
-func NewRenderer(baseURL string) (*renderer, error) {
-	return newRenderer(baseURL)
+func NewRenderer(baseURL string, unsubscribeURL func(memberID string) string) (*renderer, error) {
+	return newRenderer(baseURL, unsubscribeURL)
 }
 
 // newRenderer is the package-private implementation. Kept named
 // distinctly from the exported NewRenderer so the call sites read
 // consistently and tests can use the internal helper without an
 // indirection.
-func newRenderer(baseURL string) (*renderer, error) {
+func newRenderer(baseURL string, unsubscribeURL func(memberID string) string) (*renderer, error) {
 	r := &renderer{
-		baseURL:    baseURL,
-		subjectTpl: make(map[string]*template.Template),
-		bodyTpl:    make(map[string]*template.Template),
+		baseURL:       baseURL,
+		subjectTpl:    make(map[string]*template.Template),
+		bodyTpl:       make(map[string]*template.Template),
+		unsubscribeFn: unsubscribeURL,
 	}
 	// One subject template and one body template per event kind. They
 	// share the same data struct.
@@ -144,7 +151,9 @@ func envKeyFor(kind, slot string) string {
 // templates share the same data signature and the renderer can fill
 // in just the relevant ones per event.
 type data struct {
-	BaseURL string
+	BaseURL         string
+	UnsubscribeURL  string
+	RecipientMember string
 
 	// Swap
 	SwapID        string
@@ -168,12 +177,19 @@ type data struct {
 }
 
 // render produces the (subject, body) pair for the given event.
-func (r *renderer) render(eventKind string, event any) (subject, body string, err error) {
+// recipientMemberID is the team_members.id of the recipient; it is
+// used to look up the per-recipient unsubscribe URL when the
+// renderer was constructed with one.
+func (r *renderer) render(eventKind string, event any, recipientMemberID string) (subject, body string, err error) {
 	d, err := toData(eventKind, event)
 	if err != nil {
 		return "", "", err
 	}
 	d.BaseURL = r.baseURL
+	d.RecipientMember = recipientMemberID
+	if r.unsubscribeFn != nil {
+		d.UnsubscribeURL = r.unsubscribeFn(recipientMemberID)
+	}
 
 	var sbuf, bbuf bytes.Buffer
 	if t, ok := r.subjectTpl[eventKind]; ok {

@@ -655,7 +655,9 @@ func (s *Server) buildNotifier(db *database.DB) (*notify.ChannelNotifier, *notif
 	worker := notify.NewWorker(db, resolver, cfg.Outbox, nil)
 
 	// Build the renderer and the recipient resolver.
-	r, err := notify.NewRenderer(cfg.BaseURL)
+	// Unsubscribe URL injection is wired in a follow-up step; for
+	// now the renderer leaves .UnsubscribeURL blank.
+	r, err := notify.NewRenderer(cfg.BaseURL, nil)
 	if err != nil {
 		return nil, nil, fmt.Errorf("build renderer: %w", err)
 	}

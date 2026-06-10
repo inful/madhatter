@@ -6,3 +6,7 @@ Hi {{.TargetName}},
   Your HAT day:  {{.TargetDate}}
 
 — MadHatter Rota
+{{- if .UnsubscribeURL}}
+
+To stop receiving these emails: {{.UnsubscribeURL}}
+{{- end }}

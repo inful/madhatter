@@ -10,7 +10,7 @@ import (
 
 //nolint:goconst // test fixtures intentionally reuse sample names and dates
 func TestRenderer_RendersAllEventKinds(t *testing.T) {
-	r, err := newRenderer("https://rota.example.com")
+	r, err := newRenderer("https://rota.example.com", nil)
 	require.NoError(t, err)
 
 	cases := []struct {
@@ -87,7 +87,7 @@ func TestRenderer_RendersAllEventKinds(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			subject, body, err := r.render(tc.kind, tc.event)
+			subject, body, err := r.render(tc.kind, tc.event, "")
 			require.NoError(t, err)
 			assert.NotEmpty(t, subject)
 			assert.NotEmpty(t, body)
@@ -110,13 +110,13 @@ func TestRenderer_OverrideViaEnvVar(t *testing.T) {
 
 	t.Setenv("NOTIFY_SWAP_REQUESTED_SUBJECT_TXT_PATH", override)
 
-	r, err := newRenderer("https://x")
+	r, err := newRenderer("https://x", nil)
 	require.NoError(t, err)
 
 	subject, _, err := r.render(EventSwapRequested, SwapEvent{
 		RequesterName: "Alice", TargetName: "Bob",
 		RequesterDate: "2026-07-01", TargetDate: "2026-07-15",
-	})
+	}, "")
 	require.NoError(t, err)
 	assert.Equal(t, "OVERRIDE: Alice is asking you", subject)
 }
@@ -124,9 +124,51 @@ func TestRenderer_OverrideViaEnvVar(t *testing.T) {
 func TestRenderer_OverrideFileMissing_ReturnsError(t *testing.T) {
 	t.Setenv("NOTIFY_SWAP_REQUESTED_SUBJECT_TXT_PATH", "/no/such/file")
 
-	_, err := newRenderer("https://x")
+	_, err := newRenderer("https://x", nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "NOTIFY_SWAP_REQUESTED_SUBJECT_TXT_PATH")
+}
+
+// TestRenderer_UnsubscribeURL_AppliesPerRecipient verifies that the
+// per-recipient unsubscribe URL is injected into body templates when
+// the renderer is constructed with a URL function. The function
+// receives the recipient's member_id and returns the absolute URL.
+func TestRenderer_UnsubscribeURL_AppliesPerRecipient(t *testing.T) {
+	t.Parallel()
+	urlFn := func(memberID string) string {
+		return "https://example.com/unsubscribe?token=" + memberID
+	}
+	r, err := newRenderer("https://example.com", urlFn)
+	require.NoError(t, err)
+
+	_, body, err := r.render(EventSwapRequested, SwapEvent{
+		RequesterName: "Alice",
+		TargetName:    "Bob",
+		RequesterDate: "2026-07-01",
+		TargetDate:    "2026-07-15",
+	}, "alice-id")
+	require.NoError(t, err)
+	assert.Contains(t, body, "https://example.com/unsubscribe?token=alice-id")
+	assert.Contains(t, body, "To stop receiving these emails:")
+}
+
+// TestRenderer_UnsubscribeURL_NilFnLeavesFooterBlank verifies that
+// when no URL function is configured (e.g. in --development mode
+// where the unsubscribe secret is empty), the body still renders
+// but the footer block is suppressed.
+func TestRenderer_UnsubscribeURL_NilFnLeavesFooterBlank(t *testing.T) {
+	t.Parallel()
+	r, err := newRenderer("https://example.com", nil)
+	require.NoError(t, err)
+
+	_, body, err := r.render(EventSwapRequested, SwapEvent{
+		RequesterName: "Alice",
+		TargetName:    "Bob",
+		RequesterDate: "2026-07-01",
+		TargetDate:    "2026-07-15",
+	}, "alice-id")
+	require.NoError(t, err)
+	assert.NotContains(t, body, "To stop receiving these emails:")
 }
 
 func TestRenderer_EnvKeyFor(t *testing.T) {

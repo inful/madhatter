@@ -10,3 +10,7 @@ from {{.StartDate}} to {{.EndDate}}.
   {{.BaseURL}}/
 
 — MadHatter Rota
+{{- if .UnsubscribeURL}}
+
+To stop receiving these emails: {{.UnsubscribeURL}}
+{{- end }}

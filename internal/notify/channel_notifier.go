@@ -144,7 +144,7 @@ func (n *ChannelNotifier) enqueue(ctx context.Context, eventKind string, event a
 			name = r.name
 		}
 
-		subject, body, err := n.renderer.render(eventKind, event)
+		subject, body, err := n.renderer.render(eventKind, event, r.id)
 		if err != nil {
 			n.logger.Warn("notify: render failed",
 				slog.String("event_kind", eventKind),

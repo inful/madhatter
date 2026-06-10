@@ -34,12 +34,21 @@ func TestWithdrawOwnWFHRequest(t *testing.T) {
 
 	// Pick distinct future business days for each subtest, since the
 	// (member_id, date) unique constraint prevents repeat dates per member.
+	// A `seen` set ensures the weekend-skipping logic doesn't collapse
+	// two different offsets onto the same business day.
+	seen := make(map[string]bool)
 	futureDay := func(daysOut int) string {
 		d := time.Now().UTC().AddDate(0, 0, daysOut)
-		for d.Weekday() == time.Saturday || d.Weekday() == time.Sunday {
+		for {
+			if d.Weekday() != time.Saturday && d.Weekday() != time.Sunday {
+				dateStr := d.Format("2006-01-02")
+				if !seen[dateStr] {
+					seen[dateStr] = true
+					return dateStr
+				}
+			}
 			d = d.AddDate(0, 0, 1)
 		}
-		return d.Format("2006-01-02")
 	}
 
 	dateOK := futureDay(10)  // 24h withdrawal deadline still future

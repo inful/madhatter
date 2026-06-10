@@ -183,7 +183,13 @@
                             <th class="member-col"></th>
                             {{range .ScheduleMatrix.Days}}
                                 <th class="day-col{{if .IsToday}} today-col{{end}}">
+                                    {{if $.MeetingsToken}}
+                                    <a class="day-head-link" href="/calendar/{{$.MeetingsToken}}/meetings/{{.DateISO}}.html" title="View meetings for {{.DateDisplay}}">
+                                        <div class="day-head">{{.DateDisplay}}</div>
+                                    </a>
+                                    {{else}}
                                     <div class="day-head">{{.DateDisplay}}</div>
+                                    {{end}}
                                     <div class="day-totals">
                                         <span title="At work"><i class="fas fa-building"></i> {{.AtWorkCount}}</span>
                                         <span title="WFH"><i class="fas fa-home"></i> {{.WFHCount}}</span>
@@ -299,6 +305,18 @@
         font-weight: 700;
         color: #2d3748;
         line-height: 1.15;
+    }
+
+    a.day-head-link,
+    a.day-head-link:visited {
+        color: #2d3748;
+        text-decoration: none;
+        display: block;
+    }
+    a.day-head-link:hover,
+    a.day-head-link:focus {
+        color: #4c51bf;
+        text-decoration: underline;
     }
 
     .day-sub {

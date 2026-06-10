@@ -1,12 +1,16 @@
 package web
 
 import (
+	"context"
 	"crypto/tls"
 	"html/template"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"testing"
 
+	"github.com/inful/madhatter/internal/auth"
+	"github.com/inful/madhatter/internal/database"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -74,4 +78,90 @@ func TestGoogleSubscriptionURL_UsesCIDWithWebcalURL(t *testing.T) {
 
 	query := parsed.Query()
 	assert.Equal(t, "webcal://example.com/calendar/test-token/ics", query.Get("cid"))
+}
+
+func newCalendarTestHandler(t *testing.T, db *database.DB) *Handler {
+	t.Helper()
+	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+	return h
+}
+
+// doCalendar issues a GET through the handler's router so chi URL
+// params are populated. Returns the recorded response.
+func doCalendar(t *testing.T, h *Handler, path string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	rr := httptest.NewRecorder()
+	h.Router().ServeHTTP(rr, req)
+	return rr
+}
+
+func TestHandleMeetingsDayHTML_BusinessDayRendersMeeting(t *testing.T) {
+	db, cleanup := setupSwapTestDB(t)
+	defer cleanup()
+	h := newCalendarTestHandler(t, db)
+
+	ctx := context.Background()
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	memberID, err := db.AddTeamMember(ctx, "Token Owner", "token@example.com")
+	require.NoError(t, err)
+	token, err := db.CreateCalendarSubscription(ctx, memberID)
+	require.NoError(t, err)
+	_ = ctx
+
+	// Tuesday 2026-01-13 is a business day.
+	rr := doCalendar(t, h, "/calendar/"+token+"/meetings/2026-01-13.html")
+
+	assert.Equal(t, http.StatusOK, rr.Code, "body=%s", rr.Body.String())
+	body := rr.Body.String()
+	assert.Contains(t, body, "Morning Shuffle")
+	assert.Contains(t, body, "2026-01-13")
+}
+
+func TestHandleMeetingsDayHTML_WeekendShowsEmptyState(t *testing.T) {
+	db, cleanup := setupSwapTestDB(t)
+	defer cleanup()
+	h := newCalendarTestHandler(t, db)
+
+	ctx := context.Background()
+	memberID, err := db.AddTeamMember(ctx, "Token Owner", "token@example.com")
+	require.NoError(t, err)
+	token, err := db.CreateCalendarSubscription(ctx, memberID)
+	require.NoError(t, err)
+	_ = ctx
+
+	// Saturday 2026-01-17 is a weekend.
+	rr := doCalendar(t, h, "/calendar/"+token+"/meetings/2026-01-17.html")
+
+	assert.Equal(t, http.StatusOK, rr.Code, "body=%s", rr.Body.String())
+	assert.Contains(t, rr.Body.String(), "No meetings scheduled")
+}
+
+func TestHandleMeetingsDayHTML_InvalidDateReturns400(t *testing.T) {
+	db, cleanup := setupSwapTestDB(t)
+	defer cleanup()
+	h := newCalendarTestHandler(t, db)
+
+	ctx := context.Background()
+	memberID, err := db.AddTeamMember(ctx, "Token Owner", "token@example.com")
+	require.NoError(t, err)
+	token, err := db.CreateCalendarSubscription(ctx, memberID)
+	require.NoError(t, err)
+	_ = ctx
+
+	rr := doCalendar(t, h, "/calendar/"+token+"/meetings/not-a-date.html")
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+}
+
+func TestHandleMeetingsDayHTML_UnknownTokenReturns404(t *testing.T) {
+	db, cleanup := setupSwapTestDB(t)
+	defer cleanup()
+	h := newCalendarTestHandler(t, db)
+
+	rr := doCalendar(t, h, "/calendar/no-such-token/meetings/2026-01-13.html")
+
+	assert.Equal(t, http.StatusNotFound, rr.Code)
 }

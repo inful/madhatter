@@ -41,6 +41,7 @@ func (h *Handler) registerRoutes() {
 	h.router.HandleFunc("/calendar/{token}/ics", h.handleCalendarICS)
 	h.router.HandleFunc("/calendar/{token}/team.ics", h.handleTeamCalendarICS)
 	h.router.HandleFunc("/calendar/{token}/meetings.ics", h.handleMeetingsCalendarICS)
+	h.router.HandleFunc("/calendar/{token}/meetings/{date}.html", h.handleMeetingsDayHTML)
 	h.router.With(h.safeAuthMiddleware).HandleFunc("/help", h.handleHelp)
 
 	// Protected routes (require authentication).

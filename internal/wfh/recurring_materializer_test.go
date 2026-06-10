@@ -20,6 +20,21 @@ func futureWeekday(from time.Time, weekday time.Weekday) time.Time {
 	return d
 }
 
+// nextWeekdayInRange returns the next occurrence of weekday in the
+// inclusive [start, end] range. Used by tests that need a
+// deadline-friendly date (3+ days out from now is preferred for
+// 24h-deadline tests).
+func nextWeekdayInRange(t *testing.T, start, end time.Time, weekday time.Weekday) time.Time {
+	t.Helper()
+	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {
+		if d.Weekday() == weekday {
+			return d
+		}
+	}
+	t.Fatalf("no %s in [%s, %s]", weekday, start.Format("2006-01-02"), end.Format("2006-01-02"))
+	return time.Time{}
+}
+
 func TestEnsureRecurringMaterialized_FillsGaps(t *testing.T) {
 	ctx := context.Background()
 	db, cleanup := setupWFHTestDB(t)
@@ -119,18 +134,28 @@ func TestEnsureRecurringMaterialized_PreservesWithdrawnRow(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, db.SetTeamMemberRecurringWFHDays(ctx, memberID, database.RecurringWFHDays{Thursday: true}))
 
-	// User explicitly withdraws the Thursday occurrence in the period.
-	thursday := futureWeekday(time.Now().UTC(), time.Thursday)
+	// User explicitly withdraws the Thursday occurrence. We insert
+	// the row directly into the *current* period and flip its status
+	// to "withdrawn" via SQL so the 24h withdrawal deadline check
+	// (which is time-of-day sensitive at the UTC date boundary) is
+	// not exercised. The materializer's job is to skip existing rows
+	// regardless of status, and that's what this test verifies.
+	today := time.Now().UTC()
+	start, end, err := svc.ComputePeriodBounds(today)
+	require.NoError(t, err)
+	thursday := nextWeekdayInRange(t, start, end, time.Thursday)
 	thursdayStr := thursday.Format("2006-01-02")
-	require.NoError(t, db.CreateApprovedRecurringWFHRequest(ctx, memberID, thursdayStr, time.Now().UTC()))
+	now := time.Now().UTC()
+	require.NoError(t, db.CreateApprovedRecurringWFHRequest(ctx, memberID, thursdayStr, now))
 	rows, err := db.GetWFHRequestsByMember(ctx, memberID)
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
-	require.NoError(t, db.WithdrawOwnWFHRequest(ctx, rows[0].ID, memberID, 24))
+	_, err = db.ExecContext(ctx, "UPDATE wfh_requests SET status = ?, withdrawn_at = ? WHERE id = ?",
+		database.WFHStatusWithdrawn, now, rows[0].ID)
+	require.NoError(t, err)
 
 	// Materializer must not re-insert the withdrawn row.
-	today := time.Now().UTC()
-	start, end, err := svc.ComputePeriodBounds(today)
+	start, end, err = svc.ComputePeriodBounds(now)
 	require.NoError(t, err)
 	inserted, err := svc.EnsureRecurringMaterializedForMember(ctx, memberID, start, end)
 	require.NoError(t, err)

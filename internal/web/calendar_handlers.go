@@ -243,17 +243,32 @@ func (h *Handler) handleCalendarICS(w http.ResponseWriter, r *http.Request) {
 // handler so behavior is consistent.
 func (h *Handler) buildSupportCalendarOptions() calendar.SupportCalendarOptions {
 	return calendar.SupportCalendarOptions{
-		SupportDayLinks:                       calendar.ParseMeetingLinks(os.Getenv("SUPPORT_DAY_LINKS")),
-		WithAlarm:                             true,
-		ShuffleSeed:                           os.Getenv("SUPPORT_DAY_SHUFFLE_SEED"),
-		WFHMaterialiser:                       NewWFHMaterialiser(h.wfhService),
-		HolidayLookup:                         h.holidayLookup,
-		SupportAssignmentTemplateTextPath:     os.Getenv("SUPPORT_ASSIGNMENT_TEMPLATE_TEXT_PATH"),
-		SupportAssignmentTemplateHTMLPath:     os.Getenv("SUPPORT_ASSIGNMENT_TEMPLATE_HTML_PATH"),
-		LeaveTemplateTextPath:                 os.Getenv("LEAVE_TEMPLATE_TEXT_PATH"),
-		LeaveTemplateHTMLPath:                 os.Getenv("LEAVE_TEMPLATE_HTML_PATH"),
-		HolidayTemplateTextPath:               os.Getenv("HOLIDAY_TEMPLATE_TEXT_PATH"),
-		HolidayTemplateHTMLPath:               os.Getenv("HOLIDAY_TEMPLATE_HTML_PATH"),
+		SupportDayLinks:                   calendar.ParseMeetingLinks(os.Getenv("SUPPORT_DAY_LINKS")),
+		WithAlarm:                         true,
+		ShuffleSeed:                       os.Getenv("SUPPORT_DAY_SHUFFLE_SEED"),
+		WFHMaterialiser:                   NewWFHMaterialiser(h.wfhService),
+		HolidayLookup:                     h.holidayLookup,
+		SupportAssignmentTemplateTextPath: os.Getenv("SUPPORT_ASSIGNMENT_TEMPLATE_TEXT_PATH"),
+		SupportAssignmentTemplateHTMLPath: os.Getenv("SUPPORT_ASSIGNMENT_TEMPLATE_HTML_PATH"),
+		LeaveTemplateTextPath:             os.Getenv("LEAVE_TEMPLATE_TEXT_PATH"),
+		LeaveTemplateHTMLPath:             os.Getenv("LEAVE_TEMPLATE_HTML_PATH"),
+		HolidayTemplateTextPath:           os.Getenv("HOLIDAY_TEMPLATE_TEXT_PATH"),
+		HolidayTemplateHTMLPath:           os.Getenv("HOLIDAY_TEMPLATE_HTML_PATH"),
+	}
+}
+
+// buildMeetingsOptions assembles the MeetingsOptions from the
+// operator's environment variables. Used by both the .ics feed
+// handler and the per-day HTML view.
+func (h *Handler) buildMeetingsOptions() calendar.MeetingsOptions {
+	return calendar.MeetingsOptions{
+		Timezone:         os.Getenv("MEETINGS_TIMEZONE"),
+		TeamsURL:         os.Getenv("MEETINGS_TEAMS_URL"),
+		Links:            calendar.ParseMeetingLinks(os.Getenv("MEETINGS_LINKS")),
+		MorningLinks:     calendar.ParseMeetingLinks(os.Getenv("MEETINGS_LINKS_MORNING")),
+		ProjectLinks:     calendar.ParseMeetingLinks(os.Getenv("MEETINGS_LINKS_PROJECT")),
+		TemplateTextPath: os.Getenv("MEETINGS_TEMPLATE_TEXT_PATH"),
+		TemplateHTMLPath: os.Getenv("MEETINGS_TEMPLATE_HTML_PATH"),
 	}
 }
 
@@ -265,28 +280,12 @@ func (h *Handler) handleMeetingsCalendarICS(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	teamsURL := os.Getenv("MEETINGS_TEAMS_URL")
-	tz := os.Getenv("MEETINGS_TIMEZONE")
-	textTemplatePath := os.Getenv("MEETINGS_TEMPLATE_TEXT_PATH")
-	htmlTemplatePath := os.Getenv("MEETINGS_TEMPLATE_HTML_PATH")
-	linksRaw := os.Getenv("MEETINGS_LINKS")
-	morningLinksRaw := os.Getenv("MEETINGS_LINKS_MORNING")
-	projectLinksRaw := os.Getenv("MEETINGS_LINKS_PROJECT")
-
 	icsContent, err := calendar.GenerateMeetingsICalForToken(
 		r.Context(),
 		h.db,
 		token,
 		defaultCalendarLookaheadDays,
-		calendar.MeetingsOptions{
-			Timezone:         tz,
-			TeamsURL:         teamsURL,
-			Links:            calendar.ParseMeetingLinks(linksRaw),
-			MorningLinks:     calendar.ParseMeetingLinks(morningLinksRaw),
-			ProjectLinks:     calendar.ParseMeetingLinks(projectLinksRaw),
-			TemplateTextPath: textTemplatePath,
-			TemplateHTMLPath: htmlTemplatePath,
-		},
+		h.buildMeetingsOptions(),
 		h.isBusinessDay,
 	)
 	if err != nil {
@@ -303,6 +302,59 @@ func (h *Handler) handleMeetingsCalendarICS(w http.ResponseWriter, r *http.Reque
 	w.Header().Set("Cache-Control", "no-cache")
 
 	_, _ = w.Write([]byte(icsContent)) // #nosec G705 -- ICS content is generated server-side and served as text/calendar.
+}
+
+// handleMeetingsDayHTML renders a single date's meetings as an HTML
+// page. The token is the authorization (must exist in
+// calendar_subscriptions). Linked from the dashboard's schedule
+// matrix date headers.
+func (h *Handler) handleMeetingsDayHTML(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	token := chi.URLParam(r, "token")
+	dateStr := chi.URLParam(r, "date")
+
+	if token == "" {
+		http.Error(w, "Token required", http.StatusBadRequest)
+		return
+	}
+	if _, err := time.Parse("2006-01-02", dateStr); err != nil {
+		http.Error(w, "Invalid date, expected YYYY-MM-DD", http.StatusBadRequest)
+		return
+	}
+
+	// Touch the meetings subscription so the per-token "last used"
+	// timestamp stays current.
+	if _, err := h.db.GetMemberByToken(ctx, token); err != nil {
+		http.Error(w, "Invalid token", http.StatusNotFound)
+		return
+	}
+
+	day, err := calendar.GenerateMeetingsForDate(
+		ctx,
+		h.db,
+		dateStr,
+		h.buildMeetingsOptions(),
+		h.isBusinessDay,
+	)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	data := map[string]any{
+		"Template": "calendar_meetings_day",
+		"Token":    token,
+		"Date":     day.Date,
+		"Meetings": day.Meetings,
+	}
+	if user, ok := auth.GetUserFromContext(ctx); ok {
+		data["User"] = user
+		data["IsAdmin"] = auth.IsAdminSession(user)
+	}
+
+	if err := h.tmpl.ExecuteTemplate(w, "calendar_meetings_day.html", data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 func (h *Handler) handleTeamCalendarICS(w http.ResponseWriter, r *http.Request) {

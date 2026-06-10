@@ -214,6 +214,28 @@ func (h *Handler) loadDashboardData(ctx context.Context, data map[string]any) {
 	if h.holidayChecker != nil {
 		data["UpcomingHolidays"] = h.getUpcomingHolidays()
 	}
+
+	h.loadMeetingsToken(ctx, data)
+}
+
+// loadMeetingsToken surfaces the user's first calendar subscription
+// token so the schedule matrix can link each date header to the
+// per-day meetings page. nil token means no subscription, so the
+// links fall back to the dashboard.
+func (h *Handler) loadMeetingsToken(ctx context.Context, data map[string]any) {
+	user, ok := auth.GetUserFromContext(ctx)
+	if !ok {
+		return
+	}
+	member, mErr := h.db.GetMemberByEmail(ctx, user.Email)
+	if mErr != nil || member == nil {
+		return
+	}
+	subs, sErr := h.db.GetSubscriptionsByMemberID(ctx, member.ID)
+	if sErr != nil || len(subs) == 0 {
+		return
+	}
+	data["MeetingsToken"] = subs[0].Token
 }
 
 //nolint:cyclop // Matrix assembly is data-oriented and intentionally explicit.

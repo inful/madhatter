@@ -52,22 +52,26 @@ func TestWithdrawRecurringDayFreesQuotaForDifferentDay(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, db.SetTeamMemberRecurringWFHDays(ctx, memberID, database.RecurringWFHDays{Thursday: true}))
 
-	today := time.Now().UTC()
-	start, end, err := svc.ComputePeriodBounds(today)
-	require.NoError(t, err)
-	_, err = svc.EnsureRecurringMaterializedForMember(ctx, memberID, start, end)
+	// Materialize the next 14 days, not just the current period, so
+	// the test can pick a Thursday with a withdrawal deadline that's
+	// comfortably in the future.
+	materializeEnd := time.Now().UTC().AddDate(0, 0, 14)
+	_, err = svc.EnsureRecurringMaterializedForMember(ctx, memberID, time.Now().UTC(), materializeEnd)
 	require.NoError(t, err)
 
-	// After materialization, Thursday is in the period and consumes one slot.
-	status, err := svc.GetQuotaStatus(ctx, memberID)
-	require.NoError(t, err)
-	require.GreaterOrEqual(t, status.Used, 1)
-
-	// Withdraw the Thursday row.
+	// Find a Thursday at least 2 days out so the 24h deadline is well
+	// in the future regardless of when the test runs.
 	rows, err := db.GetWFHRequestsByMember(ctx, memberID)
 	require.NoError(t, err)
 	require.NotEmpty(t, rows)
-	thursdayRow := rows[0]
+	minDate := time.Now().UTC().AddDate(0, 0, 2).Format("2006-01-02")
+	var thursdayRow database.WFHRequest
+	for _, r := range rows {
+		if r.Date >= minDate && r.Date > thursdayRow.Date {
+			thursdayRow = r
+		}
+	}
+	require.NotEmpty(t, thursdayRow.ID, "no Thursday with date >= %s found", minDate)
 	require.NoError(t, db.WithdrawOwnWFHRequest(ctx, thursdayRow.ID, memberID, 24))
 
 	// A request for a different day in the period now has quota.

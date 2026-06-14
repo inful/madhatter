@@ -11,6 +11,7 @@ import (
 
 	"github.com/inful/madhatter/internal/database"
 	"github.com/inful/madhatter/internal/notify"
+	"github.com/inful/madhatter/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -44,15 +45,8 @@ func testConfig() Config {
 		PeriodAnchor:        defaultPeriodAnchor,
 		SettlementDays:      2,
 		WithdrawalHours:     24,
+		RequestHorizonDays:  defaultRequestHorizonDays,
 	}
-}
-
-func nextBusinessDay(from time.Time) time.Time {
-	date := time.Date(from.Year(), from.Month(), from.Day(), 0, 0, 0, 0, time.UTC)
-	for date.Weekday() == time.Saturday || date.Weekday() == time.Sunday {
-		date = date.AddDate(0, 0, 1)
-	}
-	return date
 }
 
 func TestLoadConfigFromEnv_DefaultsAndOverrides(t *testing.T) {
@@ -122,7 +116,7 @@ func TestCheckQuota_UsesCurrentPeriodLimit(t *testing.T) {
 	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
 	require.NoError(t, err)
 
-	today := nextBusinessDay(time.Now().UTC())
+	today := testutil.NextBusinessDay(time.Now().UTC())
 	date1 := today.Format("2006-01-02")
 	date2 := today.AddDate(0, 0, 1).Format("2006-01-02")
 	date3 := today.AddDate(0, 0, 2).Format("2006-01-02")
@@ -182,7 +176,7 @@ func TestCheckQuota_FarFutureDate_ComputesPeriodForThatDate(t *testing.T) {
 	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
 	require.NoError(t, err)
 
-	farFuture := nextBusinessDay(time.Now().UTC().AddDate(0, 0, 60))
+	farFuture := testutil.NextBusinessDay(time.Now().UTC().AddDate(0, 0, 60))
 	farFutureStr := farFuture.Format("2006-01-02")
 
 	hasQuota, err := svc.CheckQuota(ctx, memberID, farFutureStr)
@@ -242,8 +236,8 @@ func TestPrioritisePending_SortsByUsageThenCreatedAt(t *testing.T) {
 	defer cleanup()
 
 	svc := NewService(db, testConfig())
-	baseDate := nextBusinessDay(time.Now().UTC())
-	date := nextBusinessDay(baseDate.AddDate(0, 0, 1))
+	baseDate := testutil.NextBusinessDay(time.Now().UTC())
+	date := testutil.NextBusinessDay(baseDate.AddDate(0, 0, 1))
 	dateStr := date.Format("2006-01-02")
 	previousDateStr := baseDate.Format("2006-01-02")
 
@@ -291,8 +285,8 @@ func TestSettlePendingRequests_ApprovesHighestPriorityWithinSlots(t *testing.T) 
 	cfg.MinOnsiteAbsolute = 1
 	svc := NewService(db, cfg)
 
-	today := nextBusinessDay(time.Now().UTC())
-	targetDate := nextBusinessDay(today.AddDate(0, 0, 1))
+	today := testutil.NextBusinessDay(time.Now().UTC())
+	targetDate := testutil.NextBusinessDay(today.AddDate(0, 0, 1))
 	targetDateStr := targetDate.Format("2006-01-02")
 	todayStr := today.Format("2006-01-02")
 
@@ -346,7 +340,7 @@ func TestSettlePendingRequests_RecurringWFHConsumesRemoteCapacity(t *testing.T) 
 	cfg.MinOnsiteAbsolute = 1
 	svc := NewService(db, cfg)
 
-	targetDate := nextBusinessDay(time.Now().UTC().AddDate(0, 0, 1))
+	targetDate := testutil.NextBusinessDay(time.Now().UTC().AddDate(0, 0, 1))
 	targetDateStr := targetDate.Format("2006-01-02")
 
 	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
@@ -395,8 +389,8 @@ func TestSettlePendingRequests_NoDoubleCountForApprovedRecurringWFH(t *testing.T
 	cfg.MinOnsiteAbsolute = 1
 	svc := NewService(db, cfg)
 
-	today := nextBusinessDay(time.Now().UTC())
-	targetDate := nextBusinessDay(today.AddDate(0, 0, 1))
+	today := testutil.NextBusinessDay(time.Now().UTC())
+	targetDate := testutil.NextBusinessDay(today.AddDate(0, 0, 1))
 	targetDateStr := targetDate.Format("2006-01-02")
 
 	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
@@ -448,7 +442,7 @@ func TestCreateWFHRequest_RejectsHoliday(t *testing.T) {
 	db, cleanup := setupWFHTestDB(t)
 	t.Cleanup(cleanup)
 
-	holidayDate := nextBusinessDay(time.Now().UTC().AddDate(0, 0, 5))
+	holidayDate := testutil.NextBusinessDay(time.Now().UTC().AddDate(0, 0, 5))
 	db.SetHolidayChecker(func(d time.Time) bool {
 		return d.Format("2006-01-02") == holidayDate.Format("2006-01-02")
 	})
@@ -465,7 +459,7 @@ func TestCreateWFHRequest_AllowsNonHolidayWhenCheckerSet(t *testing.T) {
 	db, cleanup := setupWFHTestDB(t)
 	t.Cleanup(cleanup)
 
-	holidayDate := nextBusinessDay(time.Now().UTC().AddDate(0, 0, 5))
+	holidayDate := testutil.NextBusinessDay(time.Now().UTC().AddDate(0, 0, 5))
 	db.SetHolidayChecker(func(d time.Time) bool {
 		return d.Format("2006-01-02") == holidayDate.Format("2006-01-02")
 	})
@@ -473,7 +467,7 @@ func TestCreateWFHRequest_AllowsNonHolidayWhenCheckerSet(t *testing.T) {
 	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
 	require.NoError(t, err)
 
-	nonHoliday := nextBusinessDay(holidayDate.AddDate(0, 0, 1))
+	nonHoliday := testutil.NextBusinessDay(holidayDate.AddDate(0, 0, 1))
 	_, err = db.CreateWFHRequest(ctx, memberID, nonHoliday.Format("2006-01-02"))
 	assert.NoError(t, err)
 }
@@ -483,7 +477,7 @@ func TestCheckQuota_RejectsHoliday(t *testing.T) {
 	db, cleanup := setupWFHTestDB(t)
 	t.Cleanup(cleanup)
 
-	holidayDate := nextBusinessDay(time.Now().UTC().AddDate(0, 0, 5))
+	holidayDate := testutil.NextBusinessDay(time.Now().UTC().AddDate(0, 0, 5))
 	db.SetHolidayChecker(func(d time.Time) bool {
 		return d.Format("2006-01-02") == holidayDate.Format("2006-01-02")
 	})
@@ -526,8 +520,8 @@ func TestSettlePendingRequests_FiresNotifierForEachTransition(t *testing.T) {
 	cfg.MinOnsiteAbsolute = 1
 	svc := NewService(db, cfg)
 
-	today := nextBusinessDay(time.Now().UTC())
-	targetDate := nextBusinessDay(today.AddDate(0, 0, 1))
+	today := testutil.NextBusinessDay(time.Now().UTC())
+	targetDate := testutil.NextBusinessDay(today.AddDate(0, 0, 1))
 	targetDateStr := targetDate.Format("2006-01-02")
 	todayStr := today.Format("2006-01-02")
 

@@ -10,6 +10,7 @@ import (
 
 	"github.com/inful/madhatter/internal/auth"
 	"github.com/inful/madhatter/internal/database"
+	"github.com/inful/madhatter/internal/testutil"
 	"github.com/inful/madhatter/internal/wfh"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -100,7 +101,7 @@ func TestHandleWFHRequestPost_BeyondHorizon_RendersError(t *testing.T) {
 	h.wfhService = svc
 
 	// Submit a date one day beyond the 90-day horizon — tight off-by-one boundary.
-	farFuture := nextBusinessDay(time.Now().UTC().AddDate(0, 0, 91))
+	farFuture := testutil.NextBusinessDay(time.Now().UTC().AddDate(0, 0, 91))
 	formBody := "date=" + farFuture.Format("2006-01-02")
 	rec := httptest.NewRequestWithContext(ctx, http.MethodPost, "/wfh/request", strings.NewReader(formBody))
 	rec.Header.Set("Content-Type", "application/x-www-form-urlencoded")

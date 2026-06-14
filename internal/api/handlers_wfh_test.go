@@ -8,6 +8,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/humatest"
+	"github.com/inful/madhatter/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -72,19 +73,10 @@ func TestWFHAPI_RequestBeyondHorizon_Returns422(t *testing.T) {
 	require.NoError(t, err)
 
 	// Submit a date one day beyond the horizon — tight off-by-one boundary.
-	farFuture := nextBusinessDay(time.Now().UTC().AddDate(0, 0, 91))
+	farFuture := testutil.NextBusinessDay(time.Now().UTC().AddDate(0, 0, 91))
 	api := humatest.Wrap(t, server.api)
 	resp := api.Post("/api/v1/wfh", map[string]string{"date": farFuture.Format("2006-01-02")}, "Cookie: session_token="+sessionToken)
 
 	assert.Equal(t, http.StatusUnprocessableEntity, resp.Code)
 	assert.Contains(t, resp.Body.String(), "beyond the request horizon", "response body must name the horizon error")
-}
-
-// nextBusinessDay returns the next weekday (Mon–Fri) starting from the given time.
-func nextBusinessDay(from time.Time) time.Time {
-	d := from
-	for d.Weekday() == time.Saturday || d.Weekday() == time.Sunday {
-		d = d.AddDate(0, 0, 1)
-	}
-	return d
 }

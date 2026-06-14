@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/inful/madhatter/internal/database"
+	"github.com/inful/madhatter/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -81,8 +82,8 @@ func TestGetUpcomingPresenceFrom_ShowsSwapBadgeForSwappedAssignment(t *testing.T
 	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
 	require.NoError(t, err)
 
-	start := nextBusinessDay(time.Now().AddDate(0, 0, 7))
-	next := nextBusinessDay(start.AddDate(0, 0, 1))
+	start := testutil.NextBusinessDay(time.Now().AddDate(0, 0, 7))
+	next := testutil.NextBusinessDay(start.AddDate(0, 0, 1))
 
 	aliceAssignmentID, err := db.CreateRotaAssignment(ctx, start.Format("2006-01-02"), aliceID, false, nil)
 	require.NoError(t, err)
@@ -116,7 +117,7 @@ func TestLoadCurrentUserPresenceStatus_SetsHatDayAndLeave(t *testing.T) {
 	require.NoError(t, err)
 
 	today := time.Now().Format("2006-01-02")
-	tomorrow := nextBusinessDay(time.Now().AddDate(0, 0, 1)).Format("2006-01-02")
+	tomorrow := testutil.NextBusinessDay(time.Now().AddDate(0, 0, 1)).Format("2006-01-02")
 	_, err = db.CreateRotaAssignment(ctx, today, aliceID, false, nil)
 	require.NoError(t, err)
 	_, err = db.CreateRotaAssignment(ctx, tomorrow, aliceID, false, nil)
@@ -147,8 +148,8 @@ func TestLoadCurrentUserPresenceStatus_NextWFHUsesEarliestUpcomingDate(t *testin
 	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
 	require.NoError(t, err)
 
-	nearDate := nextBusinessDay(time.Now().AddDate(0, 0, 1)).Format("2006-01-02")
-	farDate := nextBusinessDay(time.Now().AddDate(0, 0, 7)).Format("2006-01-02")
+	nearDate := testutil.NextBusinessDay(time.Now().AddDate(0, 0, 1)).Format("2006-01-02")
+	farDate := testutil.NextBusinessDay(time.Now().AddDate(0, 0, 7)).Format("2006-01-02")
 
 	_, err = db.CreateWFHRequest(ctx, aliceID, nearDate)
 	require.NoError(t, err)
@@ -171,8 +172,8 @@ func TestLoadCurrentUserPresenceStatus_NextWFHUpdatesAfterSettlement(t *testing.
 	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
 	require.NoError(t, err)
 
-	nearDate := nextBusinessDay(time.Now().AddDate(0, 0, 1)).Format("2006-01-02")
-	farDate := nextBusinessDay(time.Now().AddDate(0, 0, 7)).Format("2006-01-02")
+	nearDate := testutil.NextBusinessDay(time.Now().AddDate(0, 0, 1)).Format("2006-01-02")
+	farDate := testutil.NextBusinessDay(time.Now().AddDate(0, 0, 7)).Format("2006-01-02")
 
 	_, err = db.CreateWFHRequest(ctx, aliceID, nearDate)
 	require.NoError(t, err)
@@ -226,13 +227,4 @@ func TestLoadCurrentUserPresenceStatus_RecurringWFH(t *testing.T) {
 		assert.Equal(t, currentUserStatusOnSite, data["CurrentUserPresenceStatus"])
 	}
 	assert.Equal(t, true, data["CurrentUserHasHATDay"])
-}
-
-func nextBusinessDay(from time.Time) time.Time {
-	date := time.Date(from.Year(), from.Month(), from.Day(), 0, 0, 0, 0, from.Location())
-	for date.Weekday() == time.Saturday || date.Weekday() == time.Sunday {
-		date = date.AddDate(0, 0, 1)
-	}
-
-	return date
 }

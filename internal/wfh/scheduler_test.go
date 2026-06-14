@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/inful/madhatter/internal/database"
+	"github.com/inful/madhatter/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -44,7 +45,7 @@ func TestScheduler_StartStopAndSettle(t *testing.T) {
 		scheduler.Stop()
 		assert.False(t, scheduler.running)
 
-		request2, err := db.CreateWFHRequest(ctx, memberID, nextBusinessDay(time.Now().UTC().AddDate(0, 0, 1)).Format("2006-01-02"))
+		request2, err := db.CreateWFHRequest(ctx, memberID, testutil.NextBusinessDay(time.Now().UTC().AddDate(0, 0, 1)).Format("2006-01-02"))
 		require.NoError(t, err)
 
 		require.NoError(t, scheduler.Start())

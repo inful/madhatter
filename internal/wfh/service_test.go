@@ -193,16 +193,18 @@ func TestCheckQuota_RecurringDaysReduceBudget(t *testing.T) {
 	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
 	require.NoError(t, err)
 
-	// Pick two weekdays that are guaranteed to be in the future of the
-	// current period, so materialization inserts both. Wed+Thu work for
-	// every day-of-week except Wednesday itself; the test runs at any time
-	// and exercises the same code path.
 	require.NoError(t, db.SetTeamMemberRecurringWFHDays(ctx, memberID, database.RecurringWFHDays{
 		Wednesday: true,
 		Thursday:  true,
 	}))
 
-	checkDate := nextWeekday(time.Now().UTC(), time.Friday).Format("2006-01-02")
+	// Pick a Friday strictly in the future (next 14 days) and
+	// materialize the same 14-day window. The check date and the
+	// materialized recurring rows are guaranteed to land in the same
+	// quota period, regardless of which day-of-week the test runs.
+	today := time.Now().UTC()
+	windowStart, windowEnd := today, today.AddDate(0, 0, 14)
+	checkDate := nextWeekdayInRange(t, windowStart, windowEnd, time.Friday).Format("2006-01-02")
 
 	// Without materialization, recurring days don't pre-consume budget —
 	// they're just a definition. The member has full quota available.
@@ -212,22 +214,12 @@ func TestCheckQuota_RecurringDaysReduceBudget(t *testing.T) {
 
 	// After materialization, the recurring occurrences in the period become
 	// approved rows, which the period-usage count picks up.
-	start, end, err := svc.ComputePeriodBounds(time.Now().UTC())
-	require.NoError(t, err)
-	_, err = svc.EnsureRecurringMaterializedForMember(ctx, memberID, start, end)
+	_, err = svc.EnsureRecurringMaterializedForMember(ctx, memberID, windowStart, windowEnd)
 	require.NoError(t, err)
 
 	hasQuota, err = svc.CheckQuota(ctx, memberID, checkDate)
 	require.NoError(t, err)
 	assert.False(t, hasQuota)
-}
-
-func nextWeekday(start time.Time, weekday time.Weekday) time.Time {
-	date := start.AddDate(0, 0, 1)
-	for date.Weekday() != weekday {
-		date = date.AddDate(0, 0, 1)
-	}
-	return date
 }
 
 func TestPrioritisePending_SortsByUsageThenCreatedAt(t *testing.T) {

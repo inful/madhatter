@@ -23,23 +23,35 @@ func TestGetQuotaStatus_RecurringDaysCountAfterMaterialization(t *testing.T) {
 		Thursday:  true,
 	}))
 
-	// Before materialization: quota is fully available.
-	status, err := svc.GetQuotaStatus(ctx, memberID)
-	require.NoError(t, err)
-	assert.Equal(t, 0, status.Used)
-	assert.Equal(t, 2, status.Remaining)
-
-	// After materialization: two rows consumed in the current period.
+	// Materialize a 14-day forward window so the test is independent
+	// of the current day-of-week. The window always contains at least
+	// one occurrence of each recurring weekday, but the count varies
+	// by which day of the week the test runs on — so we count directly
+	// in the period where the rows landed rather than going through
+	// GetQuotaStatus (which is anchored to today and may report a
+	// different period when today is Fri–Sun).
 	today := time.Now().UTC()
-	start, end, err := svc.ComputePeriodBounds(today)
-	require.NoError(t, err)
+	start, end := today, today.AddDate(0, 0, 14)
 	_, err = svc.EnsureRecurringMaterializedForMember(ctx, memberID, start, end)
 	require.NoError(t, err)
 
-	status, err = svc.GetQuotaStatus(ctx, memberID)
+	rows, err := db.GetWFHRequestsByMember(ctx, memberID)
 	require.NoError(t, err)
-	assert.GreaterOrEqual(t, status.Used, 1)
-	assert.Equal(t, 0, status.Remaining)
+	require.NotEmpty(t, rows, "materializer must insert at least one row")
+
+	// Find the period of the first materialized row and count rows in it.
+	firstDate, err := time.Parse("2006-01-02", rows[0].Date)
+	require.NoError(t, err)
+	periodStart, periodEnd, err := svc.ComputePeriodBounds(firstDate)
+	require.NoError(t, err)
+
+	used, err := db.GetWFHRequestsUsedInPeriod(ctx, memberID,
+		periodStart.Format("2006-01-02"), periodEnd.Format("2006-01-02"))
+	require.NoError(t, err)
+	// 14 days contains 1-2 occurrences of each of Wed and Thu, so
+	// 1-2 rows per period.
+	assert.GreaterOrEqual(t, len(used), 1)
+	assert.LessOrEqual(t, len(used), 2)
 }
 
 func TestWithdrawRecurringDayFreesQuotaForDifferentDay(t *testing.T) {

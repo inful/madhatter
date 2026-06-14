@@ -48,16 +48,17 @@ func TestEnsureRecurringMaterialized_FillsGaps(t *testing.T) {
 		Thursday:  true,
 	}))
 
+	// Use a 14-day forward window so the test is independent of the
+	// current day-of-week. The current period (7 days) may not contain a
+	// future occurrence of Wed+Thu if the test runs late in the week.
 	today := time.Now().UTC()
-	start, end, err := svc.ComputePeriodBounds(today)
-	require.NoError(t, err)
+	start, end := today, today.AddDate(0, 0, 14)
 
 	inserted, err := svc.EnsureRecurringMaterializedForMember(ctx, memberID, start, end)
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, inserted, 1, "expected at least one future recurring occurrence to be materialized")
 
-	rows, err := db.GetWFHRequestsUsedInPeriod(ctx, memberID,
-		start.Format("2006-01-02"), end.Format("2006-01-02"))
+	rows, err := db.GetWFHRequestsByMember(ctx, memberID)
 	require.NoError(t, err)
 	for _, r := range rows {
 		assert.Equal(t, database.WFHStatusApproved, r.Status)
@@ -75,9 +76,11 @@ func TestEnsureRecurringMaterialized_IsIdempotent(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, db.SetTeamMemberRecurringWFHDays(ctx, memberID, database.RecurringWFHDays{Thursday: true}))
 
+	// Use a 14-day forward window so the test is independent of the
+	// current day-of-week. A 7-day period may not contain a future
+	// Thursday if the test runs late in the week.
 	today := time.Now().UTC()
-	start, end, err := svc.ComputePeriodBounds(today)
-	require.NoError(t, err)
+	start, end := today, today.AddDate(0, 0, 14)
 
 	first, err := svc.EnsureRecurringMaterializedForMember(ctx, memberID, start, end)
 	require.NoError(t, err)
@@ -134,16 +137,15 @@ func TestEnsureRecurringMaterialized_PreservesWithdrawnRow(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, db.SetTeamMemberRecurringWFHDays(ctx, memberID, database.RecurringWFHDays{Thursday: true}))
 
-	// User explicitly withdraws the Thursday occurrence. We insert
-	// the row directly into the *current* period and flip its status
-	// to "withdrawn" via SQL so the 24h withdrawal deadline check
-	// (which is time-of-day sensitive at the UTC date boundary) is
-	// not exercised. The materializer's job is to skip existing rows
-	// regardless of status, and that's what this test verifies.
+	// Use a 7-day window starting from tomorrow. This guarantees:
+	//   - the picked Thursday is strictly in the future (so the DB
+	//     doesn't reject it as a past date when today is Fri–Sun), and
+	//   - exactly one Thursday falls in the window (Thursday recurs
+	//     weekly), so the materializer can't insert a *second* one
+	//     alongside the withdrawn row.
 	today := time.Now().UTC()
-	start, end, err := svc.ComputePeriodBounds(today)
-	require.NoError(t, err)
-	thursday := nextWeekdayInRange(t, start, end, time.Thursday)
+	windowStart, windowEnd := today.AddDate(0, 0, 1), today.AddDate(0, 0, 8)
+	thursday := nextWeekdayInRange(t, windowStart, windowEnd, time.Thursday)
 	thursdayStr := thursday.Format("2006-01-02")
 	now := time.Now().UTC()
 	require.NoError(t, db.CreateApprovedRecurringWFHRequest(ctx, memberID, thursdayStr, now))
@@ -155,9 +157,7 @@ func TestEnsureRecurringMaterialized_PreservesWithdrawnRow(t *testing.T) {
 	require.NoError(t, err)
 
 	// Materializer must not re-insert the withdrawn row.
-	start, end, err = svc.ComputePeriodBounds(now)
-	require.NoError(t, err)
-	inserted, err := svc.EnsureRecurringMaterializedForMember(ctx, memberID, start, end)
+	inserted, err := svc.EnsureRecurringMaterializedForMember(ctx, memberID, windowStart, windowEnd)
 	require.NoError(t, err)
 	assert.Equal(t, 0, inserted, "withdrawn row must suppress re-materialization")
 
@@ -180,19 +180,19 @@ func TestEnsureRecurringMaterialized_AllMembers(t *testing.T) {
 	require.NoError(t, db.SetTeamMemberRecurringWFHDays(ctx, aliceID, database.RecurringWFHDays{Wednesday: true}))
 	// Bob has no recurring schedule.
 
+	// Use a 14-day forward window so the test is independent of the
+	// current day-of-week. The current period may not contain a future
+	// Wednesday if the test runs late in the week.
 	today := time.Now().UTC()
-	start, end, err := svc.ComputePeriodBounds(today)
-	require.NoError(t, err)
+	start, end := today, today.AddDate(0, 0, 14)
 
 	inserted, err := svc.EnsureRecurringMaterialized(ctx, start, end)
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, inserted, 1, "Alice's Wed should be materialized")
 
-	aliceRows, err := db.GetWFHRequestsUsedInPeriod(ctx, aliceID,
-		start.Format("2006-01-02"), end.Format("2006-01-02"))
+	aliceRows, err := db.GetWFHRequestsByMember(ctx, aliceID)
 	require.NoError(t, err)
-	bobRows, err := db.GetWFHRequestsUsedInPeriod(ctx, bobID,
-		start.Format("2006-01-02"), end.Format("2006-01-02"))
+	bobRows, err := db.GetWFHRequestsByMember(ctx, bobID)
 	require.NoError(t, err)
 	assert.NotEmpty(t, aliceRows)
 	assert.Empty(t, bobRows, "Bob has no recurring schedule, must not be materialized")

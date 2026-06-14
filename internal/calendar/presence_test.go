@@ -106,11 +106,15 @@ func TestComputePresenceSnapshot_WFHIncluded(t *testing.T) {
 
 	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
 	require.NoError(t, err)
-	err = db.CreateApprovedRecurringWFHRequest(ctx, aliceID, "2026-06-10", time.Now().UTC())
-	require.NoError(t, err)
+
+	// Use a date strictly in the future so the DB doesn't reject it
+	// as a past date. The exact date doesn't matter for the snapshot
+	// logic being tested.
+	wfhDate := time.Now().UTC().AddDate(0, 0, 7).Format("2006-01-02")
+	require.NoError(t, db.CreateApprovedRecurringWFHRequest(ctx, aliceID, wfhDate, time.Now().UTC()))
 
 	b := newPresenceBuilder(db, nil, nil, "seed")
-	snap, err := b.Build(ctx, "2026-06-10")
+	snap, err := b.Build(ctx, wfhDate)
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, snap.TotalActive)

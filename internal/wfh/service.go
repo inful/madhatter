@@ -21,6 +21,7 @@ const (
 	defaultPeriodDays          = 7
 	defaultSettlementDays      = 2
 	defaultWithdrawalHours     = 24
+	defaultRequestHorizonDays  = 90
 	// defaultPeriodAnchor is a known Monday used as the period epoch.
 	defaultPeriodAnchor = "2026-01-05"
 )
@@ -43,6 +44,8 @@ type Config struct {
 	SettlementDays int
 	// WithdrawalHours is how many hours before a WFH day an admin can still withdraw it.
 	WithdrawalHours int
+	// RequestHorizonDays is how many days ahead a WFH request can be submitted.
+	RequestHorizonDays int
 }
 
 // LoadConfigFromEnv loads WFH configuration from environment variables.
@@ -56,6 +59,7 @@ func LoadConfigFromEnv() Config {
 		PeriodAnchor:        parseStringEnv("WFH_PERIOD_ANCHOR", defaultPeriodAnchor),
 		SettlementDays:      parseIntEnv("WFH_SETTLEMENT_DAYS", defaultSettlementDays),
 		WithdrawalHours:     parseIntEnv("WFH_WITHDRAWAL_HOURS", defaultWithdrawalHours),
+		RequestHorizonDays:  parseIntEnv("WFH_REQUEST_HORIZON_DAYS", defaultRequestHorizonDays),
 	}
 	return cfg
 }
@@ -143,6 +147,28 @@ func (s *Service) GetQuotaStatus(ctx context.Context, memberID string) (QuotaSta
 func (s *Service) CanWithdraw(wfhDate time.Time) bool {
 	deadline := wfhDate.UTC().Add(-time.Duration(s.cfg.WithdrawalHours) * time.Hour)
 	return time.Now().UTC().Before(deadline)
+}
+
+// MaxRequestDate returns the latest date (midnight UTC) up to which an
+// ad-hoc WFH request can be submitted. Contractual recurring-WFH rows are
+// produced by the materializer, which is not bounded by this horizon.
+func (s *Service) MaxRequestDate() time.Time {
+	now := time.Now().UTC()
+	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).
+		AddDate(0, 0, s.cfg.RequestHorizonDays)
+}
+
+// ValidateRequestDate reports whether the given date is within the request horizon.
+// Returns nil if valid; ErrWFHDateTooFar if beyond the horizon; ErrWFHInvalidDate if unparseable.
+func (s *Service) ValidateRequestDate(date string) error {
+	wfhDate, err := time.Parse("2006-01-02", date)
+	if err != nil {
+		return database.ErrWFHInvalidDate
+	}
+	if wfhDate.After(s.MaxRequestDate()) {
+		return database.ErrWFHDateTooFar
+	}
+	return nil
 }
 
 // CheckQuota reports whether the member has remaining WFH days in the period containing date.

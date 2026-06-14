@@ -20,6 +20,7 @@ var (
 	ErrWFHDuplicateRequest         = errors.New("a WFH request already exists for this date")
 	ErrWFHInvalidDate              = errors.New("invalid date format, expected YYYY-MM-DD")
 	ErrWFHDatePassed               = errors.New("WFH date has already passed")
+	ErrWFHDateTooFar               = errors.New("WFH date is beyond the request horizon")
 	ErrWFHMemberNotFound           = errors.New("member not found")
 	ErrWFHRecurringContractDay     = errors.New("this weekday is already configured as recurring WFH for the member")
 	ErrWFHPermanentMember          = ErrWFHRecurringContractDay

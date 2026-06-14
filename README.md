@@ -186,6 +186,7 @@ At least one provider must be configured for production authentication.
 | `WFH_PERIOD_ANCHOR` | `2026-01-05` | Reference date used to compute WFH periods. Must use `YYYY-MM-DD`. |
 | `WFH_SETTLEMENT_DAYS` | `2` | Number of days ahead that pending WFH requests are auto-settled. |
 | `WFH_WITHDRAWAL_HOURS` | `24` | Hours before the WFH day after which an approved request can no longer be withdrawn by the member or an admin. |
+| `WFH_REQUEST_HORIZON_DAYS` | `90` | Maximum number of days ahead a WFH request can be submitted. Requests beyond this horizon are rejected with a 422 in the API and a banner in the web form. |
 
 #### Calendar and meetings
 

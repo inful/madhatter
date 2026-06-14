@@ -66,6 +66,8 @@ func wfhDomainToHumaError(err error) error {
 		return huma.Error409Conflict(err.Error())
 	case errors.Is(err, database.ErrWFHDatePassed):
 		return huma.Error422UnprocessableEntity(err.Error(), nil)
+	case errors.Is(err, database.ErrWFHDateTooFar):
+		return huma.Error422UnprocessableEntity(err.Error(), nil)
 	case errors.Is(err, database.ErrWFHInvalidDate):
 		return huma.Error422UnprocessableEntity(err.Error(), nil)
 	case errors.Is(err, database.ErrWFHMemberNotFound):
@@ -109,6 +111,8 @@ func (s *Server) resolveWFHMemberID(ctx context.Context) (string, error) {
 // -- Handlers -----------------------------------------------------------------
 
 // handleRequestWFH creates a new pending WFH request for the authenticated user.
+//
+//nolint:cyclop // Auth, horizon, quota and persistence checks are sequential and explicit.
 func (s *Server) handleRequestWFH(ctx context.Context, input *CreateWFHInput) (*WFHRequestOutput, error) {
 	if s.authMiddleware == nil {
 		return nil, huma.Error503ServiceUnavailable("Authentication not available")
@@ -117,6 +121,13 @@ func (s *Server) handleRequestWFH(ctx context.Context, input *CreateWFHInput) (*
 	memberID, err := s.resolveWFHMemberID(ctx)
 	if err != nil {
 		return nil, err
+	}
+
+	// Enforce request horizon before anything else.
+	if s.wfhService != nil {
+		if horizonErr := s.wfhService.ValidateRequestDate(input.Body.Date); horizonErr != nil {
+			return nil, wfhDomainToHumaError(horizonErr)
+		}
 	}
 
 	// Enforce quota before creating the request.

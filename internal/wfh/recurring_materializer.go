@@ -15,6 +15,12 @@ import (
 // pre-insert existence check both block them. The materializer skips past
 // dates silently — there's nothing to insert there.
 //
+// Note: the request horizon (MaxRequestDate) applies to *ad-hoc* WFH
+// submissions only. The materializer may pre-create approved recurring
+// rows for any date range the caller asks for; today's call sites all
+// pass ranges inside the horizon, but a future caller that walks further
+// out would bypass the ad-hoc cap.
+//
 // Returns the number of rows actually inserted. Errors from individual
 // members are logged by the caller; the function aggregates by continuing
 // past non-fatal failures and returns the running count alongside the

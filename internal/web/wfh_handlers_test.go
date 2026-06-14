@@ -4,7 +4,9 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/inful/madhatter/internal/auth"
 	"github.com/inful/madhatter/internal/database"
@@ -38,6 +40,7 @@ func TestHandleWFHList_MaterializesRecurringRows(t *testing.T) {
 		PeriodAnchor:        "2026-01-05",
 		SettlementDays:      2,
 		WithdrawalHours:     24,
+		RequestHorizonDays:  90,
 	})
 	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
 	require.NoError(t, err)
@@ -68,4 +71,48 @@ func TestHandleWFHList_MaterializesRecurringRows(t *testing.T) {
 	rowsAfter, err := db.GetWFHRequestsByMember(ctx, memberID)
 	require.NoError(t, err)
 	assert.Len(t, rowsAfter, len(rows), "second GET must not insert more rows")
+}
+
+// TestHandleWFHRequestPost_BeyondHorizon_RendersError ensures that a POST
+// with a date beyond the configured request horizon re-renders the form with
+// an error and does not create a row.
+func TestHandleWFHRequestPost_BeyondHorizon_RendersError(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupSwapTestDB(t)
+	defer cleanup()
+
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	svc := wfh.NewService(db, wfh.Config{
+		Enabled:             true,
+		MinOnsitePercentage: 50,
+		MinOnsiteAbsolute:   1,
+		MaxDaysPerPeriod:    2,
+		PeriodDays:          7,
+		PeriodAnchor:        "2026-01-05",
+		SettlementDays:      2,
+		WithdrawalHours:     24,
+		RequestHorizonDays:  90,
+	})
+	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+	h.wfhService = svc
+
+	// Submit a date one day beyond the 90-day horizon — tight off-by-one boundary.
+	farFuture := nextBusinessDay(time.Now().UTC().AddDate(0, 0, 91))
+	formBody := "date=" + farFuture.Format("2006-01-02")
+	rec := httptest.NewRequestWithContext(ctx, http.MethodPost, "/wfh/request", strings.NewReader(formBody))
+	rec.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec = withUser(rec, "alice@example.com", "Alice", false)
+	rr := httptest.NewRecorder()
+	h.handleWFHRequestPost(rr, rec, map[string]any{}, memberID)
+
+	assert.Equal(t, http.StatusOK, rr.Code, "form must re-render on horizon error")
+	assert.Contains(t, rr.Body.String(), "90 days in advance", "error message must mention the horizon")
+
+	// Verify no row was created.
+	rows, err := db.GetWFHRequestsByMember(ctx, memberID)
+	require.NoError(t, err)
+	assert.Empty(t, rows, "no WFH row must be created for a beyond-horizon request")
 }

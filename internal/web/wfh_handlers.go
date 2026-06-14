@@ -2,6 +2,7 @@ package web
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -105,6 +106,8 @@ func (h *Handler) handleWFHRequest(w http.ResponseWriter, r *http.Request) {
 	h.renderWFHRequestForm(w, r, data, memberID, "")
 }
 
+// handleWFHRequestPost processes a WFH request form submission. Validates the
+// date format, horizon, quota, and delegates persistence to the DB layer.
 func (h *Handler) handleWFHRequestPost(w http.ResponseWriter, r *http.Request, data map[string]any, memberID string) {
 	ctx := r.Context()
 	r.Body = http.MaxBytesReader(w, r.Body, maxWFHFormBytes)
@@ -123,6 +126,16 @@ func (h *Handler) handleWFHRequestPost(w http.ResponseWriter, r *http.Request, d
 	if _, err := time.Parse("2006-01-02", date); err != nil {
 		h.renderWFHRequestForm(w, r, data, memberID, "Invalid date format, expected YYYY-MM-DD.")
 		return
+	}
+
+	// Enforce the request horizon. The date was already validated as parseable
+	// above, so ValidateRequestDate can only fail with ErrWFHDateTooFar here.
+	if h.wfhService != nil {
+		if err := h.wfhService.ValidateRequestDate(date); err != nil {
+			horizon := h.wfhService.Config().RequestHorizonDays
+			h.renderWFHRequestForm(w, r, data, memberID, wfhBeyondHorizonMessage(horizon))
+			return
+		}
 	}
 
 	// Check quota.
@@ -152,9 +165,14 @@ func (h *Handler) renderWFHRequestForm(w http.ResponseWriter, r *http.Request, d
 	if errMsg != "" {
 		data["Error"] = errMsg
 	}
-	data["Today"] = time.Now().Format("2006-01-02")
+	// Use UTC for "today" so the form's min attribute matches the server's
+	// UTC-based date comparisons. Mismatch would let a user in a positive
+	// offset pick a date the server then rejects (or vice versa).
+	now := time.Now().UTC()
+	data["Today"] = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).Format("2006-01-02")
 
 	if h.wfhService != nil {
+		data["MaxRequestDate"] = h.wfhService.MaxRequestDate().Format("2006-01-02")
 		quota, err := h.wfhService.GetQuotaStatus(ctx, memberID)
 		if err == nil {
 			data["Quota"] = quota
@@ -346,6 +364,8 @@ func wfhWebErrorMessage(err error) string {
 		return "A WFH request already exists for this date."
 	case errors.Is(err, database.ErrWFHDatePassed):
 		return "The selected date has already passed."
+	case errors.Is(err, database.ErrWFHDateTooFar):
+		return "WFH requests can only be made up to a limited number of days in advance."
 	case errors.Is(err, database.ErrWFHRecurringContractDay):
 		return "This date falls on your contractual recurring WFH day."
 	case errors.Is(err, database.ErrWFHOnHoliday):
@@ -357,4 +377,13 @@ func wfhWebErrorMessage(err error) string {
 	default:
 		return err.Error()
 	}
+}
+
+// wfhBeyondHorizonMessage formats a user-facing message for a request that
+// falls beyond the configured request horizon, with singular/plural handling.
+func wfhBeyondHorizonMessage(horizonDays int) string {
+	if horizonDays == 1 {
+		return "WFH requests can only be made up to 1 day in advance."
+	}
+	return fmt.Sprintf("WFH requests can only be made up to %d days in advance.", horizonDays)
 }

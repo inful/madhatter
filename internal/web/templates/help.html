@@ -73,6 +73,10 @@
                     <td>{{.WFHSettlementDays}} day(s) ahead</td>
                 </tr>
                 <tr>
+                    <th>Request horizon</th>
+                    <td>Ad-hoc requests accepted up to {{.WFHRequestHorizonDays}} day(s) in advance</td>
+                </tr>
+                <tr>
                     <th>Minimum on-site coverage</th>
                     <td>{{printf "%.0f" .WFHMinOnsitePercentage}}% of active members, with a floor of {{.WFHMinOnsiteAbsolute}} person(s)</td>
                 </tr>

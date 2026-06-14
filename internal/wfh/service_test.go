@@ -65,6 +65,7 @@ func TestLoadConfigFromEnv_DefaultsAndOverrides(t *testing.T) {
 	assert.Equal(t, defaultPeriodAnchor, cfg.PeriodAnchor)
 	assert.Equal(t, defaultSettlementDays, cfg.SettlementDays)
 	assert.Equal(t, defaultWithdrawalHours, cfg.WithdrawalHours)
+	assert.Equal(t, defaultRequestHorizonDays, cfg.RequestHorizonDays)
 
 	t.Setenv("WFH_ENABLED", "false")
 	t.Setenv("WFH_MIN_ONSITE_PERCENTAGE", "60.5")
@@ -74,6 +75,7 @@ func TestLoadConfigFromEnv_DefaultsAndOverrides(t *testing.T) {
 	t.Setenv("WFH_PERIOD_ANCHOR", "2026-02-02")
 	t.Setenv("WFH_SETTLEMENT_DAYS", "5")
 	t.Setenv("WFH_WITHDRAWAL_HOURS", "72")
+	t.Setenv("WFH_REQUEST_HORIZON_DAYS", "180")
 
 	cfg = LoadConfigFromEnv()
 	assert.False(t, cfg.Enabled)
@@ -84,14 +86,17 @@ func TestLoadConfigFromEnv_DefaultsAndOverrides(t *testing.T) {
 	assert.Equal(t, "2026-02-02", cfg.PeriodAnchor)
 	assert.Equal(t, 5, cfg.SettlementDays)
 	assert.Equal(t, 72, cfg.WithdrawalHours)
+	assert.Equal(t, 180, cfg.RequestHorizonDays)
 
 	t.Setenv("WFH_ENABLED", "not-a-bool")
 	t.Setenv("WFH_MIN_ONSITE_PERCENTAGE", "bad")
 	t.Setenv("WFH_MIN_ONSITE_ABSOLUTE", "bad")
+	t.Setenv("WFH_REQUEST_HORIZON_DAYS", "bad")
 	cfg = LoadConfigFromEnv()
 	assert.True(t, cfg.Enabled)
 	assert.LessOrEqual(t, math.Abs(cfg.MinOnsitePercentage-defaultMinOnsitePercentage), 0.0001)
 	assert.Equal(t, defaultMinOnsiteAbsolute, cfg.MinOnsiteAbsolute)
+	assert.Equal(t, defaultRequestHorizonDays, cfg.RequestHorizonDays)
 }
 
 func TestComputePeriodBounds_AcrossAnchorBoundaries(t *testing.T) {
@@ -130,6 +135,59 @@ func TestCheckQuota_UsesCurrentPeriodLimit(t *testing.T) {
 	hasQuota, err := svc.CheckQuota(ctx, memberID, date3)
 	require.NoError(t, err)
 	assert.False(t, hasQuota)
+}
+
+func TestService_MaxRequestDate(t *testing.T) {
+	svc := NewService(nil, Config{RequestHorizonDays: 90})
+	maxDate := svc.MaxRequestDate()
+	now := time.Now().UTC()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	expected := today.AddDate(0, 0, 90)
+	assert.Equal(t, expected, maxDate)
+}
+
+func TestService_ValidateRequestDate(t *testing.T) {
+	svc := NewService(nil, Config{RequestHorizonDays: 90})
+	maxDate := svc.MaxRequestDate()
+
+	// Within horizon — today.
+	within := maxDate.Format("2006-01-02")
+	err := svc.ValidateRequestDate(within)
+	require.NoError(t, err)
+
+	// Within horizon — a few days before max.
+	within = maxDate.AddDate(0, 0, -5).Format("2006-01-02")
+	err = svc.ValidateRequestDate(within)
+	require.NoError(t, err)
+
+	// Beyond horizon.
+	beyond := maxDate.AddDate(0, 0, 1).Format("2006-01-02")
+	err = svc.ValidateRequestDate(beyond)
+	require.ErrorIs(t, err, database.ErrWFHDateTooFar)
+
+	// Invalid date.
+	err = svc.ValidateRequestDate("not-a-date")
+	require.ErrorIs(t, err, database.ErrWFHInvalidDate)
+}
+
+func TestCheckQuota_FarFutureDate_ComputesPeriodForThatDate(t *testing.T) {
+	// Regression test: a date 60 days out falls in a future period that does
+	// not yet exist as "current". The period bounds must be computed correctly
+	// and the quota check must succeed when no days are used in that period.
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	svc := NewService(db, testConfig())
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	farFuture := nextBusinessDay(time.Now().UTC().AddDate(0, 0, 60))
+	farFutureStr := farFuture.Format("2006-01-02")
+
+	hasQuota, err := svc.CheckQuota(ctx, memberID, farFutureStr)
+	require.NoError(t, err, "CheckQuota must not fail for a far-future date within horizon")
+	assert.True(t, hasQuota, "Fresh member should have quota available for a far-future period")
 }
 
 func TestCheckQuota_RecurringDaysReduceBudget(t *testing.T) {

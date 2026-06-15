@@ -24,7 +24,7 @@ var CLI struct {
 	Serve struct {
 		Port           string `default:"8080" arg:""`
 		Development    bool   `default:"false" help:"Enable development mode using fake OAuth to bypass full OAuth setup for local development"`
-		ReassignCovers bool   `default:"true" help:"On startup, re-run the cover-assignment algorithm against existing leaves if the binary's algorithm version is ahead of the on-disk applied version"`
+		ReassignCovers bool   `default:"true" help:"On startup, re-run the cover-assignment algorithm against every leave (idempotent — safe to leave enabled)"`
 	} `cmd:"" help:"Start web server"`
 
 	Team struct {
@@ -68,9 +68,7 @@ var CLI struct {
 		} `cmd:"" help:"Export ICS file"`
 	} `cmd:"" help:"Calendar management"`
 
-	ReassignCovers struct {
-		Force bool `default:"false" help:"Re-run the cover-assignment algorithm even if the on-disk version matches the binary's version"`
-	} `cmd:"" help:"Re-run the cover-assignment algorithm against all leaves, updating cover_algorithm_state"`
+	ReassignCovers struct{} `cmd:"" help:"Re-run the cover-assignment algorithm against all leaves (idempotent — safe to run at any time)"`
 }
 
 func Execute() {
@@ -297,66 +295,45 @@ func calendarExportCommand(ctx context.Context, db *database.DB) {
 }
 
 // reassignCoversCommand re-runs the cover-assignment algorithm against
-// every leave in the database. By default it only acts when the binary's
-// CoverAlgorithmVersion is ahead of the on-disk applied_version; pass
-// --force to run unconditionally (useful in tests or after manually
-// editing cover rows).
+// every leave in the database. The operation is idempotent on a
+// steady-state rota, so it's safe to invoke at any time — including
+// to recover from manual cover edits or to confirm a deploy.
 func reassignCoversCommand(ctx context.Context, db *database.DB) {
 	//nolint:contextcheck // holiday service goroutines are fire-and-forget; the call chain through InitializeHolidayService does not accept a context.
 	maintenance, stop := buildReassignmentMaintenance(db)
 
-	// Inner function so we have a single exit point and can release the
-	// holiday service background goroutine before exiting the process.
-	exit := func() int {
-		if CLI.ReassignCovers.Force {
-			result, err := maintenance.ReassignCovers(ctx)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Reassignment failed: %v\n", err)
-				return 1
-			}
-			log.Printf("Forced reassignment: %d leaves processed, %d covers changed (now at v%d)\n",
-				result.LeavesProcessed, result.CoversChanged, result.NewVersion)
-			return 0
-		}
-
-		result, err := maintenance.ReassignCoversIfStale(ctx)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Reassignment failed: %v\n", err)
-			return 1
-		}
-		if !result.WasStale {
-			log.Printf("Cover algorithm up to date (v%d); nothing to do. Pass --force to rerun anyway.\n",
-				result.NewVersion)
-			return 0
-		}
-		log.Printf("Cover algorithm reapplication: %d leaves processed, %d covers changed (now at v%d)\n",
-			result.LeavesProcessed, result.CoversChanged, result.NewVersion)
-		return 0
-	}()
-
+	result, err := maintenance.ReassignCovers(ctx)
 	stop()
-	os.Exit(exit)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Reassignment failed: %v\n", err)
+		os.Exit(1)
+	}
+	log.Printf("Reassignment: %d leaves processed, %d covers changed\n",
+		result.LeavesProcessed, result.CoversChanged)
 }
 
 // runCoverReassignment is the startup-hook entry point used by
-// `serve`. It logs the outcome and never blocks server startup on a
-// failure (an error is logged and the server continues with whatever
-// state is on disk).
+// `serve`. It runs the reassignment unconditionally on every startup:
+// because the algorithm is idempotent, a steady-state rota is a
+// cheap no-op, and a freshly-deployed binary with a new algorithm
+// will self-heal into the new output before the server accepts its
+// first request. An error is logged and startup continues.
 func runCoverReassignment(ctx context.Context, db *database.DB) {
 	//nolint:contextcheck // holiday service goroutines are fire-and-forget; the call chain through InitializeHolidayService does not accept a context.
 	maintenance, stop := buildReassignmentMaintenance(db)
 	defer stop()
 
-	result, err := maintenance.ReassignCoversIfStale(ctx)
-	switch {
-	case err != nil:
-		log.Printf("Cover reassignment error (continuing with stale data): %v\n", err)
-	case result.WasStale:
-		log.Printf("Cover algorithm reapplication: %d leaves processed, %d covers changed (now at v%d)\n",
-			result.LeavesProcessed, result.CoversChanged, result.NewVersion)
-	default:
-		log.Printf("Cover algorithm up to date (v%d)\n", result.NewVersion)
+	result, err := maintenance.ReassignCovers(ctx)
+	if err != nil {
+		log.Printf("Cover reassignment error (continuing with on-disk data): %v\n", err)
+		return
 	}
+	if result.CoversChanged == 0 {
+		log.Printf("Cover reassignment: %d leaves processed, no changes\n", result.LeavesProcessed)
+		return
+	}
+	log.Printf("Cover reassignment: %d leaves processed, %d covers changed\n",
+		result.LeavesProcessed, result.CoversChanged)
 }
 
 // buildReassignmentMaintenance constructs a *rota.ScheduleMaintenance

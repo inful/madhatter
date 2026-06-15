@@ -15,9 +15,10 @@ import (
 // TestEngine_AssignCoversForLeave_Idempotent and
 // TestEngine_HandleLeaveChange_Idempotent).
 //
-// This is the foundational guarantee the periodic runner relies on: on
-// every server startup it can re-run ReassignCovers and the change
-// count tells the operator whether the algorithm did anything new.
+// This is the foundational guarantee the always-on runner relies on:
+// on every server startup it can re-run ReassignCovers and the
+// change count tells the operator whether the algorithm did anything
+// new.
 func TestReassignCovers_StableOnSteadyState(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
@@ -59,88 +60,6 @@ func TestReassignCovers_StableOnSteadyState(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, second.LeavesProcessed)
 	require.Equal(t, 0, second.CoversChanged, "second run on a steady-state rota must not change any covers")
-}
-
-// TestReassignCoversIfStale_NoOpWhenUpToDate verifies the version check:
-// when the on-disk applied_version already matches CoverAlgorithmVersion
-// the runner is a no-op, returns WasStale=false, and does not touch the
-// state row.
-func TestReassignCoversIfStale_NoOpWhenUpToDate(t *testing.T) {
-	db, cleanup := setupTestDB(t)
-	defer cleanup()
-
-	ctx := context.Background()
-	maintenance := NewScheduleMaintenance(db)
-
-	// Pretend the on-disk state is already at the binary's version.
-	require.NoError(t, db.SetCoverAlgorithmApplied(ctx, CoverAlgorithmVersion, 0))
-
-	result, err := maintenance.ReassignCoversIfStale(ctx)
-	require.NoError(t, err)
-	require.False(t, result.WasStale, "WasStale must be false when on-disk matches binary")
-	require.Equal(t, 0, result.LeavesProcessed, "no-op run must not walk any leaves")
-	require.Equal(t, 0, result.CoversChanged)
-
-	// And the on-disk state must be untouched.
-	state, err := db.GetCoverAlgorithmState(ctx)
-	require.NoError(t, err)
-	require.Equal(t, CoverAlgorithmVersion, state.AppliedVersion)
-}
-
-// TestReassignCoversIfStale_RunsAndBumpsVersion verifies the trigger:
-// on a fresh database (applied_version = 0) the runner walks every
-// leave, computes a change count, and updates the on-disk version to
-// CoverAlgorithmVersion along with the change count and timestamp.
-func TestReassignCoversIfStale_RunsAndBumpsVersion(t *testing.T) {
-	db, cleanup := setupTestDB(t)
-	defer cleanup()
-
-	ctx := context.Background()
-
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
-	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
-	require.NoError(t, err)
-	_, err = db.AddTeamMember(ctx, "Charlie", "charlie@example.com")
-	require.NoError(t, err)
-
-	engine := NewEngine(db)
-	maintenance := NewScheduleMaintenance(db)
-
-	startDate := time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)
-	endDate := time.Date(2024, 1, 19, 0, 0, 0, 0, time.UTC)
-	require.NoError(t, engine.GenerateSchedule(ctx, startDate, endDate))
-
-	leaveID, err := db.CreateLeaveRecord(ctx, bobID, "2024-01-16", "2024-01-18")
-	require.NoError(t, err)
-	// Intentionally do NOT call HandleLeaveChange here — the test wants
-	// the reassignment runner itself to be the thing that materializes
-	// the cover. This is the realistic case for an upgrade: the rota
-	// already has leaves assigned under the old algorithm, and the
-	// startup hook must do the work.
-	_ = leaveID
-
-	// The on-disk state is at the default (0). The runner must detect
-	// the version gap and run.
-	result, err := maintenance.ReassignCoversIfStale(ctx)
-	require.NoError(t, err)
-	require.True(t, result.WasStale, "WasStale must be true when on-disk is behind binary")
-	require.Equal(t, 1, result.LeavesProcessed)
-	require.GreaterOrEqual(t, result.CoversChanged, 1, "first run after a fresh DB must report a change")
-	require.Equal(t, CoverAlgorithmVersion, result.NewVersion)
-
-	// And the on-disk state must now be at the binary's version.
-	state, err := db.GetCoverAlgorithmState(ctx)
-	require.NoError(t, err)
-	require.Equal(t, CoverAlgorithmVersion, state.AppliedVersion)
-	require.Equal(t, result.CoversChanged, state.LastRunChanged)
-	require.NotNil(t, state.LastRunAt)
-
-	// A second call must be a no-op (already up to date).
-	second, err := maintenance.ReassignCoversIfStale(ctx)
-	require.NoError(t, err)
-	require.False(t, second.WasStale, "second call must not re-run")
-	require.Equal(t, 0, second.LeavesProcessed)
 }
 
 // TestReassignCovers_HandlesMultipleLeaves verifies the change count
@@ -253,8 +172,7 @@ func TestReassignCovers_OnlyAffectsActiveLeaves(t *testing.T) {
 // cmd layer, and as api.NewServer does on the server), a leave that
 // spans a holiday must not get a cover on the holiday. Without this,
 // the runner would diverge from the live server on any leave that
-// touches a configured holiday — the very bug the code review
-// caught.
+// touches a configured holiday.
 func TestReassignCovers_RespectsHolidayChecker(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
@@ -303,4 +221,52 @@ func TestReassignCovers_RespectsHolidayChecker(t *testing.T) {
 
 	holidayCovers = snapshotCovers(t, ctx, db, "2024-01-16", "2024-01-16")
 	require.Empty(t, holidayCovers["2024-01-16"], "reassignment must not introduce a cover on the holiday")
+}
+
+// TestReassignCovers_CreatesCoverForUnprocessedLeave verifies the
+// self-healing property: if a leave exists in the database but no
+// cover was ever created for it (e.g. an old record that predates
+// the cover-assignment system), the reassignment will create the
+// cover as if the leave were new.
+func TestReassignCovers_CreatesCoverForUnprocessedLeave(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+	_, err = db.AddTeamMember(ctx, "Charlie", "charlie@example.com")
+	require.NoError(t, err)
+
+	engine := NewEngine(db)
+	maintenance := NewScheduleMaintenance(db)
+
+	startDate := time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)
+	endDate := time.Date(2024, 1, 19, 0, 0, 0, 0, time.UTC)
+	require.NoError(t, engine.GenerateSchedule(ctx, startDate, endDate))
+
+	// Create a leave for Jan 16 (Bob's scheduled day) but do NOT call
+	// HandleLeaveChange on it — the realistic "old record" case where
+	// the cover was never assigned.
+	leaveID, err := db.CreateLeaveRecord(ctx, bobID, "2024-01-16", "2024-01-16")
+	require.NoError(t, err)
+	_ = leaveID
+
+	// Pre-condition: no cover exists yet.
+	preCovers := snapshotCovers(t, ctx, db, "2024-01-16", "2024-01-16")
+	require.Empty(t, preCovers["2024-01-16"], "no cover should exist yet on the leave day")
+
+	// Reassign: should walk the leave and create the cover.
+	result, err := maintenance.ReassignCovers(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, result.LeavesProcessed)
+	require.Equal(t, 1, result.CoversChanged,
+		"reassignment must create the missing cover for an unprocessed leave")
+
+	// Post-condition: the cover is now in place.
+	postCovers := snapshotCovers(t, ctx, db, "2024-01-16", "2024-01-16")
+	require.NotEmpty(t, postCovers["2024-01-16"], "reassignment must have placed a cover on the leave day")
 }

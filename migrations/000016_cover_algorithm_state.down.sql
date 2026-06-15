@@ -1,1 +1,3 @@
-DROP TABLE IF EXISTS cover_algorithm_state;
+-- No-op down migration: nothing to undo because 000016's up
+-- migration is a no-op.
+SELECT 1;

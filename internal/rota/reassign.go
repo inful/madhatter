@@ -7,24 +7,6 @@ import (
 	"github.com/inful/madhatter/internal/database"
 )
 
-// CoverAlgorithmVersion is the version of the cover-assignment algorithm
-// shipped with this binary. It is bumped whenever the algorithm changes
-// in a way that could produce a different cover assignment for an
-// already-processed leave (e.g. the R2 rotation anchor fix). A periodic
-// reassignment runner reads the on-disk applied version from
-// cover_algorithm_state and re-runs the algorithm when the binary's
-// version is ahead, so the rota converges to the new algorithm's output
-// without a manual data migration.
-//
-// v1: initial implementation (rotation anchored on the most recent cover
-//
-//	across the whole rota — could be stuck on a future-date cover).
-//
-// v2: rotation anchored strictly on the most recent cover BEFORE the
-//
-//	leave's start date, so a future cover never freezes the rotation.
-const CoverAlgorithmVersion = 2
-
 // ReassignResult summarizes a reassignment pass.
 type ReassignResult struct {
 	// LeavesProcessed is the number of leave rows that were walked.
@@ -34,33 +16,42 @@ type ReassignResult struct {
 	// member swapped, this increments by 1 (one leave changed), not
 	// by the number of individual cover rows that flipped.
 	CoversChanged int
-	// WasStale is true when the runner detected that the on-disk
-	// applied version was behind the binary's CoverAlgorithmVersion
-	// and therefore re-ran the algorithm. False on a no-op call.
-	WasStale bool
-	// NewVersion is the version that is now considered "applied" to
-	// the rota after the run.
-	NewVersion int
 }
 
 // ReassignCovers re-runs the cover-assignment algorithm against every
-// leave in the database. It is safe to invoke at any time:
+// leave in the database. It is safe to invoke at any time and is
+// designed to be called on every server startup:
 //
 //   - For active leaves (pending/assigned), HandleLeaveChange is called,
 //     which reconciles stale covers and re-creates covers under the
 //     current algorithm. Because of the idempotency contract on
 //     createCoverAssignment and getNextCoverIndex, the result is the
-//     same as the prior state unless the algorithm has actually changed.
+//     same as the prior state when the algorithm hasn't changed.
 //   - For completed/inactive leaves, HandleLeaveChange is a no-op (the
 //     reconcile step is already a no-op for them, and AssignCoversForLeave
 //     short-circuits on inactive status).
+//
+// The cost on a steady-state rota is O(N) DB queries where N is the
+// number of leaves, dominated by two GetAssignmentsByDateRange calls
+// per leave for the before/after diff. For a typical 14-day window
+// with a handful of active leaves, this is a few milliseconds — small
+// enough that we don't bother tracking which leaves have been
+// "already reassigned" and which haven't. The algorithm's output is
+// the source of truth; the reassignment just makes the on-disk rota
+// match whatever the current code thinks the covers should be.
+//
+// This is the self-healing property that lets a future algorithm
+// change be deployed without a data migration: the new binary ships
+// a different algorithm, the startup hook runs ReassignCovers, and
+// any leaves whose cover would differ under the new algorithm are
+// rewritten in place.
 func (sm *ScheduleMaintenance) ReassignCovers(ctx context.Context) (ReassignResult, error) {
 	leaves, err := sm.db.GetLeaveRecords(ctx)
 	if err != nil {
 		return ReassignResult{}, fmt.Errorf("reassign-covers: list leaves: %w", err)
 	}
 
-	result := ReassignResult{NewVersion: CoverAlgorithmVersion}
+	result := ReassignResult{}
 	for i := range leaves {
 		l := &leaves[i]
 		before := snapshotLeaveCovers(ctx, sm.db, l)
@@ -72,45 +63,6 @@ func (sm *ScheduleMaintenance) ReassignCovers(ctx context.Context) (ReassignResu
 		if !sameCoverSet(before, after) {
 			result.CoversChanged++
 		}
-	}
-	return result, nil
-}
-
-// ReassignCoversIfStale runs ReassignCovers only when the on-disk
-// applied_version is behind CoverAlgorithmVersion. On a fresh database
-// (applied_version = 0) it will run; on a database that's already at the
-// current version it is a no-op. This is the method a periodic runner
-// (e.g. a startup hook) should call.
-//
-// After a successful run, the applied_version is updated to the binary's
-// CoverAlgorithmVersion along with the change count and timestamp, so
-// operators can confirm what the rerun actually did via the
-// cover_algorithm_state table.
-func (sm *ScheduleMaintenance) ReassignCoversIfStale(ctx context.Context) (ReassignResult, error) {
-	state, err := sm.db.GetCoverAlgorithmState(ctx)
-	if err != nil {
-		return ReassignResult{}, fmt.Errorf("reassign-covers: read state: %w", err)
-	}
-
-	if state.AppliedVersion >= CoverAlgorithmVersion {
-		// Up to date. Surface the no-op with WasStale=false so callers can
-		// log it cleanly without re-running.
-		return ReassignResult{
-			LeavesProcessed: 0,
-			CoversChanged:   0,
-			WasStale:        false,
-			NewVersion:      state.AppliedVersion,
-		}, nil
-	}
-
-	result, err := sm.ReassignCovers(ctx)
-	if err != nil {
-		return result, err
-	}
-	result.WasStale = true
-
-	if err := sm.db.SetCoverAlgorithmApplied(ctx, CoverAlgorithmVersion, result.CoversChanged); err != nil {
-		return result, fmt.Errorf("reassign-covers: persist state: %w", err)
 	}
 	return result, nil
 }

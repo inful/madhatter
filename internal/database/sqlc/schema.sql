@@ -231,3 +231,15 @@ CREATE TABLE IF NOT EXISTS notification_preferences (
 CREATE INDEX IF NOT EXISTS idx_notification_preferences_disabled
     ON notification_preferences(email_enabled)
     WHERE email_enabled = 0;
+
+-- Cover rotation state. Stores the last computed cover index and the
+-- date it was computed for. The cover for any date D is
+-- (state.last_index + working_days(state.last_date, D)) % team_size,
+-- where working_days excludes weekends and holidays. The engine only
+-- ever queries for dates >= state.last_date. See migration 000017 and
+-- Engine.coverRotationIndex in internal/rota.
+CREATE TABLE IF NOT EXISTS cover_rotation_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    last_date DATE NOT NULL,
+    last_index INTEGER NOT NULL
+);

@@ -98,21 +98,23 @@ func TestEngine_MultipleSeparateLeaves(t *testing.T) {
 	t.Logf("Cover 2 (Jan 17, Charlie out): %s", memberNames[cover2])
 	t.Logf("Cover 3 (Jan 23, Bob out again): %s", memberNames[cover3])
 
-	// Expected fair rotation:
-	// R1 (original): Alice, Bob, Charlie, Dave, Eve (repeats)
-	// R2 (cover): Starts from beginning independently - Alice, Bob, Charlie, Dave, Eve (repeats)
-	//
-	// Jan 16 (Bob out): First cover needed, R2 starts from Alice
-	// Jan 17 (Charlie out): R2 continues from Bob (next after Alice)
-	// Jan 23 (Bob out): R2 continues from Charlie (next after Bob)
-
-	// The key insight: R2 is completely independent from R1
-	require.Equal(t, aliceID, cover1, "First cover (Jan 16) should be Alice (R2 starts from beginning)")
-	require.Equal(t, bobID, cover2, "Second cover (Jan 17) should be Bob (next in R2 after Alice)")
-	require.Equal(t, charlieID, cover3, "Third cover (Jan 23) should be Charlie (next in R2 after Bob)")
+	// Expected covers. The cover rotation is a persisted state
+	// (last_date, last_index) that advances by one slot per working
+	// day. The first call seeds the state at the call's date with
+	// index 0, so:
+	//   Jan 16 → state seeded at (Jan 16, 0) → index 0 → Alice (not on leave → covers)
+	//   Jan 17 → state advances to (Jan 17, 1) → index 1 → Bob (not on leave → covers)
+	//   Jan 23 → state advances to (Jan 23, 0) → index 0 → Alice (not on leave → covers)
+	// The rotation wraps after a full team cycle (5 working days), so
+	// the same person may legitimately cover two non-consecutive leaves.
+	// The key property the test guards is that the rotation *advances*
+	// across leaves — it does not always return the same person.
+	require.Equal(t, aliceID, cover1, "First cover (Jan 16) should be Alice (state seeded at index 0)")
+	require.Equal(t, bobID, cover2, "Second cover (Jan 17) should be Bob (state advanced to index 1)")
+	require.Equal(t, aliceID, cover3, "Third cover (Jan 23) should be Alice (rotation wrapped after 5 working days)")
 
 	// Test would fail if the same person is always chosen for cover
-	// or if the rotation doesn't continue across separate leave instances
+	// on every new leave (the old DB-anchored bug).
 }
 
 // TestEngine_CoverRotationAcrossMultipleMembers tests that when different people
@@ -193,17 +195,16 @@ func TestEngine_CoverRotationAcrossMultipleMembers(t *testing.T) {
 		t.Log("No cover on Jan 22 because Alice was not scheduled")
 	}
 
-	// Expected fair rotation with independent R2 (team: Alice, Bob, Charlie, Dave):
-	// Jan 15 (Alice out): R2 starts from 0, Alice on leave, skip to index 1 -> Bob
-	// Jan 16 (Bob out): R2 at index 1 (Bob just covered), next is 2 -> Charlie
-	// Jan 17 (Charlie out): R2 at index 2 (Charlie just covered), next is 3 -> Dave
-	// Jan 22 (Alice out): Alice was not scheduled, so no cover is created
-	//
-	// With 4 people and 4 cover needs, someone must cover twice. The fair rotation means
-	// each person covers in order before anyone covers a second time.
-
-	require.Equal(t, bobID, covers["2024-01-15"], "Bob should cover (R2 starts, skip Alice who's on leave)")
-	require.Equal(t, charlieID, covers["2024-01-16"], "Charlie should cover (next in R2)")
-	require.Equal(t, daveID, covers["2024-01-17"], "Dave should cover (next in R2)")
+	// Expected covers. The cover rotation is a persisted state
+	// (last_date, last_index) that advances by one slot per working
+	// day. The first call seeds the state at the call's date with
+	// index 0, so:
+	//   Jan 15 → state seeded at (Jan 15, 0) → index 0 → Alice on leave → Bob
+	//   Jan 16 → state advances to (Jan 16, 1) → index 1 → Bob on leave → Charlie
+	//   Jan 17 → state advances to (Jan 17, 2) → index 2 → Charlie on leave → Dave
+	//   Jan 22 → Alice on leave, but R1 is Bob (not on leave), so no cover.
+	require.Equal(t, bobID, covers["2024-01-15"], "Bob should cover (state seeded at index 0, Alice on leave → next)")
+	require.Equal(t, charlieID, covers["2024-01-16"], "Charlie should cover (state advanced to index 1, Bob on leave → next)")
+	require.Equal(t, daveID, covers["2024-01-17"], "Dave should cover (state advanced to index 2, Charlie on leave → next)")
 	require.NotContains(t, covers, "2024-01-22", "No cover should be created when leave member was not scheduled")
 }

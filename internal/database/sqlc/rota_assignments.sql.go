@@ -339,30 +339,6 @@ func (q *Queries) GetLatestAssignmentDate(ctx context.Context) (interface{}, err
 	return max_date, err
 }
 
-const getMostRecentCoverAssignment = `-- name: GetMostRecentCoverAssignment :one
-SELECT id, date, member_id
-FROM rota_assignments
-WHERE is_cover = 1 AND date < ?
-ORDER BY date DESC, created_at DESC
-LIMIT 1
-`
-
-type GetMostRecentCoverAssignmentRow struct {
-	ID       string    `json:"id"`
-	Date     time.Time `json:"date"`
-	MemberID string    `json:"member_id"`
-}
-
-// Returns the most recent cover assignment strictly BEFORE the supplied
-// reference date, so a future cover does not anchor the R2 rotation and
-// cause the same person to be picked for every new leave.
-func (q *Queries) GetMostRecentCoverAssignment(ctx context.Context, date time.Time) (GetMostRecentCoverAssignmentRow, error) {
-	row := q.db.QueryRowContext(ctx, getMostRecentCoverAssignment, date)
-	var i GetMostRecentCoverAssignmentRow
-	err := row.Scan(&i.ID, &i.Date, &i.MemberID)
-	return i, err
-}
-
 const getUpcomingAssignments = `-- name: GetUpcomingAssignments :many
 SELECT id, date, member_id, is_cover, original_assignment_id, is_swapped
 FROM rota_assignments

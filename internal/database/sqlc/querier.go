@@ -66,6 +66,10 @@ type Querier interface {
 	GetAssignmentsByDate(ctx context.Context, date time.Time) ([]GetAssignmentsByDateRow, error)
 	GetAssignmentsByDateRange(ctx context.Context, arg GetAssignmentsByDateRangeParams) ([]GetAssignmentsByDateRangeRow, error)
 	GetCoverAssignmentByDate(ctx context.Context, date time.Time) (GetCoverAssignmentByDateRow, error)
+	// Returns the single row of the cover_rotation_state table, or
+	// sql.ErrNoRows if no state has been written yet (a fresh database
+	// has no row until the first cover is computed).
+	GetCoverRotationState(ctx context.Context) (GetCoverRotationStateRow, error)
 	GetFutureAssignments(ctx context.Context) ([]GetFutureAssignmentsRow, error)
 	GetFutureAssignmentsForMember(ctx context.Context, memberID string) ([]GetFutureAssignmentsForMemberRow, error)
 	GetHatSwapByID(ctx context.Context, id string) (HatSwap, error)
@@ -76,10 +80,6 @@ type Querier interface {
 	GetMemberByEmail(ctx context.Context, email string) (TeamMember, error)
 	GetMemberByID(ctx context.Context, id string) (TeamMember, error)
 	GetMemberByToken(ctx context.Context, token string) (TeamMember, error)
-	// Returns the most recent cover assignment strictly BEFORE the supplied
-	// reference date, so a future cover does not anchor the R2 rotation and
-	// cause the same person to be picked for every new leave.
-	GetMostRecentCoverAssignment(ctx context.Context, date time.Time) (GetMostRecentCoverAssignmentRow, error)
 	// Returns the row for a member, or sql.ErrNoRows if no preference
 	// has been set. The application treats the absence of a row as
 	// "default" (email_enabled = 1).
@@ -136,6 +136,10 @@ type Querier interface {
 	UpdateUserProvider(ctx context.Context, arg UpdateUserProviderParams) error
 	UpdateWFHRequestStatus(ctx context.Context, arg UpdateWFHRequestStatusParams) (sql.Result, error)
 	UpdateWFHRequestWithdrawn(ctx context.Context, arg UpdateWFHRequestWithdrawnParams) (sql.Result, error)
+	// Inserts the cover rotation state row if it doesn't exist, otherwise
+	// updates it in place. The table is constrained to a single row by
+	// the CHECK (id = 1) clause, so this is the only way to write it.
+	UpsertCoverRotationState(ctx context.Context, arg UpsertCoverRotationStateParams) error
 }
 
 var _ Querier = (*Queries)(nil)

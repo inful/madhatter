@@ -2,7 +2,9 @@ package rota
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -11,6 +13,12 @@ import (
 
 // HolidayChecker is a function that checks if a date should be skipped due to holidays.
 type HolidayChecker func(date time.Time) bool
+
+// hoursPerDay is used to truncate a time.Time to midnight UTC before
+// comparing it to the stored state date. The state stores a DATE (no
+// time component), so any incoming time.Time must be normalized before
+// the equality check.
+const hoursPerDay = 24
 
 type Engine struct {
 	db             *database.DB
@@ -103,7 +111,10 @@ func (e *Engine) processDate(ctx context.Context, currentDate time.Time, members
 	}
 
 	originalMember := members[*memberIndex]
-	coveringMember := e.determineCoveringMember(ctx, originalMember, leaves, members, currentDate)
+	coveringMember, err := e.determineCoveringMember(ctx, originalMember, leaves, members, currentDate)
+	if err != nil {
+		return err
+	}
 
 	if err := e.createAssignment(ctx, dateStr, originalMember, coveringMember, leaves); err != nil {
 		return err
@@ -115,19 +126,33 @@ func (e *Engine) processDate(ctx context.Context, currentDate time.Time, members
 
 // determineCoveringMember finds who should cover the assignment.
 // Uses independent R2 cover rotation for fair distribution.
-func (e *Engine) determineCoveringMember(ctx context.Context, originalMember database.TeamMember, leaves []database.LeaveRecord, members []database.TeamMember, currentDate time.Time) database.TeamMember {
+//
+// If the cover rotation state cannot be read (a real DB error, not
+// the sql.ErrNoRows "no state yet" case which the state reader
+// handles internally), the error is returned to the caller. The
+// caller (processDate) then fails the whole schedule generation
+// rather than silently producing a schedule where the on-leave
+// member "covers" themselves.
+func (e *Engine) determineCoveringMember(ctx context.Context, originalMember database.TeamMember, leaves []database.LeaveRecord, members []database.TeamMember, currentDate time.Time) (database.TeamMember, error) {
 	for i := range leaves {
 		if leaves[i].MemberID == originalMember.ID {
-			// Use R2 cover rotation (independent from R1 original rotation)
-			coverIndex := e.getNextCoverIndex(ctx, members, currentDate)
+			// The cover rotation index is read from the persisted
+			// cover_rotation_state row and advanced forward by the
+			// number of working days since the last call. The first
+			// call seeds the state at (currentDate, 0); subsequent
+			// calls advance from there.
+			coverIndex, err := e.coverRotationIndex(ctx, currentDate, len(members))
+			if err != nil {
+				return database.TeamMember{}, err
+			}
 			cover, coverErr := e.findCover(members, leaves, coverIndex)
 			if coverErr == nil {
-				return cover
+				return cover, nil
 			}
 			break
 		}
 	}
-	return originalMember
+	return originalMember, nil
 }
 
 // createAssignment creates the rota assignment.
@@ -153,9 +178,14 @@ func (e *Engine) createAssignment(ctx context.Context, dateStr string, originalM
 	return err
 }
 
-// findCover finds the next available member for cover.
+// findCover returns members[startIndex] if they are not on leave, or the
+// next available member cyclically after them. The new cover rotation
+// index points directly at the person who should cover, so the search
+// starts at startIndex (not startIndex+1) — the old "start after the R1"
+// behavior is no longer needed because the rotation index is independent
+// of who's on leave as the R1.
 func (e *Engine) findCover(members []database.TeamMember, leaves []database.LeaveRecord, startIndex int) (database.TeamMember, error) {
-	for i := 1; i <= len(members); i++ {
+	for i := range members {
 		candidateIndex := (startIndex + i) % len(members)
 		candidate := members[candidateIndex]
 
@@ -193,12 +223,7 @@ func (e *Engine) AssignCoversForLeave(ctx context.Context, leaveID string) error
 		return err
 	}
 
-	// Find the last cover assignment to continue the independent cover rotation (R2)
-	// Cover rotation is completely independent from original rotation (R1)
-	// Pass the leave start date to query the right time range
-	startIndex := e.getNextCoverIndex(ctx, members, leave.StartDate)
-
-	coverDates, err := e.processLeaveDates(ctx, leave, members, startIndex, leaveID)
+	coverDates, err := e.processLeaveDates(ctx, leave, members, leaveID)
 	if err != nil {
 		return err
 	}
@@ -243,39 +268,13 @@ func memberNameByID(members []database.TeamMember, id string) string {
 	return ""
 }
 
-// findMemberIndex finds the index of a member in the members slice.
-func (e *Engine) findMemberIndex(members []database.TeamMember, memberID string) int {
-	for i := range members {
-		if members[i].ID == memberID {
-			return i
-		}
-	}
-	return -1
-}
-
-// getNextCoverIndex finds the next index for the cover rotation (R2).
-// R2 is completely independent from the original schedule rotation (R1).
-// It anchors on the most recent cover assignment strictly before
-// referenceDate so a future cover never freezes the rotation on a single
-// person. findCover will start checking from (startIndex + 1), so we return
-// (lastCoverIndex) to make it check (lastCoverIndex + 1) which is the next
-// person after the last cover.
-func (e *Engine) getNextCoverIndex(ctx context.Context, members []database.TeamMember, referenceDate time.Time) int {
-	mostRecentCoverMemberID, ok, err := e.db.GetMostRecentCoverMemberID(ctx, referenceDate)
-	if err != nil || !ok {
-		// No previous covers before referenceDate, start R2 from the
-		// beginning (index -1) so findCover will check from index 0.
-		return -1
-	}
-
-	lastCoverIndex := e.findMemberIndex(members, mostRecentCoverMemberID)
-	if lastCoverIndex != -1 {
-		return lastCoverIndex
-	}
-
-	// Fallback: start R2 from index -1 so findCover checks from index 0.
-	return -1
-}
+// getNextCoverIndex was removed when the cover rotation was switched
+// to a date-derivable index (see coverRotationIndex). The old
+// DB-anchored rotation was the source of the "same person always
+// covers" bug: in DESC processing order, the only covers on the rota
+// have date >= referenceDate, so getNextCoverIndex always fell
+// through to "no prior cover" and findCover always returned
+// members[0].
 
 // processLeaveDates processes each day of leave and creates cover
 // assignments. It returns a map from cover member_id to the list of
@@ -283,17 +282,16 @@ func (e *Engine) getNextCoverIndex(ctx context.Context, members []database.TeamM
 // dates (weekends, holidays, days with no cover available) are
 // omitted. The caller uses the map to fire one CoverAssigned event
 // per cover member with their full date range.
-func (e *Engine) processLeaveDates(ctx context.Context, leave *database.LeaveRecord, members []database.TeamMember, startIndex int, leaveID string) (map[string][]string, error) {
+//
+// The cover rotation index for each day is computed from the date
+// alone (see coverRotationIndex), so there's no cross-day index to
+// track — the old startIndex parameter is gone.
+func (e *Engine) processLeaveDates(ctx context.Context, leave *database.LeaveRecord, members []database.TeamMember, leaveID string) (map[string][]string, error) {
 	coverDates := make(map[string][]string)
-	currentIndex := startIndex
 	for d := leave.StartDate; d.Before(leave.EndDate.AddDate(0, 0, 1)); d = d.AddDate(0, 0, 1) {
-		coverID, newIndex, err := e.processLeaveDate(ctx, d, members, currentIndex, leave, leaveID)
+		coverID, err := e.processLeaveDate(ctx, d, members, leave, leaveID)
 		if err != nil {
 			return nil, err
-		}
-		// Update index for next day to continue fair rotation
-		if newIndex != -1 {
-			currentIndex = newIndex
 		}
 		if coverID != "" {
 			dateStr := d.Format("2006-01-02")
@@ -303,7 +301,6 @@ func (e *Engine) processLeaveDates(ctx context.Context, leave *database.LeaveRec
 	return coverDates, nil
 }
 
-// processLeaveDate handles a single day of leave and returns the index of the cover member.
 // shouldSkipDate checks if a date should be skipped (weekend or holiday).
 func (e *Engine) shouldSkipDate(d time.Time) bool {
 	// Skip weekends
@@ -319,45 +316,146 @@ func (e *Engine) shouldSkipDate(d time.Time) bool {
 	return false
 }
 
+// coverRotationIndex returns the cover rotation index for currentDate,
+// using the persisted cover_rotation_state row as the anchor. The state
+// stores the index for a specific date; for any later date, the new
+// index is the old index plus the number of working days (weekdays
+// that are not holidays) between them, modulo teamSize.
+//
+// The engine only ever queries for dates >= state.last_date, so the
+// state always moves forward in time. On the first call after a fresh
+// database, the state is initialized at (currentDate, 0) — the
+// current date itself is the anchor, and the rotation advances from
+// there. This means:
+//   - No O(years_in_operation) walk on every call.
+//   - Retroactive holiday changes only affect the delta from the last
+//     stored state to the current date, not the entire history.
+//
+// If a caller ever queries for a date before the stored state (which
+// should not happen — the engine only looks forward), we walk backward
+// from the stored state without updating it. This is a safety net, not
+// a normal code path.
+func (e *Engine) coverRotationIndex(ctx context.Context, currentDate time.Time, teamSize int) (int, error) {
+	if teamSize <= 0 {
+		return 0, nil
+	}
+	currentDate = currentDate.UTC().Truncate(hoursPerDay * time.Hour)
+
+	lastDate, lastIndex, err := e.db.GetCoverRotationState(ctx)
+	if err != nil {
+		// sql.ErrNoRows means no state yet — initialize at the
+		// current date with index 0. Any other error is a real
+		// failure and must surface.
+		if !errors.Is(err, sql.ErrNoRows) {
+			return 0, fmt.Errorf("read cover rotation state: %w", err)
+		}
+		if err := e.db.UpsertCoverRotationState(ctx, currentDate, 0); err != nil {
+			return 0, fmt.Errorf("initialize cover rotation state: %w", err)
+		}
+		return 0, nil
+	}
+
+	lastDate = lastDate.UTC().Truncate(hoursPerDay * time.Hour)
+
+	switch {
+	case currentDate.Equal(lastDate):
+		// Same date as the last computed index — return it directly.
+		// modNonNegative (not the built-in %) so a corrupt
+		// negative lastIndex in the DB can't produce a negative
+		// candidate index for findCover.
+		return modNonNegative(lastIndex, teamSize), nil
+
+	case currentDate.After(lastDate):
+		// Advance forward from the stored state. The delta is bounded
+		// by how far the caller has moved since the last call (usually
+		// one or two business days), not by the total age of the
+		// installation.
+		delta := e.workingDaysBetween(lastDate, currentDate)
+		newIndex := modNonNegative(lastIndex+delta, teamSize)
+		if err := e.db.UpsertCoverRotationState(ctx, currentDate, newIndex); err != nil {
+			return 0, fmt.Errorf("update cover rotation state: %w", err)
+		}
+		return newIndex, nil
+
+	default:
+		// currentDate is before the stored state. The engine only
+		// looks forward, so this should not happen in normal
+		// operation. Walk backward from the stored state without
+		// updating it — a later forward call will overwrite the state
+		// with the correct forward-computed index.
+		delta := e.workingDaysBetween(currentDate, lastDate)
+		return modNonNegative(lastIndex-delta, teamSize), nil
+	}
+}
+
+// workingDaysBetween counts working days in [from, to). Both arguments
+// are expected to be midnight-UTC dates. A working day is a weekday
+// that is not a holiday under the configured holiday checker.
+func (e *Engine) workingDaysBetween(from, to time.Time) int {
+	count := 0
+	for d := from; d.Before(to); d = d.AddDate(0, 0, 1) {
+		if e.shouldSkipDate(d) {
+			continue
+		}
+		count++
+	}
+	return count
+}
+
+// modNonNegative returns x mod m in the range [0, m). Go's % operator
+// returns a result with the sign of the dividend, which gives negative
+// values for negative x; callers want a non-negative slot index.
+func modNonNegative(x, m int) int {
+	r := x % m
+	if r < 0 {
+		r += m
+	}
+	return r
+}
+
 // processLeaveDate handles a single day of leave and returns the
 // cover member's id (empty if the day was skipped or no cover was
-// found) and the index of that cover member for the rotation.
-func (e *Engine) processLeaveDate(ctx context.Context, d time.Time, members []database.TeamMember, startIndex int, leave *database.LeaveRecord, leaveID string) (string, int, error) {
+// found). The cover rotation index is computed from the date alone,
+// so no startIndex is needed.
+func (e *Engine) processLeaveDate(ctx context.Context, d time.Time, members []database.TeamMember, leave *database.LeaveRecord, leaveID string) (string, error) {
 	if e.shouldSkipDate(d) {
-		return "", -1, nil
+		return "", nil
 	}
 
 	dateStr := d.Format("2006-01-02")
 	originalAssignmentID, err := e.ensureOriginalAssignment(ctx, dateStr, leave)
 	if errors.Is(err, errMemberNotScheduled) {
-		return "", -1, nil
+		return "", nil
 	}
 	if err != nil {
-		return "", -1, err
+		return "", err
 	}
 
 	// Get all leave records for this date to exclude them from cover selection
 	allLeaves, err := e.db.GetLeaveByDate(ctx, dateStr)
 	if err != nil {
-		return "", -1, err
+		return "", err
 	}
 
-	cover, err := e.findCover(members, allLeaves, startIndex)
+	coverIndex, err := e.coverRotationIndex(ctx, d, len(members))
+	if err != nil {
+		return "", err
+	}
+	cover, err := e.findCover(members, allLeaves, coverIndex)
 	if err != nil {
 		// Skip if no cover available - this is intentional
-		return "", -1, nil //nolint:nilerr // no cover available is a valid outcome, not an error
+		return "", nil //nolint:nilerr // no cover available is a valid outcome, not an error
 	}
 
 	if err := e.createCoverAssignment(ctx, dateStr, cover.ID, originalAssignmentID); err != nil {
-		return "", -1, err
+		return "", err
 	}
 
 	if err := e.db.UpdateLeaveStatus(ctx, leaveID, "assigned"); err != nil {
-		return "", -1, err
+		return "", err
 	}
 
-	// Return the cover member's id and the index for next iteration.
-	return cover.ID, e.findMemberIndex(members, cover.ID), nil
+	return cover.ID, nil
 }
 
 // isLeaveActive returns true if the status still requires cover assignments.

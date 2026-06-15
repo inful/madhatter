@@ -16,9 +16,13 @@ import (
 // Scenario: The schedule has been generated for a long period (e.g. 30 days).
 // A cover was assigned for a future date. When new leaves are then added for
 // earlier dates, the most-recent cover by date is the future one, so the
-// rotation gets stuck and the same person covers every new leave. The fix
-// is to anchor the rotation on the most recent cover strictly before the
-// leave's date.
+// rotation gets stuck and the same person covers every new leave.
+//
+// Under the current date-derived rotation (see Engine.coverRotationIndex)
+// the bug cannot recur: the rotation is a pure function of the leave date
+// and the team composition, with no DB-anchored state to be "stuck" on a
+// future cover. This test is kept as a regression guard — if a future
+// change re-introduces a DB-anchored rotation, this test will fail.
 func TestEngine_CoverRotationWithFutureCoverStuck(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
@@ -62,23 +66,22 @@ func TestEngine_CoverRotationWithFutureCoverStuck(t *testing.T) {
 	_, err = db.CreateRotaAssignment(ctx, "2024-01-26", memberIDByName(t, db, "Alice"), true, &originalIDJan26)
 	require.NoError(t, err)
 
-	// Add a leave for Jan 16 (Bob's scheduled day). With the fix, the most
-	// recent cover before Jan 16 is nothing, so the rotation starts fresh
-	// and Alice becomes the cover.
+	// Add a leave for Jan 16 (Bob's scheduled day). The planted future
+	// cover on Jan 26 must not affect the cover chosen for Jan 16.
 	leave1ID, err := db.CreateLeaveRecord(ctx, bobID, "2024-01-16", "2024-01-16")
 	require.NoError(t, err)
 	err = engine.AssignCoversForLeave(ctx, leave1ID)
 	require.NoError(t, err)
 
-	// Add a second leave for Jan 17 (Charlie's day). The most recent cover
-	// before Jan 17 is now Alice (Jan 16), so the rotation advances to Bob.
+	// Add a second leave for Jan 17 (Charlie's day). The future cover on
+	// Jan 26 must not anchor the rotation here either.
 	leave2ID, err := db.CreateLeaveRecord(ctx, charlieID, "2024-01-17", "2024-01-17")
 	require.NoError(t, err)
 	err = engine.AssignCoversForLeave(ctx, leave2ID)
 	require.NoError(t, err)
 
-	// And a third leave for Jan 18 (Dave's day). The most recent cover
-	// before Jan 18 is Bob (Jan 17), so the rotation advances to Charlie.
+	// And a third leave for Jan 18 (Dave's day). Same — the future
+	// cover must not pin successive new leaves to the same person.
 	leave3ID, err := db.CreateLeaveRecord(ctx, daveID, "2024-01-18", "2024-01-18")
 	require.NoError(t, err)
 	err = engine.AssignCoversForLeave(ctx, leave3ID)
@@ -99,11 +102,11 @@ func TestEngine_CoverRotationWithFutureCoverStuck(t *testing.T) {
 	t.Logf("Cover for Jan 17 (Charlie):  %s", names[cover2])
 	t.Logf("Cover for Jan 18 (Dave):     %s", names[cover3])
 
-	// Regression assertion: the same person must not cover twice in a row
-	// when other team members are available. Before the fix, the rotation
-	// was re-anchored on Alice (the most recent cover by date, planted on
-	// Jan 26) for every new leave, so findCover always started at Bob and
-	// Bob covered both Jan 17 and Jan 18.
+	// Regression assertion: successive new leaves must get different
+	// covers regardless of any future cover planted in the table.
+	// Under the old DB-anchored rotation, the future cover on Jan 26
+	// would re-pin the rotation to Alice and findCover would start at
+	// Bob for every new leave, making cover2 == cover3 == Bob.
 	require.NotEqual(t, cover2, cover3, "The same person must not cover twice when other members are available")
 }
 

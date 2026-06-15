@@ -30,6 +30,12 @@ type CalendarSubscription struct {
 	LastUsedMeetingsAt sql.NullTime `json:"last_used_meetings_at"`
 }
 
+type CoverRotationState struct {
+	ID        int64     `json:"id"`
+	LastDate  time.Time `json:"last_date"`
+	LastIndex int64     `json:"last_index"`
+}
+
 type HatSwap struct {
 	ID                    string       `json:"id"`
 	RequesterAssignmentID string       `json:"requester_assignment_id"`

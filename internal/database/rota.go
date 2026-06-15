@@ -113,21 +113,30 @@ func (db *DB) GetAssignmentsByDateRange(ctx context.Context, startDate, endDate 
 	return result, nil
 }
 
-// GetMostRecentCoverMemberID returns the member ID of the most recent cover
-// assignment with a date strictly before beforeDate. This anchors the R2
-// cover rotation on the past state of the rota, so a future cover never
-// freezes the rotation on a single person.
-// The second return value is false if no cover assignments exist.
-func (db *DB) GetMostRecentCoverMemberID(ctx context.Context, beforeDate time.Time) (string, bool, error) {
-	row, err := db.queries.GetMostRecentCoverAssignment(ctx, beforeDate)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return "", false, nil
-		}
-		return "", false, err
-	}
+// GetMostRecentCoverMemberID was removed when the cover rotation
+// switched to a date-derivable index (see Engine.coverRotationIndex
+// in internal/rota). The DB-anchored rotation was the source of the
+// "same person always covers" bug and is no longer consulted.
 
-	return row.MemberID, true, nil
+// GetCoverRotationState returns the last computed cover rotation state
+// (last_date, last_index). Returns sql.ErrNoRows if no state has been
+// written yet; the caller is responsible for initializing the state
+// row on first use.
+func (db *DB) GetCoverRotationState(ctx context.Context) (time.Time, int, error) {
+	row, err := db.queries.GetCoverRotationState(ctx)
+	if err != nil {
+		return time.Time{}, 0, err
+	}
+	return row.LastDate, int(row.LastIndex), nil
+}
+
+// UpsertCoverRotationState writes the cover rotation state. The table
+// is constrained to a single row, so this is the only write path.
+func (db *DB) UpsertCoverRotationState(ctx context.Context, date time.Time, index int) error {
+	return db.queries.UpsertCoverRotationState(ctx, sqlc.UpsertCoverRotationStateParams{
+		LastDate:  date,
+		LastIndex: int64(index),
+	})
 }
 
 // GetLatestAssignmentDate returns the latest date that has any assignments.

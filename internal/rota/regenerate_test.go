@@ -128,13 +128,16 @@ func TestRegenerateScheduleWithLeave(t *testing.T) {
 	t.Logf("Cover for Bob (Jan 16): %s", memberNames[covers["2024-01-16"]])
 	t.Logf("Cover for Charlie (Jan 17): %s", memberNames[covers["2024-01-17"]])
 
-	// Expected R2 rotation (independent):
-	// Jan 15 (Alice out): R2 starts from 0, Alice on leave, next available is Bob (index 1)
-	// Jan 16 (Bob out): R2 continues from Bob, Bob just covered so next is Charlie (index 2)
-	// Jan 17 (Charlie out): R2 continues from Charlie, Charlie just covered so next is Dave (index 3)
-	require.Equal(t, bobID, covers["2024-01-15"], "Bob should cover (R2 starts, skip Alice)")
-	require.Equal(t, charlieID, covers["2024-01-16"], "Charlie should cover (R2 continues)")
-	require.Equal(t, daveID, covers["2024-01-17"], "Dave should cover (R2 continues)")
+	// Expected covers. The cover rotation is a persisted state
+	// (last_date, last_index) that advances by one slot per working
+	// day. The first call seeds the state at the call's date with
+	// index 0, so:
+	//   Jan 15 → state seeded at (Jan 15, 0) → Alice on leave → Bob
+	//   Jan 16 → state advances to (Jan 16, 1) → Bob on leave → Charlie
+	//   Jan 17 → state advances to (Jan 17, 2) → Charlie on leave → Dave
+	require.Equal(t, bobID, covers["2024-01-15"], "Bob should cover (state seeded at index 0, Alice on leave → next)")
+	require.Equal(t, charlieID, covers["2024-01-16"], "Charlie should cover (state advanced to index 1, Bob on leave → next)")
+	require.Equal(t, daveID, covers["2024-01-17"], "Dave should cover (state advanced to index 2, Charlie on leave → next)")
 }
 
 // TestRegenerateWithMultipleLeaves tests R2 rotation wrapping.
@@ -199,17 +202,22 @@ func TestRegenerateWithMultipleLeaves(t *testing.T) {
 	t.Logf("Jan 18 (Dave out): %s covers", memberNames[covers["2024-01-18"]])
 	t.Logf("Jan 19 (Alice out): %s covers", memberNames[covers["2024-01-19"]])
 
-	// Expected R2 rotation with wrapping:
-	// Team: Alice(0), Bob(1), Charlie(2), Dave(3)
-	// Jan 15 (Alice out): R2 starts, Alice on leave -> Bob (1)
-	// Jan 16 (Bob out): R2 continues from Bob -> Charlie (2)
-	// Jan 17 (Charlie out): R2 continues from Charlie -> Dave (3)
-	// Jan 18 (Dave out): R2 continues from Dave -> wrap to Alice (0) - Alice is NOT on leave today!
-	// Jan 19 (Alice out again): R2 continues from Alice -> Bob (1)
+	// Expected covers. The cover rotation is a persisted state
+	// (last_date, last_index) that advances by one slot per working
+	// day. The first call seeds the state at the call's date with
+	// index 0, so:
+	//   Jan 15 → state seeded at (Jan 15, 0) → index 0 → Alice on leave → Bob
+	//   Jan 16 → state advances to (Jan 16, 1) → Bob on leave → Charlie
+	//   Jan 17 → state advances to (Jan 17, 2) → Charlie on leave → Dave
+	//   Jan 18 → state advances to (Jan 18, 3) → Dave on leave → Alice
+	//   Jan 19 → state advances to (Jan 19, 0) → Alice on leave → Bob
+	// This is the wrap-around behavior: every team member covers
+	// exactly once across the five consecutive leaves, then the
+	// rotation resets at Jan 19.
 
 	require.Equal(t, bobID, covers["2024-01-15"], "Bob covers Jan 15")
 	require.Equal(t, charlieID, covers["2024-01-16"], "Charlie covers Jan 16")
 	require.Equal(t, daveID, covers["2024-01-17"], "Dave covers Jan 17")
-	require.Equal(t, aliceID, covers["2024-01-18"], "Alice covers Jan 18 (wraps after Dave, Alice available)")
-	require.Equal(t, bobID, covers["2024-01-19"], "Bob covers Jan 19")
+	require.Equal(t, aliceID, covers["2024-01-18"], "Alice covers Jan 18")
+	require.Equal(t, bobID, covers["2024-01-19"], "Bob covers Jan 19 (rotation wraps)")
 }

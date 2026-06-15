@@ -31,8 +31,8 @@ type ReassignResult struct {
 //   - For active leaves (pending/assigned), HandleLeaveChange is called,
 //     which reconciles stale covers and re-creates covers under the
 //     current algorithm. Because of the idempotency contract on
-//     createCoverAssignment and getNextCoverIndex, the result is the
-//     same as the prior state when the algorithm hasn't changed.
+//     createCoverAssignment, the result is the same as the prior state
+//     when the algorithm hasn't changed.
 //   - For completed/inactive leaves, HandleLeaveChange is a no-op (the
 //     reconcile step is already a no-op for them, and AssignCoversForLeave
 //     short-circuits on inactive status).

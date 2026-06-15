@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/inful/madhatter/internal/auth"
@@ -97,26 +98,36 @@ func (h *Handler) loadCurrentUserPresenceStatus(ctx context.Context, data map[st
 	}
 
 	today := time.Now().Format("2006-01-02")
+
+	// Build the set of dates (>= today) the user is on leave for. This is
+	// reused below to gate the HAT-day badge, the Next HAT day, and the
+	// Next Leave day, so the "actual" HAT day reflects reassignments.
+	leaveDates := h.buildUserLeaveDates(ctx, member.ID, today)
+
+	// HAT day badge: true if the user is on HAT duty today, either as the
+	// primary assignee or as a cover for someone else. A leave day hides
+	// the badge even when the user has a cover assignment, because an
+	// on-leave user is not actually on call - any cover assignment they
+	// hold on a leave day is stale data the engine would have reassigned.
 	assignments, err := h.db.GetAssignmentsByDate(ctx, today)
 	if err == nil {
 		for i := range assignments {
-			if assignments[i].MemberID == member.ID {
-				data["CurrentUserHasHATDay"] = true
+			if assignments[i].MemberID != member.ID {
+				continue
+			}
+			if _, onLeave := leaveDates[today]; onLeave {
 				break
 			}
+			data["CurrentUserHasHATDay"] = true
+			break
 		}
 	}
 
-	h.loadCurrentUserUpcomingDates(ctx, data, member.ID, today)
+	h.loadCurrentUserUpcomingDates(ctx, data, member.ID, today, leaveDates)
 
-	leaveRecords, err := h.db.GetLeaveByDate(ctx, today)
-	if err == nil {
-		for i := range leaveRecords {
-			if leaveRecords[i].MemberID == member.ID {
-				data["CurrentUserPresenceStatus"] = currentUserStatusOnLeave
-				return
-			}
-		}
+	if _, onLeave := leaveDates[today]; onLeave {
+		data["CurrentUserPresenceStatus"] = currentUserStatusOnLeave
+		return
 	}
 
 	if member.IsRecurringWFHOn(time.Now()) {
@@ -137,11 +148,71 @@ func (h *Handler) loadCurrentUserPresenceStatus(ctx context.Context, data map[st
 	data["CurrentUserPresenceStatus"] = currentUserStatusOnSite
 }
 
+// buildUserLeaveDates returns the set of dates (>= today) on which the
+// given member is on an *active* leave. Only leaves with status
+// "pending" or "assigned" are included - the same set the rota engine
+// treats as live (see rota.isLeaveActive). Rejected, cancelled, and
+// completed leaves are ignored, so a rejected leave with a future date
+// does not gate the HAT-day surface.
+//
+// Leaves that have already ended are excluded, and leaves that started
+// in the past are clamped to today.
+func (h *Handler) buildUserLeaveDates(ctx context.Context, memberID, today string) map[string]struct{} {
+	leaveDates := make(map[string]struct{})
+
+	todayTime, err := time.Parse("2006-01-02", today)
+	if err != nil {
+		return leaveDates
+	}
+
+	leaveRecords, err := h.db.GetLeaveRecords(ctx)
+	if err != nil {
+		return leaveDates
+	}
+
+	for i := range leaveRecords {
+		if leaveRecords[i].MemberID != memberID {
+			continue
+		}
+
+		status := strings.ToLower(strings.TrimSpace(leaveRecords[i].Status))
+		if status != "pending" && status != "assigned" {
+			continue
+		}
+
+		endDate := leaveRecords[i].EndDate
+		if endDate.Before(todayTime) {
+			continue
+		}
+
+		startDate := leaveRecords[i].StartDate
+		if startDate.Before(todayTime) {
+			startDate = todayTime
+		}
+
+		for d := startDate; !d.After(endDate); d = d.AddDate(0, 0, 1) {
+			leaveDates[d.Format("2006-01-02")] = struct{}{}
+		}
+	}
+
+	return leaveDates
+}
+
 //nolint:cyclop // Upcoming date resolution combines multiple domain queries.
-func (h *Handler) loadCurrentUserUpcomingDates(ctx context.Context, data map[string]any, memberID, today string) {
+func (h *Handler) loadCurrentUserUpcomingDates(ctx context.Context, data map[string]any, memberID, today string, leaveDates map[string]struct{}) {
+	// Next HAT: the earliest future day the user is on HAT duty. Cover
+	// duties count - the user is on support that day, just for someone
+	// else. Days the user is on leave are skipped because in that case a
+	// cover has the duty, not the user.
 	futureAssignments, err := h.db.GetFutureAssignmentsForMember(ctx, memberID)
-	if err == nil && len(futureAssignments) > 0 {
-		data["CurrentUserNextHATDay"] = futureAssignments[0].Date
+	if err == nil {
+		for i := range futureAssignments {
+			if _, onLeave := leaveDates[futureAssignments[i].Date]; onLeave {
+				continue
+			}
+			data["CurrentUserNextHATDay"] = futureAssignments[i].Date
+			break
+		}
 	}
 
 	wfhRequests, err := h.db.GetWFHRequestsByMember(ctx, memberID)
@@ -164,20 +235,17 @@ func (h *Handler) loadCurrentUserUpcomingDates(ctx context.Context, data map[str
 		}
 	}
 
-	leaveRecords, err := h.db.GetLeaveRecords(ctx)
-	if err == nil {
-		for i := range leaveRecords {
-			if leaveRecords[i].MemberID != memberID {
-				continue
+	// Next leave day: reuses the pre-computed leave-date set so we only
+	// surface dates that are still in the future.
+	if len(leaveDates) > 0 {
+		nextLeaveDay := ""
+		for date := range leaveDates {
+			if nextLeaveDay == "" || date < nextLeaveDay {
+				nextLeaveDay = date
 			}
-
-			effectiveStart := max(leaveRecords[i].StartDate.Format("2006-01-02"), today)
-			if leaveRecords[i].EndDate.Format("2006-01-02") < today {
-				continue
-			}
-
-			data["CurrentUserNextLeaveDay"] = effectiveStart
-			break
+		}
+		if nextLeaveDay != "" {
+			data["CurrentUserNextLeaveDay"] = nextLeaveDay
 		}
 	}
 }

@@ -134,10 +134,201 @@ func TestLoadCurrentUserPresenceStatus_SetsHatDayAndLeave(t *testing.T) {
 	handler.loadCurrentUserPresenceStatus(ctx, data, "alice@example.com")
 
 	assert.Equal(t, currentUserStatusOnLeave, data["CurrentUserPresenceStatus"])
-	assert.Equal(t, true, data["CurrentUserHasHATDay"])
-	assert.Equal(t, today, data["CurrentUserNextHATDay"])
+	// On leave: HAT day badge is hidden, and the Next HAT day skips
+	// the leave-reassigned day in favor of the next post-leave HAT.
+	_, hasHAT := data["CurrentUserHasHATDay"]
+	assert.False(t, hasHAT, "CurrentUserHasHATDay should not be set when on leave")
+	assert.Equal(t, tomorrow, data["CurrentUserNextHATDay"])
 	assert.Equal(t, tomorrow, data["CurrentUserNextWFHDay"])
 	assert.Equal(t, today, data["CurrentUserNextLeaveDay"])
+}
+
+func TestLoadCurrentUserPresenceStatus_CoverDutyIsNextHAT(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupPresenceTestDB(t)
+	defer cleanup()
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	bobOriginalDate := testutil.NextBusinessDay(time.Now().AddDate(0, 0, 7)).Format("2006-01-02")
+	aliceOwnHATDate := testutil.NextBusinessDay(time.Now().AddDate(0, 0, 9)).Format("2006-01-02")
+	coverDate := testutil.NextBusinessDay(time.Now().AddDate(0, 0, 2)).Format("2006-01-02")
+
+	bobAssignmentID, err := db.CreateRotaAssignment(ctx, bobOriginalDate, bobID, false, nil)
+	require.NoError(t, err)
+	_, err = db.CreateRotaAssignment(ctx, aliceOwnHATDate, aliceID, false, nil)
+	require.NoError(t, err)
+
+	// Alice is the cover for Bob on the near future date.
+	_, err = db.CreateRotaAssignment(ctx, coverDate, aliceID, true, &bobAssignmentID)
+	require.NoError(t, err)
+
+	handler := &Handler{db: db}
+	data := map[string]any{}
+
+	handler.loadCurrentUserPresenceStatus(ctx, data, "alice@example.com")
+
+	// The cover duty comes first chronologically. A cover is on HAT
+	// duty - just for someone else - so the cover date is the Next HAT.
+	assert.Equal(t, coverDate, data["CurrentUserNextHATDay"])
+}
+
+func TestLoadCurrentUserPresenceStatus_CoverDutyToday_ShowsHATBadge(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupPresenceTestDB(t)
+	defer cleanup()
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	// Bob's primary HAT day is today; Alice is the cover for Bob today.
+	today := time.Now().Format("2006-01-02")
+	bobAssignmentID, err := db.CreateRotaAssignment(ctx, today, bobID, false, nil)
+	require.NoError(t, err)
+	_, err = db.CreateRotaAssignment(ctx, today, aliceID, true, &bobAssignmentID)
+	require.NoError(t, err)
+
+	handler := &Handler{db: db}
+	data := map[string]any{}
+
+	handler.loadCurrentUserPresenceStatus(ctx, data, "alice@example.com")
+
+	// Alice is the cover today, so she has HAT status. The badge must
+	// be shown - cover duty is HAT duty, just on behalf of someone else.
+	assert.Equal(t, true, data["CurrentUserHasHATDay"])
+	assert.Equal(t, today, data["CurrentUserNextHATDay"])
+}
+
+func TestLoadCurrentUserPresenceStatus_CoverDutyToday_OnLeave_StillHidesBadge(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupPresenceTestDB(t)
+	defer cleanup()
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	// Bob's primary HAT day is today; Alice is the cover for Bob today,
+	// and Alice is also on leave today. The cover assignment is stale
+	// data in this case - the user cannot actually cover if they are on
+	// leave - so the HAT badge is hidden and the status is "On leave".
+	today := time.Now().Format("2006-01-02")
+	bobAssignmentID, err := db.CreateRotaAssignment(ctx, today, bobID, false, nil)
+	require.NoError(t, err)
+	_, err = db.CreateRotaAssignment(ctx, today, aliceID, true, &bobAssignmentID)
+	require.NoError(t, err)
+	_, err = db.CreateLeaveRecord(ctx, aliceID, today, today)
+	require.NoError(t, err)
+
+	handler := &Handler{db: db}
+	data := map[string]any{}
+
+	handler.loadCurrentUserPresenceStatus(ctx, data, "alice@example.com")
+
+	assert.Equal(t, currentUserStatusOnLeave, data["CurrentUserPresenceStatus"])
+	_, hasHAT := data["CurrentUserHasHATDay"]
+	assert.False(t, hasHAT, "HAT badge must be hidden when the user is on leave, even with a cover assignment")
+	assert.Equal(t, today, data["CurrentUserNextLeaveDay"])
+}
+
+func TestLoadCurrentUserPresenceStatus_RejectedLeave_DoesNotHideHAT(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupPresenceTestDB(t)
+	defer cleanup()
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	// Alice has a HAT day in the future and a leave for that day, but
+	// the leave has been rejected - the reassignment was rolled back and
+	// the original HAT day stands.
+	hatDay := testutil.NextBusinessDay(time.Now().AddDate(0, 0, 1)).Format("2006-01-02")
+	_, err = db.CreateRotaAssignment(ctx, hatDay, aliceID, false, nil)
+	require.NoError(t, err)
+	leaveID, err := db.CreateLeaveRecord(ctx, aliceID, hatDay, hatDay)
+	require.NoError(t, err)
+	require.NoError(t, db.UpdateLeaveStatus(ctx, leaveID, "rejected"))
+
+	handler := &Handler{db: db}
+	data := map[string]any{}
+
+	handler.loadCurrentUserPresenceStatus(ctx, data, "alice@example.com")
+
+	// The rejected leave is not an active leave, so the HAT day stands.
+	assert.Equal(t, hatDay, data["CurrentUserNextHATDay"])
+	// And the next leave should be empty - a rejected leave with a future
+	// date is not surfaced as an upcoming leave.
+	_, hasLeave := data["CurrentUserNextLeaveDay"]
+	assert.False(t, hasLeave, "rejected leave with future date should not be surfaced as upcoming leave")
+}
+
+func TestLoadCurrentUserPresenceStatus_AllLeaveDays_NoNextHAT(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupPresenceTestDB(t)
+	defer cleanup()
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	// Two upcoming HAT days, both entirely covered by leave.
+	firstHAT := testutil.NextBusinessDay(time.Now().AddDate(0, 0, 1)).Format("2006-01-02")
+	lastHAT := testutil.NextBusinessDay(time.Now().AddDate(0, 0, 2)).Format("2006-01-02")
+	_, err = db.CreateRotaAssignment(ctx, firstHAT, aliceID, false, nil)
+	require.NoError(t, err)
+	_, err = db.CreateRotaAssignment(ctx, lastHAT, aliceID, false, nil)
+	require.NoError(t, err)
+
+	// Leave spans from the first HAT day through the last.
+	_, err = db.CreateLeaveRecord(ctx, aliceID, firstHAT, lastHAT)
+	require.NoError(t, err)
+
+	handler := &Handler{db: db}
+	data := map[string]any{}
+
+	handler.loadCurrentUserPresenceStatus(ctx, data, "alice@example.com")
+
+	_, hasNext := data["CurrentUserNextHATDay"]
+	assert.False(t, hasNext, "Next HAT should not be set when every HAT day is on leave")
+	assert.Equal(t, firstHAT, data["CurrentUserNextLeaveDay"])
+}
+
+func TestLoadCurrentUserPresenceStatus_SwapReflectedInNextHAT(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupPresenceTestDB(t)
+	defer cleanup()
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	aliceOriginal := testutil.NextBusinessDay(time.Now().AddDate(0, 0, 2)).Format("2006-01-02")
+	bobOriginal := testutil.NextBusinessDay(time.Now().AddDate(0, 0, 4)).Format("2006-01-02")
+
+	aliceAssignmentID, err := db.CreateRotaAssignment(ctx, aliceOriginal, aliceID, false, nil)
+	require.NoError(t, err)
+	bobAssignmentID, err := db.CreateRotaAssignment(ctx, bobOriginal, bobID, false, nil)
+	require.NoError(t, err)
+
+	swapID, err := db.CreateHatSwap(ctx, aliceAssignmentID, bobAssignmentID, aliceID, bobID)
+	require.NoError(t, err)
+	require.NoError(t, db.ExecuteSwap(ctx, swapID))
+
+	handler := &Handler{db: db}
+	data := map[string]any{}
+
+	handler.loadCurrentUserPresenceStatus(ctx, data, "alice@example.com")
+
+	// After the swap Alice's member_id is on Bob's original day, so the
+	// Status card must surface the post-swap date, not her pre-swap one.
+	assert.Equal(t, bobOriginal, data["CurrentUserNextHATDay"])
+	assert.NotEqual(t, aliceOriginal, data["CurrentUserNextHATDay"])
 }
 
 func TestLoadCurrentUserPresenceStatus_NextWFHUsesEarliestUpcomingDate(t *testing.T) {

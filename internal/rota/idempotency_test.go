@@ -133,7 +133,7 @@ func TestEngine_AssignCoversForLeave_StableAcrossMultipleRuns(t *testing.T) {
 	}{
 		{"2024-01-16", bobID},
 		{"2024-01-17", charlieID},
-		{"2024-01-18", getFirstMemberID(t, db, "Dave")},
+		{"2024-01-18", memberIDByName(t, db, "Dave")},
 	}
 
 	run := func() []string {

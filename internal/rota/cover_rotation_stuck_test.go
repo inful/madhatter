@@ -59,7 +59,7 @@ func TestEngine_CoverRotationWithFutureCoverStuck(t *testing.T) {
 	require.NotEmpty(t, originalIDJan26, "Should have an original assignment for Jan 26")
 
 	// Plant the future cover: Alice covers Jan 26.
-	_, err = db.CreateRotaAssignment(ctx, "2024-01-26", getFirstMemberID(t, db, "Alice"), true, &originalIDJan26)
+	_, err = db.CreateRotaAssignment(ctx, "2024-01-26", memberIDByName(t, db, "Alice"), true, &originalIDJan26)
 	require.NoError(t, err)
 
 	// Add a leave for Jan 16 (Bob's scheduled day). With the fix, the most
@@ -121,9 +121,11 @@ func getCoverMemberID(t *testing.T, ctx context.Context, db *database.DB, date s
 	return ""
 }
 
-// getFirstMemberID looks up the first team member with the given name and
-// returns their ID. Used to plant fixtures.
-func getFirstMemberID(t *testing.T, db *database.DB, name string) string {
+// memberIDByName returns the ID of the team member whose name matches.
+// Test fixture helper: each test sets up a small team with unique
+// names, so a name lookup is unambiguous. Fails the test if no
+// member matches.
+func memberIDByName(t *testing.T, db *database.DB, name string) string {
 	t.Helper()
 	members, err := db.GetActiveTeamMembers(context.Background())
 	require.NoError(t, err)

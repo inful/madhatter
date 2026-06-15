@@ -270,3 +270,23 @@ func TestReassignCovers_CreatesCoverForUnprocessedLeave(t *testing.T) {
 	postCovers := snapshotCovers(t, ctx, db, "2024-01-16", "2024-01-16")
 	require.NotEmpty(t, postCovers["2024-01-16"], "reassignment must have placed a cover on the leave day")
 }
+
+// TestReassignCovers_EmptyRota verifies the no-op path: a fresh
+// database with no leaves returns the zero ReassignResult and
+// leaves Failures nil. The continue-on-error code path is exercised
+// by per-leave failures, which the engine's own graceful "skip
+// on no-cover-available" path makes hard to inject from outside
+// without an internal fault-injection hook. The Failures field
+// exists and is collected, and the structure of the call is
+// verified here.
+func TestReassignCovers_EmptyRota(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	maintenance := NewScheduleMaintenance(db)
+	result, err := maintenance.ReassignCovers(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, 0, result.LeavesProcessed)
+	require.Equal(t, 0, result.CoversChanged)
+	require.Empty(t, result.Failures)
+}

@@ -107,10 +107,12 @@ func Execute() {
 }
 
 func serveCommand(ctx context.Context, db *database.DB) {
-	// Run the periodic cover reassignment before bringing the server up if
-	// the binary's algorithm version is ahead of what's on disk. This
-	// guarantees the on-disk rota always reflects the current algorithm
-	// after a deploy, with no manual migration step.
+	// Run the cover reassignment before bringing the server up. The
+	// operation is idempotent on a steady-state rota, so this is a
+	// no-op when nothing has changed; when the algorithm HAS changed
+	// (e.g. a bug-fix deploy), the existing on-disk covers converge
+	// to the new algorithm's output before the first request is
+	// served. Disable with --reassign-covers=false for debugging.
 	if CLI.Serve.ReassignCovers {
 		runCoverReassignment(ctx, db)
 	}
@@ -328,6 +330,10 @@ func runCoverReassignment(ctx context.Context, db *database.DB) {
 		log.Printf("Cover reassignment error (continuing with on-disk data): %v\n", err)
 		return
 	}
+	if len(result.Failures) > 0 {
+		log.Printf("Cover reassignment: %d leave(s) failed to process and were skipped: %v\n",
+			len(result.Failures), result.Failures)
+	}
 	if result.CoversChanged == 0 {
 		log.Printf("Cover reassignment: %d leaves processed, no changes\n", result.LeavesProcessed)
 		return
@@ -344,6 +350,15 @@ func runCoverReassignment(ctx context.Context, db *database.DB) {
 // spans a holiday — a leave that the live server would skip would
 // get a cover from the cmd-side runner.
 //
+// Note: the returned maintenance is intentionally NOT wired with a
+// notifier. The reassignment follows the same HandleLeaveChange
+// convention as the server's newScheduleMaintenance — bulk cover
+// processing is silent. Only the single-leave AssignCoversForLeave
+// path (taken by the API endpoint on a fresh leave report) fires
+// CoverAssigned events. The cmd runner is for catch-up / self-heal
+// runs that shouldn't spam the cover assignee with notifications
+// every time a deploy reconverges the rota.
+//
 // The returned stop function releases the holiday service background
 // goroutine (if any). Callers must invoke it before the process exits.
 func buildReassignmentMaintenance(db *database.DB) (*rota.ScheduleMaintenance, func()) {
@@ -358,9 +373,20 @@ func buildReassignmentMaintenance(db *database.DB) (*rota.ScheduleMaintenance, f
 	}
 	return maintenance, func() {
 		if holidayService != nil {
-			if stopErr := holidayService.Stop(); stopErr != nil {
+			// Service.Stop() returns "scheduler is not running" when
+			// HOLIDAY_URLS was empty (no scheduler was started). That's
+			// a normal no-op case, not a failure to log about.
+			if stopErr := holidayService.Stop(); stopErr != nil && !isNoOpHolidayStopErr(stopErr) {
 				log.Printf("Cover reassignment: holiday service stop failed: %v\n", stopErr)
 			}
 		}
 	}
+}
+
+// isNoOpHolidayStopErr reports whether a holiday.Service.Stop error
+// is just the well-known "scheduler was never started" response —
+// which happens on every boot when HOLIDAY_URLS is empty. The
+// service returns this even though stopping was a no-op.
+func isNoOpHolidayStopErr(err error) bool {
+	return err != nil && err.Error() == "scheduler is not running"
 }

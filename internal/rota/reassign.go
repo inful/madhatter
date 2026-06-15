@@ -16,6 +16,12 @@ type ReassignResult struct {
 	// member swapped, this increments by 1 (one leave changed), not
 	// by the number of individual cover rows that flipped.
 	CoversChanged int
+	// Failures lists the leave IDs whose HandleLeaveChange call
+	// returned an error. The runner continues past per-leave failures
+	// so a single bad row doesn't strand the rest of the rota in a
+	// half-reassigned state; the failures are surfaced here for the
+	// caller to log or surface to the operator.
+	Failures []string
 }
 
 // ReassignCovers re-runs the cover-assignment algorithm against every
@@ -30,6 +36,13 @@ type ReassignResult struct {
 //   - For completed/inactive leaves, HandleLeaveChange is a no-op (the
 //     reconcile step is already a no-op for them, and AssignCoversForLeave
 //     short-circuits on inactive status).
+//
+// The runner continues past per-leave errors: a single broken row
+// (e.g. an FK violation from a deleted member) does not abort the
+// whole pass. The failed leave IDs are collected in Result.Failures
+// and the function still returns nil in that case so the startup
+// hook can come up cleanly; callers that want fail-fast behavior
+// can check len(Result.Failures) > 0.
 //
 // The cost on a steady-state rota is O(N) DB queries where N is the
 // number of leaves, dominated by two GetAssignmentsByDateRange calls
@@ -56,7 +69,12 @@ func (sm *ScheduleMaintenance) ReassignCovers(ctx context.Context) (ReassignResu
 		l := &leaves[i]
 		before := snapshotLeaveCovers(ctx, sm.db, l)
 		if err := sm.HandleLeaveChange(ctx, l.ID); err != nil {
-			return result, fmt.Errorf("reassign-covers: handle leave %s: %w", l.ID, err)
+			// Continue past per-leave failures: one broken row must
+			// not strand the rest of the rota in a half-reassigned
+			// state. The caller (cmd hook or CLI) decides whether to
+			// log Failures or surface them.
+			result.Failures = append(result.Failures, l.ID)
+			continue
 		}
 		after := snapshotLeaveCovers(ctx, sm.db, l)
 		result.LeavesProcessed++

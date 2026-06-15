@@ -21,8 +21,9 @@ const (
 
 var CLI struct {
 	Serve struct {
-		Port        string `default:"8080" arg:""`
-		Development bool   `default:"false" help:"Enable development mode using fake OAuth to bypass full OAuth setup for local development"`
+		Port           string `default:"8080" arg:""`
+		Development    bool   `default:"false" help:"Enable development mode using fake OAuth to bypass full OAuth setup for local development"`
+		ReassignCovers bool   `default:"true" help:"On startup, re-run the cover-assignment algorithm against existing leaves if the binary's algorithm version is ahead of the on-disk applied version"`
 	} `cmd:"" help:"Start web server"`
 
 	Team struct {
@@ -65,6 +66,10 @@ var CLI struct {
 			Output string `help:"Output file path" arg:""`
 		} `cmd:"" help:"Export ICS file"`
 	} `cmd:"" help:"Calendar management"`
+
+	ReassignCovers struct {
+		Force bool `default:"false" help:"Re-run the cover-assignment algorithm even if the on-disk version matches the binary's version"`
+	} `cmd:"" help:"Re-run the cover-assignment algorithm against all leaves, updating cover_algorithm_state"`
 }
 
 func Execute() {
@@ -91,6 +96,7 @@ func Execute() {
 		"schedule view <date>":             scheduleViewCommand,
 		"calendar subscribe <email>":       calendarSubscribeCommand,
 		"calendar export <email> <output>": calendarExportCommand,
+		"reassign-covers":                  reassignCoversCommand,
 	}
 
 	if handler, exists := handlers[command]; exists {
@@ -102,6 +108,24 @@ func Execute() {
 }
 
 func serveCommand(ctx context.Context, db *database.DB) {
+	// Run the periodic cover reassignment before bringing the server up if
+	// the binary's algorithm version is ahead of what's on disk. This
+	// guarantees the on-disk rota always reflects the current algorithm
+	// after a deploy, with no manual migration step.
+	if CLI.Serve.ReassignCovers {
+		maintenance := rota.NewScheduleMaintenance(db)
+		result, err := maintenance.ReassignCoversIfStale(ctx)
+		switch {
+		case err != nil:
+			log.Printf("Cover reassignment error (continuing with stale data): %v\n", err)
+		case result.WasStale:
+			log.Printf("Cover algorithm reapplication: %d leaves processed, %d covers changed (now at v%d)\n",
+				result.LeavesProcessed, result.CoversChanged, result.NewVersion)
+		default:
+			log.Printf("Cover algorithm up to date (v%d)\n", result.NewVersion)
+		}
+	}
+
 	server, err := api.NewServer(db, CLI.Serve.Development) //nolint:contextcheck // ctx is reserved for the long-running server lifecycle; the constructor uses its own short-lived contexts
 	if err != nil {
 		log.Fatalf("Failed to create server: %v\n", err)
@@ -279,4 +303,37 @@ func calendarExportCommand(ctx context.Context, db *database.DB) {
 
 	log.Printf("ICS file exported for %s to %s\n", member.Name, filePath)
 	log.Printf("Total assignments: %d\n", len(assignments))
+}
+
+// reassignCoversCommand re-runs the cover-assignment algorithm against
+// every leave in the database. By default it only acts when the binary's
+// CoverAlgorithmVersion is ahead of the on-disk applied_version; pass
+// --force to run unconditionally (useful in tests or after manually
+// editing cover rows).
+func reassignCoversCommand(ctx context.Context, db *database.DB) {
+	maintenance := rota.NewScheduleMaintenance(db)
+
+	if CLI.ReassignCovers.Force {
+		result, err := maintenance.ReassignCovers(ctx)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Reassignment failed: %v\n", err)
+			os.Exit(1)
+		}
+		log.Printf("Forced reassignment: %d leaves processed, %d covers changed (now at v%d)\n",
+			result.LeavesProcessed, result.CoversChanged, result.NewVersion)
+		return
+	}
+
+	result, err := maintenance.ReassignCoversIfStale(ctx)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Reassignment failed: %v\n", err)
+		os.Exit(1)
+	}
+	if !result.WasStale {
+		log.Printf("Cover algorithm up to date (v%d); nothing to do. Pass --force to rerun anyway.\n",
+			result.NewVersion)
+		return
+	}
+	log.Printf("Cover algorithm reapplication: %d leaves processed, %d covers changed (now at v%d)\n",
+		result.LeavesProcessed, result.CoversChanged, result.NewVersion)
 }

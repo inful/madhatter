@@ -231,3 +231,15 @@ CREATE TABLE IF NOT EXISTS notification_preferences (
 CREATE INDEX IF NOT EXISTS idx_notification_preferences_disabled
     ON notification_preferences(email_enabled)
     WHERE email_enabled = 0;
+
+-- Cover algorithm version: single-row table that records the most recent
+-- version of the cover-assignment algorithm that has been applied to the
+-- rota. The periodic cover-reassignment runner consults this on startup
+-- to decide whether to re-run the algorithm. See ReassignCoversIfStale.
+CREATE TABLE IF NOT EXISTS cover_algorithm_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    applied_version INTEGER NOT NULL DEFAULT 0,
+    last_run_at DATETIME,
+    last_run_changed INTEGER NOT NULL DEFAULT 0
+);
+INSERT OR IGNORE INTO cover_algorithm_state (id, applied_version) VALUES (1, 0);

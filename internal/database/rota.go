@@ -113,10 +113,13 @@ func (db *DB) GetAssignmentsByDateRange(ctx context.Context, startDate, endDate 
 	return result, nil
 }
 
-// GetMostRecentCoverMemberID returns the member ID of the most recent cover assignment.
+// GetMostRecentCoverMemberID returns the member ID of the most recent cover
+// assignment with a date strictly before beforeDate. This anchors the R2
+// cover rotation on the past state of the rota, so a future cover never
+// freezes the rotation on a single person.
 // The second return value is false if no cover assignments exist.
-func (db *DB) GetMostRecentCoverMemberID(ctx context.Context) (string, bool, error) {
-	row, err := db.queries.GetMostRecentCoverAssignment(ctx)
+func (db *DB) GetMostRecentCoverMemberID(ctx context.Context, beforeDate time.Time) (string, bool, error) {
+	row, err := db.queries.GetMostRecentCoverAssignment(ctx, beforeDate)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return "", false, nil

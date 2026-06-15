@@ -255,17 +255,16 @@ func (e *Engine) findMemberIndex(members []database.TeamMember, memberID string)
 
 // getNextCoverIndex finds the next index for the cover rotation (R2).
 // R2 is completely independent from the original schedule rotation (R1).
-// It looks at ALL cover assignments across the entire schedule and returns the index
-// to continue from the last person who provided cover.
-// Note: findCover will start checking from (startIndex + 1), so we return (lastCoverIndex)
-// to make it check (lastCoverIndex + 1) which is the next person after the last cover.
+// It anchors on the most recent cover assignment strictly before
+// referenceDate so a future cover never freezes the rotation on a single
+// person. findCover will start checking from (startIndex + 1), so we return
+// (lastCoverIndex) to make it check (lastCoverIndex + 1) which is the next
+// person after the last cover.
 func (e *Engine) getNextCoverIndex(ctx context.Context, members []database.TeamMember, referenceDate time.Time) int {
-	_ = referenceDate
-
-	mostRecentCoverMemberID, ok, err := e.db.GetMostRecentCoverMemberID(ctx)
+	mostRecentCoverMemberID, ok, err := e.db.GetMostRecentCoverMemberID(ctx, referenceDate)
 	if err != nil || !ok {
-		// No previous covers found, start R2 from the beginning (index -1)
-		// so findCover will check from index 0.
+		// No previous covers before referenceDate, start R2 from the
+		// beginning (index -1) so findCover will check from index 0.
 		return -1
 	}
 

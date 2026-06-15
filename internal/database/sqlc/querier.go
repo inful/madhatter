@@ -76,7 +76,10 @@ type Querier interface {
 	GetMemberByEmail(ctx context.Context, email string) (TeamMember, error)
 	GetMemberByID(ctx context.Context, id string) (TeamMember, error)
 	GetMemberByToken(ctx context.Context, token string) (TeamMember, error)
-	GetMostRecentCoverAssignment(ctx context.Context) (GetMostRecentCoverAssignmentRow, error)
+	// Returns the most recent cover assignment strictly BEFORE the supplied
+	// reference date, so a future cover does not anchor the R2 rotation and
+	// cause the same person to be picked for every new leave.
+	GetMostRecentCoverAssignment(ctx context.Context, date time.Time) (GetMostRecentCoverAssignmentRow, error)
 	// Returns the row for a member, or sql.ErrNoRows if no preference
 	// has been set. The application treats the absence of a row as
 	// "default" (email_enabled = 1).

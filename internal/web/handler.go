@@ -89,6 +89,13 @@ type scheduleMatrixDay struct {
 	AtWorkCount int
 	WFHCount    int
 	LeaveCount  int
+	// AtWFHFloor is true when the day's at-work count has reached
+	// the WFH minimum-onsite floor (the larger of MinOnsiteAbsolute
+	// and the percentage of active members, rounded up). When set,
+	// the column is at-capacity for additional WFH — the WFH icon
+	// in the column header is rendered in an orange tone to flag
+	// it visually.
+	AtWFHFloor bool
 }
 
 type scheduleMatrixRow struct {

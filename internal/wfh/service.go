@@ -274,7 +274,7 @@ func (s *Service) settleDate(ctx context.Context, date string, pending []databas
 	}
 
 	// Compute the minimum on-site headcount.
-	minOnsite := s.minOnsiteCount(totalActive)
+	minOnsite := s.MinOnsiteCount(totalActive)
 
 	// How many members are already unavailable for on-site duty?
 	// Use unique member IDs to avoid double counting leave + WFH overlap.
@@ -369,8 +369,12 @@ func countUniqueMembers(sets ...map[string]struct{}) int {
 	return len(unique)
 }
 
-// minOnsiteCount computes the minimum on-site count from config.
-func (s *Service) minOnsiteCount(totalActive int) int {
+// MinOnsiteCount computes the minimum on-site count from config.
+// It is the larger of MinOnsiteAbsolute and the percentage of
+// active members rounded up — the same formula settleDate uses to
+// decide available WFH slots. Exposed so the schedule matrix can
+// flag days that have hit the WFH floor.
+func (s *Service) MinOnsiteCount(totalActive int) int {
 	const pctDivisor = 100.0
 	pctMin := int(math.Ceil(float64(totalActive) * s.cfg.MinOnsitePercentage / pctDivisor))
 	if pctMin < s.cfg.MinOnsiteAbsolute {

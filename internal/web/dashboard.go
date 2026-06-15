@@ -268,7 +268,7 @@ func (h *Handler) loadDashboardData(ctx context.Context, data map[string]any) {
 	// Get upcoming presence for next business days.
 	if presence, presenceErr := h.getUpcomingPresence(ctx); presenceErr == nil {
 		data["UpcomingPresence"] = presence
-		data["ScheduleMatrix"] = buildScheduleMatrix(presence)
+		data["ScheduleMatrix"] = buildScheduleMatrix(presence, h.wfhFloor(ctx))
 	}
 
 	// Get current and next week assignments.
@@ -306,8 +306,23 @@ func (h *Handler) loadMeetingsToken(ctx context.Context, data map[string]any) {
 	data["MeetingsToken"] = subs[0].Token
 }
 
+// wfhFloor returns the WFH min-onsite count for the team, or 0
+// if the WFH service is not configured. The schedule matrix uses
+// it to flag columns that have hit the WFH floor with an orange
+// tone on the WFH icon.
+func (h *Handler) wfhFloor(ctx context.Context) int {
+	if h.wfhService == nil {
+		return 0
+	}
+	members, err := h.db.GetActiveTeamMembers(ctx)
+	if err != nil {
+		return 0
+	}
+	return h.wfhService.MinOnsiteCount(len(members))
+}
+
 //nolint:cyclop // Matrix assembly is data-oriented and intentionally explicit.
-func buildScheduleMatrix(presence []presenceDay) scheduleMatrix {
+func buildScheduleMatrix(presence []presenceDay, floor int) scheduleMatrix {
 	memberByID := make(map[string]database.TeamMember)
 
 	for i := range presence {
@@ -334,13 +349,20 @@ func buildScheduleMatrix(presence []presenceDay) scheduleMatrix {
 	days := make([]scheduleMatrixDay, 0, len(presence))
 	for i := range presence {
 		day := presence[i]
+		atWork := len(day.Present)
 		days = append(days, scheduleMatrixDay{
 			DateISO:     day.DateISO,
 			DateDisplay: day.DateDisplay,
 			IsToday:     day.IsToday,
-			AtWorkCount: len(day.Present),
+			AtWorkCount: atWork,
 			WFHCount:    len(day.WFH),
 			LeaveCount:  len(day.Away),
+			// Flag the column when the at-work count has reached
+			// the WFH min-onsite floor. The "<=" covers both the
+			// "at the floor" case (no more WFH allowed) and the
+			// over-WFH case (which shouldn't happen but is a
+			// strong signal worth flagging).
+			AtWFHFloor: floor > 0 && atWork <= floor,
 		})
 	}
 

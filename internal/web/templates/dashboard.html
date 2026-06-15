@@ -144,7 +144,7 @@
                             </div>
                             <div class="mobile-day-totals">
                                 <span class="mobile-total-chip total-onsite" title="At work"><i class="fas fa-building"></i> {{$day.AtWorkCount}}</span>
-                                <span class="mobile-total-chip total-wfh" title="WFH"><i class="fas fa-home"></i> {{$day.WFHCount}}</span>
+                                <span class="mobile-total-chip total-wfh{{if $day.AtWFHFloor}} at-wfh-floor{{end}}"{{if $day.AtWFHFloor}} title="WFH at the min-onsite floor — no more WFH can be approved today"{{else}} title="WFH"{{end}}><i class="fas fa-home"></i> {{$day.WFHCount}}</span>
                                 <span class="mobile-total-chip total-away" title="On leave"><i class="fas fa-plane-departure"></i> {{$day.LeaveCount}}</span>
                             </div>
                         </div>
@@ -192,7 +192,7 @@
                                     {{end}}
                                     <div class="day-totals">
                                         <span title="At work"><i class="fas fa-building"></i> {{.AtWorkCount}}</span>
-                                        <span title="WFH"><i class="fas fa-home"></i> {{.WFHCount}}</span>
+                                        <span class="wfh-totals{{if .AtWFHFloor}} at-wfh-floor{{end}}"{{if .AtWFHFloor}} title="WFH at the min-onsite floor — no more WFH can be approved today"{{else}} title="WFH"{{end}}><i class="fas fa-home"></i> {{.WFHCount}}</span>
                                         <span title="On leave"><i class="fas fa-plane-departure"></i> {{.LeaveCount}}</span>
                                     </div>
                                 </th>
@@ -552,6 +552,17 @@
             color: #1d4ed8;
             background: #eff6ff;
             border-color: #bfdbfe;
+        }
+
+        /* Slightly orange tone for the WFH icon when the column
+           has hit the WFH min-onsite floor. The at-work count is
+           at (or below) the configured floor, so no more WFH can
+           be approved without breaching the policy. */
+        .wfh-totals.at-wfh-floor,
+        .total-wfh.at-wfh-floor {
+            color: #b45309;
+            background: #fff4e0;
+            border-color: #fcd9a5;
         }
 
         .total-away {

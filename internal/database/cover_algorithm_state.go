@@ -47,11 +47,20 @@ func (db *DB) GetCoverAlgorithmState(ctx context.Context) (CoverAlgorithmState, 
 // SetCoverAlgorithmApplied records that the algorithm version has been
 // applied, along with the timestamp and the number of covers that changed
 // during the run. Diagnostics for operators to confirm what a rerun did.
+//
+// Implemented as an upsert so the single-row invariant is enforced by
+// the query itself, not by relying on the migration to have inserted
+// the row. Without the ON CONFLICT clause, a row that was somehow
+// missing would silently affect 0 rows and leave the runner in a
+// permanent re-run loop.
 func (db *DB) SetCoverAlgorithmApplied(ctx context.Context, version, changed int) error {
 	_, err := db.db.ExecContext(ctx, `
-		UPDATE cover_algorithm_state
-		SET applied_version = ?, last_run_at = ?, last_run_changed = ?
-		WHERE id = 1
+		INSERT INTO cover_algorithm_state (id, applied_version, last_run_at, last_run_changed)
+		VALUES (1, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			applied_version = excluded.applied_version,
+			last_run_at = excluded.last_run_at,
+			last_run_changed = excluded.last_run_changed
 	`, version, time.Now().UTC(), changed)
 	return err
 }

@@ -246,3 +246,61 @@ func TestReassignCovers_OnlyAffectsActiveLeaves(t *testing.T) {
 	activeCovers := snapshotCovers(t, ctx, db, "2024-01-16", "2024-01-16")
 	require.NotEmpty(t, activeCovers["2024-01-16"], "active leave's cover must remain")
 }
+
+// TestReassignCovers_RespectsHolidayChecker pins down the property
+// the cmd-side startup hook relies on: when the maintenance is wired
+// with a holiday checker (as buildReassignmentMaintenance does at the
+// cmd layer, and as api.NewServer does on the server), a leave that
+// spans a holiday must not get a cover on the holiday. Without this,
+// the runner would diverge from the live server on any leave that
+// touches a configured holiday — the very bug the code review
+// caught.
+func TestReassignCovers_RespectsHolidayChecker(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+	_, err = db.AddTeamMember(ctx, "Charlie", "charlie@example.com")
+	require.NoError(t, err)
+
+	engine := NewEngine(db)
+	maintenance := NewScheduleMaintenance(db)
+
+	// Generate the schedule. 2024-01-16 is a Tuesday; treat it as a
+	// holiday. The leave is Mon-Fri, so it must skip 2024-01-16.
+	startDate := time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC)
+	endDate := time.Date(2024, 1, 19, 0, 0, 0, 0, time.UTC)
+	require.NoError(t, engine.GenerateSchedule(ctx, startDate, endDate))
+
+	holiday := time.Date(2024, 1, 16, 0, 0, 0, 0, time.UTC)
+	maintenance.SetHolidayChecker(func(date time.Time) bool {
+		return date.Equal(holiday)
+	})
+
+	// Bob is on leave all week, so covers should be assigned for
+	// Mon (2024-01-15) and Wed-Fri (2024-01-17 to 2024-01-19), but
+	// NOT for the holiday Tue (2024-01-16).
+	leaveID, err := db.CreateLeaveRecord(ctx, bobID, "2024-01-15", "2024-01-19")
+	require.NoError(t, err)
+	require.NoError(t, maintenance.HandleLeaveChange(ctx, leaveID))
+
+	// Sanity-check: the holiday has no cover.
+	holidayCovers := snapshotCovers(t, ctx, db, "2024-01-16", "2024-01-16")
+	require.Empty(t, holidayCovers["2024-01-16"], "holiday must not have a cover")
+
+	// Now run the reassignment. The covers for non-holiday days must
+	// remain; the holiday must STILL have no cover. The change count
+	// is zero because the state is already at the algorithm's output.
+	result, err := maintenance.ReassignCovers(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, result.LeavesProcessed)
+	require.Equal(t, 0, result.CoversChanged, "reassignment must not create a cover on the holiday")
+
+	holidayCovers = snapshotCovers(t, ctx, db, "2024-01-16", "2024-01-16")
+	require.Empty(t, holidayCovers["2024-01-16"], "reassignment must not introduce a cover on the holiday")
+}

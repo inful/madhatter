@@ -27,10 +27,20 @@ const CoverAlgorithmVersion = 2
 
 // ReassignResult summarizes a reassignment pass.
 type ReassignResult struct {
+	// LeavesProcessed is the number of leave rows that were walked.
 	LeavesProcessed int
-	CoversChanged   int
-	WasStale        bool
-	NewVersion      int
+	// CoversChanged is the number of leaves whose cover set actually
+	// moved during the run. For a multi-day leave that had one cover
+	// member swapped, this increments by 1 (one leave changed), not
+	// by the number of individual cover rows that flipped.
+	CoversChanged int
+	// WasStale is true when the runner detected that the on-disk
+	// applied version was behind the binary's CoverAlgorithmVersion
+	// and therefore re-ran the algorithm. False on a no-op call.
+	WasStale bool
+	// NewVersion is the version that is now considered "applied" to
+	// the rota after the run.
+	NewVersion int
 }
 
 // ReassignCovers re-runs the cover-assignment algorithm against every
@@ -44,11 +54,6 @@ type ReassignResult struct {
 //   - For completed/inactive leaves, HandleLeaveChange is a no-op (the
 //     reconcile step is already a no-op for them, and AssignCoversForLeave
 //     short-circuits on inactive status).
-//
-// The return value reports how many leaves were walked and how many had
-// their cover set actually change. The two are not equal: a multi-day
-// leave that flipped one cover counts as one leave touched but one
-// change observed (the underlying count of changed cover records).
 func (sm *ScheduleMaintenance) ReassignCovers(ctx context.Context) (ReassignResult, error) {
 	leaves, err := sm.db.GetLeaveRecords(ctx)
 	if err != nil {
@@ -115,20 +120,28 @@ func (sm *ScheduleMaintenance) ReassignCoversIfStale(ctx context.Context) (Reass
 // actually have a cover; a date with no cover (e.g. weekend, leave
 // member not scheduled) is absent. Used to diff before/after a
 // reassignment pass.
+//
+// One database round-trip per leave via GetAssignmentsByDateRange,
+// rather than one per day inside the leave.
 func snapshotLeaveCovers(ctx context.Context, db *database.DB, l *database.LeaveRecord) map[string]string {
 	out := make(map[string]string)
-	for d := l.StartDate; !d.After(l.EndDate); d = d.AddDate(0, 0, 1) {
-		dateStr := d.Format("2006-01-02")
-		assignments, err := db.GetAssignmentsByDate(ctx, dateStr)
-		if err != nil {
+	if l.EndDate.Before(l.StartDate) {
+		return out
+	}
+	assignments, err := db.GetAssignmentsByDateRange(
+		ctx,
+		l.StartDate.Format("2006-01-02"),
+		l.EndDate.Format("2006-01-02"),
+	)
+	if err != nil {
+		return out
+	}
+	// Group by date, picking the cover row only.
+	for i := range assignments {
+		if !assignments[i].IsCover {
 			continue
 		}
-		for j := range assignments {
-			if assignments[j].IsCover {
-				out[dateStr] = assignments[j].MemberID
-				break
-			}
-		}
+		out[assignments[i].Date] = assignments[i].MemberID
 	}
 	return out
 }

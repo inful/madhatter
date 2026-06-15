@@ -84,9 +84,9 @@ func TestEngine_CoverRotationWithFutureCoverStuck(t *testing.T) {
 	err = engine.AssignCoversForLeave(ctx, leave3ID)
 	require.NoError(t, err)
 
-	cover1 := getCoverMemberID(t, db, "2024-01-16")
-	cover2 := getCoverMemberID(t, db, "2024-01-17")
-	cover3 := getCoverMemberID(t, db, "2024-01-18")
+	cover1 := getCoverMemberID(t, ctx, db, "2024-01-16")
+	cover2 := getCoverMemberID(t, ctx, db, "2024-01-17")
+	cover3 := getCoverMemberID(t, ctx, db, "2024-01-18")
 
 	members, err := db.GetActiveTeamMembers(ctx)
 	require.NoError(t, err)
@@ -109,9 +109,9 @@ func TestEngine_CoverRotationWithFutureCoverStuck(t *testing.T) {
 
 // getCoverMemberID returns the member_id of the cover assignment for the
 // given date, or "" if no cover is present.
-func getCoverMemberID(t *testing.T, db *database.DB, date string) string {
+func getCoverMemberID(t *testing.T, ctx context.Context, db *database.DB, date string) string {
 	t.Helper()
-	assignments, err := db.GetAssignmentsByDate(context.Background(), date)
+	assignments, err := db.GetAssignmentsByDate(ctx, date)
 	require.NoError(t, err)
 	for _, a := range assignments {
 		if a.IsCover {

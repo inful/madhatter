@@ -396,32 +396,44 @@ func (e *Engine) ensureOriginalAssignment(ctx context.Context, dateStr string, l
 	return "", errMemberNotScheduled
 }
 
-// createCoverAssignment creates or updates a cover assignment.
-// If a cover already exists for the date, it updates the member_id.
-// Otherwise, it creates a new cover assignment.
+// createCoverAssignment creates or updates a cover assignment for the given
+// date. It is idempotent:
+//   - if a cover already exists with the same member, it is a no-op;
+//   - if a cover exists with a different member, the member_id is updated
+//     to point to the new person (e.g. when a cover themselves take leave);
+//   - if no cover exists, a new one is created.
+//
+// This idempotency is required because AssignCoversForLeave is invoked from
+// multiple paths (web form, API, manual reprocess, HandleLeaveChange
+// reconcile) and any of them may run more than once for the same leave.
 func (e *Engine) createCoverAssignment(ctx context.Context, dateStr, coverMemberID, originalAssignmentID string) error {
-	// Check if there's already a cover assignment for this date
+	// Check if there's already a cover assignment for this date.
 	existingAssignments, err := e.db.GetAssignmentsByDate(ctx, dateStr)
 	if err != nil {
 		return err
 	}
 
 	for _, a := range existingAssignments {
-		if a.IsCover && a.MemberID != coverMemberID {
-			// Update the existing cover to point to the new person
-			// Parse the date string to time.Time for the SQL query
-			dateTime, parseErr := time.Parse("2006-01-02", dateStr)
-			if parseErr != nil {
-				return parseErr
-			}
-
-			query := `UPDATE rota_assignments SET member_id = ? WHERE date = ? AND is_cover = 1`
-			_, err = e.db.ExecContext(ctx, query, coverMemberID, dateTime)
-			return err
+		if !a.IsCover {
+			continue
 		}
+		if a.MemberID == coverMemberID {
+			// Cover already points at the right person; leave it alone.
+			return nil
+		}
+		// Cover exists but with a different member (e.g. the original
+		// cover themselves took leave). Re-point the cover in place.
+		dateTime, parseErr := time.Parse("2006-01-02", dateStr)
+		if parseErr != nil {
+			return parseErr
+		}
+
+		query := `UPDATE rota_assignments SET member_id = ? WHERE date = ? AND is_cover = 1`
+		_, err = e.db.ExecContext(ctx, query, coverMemberID, dateTime)
+		return err
 	}
 
-	// No existing cover, create a new one
+	// No existing cover, create a new one.
 	_, err = e.db.CreateRotaAssignment(ctx, dateStr, coverMemberID, true, &originalAssignmentID)
 	return err
 }

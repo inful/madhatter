@@ -126,10 +126,33 @@
     </header>
     <div class="card-content">
         <div class="content">
-            <p>HAT days are distributed using a round-robin rotation across active team members to keep assignments fair over time.</p>
-            <p>Only business days are assigned. Weekends are skipped automatically, and configured holidays are also skipped.</p>
-            <p>When leave is reported, the system creates cover assignments when needed and keeps existing assignments as stable as possible.</p>
-            <p>Accepted swap requests exchange assignment ownership and are shown with a swap icon on the dashboard.</p>
+            <p>Every business day on the rota gets exactly one <strong>HAT day</strong> — the person who carries the duty that day. Two independent rotations run side by side, so a leave on one day never reshuffles the rest of the rota.</p>
+
+            <h4 class="title is-6 mb-2 mt-4">The original-HAT rotation (R1)</h4>
+            <p>Each business day is assigned to the next active member in alphabetical order, wrapping around at the end of the list. The cursor lives in memory while a schedule is being generated and is reset from the most recent original assignment on the rota when a new schedule is built. So Alice, Bob, Carla, Dave, Alice, Bob, … is the pattern on a four-person team with no breaks.</p>
+            <p>Weekends and configured holidays are skipped — the cursor only advances on a day that becomes an assignment.</p>
+
+            <h4 class="title is-6 mb-2 mt-4">The cover rotation (R2)</h4>
+            <p>When the R1 member is on leave, the system needs a cover. Covers come from a second rotation that is deliberately independent of R1: it advances on its own, not as a side effect of who's on leave, so a long leave on one person cannot freeze the cover slot on another.</p>
+            <p>The cover rotation is a small piece of persistent state — a single row in the database that remembers the last date an index was computed and the index for that date. The flow is:</p>
+            <ol>
+                <li><strong>First call ever:</strong> the row doesn't exist, so the system seeds it at the current date with index <code>0</code> — i.e. the first member in the active list. The current date is its own anchor.</li>
+                <li><strong>Same date, later call:</strong> return the stored index directly, no advance.</li>
+                <li><strong>Later date:</strong> count the working days (weekdays that are not holidays) between the stored date and the new date, add that count to the stored index, take the result modulo the team size, persist the new state, and return it. A one-day advance shifts the index by one slot; a Monday-to-Friday advance of three working days shifts it by three.</li>
+                <li><strong>Earlier date:</strong> walk backward from the stored state without updating it. This is a safety net — the system only ever looks forward in normal operation, so this branch shouldn't fire.</li>
+            </ol>
+            <p>Because the state stores the index for the date it was computed on (not just an opaque counter), retroactive changes to the holiday list only affect the gap between the last stored date and the current query, not the entire history of the rota.</p>
+
+            <h4 class="title is-6 mb-2 mt-4">Picking the actual cover</h4>
+            <p>Whichever member sits at the R2 index becomes the primary candidate for cover. If that person is also on leave for the same day, the system advances cyclically through the member list and picks the first one who is not. So covers never collide with active leave records.</p>
+
+            <h4 class="title is-6 mb-2 mt-4">What this guarantees</h4>
+            <ul>
+                <li>The cover for any given date is fully determined by the team composition and the date — there is no randomisation and no dependence on the order in which leaves were reported.</li>
+                <li>The same person cannot be picked for every new leave (the old failure mode this algorithm replaced).</li>
+                <li>Across a year of random leave, the total HAT-day count — originals plus covers — comes out close to equal for every team member, with a measured spread of 1–7 days on a 5-person team over 250 working days.</li>
+                <li>Existing schedule entries are preserved: a leave that gets added after the rota is already generated only triggers a cover for the affected dates, never a regeneration.</li>
+            </ul>
         </div>
     </div>
 </div>

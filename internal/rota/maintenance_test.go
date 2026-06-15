@@ -608,10 +608,23 @@ func TestGenerateMissingDays_HolidayOnlyRange(t *testing.T) {
 	assert.False(t, created, "no assignment should be created when the range is all holidays")
 }
 
-// TestGetStartingMemberIndex_SkipsWeekendBoundary verifies that when the schedule
-// starts on a Monday the rotation anchor is seeded from the most recent Friday
-// assignment (not from Sunday which has no assignment).
-func TestGetStartingMemberIndex_SkipsWeekendBoundary(t *testing.T) {
+// TestGenerateMissingDays_ContinuesFromPersistedR1State verifies that
+// when the schedule resumes on a Monday after a gap, the R1
+// rotation continues from the persisted state rather than
+// restarting from index 0. Without persistence, a sub-range call
+// to GenerateMissingDays would always start the rotation from
+// the first member; with persistence, the state advances
+// monotonically across the gap.
+//
+// Uses 3 members (Alice, Bob, Charlie) so the rotation is
+// distinguishable across the gap: Mon=Alice, Tue=Bob,
+// Wed=Charlie, Thu=Alice, Fri=Bob. The persisted R1 state lands
+// on (Friday, 1) after the Friday write. The Friday→Monday
+// working-day delta is 1 (Friday itself is a working day and is
+// counted in the half-open interval), so Monday's index is
+// (1 + 1) % 3 = 2 = Charlie. Without persisted state, Monday
+// would be Alice (index 0).
+func TestGenerateMissingDays_ContinuesFromPersistedR1State(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -621,35 +634,38 @@ func TestGetStartingMemberIndex_SkipsWeekendBoundary(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
 	require.NoError(t, err)
-
-	maintenance := NewScheduleMaintenance(db)
-
-	// Create an assignment on Friday 2026-01-09.
-	friday := time.Date(2026, time.January, 9, 0, 0, 0, 0, time.UTC)
-	_, err = db.CreateRotaAssignment(ctx, friday.Format("2006-01-02"), func() string {
-		members, _ := db.GetActiveTeamMembers(ctx)
-		return members[0].ID // Alice
-	}(), false, nil)
+	_, err = db.AddTeamMember(ctx, "Charlie", "charlie@example.com")
 	require.NoError(t, err)
 
-	// Generate assignments starting from Monday 2026-01-12.
-	// The rotation should continue from Alice, so Monday gets Bob.
+	engine := NewEngine(db)
+	maintenance := NewScheduleMaintenance(db)
+
+	weekStart := time.Date(2026, time.January, 5, 0, 0, 0, 0, time.UTC) // Mon
+	weekEnd := time.Date(2026, time.January, 9, 0, 0, 0, 0, time.UTC)   // Fri
+	require.NoError(t, engine.GenerateSchedule(ctx, weekStart, weekEnd))
+
 	monday := time.Date(2026, time.January, 12, 0, 0, 0, 0, time.UTC)
 	created, err := maintenance.GenerateMissingDays(ctx, monday, monday)
 	require.NoError(t, err)
 	assert.True(t, created, "assignment should be created for Monday")
 
+	members, err := db.GetActiveTeamMembers(ctx)
+	require.NoError(t, err)
+	require.Len(t, members, 3)
+	bobID, charlieID := members[1].ID, members[2].ID
+
+	fridayAssignments, err := db.GetAssignmentsByDate(ctx, weekEnd.Format("2006-01-02"))
+	require.NoError(t, err)
+	require.NotEmpty(t, fridayAssignments)
+	assert.Equal(t, bobID, fridayAssignments[0].MemberID,
+		"Friday's R1 should be Bob (rotation: Alice, Bob, Charlie, Alice, Bob)")
+
 	mondayAssignments, err := db.GetAssignmentsByDate(ctx, monday.Format("2006-01-02"))
 	require.NoError(t, err)
 	require.NotEmpty(t, mondayAssignments)
-
-	members, err := db.GetActiveTeamMembers(ctx)
-	require.NoError(t, err)
-	require.Len(t, members, 2)
-
-	// Friday was assigned to Alice (members[0]); Monday should be Bob (members[1]).
-	assert.Equal(t, members[1].ID, mondayAssignments[0].MemberID,
-		"Monday rotation should continue from Friday's Alice assignment, so Bob is next")
+	assert.Equal(t, charlieID, mondayAssignments[0].MemberID,
+		"Monday's R1 should be Charlie — the persisted state advanced from Friday's "+
+			"Bob by one working day, mod 3. Without persistence, Monday would be Alice.")
 }
 
 // TestScheduleMaintenance_DeleteLeave_RestoresOriginalAssignments is a regression

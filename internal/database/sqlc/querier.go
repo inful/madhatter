@@ -89,6 +89,13 @@ type Querier interface {
 	GetOutboxEntry(ctx context.Context, id string) (NotificationOutbox, error)
 	GetPendingSwapsForMember(ctx context.Context, targetMemberID string) ([]HatSwap, error)
 	GetPendingWFHRequestsForSettlement(ctx context.Context, date time.Time) ([]GetPendingWFHRequestsForSettlementRow, error)
+	// Returns the R1 (original-HAT) rotation state, or sql.ErrNoRows
+	// if no R1 assignment has been written yet. The R1 rotation is
+	// kept in its own table (r1_rotation_state) so its write rules
+	// (only advance on successful assignment write) don't collide
+	// with the cover rotation's write rules (advance on every
+	// computation).
+	GetR1RotationState(ctx context.Context) (R1RotationState, error)
 	GetSessionByToken(ctx context.Context, token string) (GetSessionByTokenRow, error)
 	GetSubscriptionByToken(ctx context.Context, token string) (CalendarSubscription, error)
 	GetSubscriptionsByMemberID(ctx context.Context, memberID string) ([]CalendarSubscription, error)
@@ -140,6 +147,11 @@ type Querier interface {
 	// updates it in place. The table is constrained to a single row by
 	// the CHECK (id = 1) clause, so this is the only way to write it.
 	UpsertCoverRotationState(ctx context.Context, arg UpsertCoverRotationStateParams) error
+	// Writes the R1 rotation state. The table holds at most one
+	// row, so this either inserts the first row or replaces the
+	// existing one. R1 is keyed by the (date, index) pair of the
+	// most recently written original assignment.
+	UpsertR1RotationState(ctx context.Context, arg UpsertR1RotationStateParams) error
 }
 
 var _ Querier = (*Queries)(nil)

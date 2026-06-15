@@ -80,10 +80,9 @@ func (e *Engine) GenerateSchedule(ctx context.Context, startDate, endDate time.T
 	}
 
 	currentDate := startDate
-	memberIndex := 0
 
 	for currentDate.Before(endDate.AddDate(0, 0, 1)) {
-		if err := e.processDate(ctx, currentDate, members, &memberIndex); err != nil {
+		if err := e.processDate(ctx, currentDate, members); err != nil {
 			return err
 		}
 		currentDate = currentDate.AddDate(0, 0, 1)
@@ -92,8 +91,18 @@ func (e *Engine) GenerateSchedule(ctx context.Context, startDate, endDate time.T
 	return nil
 }
 
-// processDate handles assignment for a single date.
-func (e *Engine) processDate(ctx context.Context, currentDate time.Time, members []database.TeamMember, memberIndex *int) error {
+// processDate handles assignment for a single date. The R1 (original)
+// member is read from the persisted R1 rotation state, not from an
+// in-memory cursor — this is what lets schedule generation be split
+// across multiple calls (EnsureSchedule, GenerateMissingDays,
+// RegenerateSchedule) without losing the cursor's place.
+//
+// On a successful original-assignment write the R1 state is advanced
+// to (currentDate, usedIndex), so the next business day's index
+// will be one slot further. The advance is keyed off the actual
+// write, not off processDate's call, which is the rule "R1 only
+// advances when a new original assignment is written".
+func (e *Engine) processDate(ctx context.Context, currentDate time.Time, members []database.TeamMember) error {
 	// Skip weekends
 	if currentDate.Weekday() == time.Saturday || currentDate.Weekday() == time.Sunday {
 		return nil
@@ -110,17 +119,20 @@ func (e *Engine) processDate(ctx context.Context, currentDate time.Time, members
 		return err
 	}
 
-	originalMember := members[*memberIndex]
+	r1Index, err := e.r1RotationIndex(ctx, currentDate, len(members))
+	if err != nil {
+		return err
+	}
+	originalMember := members[r1Index]
 	coveringMember, err := e.determineCoveringMember(ctx, originalMember, leaves, members, currentDate)
 	if err != nil {
 		return err
 	}
 
-	if err := e.createAssignment(ctx, dateStr, originalMember, coveringMember, leaves); err != nil {
+	if err := e.createAssignment(ctx, currentDate, dateStr, r1Index, originalMember, coveringMember); err != nil {
 		return err
 	}
 
-	*memberIndex = (*memberIndex + 1) % len(members)
 	return nil
 }
 
@@ -155,8 +167,24 @@ func (e *Engine) determineCoveringMember(ctx context.Context, originalMember dat
 	return originalMember, nil
 }
 
-// createAssignment creates the rota assignment.
-func (e *Engine) createAssignment(ctx context.Context, dateStr string, originalMember, coveringMember database.TeamMember, _ []database.LeaveRecord) error {
+// createAssignment writes the rota assignment for one date and, on a
+// successful original-assignment insert, advances the R1 rotation
+// state to (currentDate, r1Index). The advance is the "only when a
+// new original assignment is written" rule: a failed write leaves
+// the state untouched so a retry can pick up at the same index.
+//
+// currentDate is the time.Time the engine was processing (used to
+// stamp the new R1 state); dateStr is the same date formatted for
+// the assignment row. r1Index is the member slot the caller chose
+// from the persisted R1 state — it is what we record as the index
+// for this date in the new state row.
+func (e *Engine) createAssignment(
+	ctx context.Context,
+	currentDate time.Time,
+	dateStr string,
+	r1Index int,
+	originalMember, coveringMember database.TeamMember,
+) error {
 	isCover := coveringMember.ID != originalMember.ID
 
 	if isCover {
@@ -167,15 +195,38 @@ func (e *Engine) createAssignment(ctx context.Context, dateStr string, originalM
 		if err != nil {
 			return err
 		}
+		// The original is on disk; advance R1 before the cover
+		// write. If the cover write fails the next HandleLeaveChange
+		// pass will re-create it, and the R1 state is already
+		// correct (the original was written, so advancing was
+		// correct).
+		if advanceErr := e.advanceR1RotationState(ctx, currentDate, r1Index); advanceErr != nil {
+			return advanceErr
+		}
 
 		// Create the cover assignment
 		_, err = e.db.CreateRotaAssignment(ctx, dateStr, coveringMember.ID, true, &originalAssignmentID)
 		return err
 	}
 
-	// For non-cover assignments, just create normally
-	_, err := e.db.CreateRotaAssignment(ctx, dateStr, coveringMember.ID, false, nil)
-	return err
+	// For non-cover assignments, just create the original.
+	if _, err := e.db.CreateRotaAssignment(ctx, dateStr, coveringMember.ID, false, nil); err != nil {
+		return err
+	}
+	return e.advanceR1RotationState(ctx, currentDate, r1Index)
+}
+
+// advanceR1RotationState persists the R1 (last_date, last_index)
+// pair. Truncates currentDate to midnight UTC so equality checks
+// against the stored state work in the same coordinate space as
+// the R2 rotation. Uses an INSERT-on-conflict-do-nothing to seed
+// the row on the very first call: the row must exist (id = 1, set
+// by the R2 path or by an earlier R1 write) but a concurrent
+// first-call from the R2 path is fine — the second writer just
+// overwrites with the same pair.
+func (e *Engine) advanceR1RotationState(ctx context.Context, currentDate time.Time, index int) error {
+	truncated := currentDate.UTC().Truncate(hoursPerDay * time.Hour)
+	return e.db.UpsertR1RotationState(ctx, truncated, index)
 }
 
 // findCover returns members[startIndex] if they are not on leave, or the
@@ -383,6 +434,62 @@ func (e *Engine) coverRotationIndex(ctx context.Context, currentDate time.Time, 
 		// operation. Walk backward from the stored state without
 		// updating it — a later forward call will overwrite the state
 		// with the correct forward-computed index.
+		delta := e.workingDaysBetween(currentDate, lastDate)
+		return modNonNegative(lastIndex-delta, teamSize), nil
+	}
+}
+
+// r1RotationIndex returns the R1 (original-HAT) rotation index for
+// currentDate, computed from the persisted R1 sub-state of
+// cover_rotation_state. Unlike coverRotationIndex, this is a pure
+// read: the state is NOT advanced as a side effect. Callers must
+// persist the new state themselves (via UpsertR1RotationState)
+// after they have actually written the corresponding original
+// assignment — this is what gives the R1 rotation the property
+// "only advances when a new original assignment is written". A
+// failed write leaves the state untouched, so the next successful
+// attempt picks up at the same index.
+//
+// The state shape is identical to R2's: a (last_date, last_index)
+// pair. The index for a later date is the stored index plus the
+// number of working days between, modulo teamSize. On the first
+// call after a fresh database the R1 sub-state is null, so the
+// function returns 0 (the first member in the alphabetical list)
+// without persisting — the caller will write the state after the
+// corresponding assignment lands.
+//
+// If a caller ever queries for a date before the stored state (which
+// should not happen — the engine only looks forward), we walk
+// backward from the stored state without updating it.
+func (e *Engine) r1RotationIndex(ctx context.Context, currentDate time.Time, teamSize int) (int, error) {
+	if teamSize <= 0 {
+		return 0, nil
+	}
+	currentDate = currentDate.UTC().Truncate(hoursPerDay * time.Hour)
+
+	lastDate, lastIndex, err := e.db.GetR1RotationState(ctx)
+	if err != nil {
+		// sql.ErrNoRows is expected on the very first call: the
+		// R1 sub-state hasn't been seeded yet. Return index 0
+		// without persisting — the caller writes the state after
+		// the assignment lands.
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("read R1 rotation state: %w", err)
+	}
+
+	lastDate = lastDate.UTC().Truncate(hoursPerDay * time.Hour)
+
+	switch {
+	case currentDate.Equal(lastDate):
+		return modNonNegative(lastIndex, teamSize), nil
+
+	case currentDate.After(lastDate):
+		delta := e.workingDaysBetween(lastDate, currentDate)
+		return modNonNegative(lastIndex+delta, teamSize), nil
+
+	default:
 		delta := e.workingDaysBetween(currentDate, lastDate)
 		return modNonNegative(lastIndex-delta, teamSize), nil
 	}

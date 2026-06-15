@@ -129,8 +129,9 @@
             <p>Every business day on the rota gets exactly one <strong>HAT day</strong> — the person who carries the duty that day. Two independent rotations run side by side, so a leave on one day never reshuffles the rest of the rota.</p>
 
             <h4 class="title is-6 mb-2 mt-4">The original-HAT rotation (R1)</h4>
-            <p>Each business day is assigned to the next active member in alphabetical order, wrapping around at the end of the list. The cursor lives in memory while a schedule is being generated and is reset from the most recent original assignment on the rota when a new schedule is built. So Alice, Bob, Carla, Dave, Alice, Bob, … is the pattern on a four-person team with no breaks.</p>
-            <p>Weekends and configured holidays are skipped — the cursor only advances on a day that becomes an assignment.</p>
+            <p>Each business day is assigned to the next active member in alphabetical order, wrapping around at the end of the list. The R1 index is read from a small persisted state row that records the date of the most recent original assignment and the index that was used. So Alice, Bob, Carla, Dave, Alice, Bob, … is the pattern on a four-person team with no breaks.</p>
+            <p>Because the state persists in the database, a schedule that is generated in multiple calls — for example, a 14-day rolling window that runs on every page load, or a partial regeneration of a sub-range — picks up exactly where the previous call left off. There is no in-memory cursor to clobber, so a concurrent regeneration can't roll the rotation back.</p>
+            <p>The R1 state advances <em>only</em> when a new original assignment is successfully written. A failed write leaves the state untouched, so a retry picks up at the same index. Weekends and configured holidays are skipped — the index only advances on a day that becomes an assignment.</p>
 
             <h4 class="title is-6 mb-2 mt-4">The cover rotation (R2)</h4>
             <p>When the R1 member is on leave, the system needs a cover. Covers come from a second rotation that is deliberately independent of R1: it advances on its own, not as a side effect of who's on leave, so a long leave on one person cannot freeze the cover slot on another.</p>
@@ -148,10 +149,10 @@
 
             <h4 class="title is-6 mb-2 mt-4">What this guarantees</h4>
             <ul>
-                <li>The cover for any given date is fully determined by the team composition and the date — there is no randomisation and no dependence on the order in which leaves were reported.</li>
+                <li>The R1 (original) and R2 (cover) for any given date are both fully determined by the team composition and the date — there is no randomisation and no dependence on the order in which leaves were reported or the order in which the schedule was generated.</li>
                 <li>The same person cannot be picked for every new leave (the old failure mode this algorithm replaced).</li>
-                <li>Across a year of random leave, the total HAT-day count — originals plus covers — comes out close to equal for every team member, with a measured spread of 1–7 days on a 5-person team over 250 working days.</li>
-                <li>Existing schedule entries are preserved: a leave that gets added after the rota is already generated only triggers a cover for the affected dates, never a regeneration.</li>
+                <li>Across a year of random leave, the total HAT-day count — originals plus covers — comes out close to equal for every team member, with a measured spread of 1–6 days on a 5-person team over 250 working days.</li>
+                <li>Existing schedule entries are preserved: a leave that gets added after the rota is already generated only triggers a cover for the affected dates, never a regeneration. A regeneration of a sub-range reuses the persisted state, so the rotation continues from where the surrounding schedule left off instead of restarting from the first member.</li>
             </ul>
         </div>
     </div>

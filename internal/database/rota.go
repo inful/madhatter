@@ -139,6 +139,29 @@ func (db *DB) UpsertCoverRotationState(ctx context.Context, date time.Time, inde
 	})
 }
 
+// GetR1RotationState returns the R1 (original-HAT) rotation state
+// (last_date, last_index). Returns sql.ErrNoRows if no R1
+// assignment has been written yet. The R1 state lives in its own
+// table (r1_rotation_state) so its write rules don't collide with
+// the cover rotation's.
+func (db *DB) GetR1RotationState(ctx context.Context) (time.Time, int, error) {
+	row, err := db.queries.GetR1RotationState(ctx)
+	if err != nil {
+		return time.Time{}, 0, err
+	}
+	return row.LastDate, int(row.LastIndex), nil
+}
+
+// UpsertR1RotationState writes the R1 rotation state. The table
+// holds at most one row, so this either inserts the first row or
+// replaces the existing one.
+func (db *DB) UpsertR1RotationState(ctx context.Context, date time.Time, index int) error {
+	return db.queries.UpsertR1RotationState(ctx, sqlc.UpsertR1RotationStateParams{
+		LastDate:  date,
+		LastIndex: int64(index),
+	})
+}
+
 // GetLatestAssignmentDate returns the latest date that has any assignments.
 // Returns empty string if no assignments exist.
 func (db *DB) GetLatestAssignmentDate(ctx context.Context) (string, error) {

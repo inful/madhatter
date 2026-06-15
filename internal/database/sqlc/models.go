@@ -93,6 +93,11 @@ type OauthToken struct {
 	UpdatedAt    sql.NullTime   `json:"updated_at"`
 }
 
+type R1RotationState struct {
+	LastDate  time.Time `json:"last_date"`
+	LastIndex int64     `json:"last_index"`
+}
+
 type RotaAssignment struct {
 	ID                   string         `json:"id"`
 	Date                 time.Time      `json:"date"`

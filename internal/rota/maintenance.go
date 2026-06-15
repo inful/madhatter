@@ -116,6 +116,12 @@ func (sm *ScheduleMaintenance) hasBusinessGap(ctx context.Context, startDate, en
 // This is the core method that implements "static as possible" scheduling.
 // It only creates assignments for dates that don't have any assignments yet.
 // Returns true if assignments were created, false otherwise.
+//
+// The R1 (original-HAT) rotation index is read from the persisted
+// R1 state on every date, so there is no in-memory cursor to seed
+// or carry across calls. The state advances on every original
+// assignment write, regardless of how this method is called (full
+// schedule, gap fill, regeneration).
 func (sm *ScheduleMaintenance) GenerateMissingDays(ctx context.Context, startDate, endDate time.Time) (bool, error) {
 	// Get existing assignments and validate
 	datesWithAssignments, err := sm.getDatesWithAssignments(ctx, startDate, endDate)
@@ -133,14 +139,8 @@ func (sm *ScheduleMaintenance) GenerateMissingDays(ctx context.Context, startDat
 		return false, errors.New("no active team members")
 	}
 
-	// Determine starting position in rotation
-	memberIndex, err := sm.getStartingMemberIndex(ctx, startDate, members)
-	if err != nil {
-		return false, err
-	}
-
 	// Generate assignments for missing dates
-	return sm.generateAssignmentsForMissingDates(ctx, startDate, endDate, datesWithAssignments, members, memberIndex)
+	return sm.generateAssignmentsForMissingDates(ctx, startDate, endDate, datesWithAssignments, members)
 }
 
 // getDatesWithAssignments retrieves all dates that already have assignments in the given range.
@@ -162,50 +162,15 @@ func (sm *ScheduleMaintenance) getDatesWithAssignments(ctx context.Context, star
 	return datesWithAssignments, nil
 }
 
-// getStartingMemberIndex determines where to start in the rotation.
-// It walks backwards from startDate (up to lookbackDays calendar days) looking
-// for the most recent *non-cover* assignment on a business day so that the
-// rotation anchor is always deterministic, unaffected by weekend boundaries or
-// the presence of cover assignments on the preceding day.
-func (sm *ScheduleMaintenance) getStartingMemberIndex(ctx context.Context, startDate time.Time, members []database.TeamMember) (int, error) {
-	const lookbackDays = 30
-
-	for i := 1; i <= lookbackDays; i++ {
-		day := startDate.AddDate(0, 0, -i)
-
-		// Skip weekends - they never have original assignments.
-		if day.Weekday() == time.Saturday || day.Weekday() == time.Sunday {
-			continue
-		}
-
-		// Skip holidays if a checker is configured.
-		if sm.engine.holidayChecker != nil && sm.engine.holidayChecker(day) {
-			continue
-		}
-
-		assignments, err := sm.db.GetAssignmentsByDateRange(
-			ctx,
-			day.Format("2006-01-02"),
-			day.Format("2006-01-02"),
-		)
-		if err != nil {
-			return 0, fmt.Errorf("failed to get assignments before range: %w", err)
-		}
-
-		// Find a non-cover original assignment - this is the R1 rotation anchor.
-		for _, a := range assignments {
-			if !a.IsCover {
-				memberIndex := sm.findMemberIndex(members, a.MemberID)
-				if memberIndex != -1 {
-					return (memberIndex + 1) % len(members), nil
-				}
-			}
-		}
-	}
-
-	// No prior original assignment found; start the rotation from the beginning.
-	return 0, nil
-}
+// getStartingMemberIndex was removed when the R1 (original-HAT)
+// rotation became a persisted state. The previous implementation
+// walked back up to 30 days looking for the most recent
+// non-cover original assignment so a sub-range regeneration could
+// pick up where the prior range left off. That work is now
+// unnecessary: the R1 state row holds (last_date, last_index) and
+// r1RotationIndex advances from it directly, so every call to
+// processDate continues the rotation from wherever the last
+// successful write landed.
 
 // generateAssignmentsForMissingDates creates assignments only for dates without them.
 func (sm *ScheduleMaintenance) generateAssignmentsForMissingDates(
@@ -213,7 +178,6 @@ func (sm *ScheduleMaintenance) generateAssignmentsForMissingDates(
 	startDate, endDate time.Time,
 	datesWithAssignments map[string]bool,
 	members []database.TeamMember,
-	memberIndex int,
 ) (bool, error) {
 	createdAny := false
 	currentDate := startDate
@@ -224,7 +188,7 @@ func (sm *ScheduleMaintenance) generateAssignmentsForMissingDates(
 			continue
 		}
 
-		if err := sm.engine.processDate(ctx, currentDate, members, &memberIndex); err != nil {
+		if err := sm.engine.processDate(ctx, currentDate, members); err != nil {
 			return createdAny, fmt.Errorf("failed to create assignment for %s: %w",
 				currentDate.Format("2006-01-02"), err)
 		}
@@ -270,6 +234,13 @@ func (sm *ScheduleMaintenance) HandleTeamChange(ctx context.Context) error {
 
 // RegenerateSchedule creates a fresh schedule from scratch, replacing all existing assignments
 // in the specified date range. This is useful for initial team setup or schedule resets.
+//
+// The R1 rotation index is read from the persisted R1 state on every
+// date, so regeneration continues the rotation from wherever the
+// last successful write landed. The state advances as each new
+// original assignment is written, so a re-run of this method (after
+// a DeleteAssignmentsInRange) produces a self-consistent schedule
+// without any look-back logic.
 func (sm *ScheduleMaintenance) RegenerateSchedule(ctx context.Context, start, end time.Time) (int, error) {
 	// Get active team members before rebuilding the range.
 	members, err := sm.db.GetActiveTeamMembers(ctx)
@@ -281,11 +252,6 @@ func (sm *ScheduleMaintenance) RegenerateSchedule(ctx context.Context, start, en
 		return 0, errors.New("no active team members")
 	}
 
-	memberIndex, err := sm.getStartingMemberIndex(ctx, start, members)
-	if err != nil {
-		return 0, err
-	}
-
 	// Delete existing assignments in the date range
 	err = sm.db.DeleteAssignmentsInRange(ctx, start.Format("2006-01-02"), end.Format("2006-01-02"))
 	if err != nil {
@@ -293,7 +259,7 @@ func (sm *ScheduleMaintenance) RegenerateSchedule(ctx context.Context, start, en
 	}
 
 	for currentDate := start; !currentDate.After(end); currentDate = currentDate.AddDate(0, 0, 1) {
-		if err = sm.engine.processDate(ctx, currentDate, members, &memberIndex); err != nil {
+		if err = sm.engine.processDate(ctx, currentDate, members); err != nil {
 			return 0, fmt.Errorf("failed to regenerate assignment for %s: %w",
 				currentDate.Format("2006-01-02"), err)
 		}
@@ -444,16 +410,9 @@ func (sm *ScheduleMaintenance) findOriginalMemberID(assignments []database.RotaA
 	return ""
 }
 
-// findMemberIndex finds the index of a member in the members slice.
-// Returns -1 if not found.
-func (sm *ScheduleMaintenance) findMemberIndex(members []database.TeamMember, memberID string) int {
-	if memberID == "" {
-		return -1
-	}
-	for i, m := range members {
-		if m.ID == memberID {
-			return i
-		}
-	}
-	return -1
-}
+// findMemberIndex was removed when the R1 (original-HAT) rotation
+// became a persisted state. The previous implementation lived here
+// because the look-back logic in getStartingMemberIndex needed to
+// find the index of a member by ID; both that look-back and the
+// helper that supported it are gone, replaced by the state-based
+// r1RotationIndex.

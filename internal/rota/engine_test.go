@@ -448,9 +448,8 @@ func TestEngine_processDate_SkipsWeekends(t *testing.T) {
 	// Test Saturday
 	saturday := time.Date(2024, 1, 13, 0, 0, 0, 0, time.UTC)
 	members := []database.TeamMember{{ID: aliceID, Name: "Alice"}}
-	memberIndex := 0
 
-	err = engine.processDate(ctx, saturday, members, &memberIndex)
+	err = engine.processDate(ctx, saturday, members)
 	require.NoError(t, err)
 
 	// No assignment should be created
@@ -460,7 +459,7 @@ func TestEngine_processDate_SkipsWeekends(t *testing.T) {
 
 	// Test Sunday
 	sunday := time.Date(2024, 1, 14, 0, 0, 0, 0, time.UTC)
-	err = engine.processDate(ctx, sunday, members, &memberIndex)
+	err = engine.processDate(ctx, sunday, members)
 	require.NoError(t, err)
 
 	// No assignment should be created
@@ -547,7 +546,7 @@ func TestEngine_createAssignment_Cover(t *testing.T) {
 	originalMember := database.TeamMember{ID: aliceID, Name: "Alice"}
 	coveringMember := database.TeamMember{ID: bobID, Name: "Bob"}
 
-	err = engine.createAssignment(ctx, "2024-01-15", originalMember, coveringMember, []database.LeaveRecord{})
+	err = engine.createAssignment(ctx, time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC), "2024-01-15", 0, originalMember, coveringMember)
 	require.NoError(t, err)
 
 	// Verify two assignments created
@@ -586,7 +585,7 @@ func TestEngine_createAssignment_NoCover(t *testing.T) {
 
 	member := database.TeamMember{ID: aliceID, Name: "Alice"}
 
-	err = engine.createAssignment(ctx, "2024-01-15", member, member, []database.LeaveRecord{})
+	err = engine.createAssignment(ctx, time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC), "2024-01-15", 0, member, member)
 	require.NoError(t, err)
 
 	// Verify single assignment created

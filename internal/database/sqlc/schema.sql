@@ -243,3 +243,19 @@ CREATE TABLE IF NOT EXISTS cover_rotation_state (
     last_date DATE NOT NULL,
     last_index INTEGER NOT NULL
 );
+
+-- R1 (original-HAT) rotation state. Stores the last written
+-- original-assignment index and the date it was written for. The
+-- R1 index for a given date D is
+-- (state.last_index + working_days(state.last_date, D)) % team_size.
+-- The R1 state advances only when a new original assignment is
+-- written (see Engine.advanceR1RotationState), which is a
+-- different write rule from R2's — R2 advances on every
+-- cover-index computation. The two rotations are kept in
+-- separate tables to avoid an INSERT in one path corrupting the
+-- other's state. See migration 000018 and Engine.r1RotationIndex
+-- in internal/rota.
+CREATE TABLE IF NOT EXISTS r1_rotation_state (
+    last_date DATE NOT NULL,
+    last_index INTEGER NOT NULL
+);

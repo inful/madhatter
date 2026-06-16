@@ -10,8 +10,35 @@ import (
 	"database/sql"
 )
 
+const approveUser = `-- name: ApproveUser :one
+UPDATE users
+SET is_active = 1, deactivated_at = NULL, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+RETURNING id, email, name, provider, provider_id, is_admin, is_active, deactivated_at, created_at, updated_at
+`
+
+// Activates a pending user. The deactivated_at column stays NULL
+// (it was NULL while pending and is cleared on approve).
+func (q *Queries) ApproveUser(ctx context.Context, id string) (User, error) {
+	row := q.db.QueryRowContext(ctx, approveUser, id)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.Name,
+		&i.Provider,
+		&i.ProviderID,
+		&i.IsAdmin,
+		&i.IsActive,
+		&i.DeactivatedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const countAdmins = `-- name: CountAdmins :one
-SELECT COUNT(*) FROM users 
+SELECT COUNT(*) FROM users
 WHERE is_admin = 1 AND is_active = 1
 `
 
@@ -22,34 +49,47 @@ func (q *Queries) CountAdmins(ctx context.Context) (int64, error) {
 	return count, err
 }
 
-const createUser = `-- name: CreateUser :one
+const countPendingUsers = `-- name: CountPendingUsers :one
+SELECT COUNT(*) FROM users
+WHERE is_active = 0 AND deactivated_at IS NULL
+`
+
+func (q *Queries) CountPendingUsers(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countPendingUsers)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const createActiveUser = `-- name: CreateActiveUser :one
 INSERT INTO users (
     id, email, name, provider, provider_id, is_admin, is_active
 ) VALUES (
-    ?, ?, ?, ?, ?, ?, ?
+    ?, ?, ?, ?, ?, ?, 1
 )
-RETURNING id, email, name, provider, provider_id, is_admin, is_active, created_at, updated_at
+RETURNING id, email, name, provider, provider_id, is_admin, is_active, deactivated_at, created_at, updated_at
 `
 
-type CreateUserParams struct {
+type CreateActiveUserParams struct {
 	ID         string        `json:"id"`
 	Email      string        `json:"email"`
 	Name       string        `json:"name"`
 	Provider   string        `json:"provider"`
 	ProviderID string        `json:"provider_id"`
 	IsAdmin    sql.NullInt64 `json:"is_admin"`
-	IsActive   sql.NullInt64 `json:"is_active"`
 }
 
-func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
-	row := q.db.QueryRowContext(ctx, createUser,
+// Inserts an already-active user. Used by test fixtures and the
+// dev-mode seeder; the production OAuth flow goes through
+// CreateUser (pending) and is approved by an admin.
+func (q *Queries) CreateActiveUser(ctx context.Context, arg CreateActiveUserParams) (User, error) {
+	row := q.db.QueryRowContext(ctx, createActiveUser,
 		arg.ID,
 		arg.Email,
 		arg.Name,
 		arg.Provider,
 		arg.ProviderID,
 		arg.IsAdmin,
-		arg.IsActive,
 	)
 	var i User
 	err := row.Scan(
@@ -60,6 +100,53 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.ProviderID,
 		&i.IsAdmin,
 		&i.IsActive,
+		&i.DeactivatedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createUser = `-- name: CreateUser :one
+INSERT INTO users (
+    id, email, name, provider, provider_id, is_admin, is_active
+) VALUES (
+    ?, ?, ?, ?, ?, ?, 0
+)
+RETURNING id, email, name, provider, provider_id, is_admin, is_active, deactivated_at, created_at, updated_at
+`
+
+type CreateUserParams struct {
+	ID         string        `json:"id"`
+	Email      string        `json:"email"`
+	Name       string        `json:"name"`
+	Provider   string        `json:"provider"`
+	ProviderID string        `json:"provider_id"`
+	IsAdmin    sql.NullInt64 `json:"is_admin"`
+}
+
+// Inserts a user as pending (is_active = 0). The first-ever
+// user is bootstrapped via CreateUserAsFirstAdmin instead, which
+// sets is_active = 1 atomically.
+func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
+	row := q.db.QueryRowContext(ctx, createUser,
+		arg.ID,
+		arg.Email,
+		arg.Name,
+		arg.Provider,
+		arg.ProviderID,
+		arg.IsAdmin,
+	)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.Name,
+		&i.Provider,
+		&i.ProviderID,
+		&i.IsAdmin,
+		&i.IsActive,
+		&i.DeactivatedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -70,10 +157,10 @@ const createUserAsFirstAdmin = `-- name: CreateUserAsFirstAdmin :one
 INSERT INTO users (
     id, email, name, provider, provider_id, is_admin, is_active
 )
-SELECT ?, ?, ?, ?, ?, 
+SELECT ?, ?, ?, ?, ?,
     CASE WHEN (SELECT COUNT(*) FROM users WHERE is_admin = 1 AND is_active = 1) = 0 THEN 1 ELSE 0 END,
-    1
-RETURNING id, email, name, provider, provider_id, is_admin, is_active, created_at, updated_at
+    CASE WHEN (SELECT COUNT(*) FROM users WHERE is_admin = 1 AND is_active = 1) = 0 THEN 1 ELSE 0 END
+RETURNING id, email, name, provider, provider_id, is_admin, is_active, deactivated_at, created_at, updated_at
 `
 
 type CreateUserAsFirstAdminParams struct {
@@ -84,7 +171,10 @@ type CreateUserAsFirstAdminParams struct {
 	ProviderID string `json:"provider_id"`
 }
 
-// Atomically creates a user and makes them admin only if no admins exist
+// Atomically creates a user and makes them admin only if no admins
+// exist. The first-ever user is bootstrapped active (is_active = 1)
+// so the operator can log in; every subsequent user is pending
+// (is_active = 0) and requires admin approval.
 func (q *Queries) CreateUserAsFirstAdmin(ctx context.Context, arg CreateUserAsFirstAdminParams) (User, error) {
 	row := q.db.QueryRowContext(ctx, createUserAsFirstAdmin,
 		arg.ID,
@@ -102,14 +192,52 @@ func (q *Queries) CreateUserAsFirstAdmin(ctx context.Context, arg CreateUserAsFi
 		&i.ProviderID,
 		&i.IsAdmin,
 		&i.IsActive,
+		&i.DeactivatedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
 }
 
+const deactivateUser = `-- name: DeactivateUser :one
+UPDATE users
+SET is_active = 0, deactivated_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+RETURNING id, email, name, provider, provider_id, is_admin, is_active, deactivated_at, created_at, updated_at
+`
+
+// Admin-initiated deactivation of an active user. Sets
+// deactivated_at; the team page can offer reactivate from this
+// state.
+func (q *Queries) DeactivateUser(ctx context.Context, id string) (User, error) {
+	row := q.db.QueryRowContext(ctx, deactivateUser, id)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.Name,
+		&i.Provider,
+		&i.ProviderID,
+		&i.IsAdmin,
+		&i.IsActive,
+		&i.DeactivatedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const deleteUser = `-- name: DeleteUser :exec
+DELETE FROM users WHERE id = ?
+`
+
+func (q *Queries) DeleteUser(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, deleteUser, id)
+	return err
+}
+
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, name, provider, provider_id, is_admin, is_active, created_at, updated_at FROM users 
+SELECT id, email, name, provider, provider_id, is_admin, is_active, deactivated_at, created_at, updated_at FROM users 
 WHERE email = ? 
 LIMIT 1
 `
@@ -125,6 +253,7 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.ProviderID,
 		&i.IsAdmin,
 		&i.IsActive,
+		&i.DeactivatedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -132,7 +261,7 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, name, provider, provider_id, is_admin, is_active, created_at, updated_at FROM users 
+SELECT id, email, name, provider, provider_id, is_admin, is_active, deactivated_at, created_at, updated_at FROM users 
 WHERE id = ? 
 LIMIT 1
 `
@@ -148,6 +277,7 @@ func (q *Queries) GetUserByID(ctx context.Context, id string) (User, error) {
 		&i.ProviderID,
 		&i.IsAdmin,
 		&i.IsActive,
+		&i.DeactivatedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -155,7 +285,7 @@ func (q *Queries) GetUserByID(ctx context.Context, id string) (User, error) {
 }
 
 const getUserByProvider = `-- name: GetUserByProvider :one
-SELECT id, email, name, provider, provider_id, is_admin, is_active, created_at, updated_at FROM users 
+SELECT id, email, name, provider, provider_id, is_admin, is_active, deactivated_at, created_at, updated_at FROM users 
 WHERE provider = ? AND provider_id = ? 
 LIMIT 1
 `
@@ -176,6 +306,7 @@ func (q *Queries) GetUserByProvider(ctx context.Context, arg GetUserByProviderPa
 		&i.ProviderID,
 		&i.IsAdmin,
 		&i.IsActive,
+		&i.DeactivatedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -183,8 +314,8 @@ func (q *Queries) GetUserByProvider(ctx context.Context, arg GetUserByProviderPa
 }
 
 const listActiveUsers = `-- name: ListActiveUsers :many
-SELECT id, email, name, provider, provider_id, is_admin, is_active, created_at, updated_at FROM users 
-WHERE is_active = 1 
+SELECT id, email, name, provider, provider_id, is_admin, is_active, deactivated_at, created_at, updated_at FROM users
+WHERE is_active = 1
 ORDER BY name
 `
 
@@ -205,6 +336,7 @@ func (q *Queries) ListActiveUsers(ctx context.Context) ([]User, error) {
 			&i.ProviderID,
 			&i.IsAdmin,
 			&i.IsActive,
+			&i.DeactivatedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -222,8 +354,8 @@ func (q *Queries) ListActiveUsers(ctx context.Context) ([]User, error) {
 }
 
 const listAdminUsers = `-- name: ListAdminUsers :many
-SELECT id, email, name, provider, provider_id, is_admin, is_active, created_at, updated_at FROM users 
-WHERE is_admin = 1 AND is_active = 1 
+SELECT id, email, name, provider, provider_id, is_admin, is_active, deactivated_at, created_at, updated_at FROM users
+WHERE is_admin = 1 AND is_active = 1
 ORDER BY name
 `
 
@@ -244,6 +376,7 @@ func (q *Queries) ListAdminUsers(ctx context.Context) ([]User, error) {
 			&i.ProviderID,
 			&i.IsAdmin,
 			&i.IsActive,
+			&i.DeactivatedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -260,9 +393,116 @@ func (q *Queries) ListAdminUsers(ctx context.Context) ([]User, error) {
 	return items, nil
 }
 
+const listDeactivatedUsers = `-- name: ListDeactivatedUsers :many
+SELECT id, email, name, provider, provider_id, is_admin, is_active, deactivated_at, created_at, updated_at FROM users
+WHERE is_active = 0 AND deactivated_at IS NOT NULL
+ORDER BY deactivated_at DESC
+`
+
+func (q *Queries) ListDeactivatedUsers(ctx context.Context) ([]User, error) {
+	rows, err := q.db.QueryContext(ctx, listDeactivatedUsers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []User{}
+	for rows.Next() {
+		var i User
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.Name,
+			&i.Provider,
+			&i.ProviderID,
+			&i.IsAdmin,
+			&i.IsActive,
+			&i.DeactivatedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPendingUsers = `-- name: ListPendingUsers :many
+SELECT id, email, name, provider, provider_id, is_admin, is_active, deactivated_at, created_at, updated_at FROM users
+WHERE is_active = 0 AND deactivated_at IS NULL
+ORDER BY created_at
+`
+
+// Users awaiting admin approval. Excludes admin-deactivated
+// users (those have deactivated_at set).
+func (q *Queries) ListPendingUsers(ctx context.Context) ([]User, error) {
+	rows, err := q.db.QueryContext(ctx, listPendingUsers)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []User{}
+	for rows.Next() {
+		var i User
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.Name,
+			&i.Provider,
+			&i.ProviderID,
+			&i.IsAdmin,
+			&i.IsActive,
+			&i.DeactivatedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const reactivateUser = `-- name: ReactivateUser :one
+UPDATE users
+SET is_active = 1, deactivated_at = NULL, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+RETURNING id, email, name, provider, provider_id, is_admin, is_active, deactivated_at, created_at, updated_at
+`
+
+func (q *Queries) ReactivateUser(ctx context.Context, id string) (User, error) {
+	row := q.db.QueryRowContext(ctx, reactivateUser, id)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Email,
+		&i.Name,
+		&i.Provider,
+		&i.ProviderID,
+		&i.IsAdmin,
+		&i.IsActive,
+		&i.DeactivatedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const updateUser = `-- name: UpdateUser :exec
-UPDATE users 
-SET 
+UPDATE users
+SET
     name = ?,
     is_admin = ?,
     is_active = ?,
@@ -288,8 +528,8 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) error {
 }
 
 const updateUserProvider = `-- name: UpdateUserProvider :exec
-UPDATE users 
-SET 
+UPDATE users
+SET
     name = ?,
     provider = ?,
     provider_id = ?,

@@ -28,12 +28,13 @@ package notify
 // EventKind values written to notification_outbox.event_kind. Kept as
 // named constants so call sites don't scatter magic strings.
 const (
-	EventSwapRequested  = "swap.requested"
-	EventSwapAccepted   = "swap.accepted"
-	EventSwapRejected   = "swap.rejected"
-	EventSwapCancelled  = "swap.cancelled"
-	EventWFHStateChange = "wfh.state_changed"
-	EventCoverAssigned  = "cover.assigned"
+	EventSwapRequested       = "swap.requested"
+	EventSwapAccepted        = "swap.accepted"
+	EventSwapRejected        = "swap.rejected"
+	EventSwapCancelled       = "swap.cancelled"
+	EventWFHStateChange      = "wfh.state_changed"
+	EventCoverAssigned       = "cover.assigned"
+	EventUserPendingApproval = "user.pending_approval"
 )
 
 // ChannelName values used in NOTIFY_CHANNELS and the

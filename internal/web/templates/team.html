@@ -186,6 +186,11 @@
                                         </button>
                                     </form>
                                 {{end}}
+                                <form method="POST" action="/team/users/{{.ID}}/deactivate" style="display: inline;">
+                                    <button type="submit" class="button is-small is-light" title="Deactivate this user. They can be reactivated later.">
+                                        <i class="fas fa-user-slash mr-1"></i> Deactivate
+                                    </button>
+                                </form>
                             </div>
                         </div>
                     </div>
@@ -198,6 +203,84 @@
         {{end}}
     </div>
 </div>
+
+{{if .PendingUsers}}
+<div class="card mt-4">
+    <header class="card-header">
+        <p class="card-header-title">
+            <i class="fas fa-user-clock mr-2"></i> Awaiting Approval
+            <span class="tag is-warning is-light ml-2">{{.PendingCount}}</span>
+        </p>
+    </header>
+    <div class="card-content">
+        <div class="content">
+            <p class="is-size-7 has-text-grey mb-3">
+                New users who have signed in via an OAuth provider but
+                have not been approved yet. Approving activates their
+                account; denying removes it.
+            </p>
+            {{range .PendingUsers}}
+                <div class="box member-card">
+                    <div class="columns is-mobile is-vcentered">
+                        <div class="column">
+                            <strong class="is-size-5">{{.Name}}</strong><br>
+                            <span class="has-text-grey">{{.Email}}</span><br>
+                            {{if .CreatedAt}}<span class="has-text-grey is-size-7">Signed in {{.CreatedAt}}</span>{{end}}
+                        </div>
+                        <div class="column is-narrow">
+                            <form method="POST" action="/team/users/{{.ID}}/approve" style="display: inline;">
+                                <button type="submit" class="button is-small is-primary">
+                                    <i class="fas fa-check mr-1"></i> Approve
+                                </button>
+                            </form>
+                            <form method="POST" action="/team/users/{{.ID}}/deny" style="display: inline;">
+                                <button type="submit" class="button is-small is-danger is-light">
+                                    <i class="fas fa-times mr-1"></i> Deny
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            {{end}}
+        </div>
+    </div>
+</div>
+{{end}}
+
+{{if .DeactivatedUsers}}
+<div class="card mt-4">
+    <header class="card-header">
+        <p class="card-header-title">
+            <i class="fas fa-user-slash mr-2"></i> Deactivated Users
+        </p>
+    </header>
+    <div class="card-content">
+        <div class="content">
+            <p class="is-size-7 has-text-grey mb-3">
+                Users who were deactivated by an admin. They cannot
+                log in. Reactivate to restore their access.
+            </p>
+            {{range .DeactivatedUsers}}
+                <div class="box member-card">
+                    <div class="columns is-mobile is-vcentered">
+                        <div class="column">
+                            <strong class="is-size-5">{{.Name}}</strong><br>
+                            <span class="has-text-grey">{{.Email}}</span>
+                        </div>
+                        <div class="column is-narrow">
+                            <form method="POST" action="/team/users/{{.ID}}/reactivate" style="display: inline;">
+                                <button type="submit" class="button is-small is-primary is-light">
+                                    <i class="fas fa-user-check mr-1"></i> Reactivate
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            {{end}}
+        </div>
+    </div>
+</div>
+{{end}}
 
 <div id="editModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="editModalTitle">
     <div class="modal-background" onclick="closeEditModal()"></div>

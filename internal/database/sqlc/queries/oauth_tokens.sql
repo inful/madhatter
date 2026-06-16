@@ -22,5 +22,9 @@ SET
 WHERE user_id = ? AND provider = ?;
 
 -- name: DeleteOAuthToken :exec
-DELETE FROM oauth_tokens 
+DELETE FROM oauth_tokens
 WHERE user_id = ? AND provider = ?;
+
+-- name: DeleteUserOAuthTokens :exec
+DELETE FROM oauth_tokens
+WHERE user_id = ?;

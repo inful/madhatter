@@ -501,6 +501,8 @@ func (r *recordingNotifier) SwapAccepted(_ context.Context, _ notify.SwapEvent) 
 func (r *recordingNotifier) SwapRejected(_ context.Context, _ notify.SwapEvent)   {}
 func (r *recordingNotifier) SwapCancelled(_ context.Context, _ notify.SwapEvent)  {}
 func (r *recordingNotifier) CoverAssigned(_ context.Context, _ notify.CoverEvent) {}
+func (r *recordingNotifier) UserPendingApproval(_ context.Context, _ notify.UserPendingApprovalEvent) {
+}
 
 func TestSettlePendingRequests_FiresNotifierForEachTransition(t *testing.T) {
 	ctx := context.Background()

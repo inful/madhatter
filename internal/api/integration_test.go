@@ -53,7 +53,7 @@ func (s *Server) createTestSession(ctx context.Context) (string, error) {
 	user, err := s.db.GetQueries().GetUserByEmail(ctx, "test@example.com")
 	if err != nil {
 		// User doesn't exist, create one
-		user, err = s.db.GetQueries().CreateUser(ctx, sqlc.CreateUserParams{
+		user, err = s.db.GetQueries().CreateActiveUser(ctx, sqlc.CreateActiveUserParams{
 			Email:      "test@example.com",
 			Name:       "Test User",
 			Provider:   "fake",

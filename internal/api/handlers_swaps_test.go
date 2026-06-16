@@ -59,14 +59,13 @@ func TestSwapAPI_AcceptPastSwap_Returns409(t *testing.T) {
 	ctx := context.Background()
 	queries := server.db.GetQueries()
 
-	_, err := queries.CreateUser(ctx, sqlc.CreateUserParams{
+	_, err := queries.CreateActiveUser(ctx, sqlc.CreateActiveUserParams{
 		ID:         "api-bob-user",
 		Email:      "bob@example.com",
 		Name:       "Bob",
 		Provider:   "fake",
 		ProviderID: "bob-provider",
 		IsAdmin:    sql.NullInt64{Int64: 0, Valid: true},
-		IsActive:   sql.NullInt64{Int64: 1, Valid: true},
 	})
 	require.NoError(t, err)
 

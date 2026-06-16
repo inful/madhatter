@@ -41,6 +41,13 @@ func (f fakeResolver) EmailEnabled(_ context.Context, memberID string) (bool, er
 	return !f.disabled[memberID], nil
 }
 
+// ListActiveAdmins implements notify.RecipientResolver. The fake
+// returns an empty list; tests that need admin fan-out wire a
+// custom resolver.
+func (f fakeResolver) ListActiveAdmins(_ context.Context) ([]AdminRef, error) {
+	return nil, nil
+}
+
 // fakeChannel records every Send call.
 type fakeChannel struct {
 	mu    sync.Mutex

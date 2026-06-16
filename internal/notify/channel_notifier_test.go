@@ -61,6 +61,13 @@ func (s stubResolver) EmailEnabled(_ context.Context, id string) (bool, error) {
 	return !s.disabled[id], nil
 }
 
+// ListActiveAdmins implements notify.RecipientResolver. The stub
+// returns an empty list; tests that need admin fan-out wire a
+// custom resolver.
+func (s stubResolver) ListActiveAdmins(_ context.Context) ([]AdminRef, error) {
+	return nil, nil
+}
+
 var errUnknownMember = stringError("unknown")
 
 type stringError string

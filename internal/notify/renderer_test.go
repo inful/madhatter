@@ -173,12 +173,13 @@ func TestRenderer_UnsubscribeURL_NilFnLeavesFooterBlank(t *testing.T) {
 
 func TestRenderer_EnvKeyFor(t *testing.T) {
 	cases := map[string]string{
-		EventSwapRequested:  "NOTIFY_SWAP_REQUESTED_TXT_PATH",
-		EventSwapAccepted:   "NOTIFY_SWAP_ACCEPTED_TXT_PATH",
-		EventSwapRejected:   "NOTIFY_SWAP_REJECTED_TXT_PATH",
-		EventSwapCancelled:  "NOTIFY_SWAP_CANCELLED_TXT_PATH",
-		EventWFHStateChange: "NOTIFY_WFH_STATE_CHANGED_TXT_PATH",
-		EventCoverAssigned:  "NOTIFY_COVER_ASSIGNED_TXT_PATH",
+		EventSwapRequested:       "NOTIFY_SWAP_REQUESTED_TXT_PATH",
+		EventSwapAccepted:        "NOTIFY_SWAP_ACCEPTED_TXT_PATH",
+		EventSwapRejected:        "NOTIFY_SWAP_REJECTED_TXT_PATH",
+		EventSwapCancelled:       "NOTIFY_SWAP_CANCELLED_TXT_PATH",
+		EventWFHStateChange:      "NOTIFY_WFH_STATE_CHANGED_TXT_PATH",
+		EventCoverAssigned:       "NOTIFY_COVER_ASSIGNED_TXT_PATH",
+		EventUserPendingApproval: "NOTIFY_USER_PENDING_APPROVAL_TXT_PATH",
 	}
 	for kind, want := range cases {
 		assert.Equal(t, want, envKeyFor(kind, "body"),

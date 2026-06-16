@@ -19,11 +19,10 @@ func TestWithdrawOwnWFHRequest(t *testing.T) {
 	// Create an admin so the existing admin-path (WithdrawWFHRequest) keeps
 	// working. The self-withdraw path doesn't need a user record because
 	// withdrawn_by is left NULL for self-withdrawals.
-	_, err := db.GetQueries().CreateUser(ctx, sqlc.CreateUserParams{
+	_, err := db.GetQueries().CreateActiveUser(ctx, sqlc.CreateActiveUserParams{
 		ID: "admin-1", Email: "admin@example.com", Name: "Admin",
 		Provider: "fake", ProviderID: "admin-1",
-		IsAdmin:  sql.NullInt64{Int64: 1, Valid: true},
-		IsActive: sql.NullInt64{Int64: 1, Valid: true},
+		IsAdmin: sql.NullInt64{Int64: 1, Valid: true},
 	})
 	require.NoError(t, err)
 

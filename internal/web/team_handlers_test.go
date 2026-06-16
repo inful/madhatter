@@ -96,14 +96,13 @@ func createActiveTestUser(t *testing.T, db *database.DB, isAdmin bool) string {
 		adminValue = 1
 	}
 
-	_, err := db.GetQueries().CreateUser(context.Background(), sqlc.CreateUserParams{
+	_, err := db.GetQueries().CreateActiveUser(context.Background(), sqlc.CreateActiveUserParams{
 		ID:         userID,
 		Email:      userID + "@example.com",
 		Name:       "User " + userID,
 		Provider:   "fake",
 		ProviderID: userID,
 		IsAdmin:    sql.NullInt64{Int64: adminValue, Valid: true},
-		IsActive:   sql.NullInt64{Int64: 1, Valid: true},
 	})
 	require.NoError(t, err)
 

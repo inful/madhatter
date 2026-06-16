@@ -21,6 +21,7 @@ type Notifier interface {
 	SwapCancelled(ctx context.Context, e SwapEvent)
 	WFHStateChanged(ctx context.Context, e WFHEvent)
 	CoverAssigned(ctx context.Context, e CoverEvent)
+	UserPendingApproval(ctx context.Context, e UserPendingApprovalEvent)
 }
 
 // LogNotifier is a Notifier that calls a registered set of channels
@@ -70,12 +71,24 @@ type outboundMessage struct {
 // without the test resolver having to implement the lookup. The
 // zero-value behavior is "enabled" so resolvers that only implement
 // ResolveByID continue to work.
+//
+// ListActiveAdmins returns the (id, name) of every active admin.
+// It is used by events that fan out to the admin group rather
+// than to a single recipient (e.g. a new user awaiting approval).
+// Resolvers that don't model admins can return an empty slice.
 type RecipientResolver interface {
 	ResolveByID(ctx context.Context, memberID string) (email, name string, err error)
 	// EmailEnabled returns false when the member has unsubscribed
 	// from email notifications. Implementations that don't track
 	// preferences can leave this at the default (return true).
 	EmailEnabled(ctx context.Context, memberID string) (bool, error)
+	ListActiveAdmins(ctx context.Context) ([]AdminRef, error)
+}
+
+// AdminRef identifies an active admin for fan-out events.
+type AdminRef struct {
+	ID   string
+	Name string
 }
 
 // NewLogNotifier returns a LogNotifier that calls the given channels
@@ -150,6 +163,24 @@ func (n *LogNotifier) CoverAssigned(ctx context.Context, e CoverEvent) {
 	n.dispatch(ctx, EventCoverAssigned, []recipientTarget{
 		{memberID: e.CoverMemberID, nameHint: e.CoverMemberName},
 	}, func(ch registeredChannel, msg outboundMessage) error {
+		return ch.Send(ctx, msg)
+	}, e)
+}
+
+// UserPendingApproval implements Notifier.
+func (n *LogNotifier) UserPendingApproval(ctx context.Context, e UserPendingApprovalEvent) {
+	n.mu.RLock()
+	resolver := n.resolver
+	n.mu.RUnlock()
+	admins, err := resolver.ListActiveAdmins(ctx)
+	if err != nil || len(admins) == 0 {
+		return
+	}
+	recipients := make([]recipientTarget, 0, len(admins))
+	for _, a := range admins {
+		recipients = append(recipients, recipientTarget{memberID: a.ID, nameHint: a.Name})
+	}
+	n.dispatch(ctx, EventUserPendingApproval, recipients, func(ch registeredChannel, msg outboundMessage) error {
 		return ch.Send(ctx, msg)
 	}, e)
 }

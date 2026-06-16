@@ -42,3 +42,17 @@ type CoverEvent struct {
 	// (created when a leave was edited and the cover rotated).
 	ResolvedBy string
 }
+
+// UserPendingApprovalEvent fires when a new user is created by the
+// OAuth callback. The notifier resolves every active admin and
+// emails them a link to the team page so they can approve or deny
+// the new account. Until an admin approves, the user cannot log in.
+type UserPendingApprovalEvent struct {
+	UserID    string
+	UserName  string
+	UserEmail string
+	Provider  string
+	// CreatedAt is an ISO-8601 timestamp rendered in the email so
+	// the admin can see how long the request has been waiting.
+	CreatedAt string
+}

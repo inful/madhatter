@@ -404,7 +404,7 @@ func TestAuthManager_HandleLogout(t *testing.T) {
 	// Create a user first
 	ctx := context.Background()
 	userID := uuid.New().String()
-	_, err = queries.CreateUser(ctx, sqlc.CreateUserParams{
+	_, err = queries.CreateActiveUser(ctx, sqlc.CreateActiveUserParams{
 		ID:    userID,
 		Email: "test@example.com",
 		Name:  "Test User",
@@ -495,7 +495,7 @@ func TestAuthManager_HandleLoginView_AlreadyLoggedIn(t *testing.T) {
 	// Create a user and session
 	ctx := context.Background()
 	userID := uuid.New().String()
-	_, err = queries.CreateUser(ctx, sqlc.CreateUserParams{
+	_, err = queries.CreateActiveUser(ctx, sqlc.CreateActiveUserParams{
 		ID:      userID,
 		Email:   "test@example.com",
 		Name:    "Test User",
@@ -543,7 +543,7 @@ func TestAuthManager_HandleGenerateAPIToken(t *testing.T) {
 	// Create authenticated user
 	ctx := context.Background()
 	userID := uuid.New().String()
-	_, err = queries.CreateUser(ctx, sqlc.CreateUserParams{
+	_, err = queries.CreateActiveUser(ctx, sqlc.CreateActiveUserParams{
 		ID:    userID,
 		Email: "test@example.com",
 		Name:  "Test User",
@@ -627,7 +627,7 @@ func TestAuthManager_HandleListAPITokens(t *testing.T) {
 	// Create authenticated user
 	ctx := context.Background()
 	userID := uuid.New().String()
-	_, err = queries.CreateUser(ctx, sqlc.CreateUserParams{
+	_, err = queries.CreateActiveUser(ctx, sqlc.CreateActiveUserParams{
 		ID:    userID,
 		Email: "test@example.com",
 		Name:  "Test User",
@@ -728,7 +728,7 @@ func TestAuthManager_HandleRevokeAPIToken(t *testing.T) {
 	// Create authenticated user
 	ctx := context.Background()
 	userID := uuid.New().String()
-	_, err = queries.CreateUser(ctx, sqlc.CreateUserParams{
+	_, err = queries.CreateActiveUser(ctx, sqlc.CreateActiveUserParams{
 		ID:    userID,
 		Email: "test@example.com",
 		Name:  "Test User",
@@ -797,7 +797,7 @@ func TestAuthManager_HandleRevokeAPIToken_Unauthorized(t *testing.T) {
 	user1ID := uuid.New().String()
 	user2ID := uuid.New().String()
 
-	_, err = queries.CreateUser(ctx, sqlc.CreateUserParams{
+	_, err = queries.CreateActiveUser(ctx, sqlc.CreateActiveUserParams{
 		ID:         user1ID,
 		Email:      "user1@example.com",
 		Name:       "User 1",
@@ -806,7 +806,7 @@ func TestAuthManager_HandleRevokeAPIToken_Unauthorized(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	_, err = queries.CreateUser(ctx, sqlc.CreateUserParams{
+	_, err = queries.CreateActiveUser(ctx, sqlc.CreateActiveUserParams{
 		ID:         user2ID,
 		Email:      "user2@example.com",
 		Name:       "User 2",
@@ -872,7 +872,7 @@ func TestAuthManager_HandleCleanupExpiredTokens(t *testing.T) {
 	// Create admin user
 	ctx := context.Background()
 	adminID := uuid.New().String()
-	_, err = queries.CreateUser(ctx, sqlc.CreateUserParams{
+	_, err = queries.CreateActiveUser(ctx, sqlc.CreateActiveUserParams{
 		ID:      adminID,
 		Email:   "admin@example.com",
 		Name:    "Admin",
@@ -931,7 +931,7 @@ func TestAuthManager_HandleCleanupExpiredTokens_NotAdmin(t *testing.T) {
 	// Create regular user
 	ctx := context.Background()
 	userID := uuid.New().String()
-	_, err = queries.CreateUser(ctx, sqlc.CreateUserParams{
+	_, err = queries.CreateActiveUser(ctx, sqlc.CreateActiveUserParams{
 		ID:      userID,
 		Email:   "user@example.com",
 		Name:    "User",
@@ -1161,7 +1161,7 @@ func TestAuthManager_HandleRevokeAPIToken_MissingID(t *testing.T) {
 	// Create authenticated user
 	ctx := context.Background()
 	userID := uuid.New().String()
-	_, err = queries.CreateUser(ctx, sqlc.CreateUserParams{
+	_, err = queries.CreateActiveUser(ctx, sqlc.CreateActiveUserParams{
 		ID:    userID,
 		Email: "test@example.com",
 		Name:  "Test User",
@@ -1208,7 +1208,7 @@ func TestAuthManager_HandleRevokeAPIToken_NotFound(t *testing.T) {
 	// Create authenticated user
 	ctx := context.Background()
 	userID := uuid.New().String()
-	_, err = queries.CreateUser(ctx, sqlc.CreateUserParams{
+	_, err = queries.CreateActiveUser(ctx, sqlc.CreateActiveUserParams{
 		ID:    userID,
 		Email: "test@example.com",
 		Name:  "Test User",
@@ -1261,7 +1261,7 @@ func TestAuthManager_HandleGenerateAPIToken_WithExpiry(t *testing.T) {
 	// Create authenticated user
 	ctx := context.Background()
 	userID := uuid.New().String()
-	_, err = queries.CreateUser(ctx, sqlc.CreateUserParams{
+	_, err = queries.CreateActiveUser(ctx, sqlc.CreateActiveUserParams{
 		ID:    userID,
 		Email: "test@example.com",
 		Name:  "Test User",

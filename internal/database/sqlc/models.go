@@ -131,15 +131,16 @@ type TeamMember struct {
 }
 
 type User struct {
-	ID         string        `json:"id"`
-	Email      string        `json:"email"`
-	Name       string        `json:"name"`
-	Provider   string        `json:"provider"`
-	ProviderID string        `json:"provider_id"`
-	IsAdmin    sql.NullInt64 `json:"is_admin"`
-	IsActive   sql.NullInt64 `json:"is_active"`
-	CreatedAt  sql.NullTime  `json:"created_at"`
-	UpdatedAt  sql.NullTime  `json:"updated_at"`
+	ID            string        `json:"id"`
+	Email         string        `json:"email"`
+	Name          string        `json:"name"`
+	Provider      string        `json:"provider"`
+	ProviderID    string        `json:"provider_id"`
+	IsAdmin       sql.NullInt64 `json:"is_admin"`
+	IsActive      sql.NullInt64 `json:"is_active"`
+	DeactivatedAt sql.NullTime  `json:"deactivated_at"`
+	CreatedAt     sql.NullTime  `json:"created_at"`
+	UpdatedAt     sql.NullTime  `json:"updated_at"`
 }
 
 type WfhRequest struct {

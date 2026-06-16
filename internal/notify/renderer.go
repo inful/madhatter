@@ -174,6 +174,12 @@ type data struct {
 	StartDate       string
 	EndDate         string
 	ResolvedBy      string
+
+	// User pending approval
+	UserName  string
+	UserEmail string
+	Provider  string
+	CreatedAt string
 }
 
 // render produces the (subject, body) pair for the given event.
@@ -234,6 +240,13 @@ func toData(eventKind string, event any) (data, error) {
 			StartDate:       e.StartDate,
 			EndDate:         e.EndDate,
 			ResolvedBy:      e.ResolvedBy,
+		}, nil
+	case UserPendingApprovalEvent:
+		return data{
+			UserName:  e.UserName,
+			UserEmail: e.UserEmail,
+			Provider:  e.Provider,
+			CreatedAt: e.CreatedAt,
 		}, nil
 	default:
 		return data{}, fmt.Errorf("notify: unknown event type %T for kind %s", event, eventKind)

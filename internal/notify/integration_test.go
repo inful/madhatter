@@ -211,6 +211,20 @@ func (r dbRecipientResolver) EmailEnabled(ctx context.Context, memberID string) 
 	return r.db.IsNotificationEmailEnabled(ctx, memberID)
 }
 
+// ListActiveAdmins implements notify.RecipientResolver by
+// mirroring the production path in internal/api/server.go.
+func (r dbRecipientResolver) ListActiveAdmins(ctx context.Context) ([]AdminRef, error) {
+	users, err := r.db.GetQueries().ListAdminUsers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	refs := make([]AdminRef, 0, len(users))
+	for i := range users {
+		refs = append(refs, AdminRef{ID: users[i].ID, Name: users[i].Name})
+	}
+	return refs, nil
+}
+
 var errNotFound = memberNotFoundError("member not found")
 
 type memberNotFoundError string

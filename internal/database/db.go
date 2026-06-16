@@ -75,6 +75,13 @@ func (db *DB) GetQueries() *sqlc.Queries {
 	return db.queries
 }
 
+// BeginTx starts a new transaction. The caller is responsible for
+// committing or rolling back. Exposed for code paths that need to
+// span multiple queries atomically (e.g. user-approval cleanup).
+func (db *DB) BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
+	return db.db.BeginTx(ctx, opts)
+}
+
 func (db *DB) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	return db.db.ExecContext(ctx, query, args...)
 }

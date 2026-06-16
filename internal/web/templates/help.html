@@ -121,6 +121,22 @@
 <div class="card">
     <header class="card-header">
         <p class="card-header-title">
+            <i class="fas fa-user-check mr-2"></i> User Approval
+        </p>
+    </header>
+    <div class="card-content">
+        <div class="content">
+            <p>New users who sign in via an OAuth provider (Google, GitLab, etc.) start in a <strong>pending</strong> state. They see a "your account is awaiting approval" page and cannot log in until an admin approves them. Pending users appear on the team page under "Awaiting Approval" with Approve and Deny buttons.</p>
+            <p>Admins are notified by email when a new user signs in. The email links to the team page where the admin can approve or deny.</p>
+            <p>Approved users become active. An admin can also <strong>deactivate</strong> an active user (e.g. when they leave the team). Deactivated users cannot log in but their team-member row is preserved for audit. They appear under "Deactivated Users" on the team page with a Reactivate button.</p>
+            <p>Deactivation and reactivation both work by toggling a flag on the user row. Sessions belonging to a deactivated user are rejected by <code>ValidateSession</code> on the next request, so changing the flag is effective immediately for any future request.</p>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <header class="card-header">
+        <p class="card-header-title">
             <i class="fas fa-shuffle mr-2"></i> How HAT Days Are Assigned
         </p>
     </header>

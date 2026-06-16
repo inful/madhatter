@@ -185,9 +185,10 @@ func (h *Handler) SetHolidayLookup(l calendar.HolidayLookup) {
 // at every call site.
 type notifyNoop struct{}
 
-func (notifyNoop) SwapRequested(_ context.Context, _ notify.SwapEvent)  {}
-func (notifyNoop) SwapAccepted(_ context.Context, _ notify.SwapEvent)   {}
-func (notifyNoop) SwapRejected(_ context.Context, _ notify.SwapEvent)   {}
-func (notifyNoop) SwapCancelled(_ context.Context, _ notify.SwapEvent)  {}
-func (notifyNoop) WFHStateChanged(_ context.Context, _ notify.WFHEvent) {}
-func (notifyNoop) CoverAssigned(_ context.Context, _ notify.CoverEvent) {}
+func (notifyNoop) SwapRequested(_ context.Context, _ notify.SwapEvent)                      {}
+func (notifyNoop) SwapAccepted(_ context.Context, _ notify.SwapEvent)                       {}
+func (notifyNoop) SwapRejected(_ context.Context, _ notify.SwapEvent)                       {}
+func (notifyNoop) SwapCancelled(_ context.Context, _ notify.SwapEvent)                      {}
+func (notifyNoop) WFHStateChanged(_ context.Context, _ notify.WFHEvent)                     {}
+func (notifyNoop) CoverAssigned(_ context.Context, _ notify.CoverEvent)                     {}
+func (notifyNoop) UserPendingApproval(_ context.Context, _ notify.UserPendingApprovalEvent) {}

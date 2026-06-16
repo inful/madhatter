@@ -7,12 +7,15 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"html/template"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/inful/madhatter/internal/database/sqlc"
+	"github.com/inful/madhatter/internal/notify"
 )
 
 const (
@@ -25,6 +28,8 @@ type AuthManager struct {
 	providerFactory *ProviderFactory
 	userService     *UserService
 	sessionManager  *SessionManager
+	notifier        notify.Notifier
+	pendingTmpl     *template.Template
 	providers       map[string]Provider
 }
 
@@ -40,6 +45,21 @@ func NewAuthManager(
 		sessionManager:  sessionManager,
 		providers:       make(map[string]Provider),
 	}
+}
+
+// SetNotifier wires the application notifier so the auth callback
+// can fan out user-pending-approval emails. nil disables that path
+// (e.g. in tests that don't care about admin notification).
+func (am *AuthManager) SetNotifier(n notify.Notifier) {
+	am.notifier = n
+}
+
+// SetPendingApprovalTemplate wires the HTML template used to render
+// the "your account is awaiting approval" page in the OAuth callback.
+// nil falls back to a built-in default. The template receives a
+// single struct value: pendingApprovalData.
+func (am *AuthManager) SetPendingApprovalTemplate(t *template.Template) {
+	am.pendingTmpl = t
 }
 
 // RegisterProvider registers an OAuth provider.
@@ -181,7 +201,26 @@ func (am *AuthManager) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if ensureErr := am.userService.EnsureTeamMember(ctx, userInfo); ensureErr != nil {
+	// Pending or deactivated users are silently rejected. We do
+	// NOT issue a session cookie, do NOT store the OAuth token
+	// (no point caching credentials for a user who can't log in),
+	// and clear the OAuth state cookie before rendering the
+	// pending-approval page. The team's team_member row is
+	// already created so the admin can see the user on the team
+	// page; reactivating an existing team member is intentionally
+	// skipped for pending users.
+	if !IsUserActive(user) {
+		if ensureErr := am.userService.EnsureTeamMember(ctx, userInfo, false); ensureErr != nil {
+			http.Error(w, fmt.Sprintf("Failed to create team member: %v", ensureErr), http.StatusInternalServerError)
+			return
+		}
+		am.clearOAuthStateCookie(w, r)
+		am.notifyPendingApproval(ctx, user, providerName)
+		am.renderPendingApproval(w, userInfo.Email, providerName, am.baseURL(r))
+		return
+	}
+
+	if ensureErr := am.userService.EnsureTeamMember(ctx, userInfo, true); ensureErr != nil {
 		http.Error(w, fmt.Sprintf("Failed to create team member: %v", ensureErr), http.StatusInternalServerError)
 		return
 	}
@@ -227,6 +266,82 @@ func (am *AuthManager) HandleCallback(w http.ResponseWriter, r *http.Request) {
 
 	// Redirect to dashboard
 	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+// clearOAuthStateCookie invalidates the OAuth state cookie. Used in
+// the pending-user branch so a stale cookie from a different OAuth
+// attempt can't accidentally satisfy a future callback.
+func (am *AuthManager) clearOAuthStateCookie(w http.ResponseWriter, r *http.Request) {
+	scheme := r.Header.Get("X-Forwarded-Proto")
+	if scheme == "" {
+		if r.TLS != nil {
+			scheme = "https"
+		} else {
+			scheme = "http"
+		}
+	}
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124 false positive: cookie has all required security attributes
+		Name:     "oauth_state",
+		Value:    "",
+		Path:     "/auth/callback",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   scheme == "https",
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
+// baseURL derives the request's base URL (scheme + host) for use
+// in the pending-approval page and notification emails. The
+// X-Forwarded-Proto / X-Forwarded-Host headers are honored when
+// present so a reverse proxy gets a usable URL in the email.
+func (am *AuthManager) baseURL(r *http.Request) string {
+	scheme := r.Header.Get("X-Forwarded-Proto")
+	if scheme == "" {
+		if r.TLS != nil {
+			scheme = "https"
+		} else {
+			scheme = "http"
+		}
+	}
+	host := r.Header.Get("X-Forwarded-Host")
+	if host == "" {
+		host = r.Host
+	}
+	return scheme + "://" + host
+}
+
+// renderPendingApproval writes the pending-approval page to w.
+// Defaults to the embedded template; the wired-in template (if
+// any) wins. Errors are surfaced as a 500 so the user still gets
+// a response rather than a blank screen.
+func (am *AuthManager) renderPendingApproval(w http.ResponseWriter, email, provider, baseURL string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusForbidden)
+	if err := renderPendingApproval(am.pendingTmpl, w, email, provider, baseURL); err != nil {
+		http.Error(w, "failed to render pending approval page: "+err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// notifyPendingApproval fires the notifier event when a new
+// pending user is created. Best-effort: failures are swallowed
+// by the notifier (and ultimately the outbox), not propagated
+// to the caller.
+func (am *AuthManager) notifyPendingApproval(ctx context.Context, user *sqlc.User, providerName string) {
+	if am.notifier == nil {
+		return
+	}
+	createdAt := ""
+	if user.CreatedAt.Valid {
+		createdAt = user.CreatedAt.Time.Format(time.RFC3339)
+	}
+	am.notifier.UserPendingApproval(ctx, notify.UserPendingApprovalEvent{
+		UserID:    user.ID,
+		UserName:  user.Name,
+		UserEmail: user.Email,
+		Provider:  providerName,
+		CreatedAt: createdAt,
+	})
 }
 
 // HandleLogout handles user logout.

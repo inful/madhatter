@@ -192,6 +192,9 @@ func (s *Server) setupNotifier(db *database.DB) error {
 	if s.engine != nil {
 		s.engine.SetNotifier(rotaCoverAdapter{inner: s.notifier})
 	}
+	if s.authManager != nil {
+		s.authManager.SetNotifier(s.notifier)
+	}
 	return nil
 }
 
@@ -710,6 +713,22 @@ func (r dbRecipientResolver) EmailEnabled(ctx context.Context, memberID string) 
 		return true, nil
 	}
 	return r.db.IsNotificationEmailEnabled(ctx, memberID)
+}
+
+// ListActiveAdmins implements notify.RecipientResolver. Returns the
+// (id, name) pair for every active admin so events that fan out
+// to the admin group (e.g. a new user awaiting approval) can
+// resolve their recipients without a separate call site.
+func (r dbRecipientResolver) ListActiveAdmins(ctx context.Context) ([]notify.AdminRef, error) {
+	users, err := r.db.GetQueries().ListAdminUsers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	refs := make([]notify.AdminRef, 0, len(users))
+	for i := range users {
+		refs = append(refs, notify.AdminRef{ID: users[i].ID, Name: users[i].Name})
+	}
+	return refs, nil
 }
 
 // rotaCoverAdapter bridges rota.CoverNotifier (which uses a local

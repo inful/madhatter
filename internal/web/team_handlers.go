@@ -19,10 +19,13 @@ import (
 const maxTeamFormBytes = 1 << 20
 
 type teamUserView struct {
-	ID      string
-	Name    string
-	Email   string
-	IsAdmin bool
+	ID          string
+	Name        string
+	Email       string
+	IsAdmin     bool
+	IsActive    bool
+	Deactivated bool
+	CreatedAt   string
 }
 
 func (h *Handler) handleTeamPost(w http.ResponseWriter, r *http.Request) {
@@ -99,19 +102,23 @@ func (h *Handler) handleTeam(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	pendingUsers, err := h.db.GetQueries().ListPendingUsers(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	deactivatedUsers, err := h.db.GetQueries().ListDeactivatedUsers(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	data["Members"] = members
-	userViews := make([]teamUserView, 0, len(users))
-	for i := range users {
-		userViews = append(userViews, teamUserView{
-			ID:      users[i].ID,
-			Name:    users[i].Name,
-			Email:   users[i].Email,
-			IsAdmin: auth.IsAdmin(users[i].IsAdmin),
-		})
-	}
-	data["Users"] = userViews
+	data["Users"] = buildUserViews(users)
+	data["PendingUsers"] = buildUserViews(pendingUsers)
+	data["DeactivatedUsers"] = buildUserViews(deactivatedUsers)
 	data["AdminCount"] = adminCount
+	data["PendingCount"] = len(pendingUsers)
 
 	// Build subscription activity map: member ID → {RotaActive, MeetingsActive}.
 	// A subscription is "active" if it was used in the last 7 days.
@@ -130,6 +137,40 @@ func (h *Handler) handleTeam(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// buildUserViews converts a slice of sqlc.User rows into the
+// template-facing view struct. The "IsActive" and "Deactivated"
+// flags are derived from the row's is_active and deactivated_at
+// columns. "CreatedAt" is a render-ready timestamp so the
+// template can show "signed in 3 days ago" without doing the
+// formatting itself.
+func buildUserViews(rows []sqlc.User) []teamUserView {
+	views := make([]teamUserView, 0, len(rows))
+	for i := range rows {
+		u := rows[i]
+		views = append(views, teamUserView{
+			ID:          u.ID,
+			Name:        u.Name,
+			Email:       u.Email,
+			IsAdmin:     auth.IsAdmin(u.IsAdmin),
+			IsActive:    u.IsActive.Valid && u.IsActive.Int64 == 1,
+			Deactivated: u.DeactivatedAt.Valid,
+			CreatedAt:   formatUserCreatedAt(u.CreatedAt),
+		})
+	}
+	return views
+}
+
+// formatUserCreatedAt renders a user.CreatedAt timestamp for the
+// template, returning "" if the value is absent. The format is
+// "2006-01-02 15:04 UTC" — enough granularity for the team page
+// to show "signed in N days ago".
+func formatUserCreatedAt(t sql.NullTime) string {
+	if !t.Valid {
+		return ""
+	}
+	return t.Time.UTC().Format("2006-01-02 15:04 MST")
+}
+
 func (h *Handler) syncDevelopmentUsersWithTeamMembers(ctx context.Context, members []database.TeamMember) error {
 	for _, member := range members {
 		_, err := h.db.GetQueries().GetUserByEmail(ctx, member.Email)
@@ -140,14 +181,12 @@ func (h *Handler) syncDevelopmentUsersWithTeamMembers(ctx context.Context, membe
 			return err
 		}
 
-		_, createErr := h.db.GetQueries().CreateUser(ctx, sqlc.CreateUserParams{
+		_, createErr := h.db.GetQueries().CreateActiveUser(ctx, sqlc.CreateActiveUserParams{
 			ID:         uuid.New().String(),
 			Email:      member.Email,
 			Name:       member.Name,
 			Provider:   "fake",
 			ProviderID: member.Email,
-			IsAdmin:    sql.NullInt64{Int64: 0, Valid: true},
-			IsActive:   sql.NullInt64{Int64: 1, Valid: true},
 		})
 		if createErr != nil {
 			return createErr

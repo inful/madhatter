@@ -124,7 +124,7 @@ func TestUserService_EnsureTeamMember_PreservesExistingName(t *testing.T) {
 		ID:    "provider-user-1",
 		Email: "dev@example.com",
 		Name:  "OAuth Provider Name",
-	})
+	}, true)
 	require.NoError(t, err)
 
 	member, err := db.GetMemberByEmail(ctx, "dev@example.com")

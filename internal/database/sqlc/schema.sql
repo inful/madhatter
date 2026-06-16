@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS users (
     provider_id TEXT NOT NULL,
     is_admin INTEGER DEFAULT 0,
     is_active INTEGER DEFAULT 1,
+    deactivated_at DATETIME,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(provider, provider_id)

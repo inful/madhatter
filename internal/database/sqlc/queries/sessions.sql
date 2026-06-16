@@ -7,7 +7,7 @@ INSERT INTO sessions (
 RETURNING *;
 
 -- name: GetSessionByToken :one
-SELECT s.*, u.email, u.name, u.is_admin 
+SELECT s.*, u.email, u.name, u.is_admin, u.is_active
 FROM sessions s
 JOIN users u ON s.user_id = u.id
 WHERE s.token = ? AND datetime(s.expires_at) > datetime('now');

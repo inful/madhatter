@@ -13,6 +13,9 @@ import (
 type Querier interface {
 	ActivateTeamMember(ctx context.Context, id string) error
 	AddTeamMember(ctx context.Context, arg AddTeamMemberParams) (sql.Result, error)
+	// Activates a pending user. The deactivated_at column stays NULL
+	// (it was NULL while pending and is cleared on approve).
+	ApproveUser(ctx context.Context, id string) (User, error)
 	// Atomically claim a batch of due rows by bumping next_attempt_at far into
 	// the future, so concurrent workers don't pick the same row.
 	//
@@ -26,7 +29,12 @@ type Querier interface {
 	CountAdmins(ctx context.Context) (int64, error)
 	CountApprovedWFHByDate(ctx context.Context, date time.Time) (int64, error)
 	CountPendingSwapsForMember(ctx context.Context, targetMemberID string) (int64, error)
+	CountPendingUsers(ctx context.Context) (int64, error)
 	CreateAPIToken(ctx context.Context, arg CreateAPITokenParams) (sql.Result, error)
+	// Inserts an already-active user. Used by test fixtures and the
+	// dev-mode seeder; the production OAuth flow goes through
+	// CreateUser (pending) and is approved by an admin.
+	CreateActiveUser(ctx context.Context, arg CreateActiveUserParams) (User, error)
 	CreateApprovedRecurringWFHRequest(ctx context.Context, arg CreateApprovedRecurringWFHRequestParams) (sql.Result, error)
 	CreateCalendarSubscription(ctx context.Context, arg CreateCalendarSubscriptionParams) (sql.Result, error)
 	CreateHatSwap(ctx context.Context, arg CreateHatSwapParams) (sql.Result, error)
@@ -35,12 +43,22 @@ type Querier interface {
 	CreateOutboxEntry(ctx context.Context, arg CreateOutboxEntryParams) (sql.Result, error)
 	CreateRotaAssignment(ctx context.Context, arg CreateRotaAssignmentParams) (sql.Result, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
+	// Inserts a user as pending (is_active = 0). The first-ever
+	// user is bootstrapped via CreateUserAsFirstAdmin instead, which
+	// sets is_active = 1 atomically.
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
-	// Atomically creates a user and makes them admin only if no admins exist
+	// Atomically creates a user and makes them admin only if no admins
+	// exist. The first-ever user is bootstrapped active (is_active = 1)
+	// so the operator can log in; every subsequent user is pending
+	// (is_active = 0) and requires admin approval.
 	CreateUserAsFirstAdmin(ctx context.Context, arg CreateUserAsFirstAdminParams) (User, error)
 	CreateWFHRequest(ctx context.Context, arg CreateWFHRequestParams) (sql.Result, error)
 	DeactivateAPIToken(ctx context.Context, id string) (sql.Result, error)
 	DeactivateTeamMember(ctx context.Context, id string) error
+	// Admin-initiated deactivation of an active user. Sets
+	// deactivated_at; the team page can offer reactivate from this
+	// state.
+	DeactivateUser(ctx context.Context, id string) (User, error)
 	DeleteAPIToken(ctx context.Context, id string) (sql.Result, error)
 	DeleteAssignmentsByDateRange(ctx context.Context, arg DeleteAssignmentsByDateRangeParams) error
 	DeleteCalendarSubscription(ctx context.Context, token string) error
@@ -54,6 +72,8 @@ type Querier interface {
 	DeleteSession(ctx context.Context, token string) error
 	DeleteStaleSubscriptions(ctx context.Context, arg DeleteStaleSubscriptionsParams) (sql.Result, error)
 	DeleteTeamMember(ctx context.Context, id string) error
+	DeleteUser(ctx context.Context, id string) error
+	DeleteUserOAuthTokens(ctx context.Context, userID string) error
 	DeleteUserSessions(ctx context.Context, userID string) error
 	DeleteWFHRequest(ctx context.Context, id string) error
 	GetAPITokenByHash(ctx context.Context, tokenHash string) (ApiToken, error)
@@ -118,10 +138,15 @@ type Querier interface {
 	IsNotificationEmailEnabled(ctx context.Context, memberID string) (interface{}, error)
 	ListActiveUsers(ctx context.Context) ([]User, error)
 	ListAdminUsers(ctx context.Context) ([]User, error)
+	ListDeactivatedUsers(ctx context.Context) ([]User, error)
+	// Users awaiting admin approval. Excludes admin-deactivated
+	// users (those have deactivated_at set).
+	ListPendingUsers(ctx context.Context) ([]User, error)
 	MarkAssignmentSwapped(ctx context.Context, id string) error
 	MarkOutboxDead(ctx context.Context, arg MarkOutboxDeadParams) (sql.Result, error)
 	MarkOutboxFailed(ctx context.Context, arg MarkOutboxFailedParams) (sql.Result, error)
 	MarkOutboxSent(ctx context.Context, id string) (sql.Result, error)
+	ReactivateUser(ctx context.Context, id string) (User, error)
 	// Upserts the email-enabled flag for a member. Pass 1 to enable,
 	// 0 to disable. disabled_at is set/cleared by the application
 	// before calling this query.

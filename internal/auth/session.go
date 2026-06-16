@@ -77,6 +77,10 @@ func (sm *SessionManager) CreateSession(ctx context.Context, userID string) (str
 }
 
 // ValidateSession validates a session token and returns user info.
+// Sessions belonging to users with is_active = 0 (pending admin
+// approval or admin-deactivated) are rejected as ErrInvalidSession.
+// This is the gate that locks a pending or deactivated user out
+// even if they already hold a valid session cookie.
 func (sm *SessionManager) ValidateSession(ctx context.Context, token string) (*sqlc.GetSessionByTokenRow, error) {
 	// Hash the token before looking it up
 	tokenHash := hashToken(token)
@@ -84,6 +88,10 @@ func (sm *SessionManager) ValidateSession(ctx context.Context, token string) (*s
 	// Get session using hashed token
 	session, err := sm.db.GetSessionByToken(ctx, tokenHash)
 	if err != nil {
+		return nil, ErrInvalidSession
+	}
+
+	if !session.IsActive.Valid || session.IsActive.Int64 == 0 {
 		return nil, ErrInvalidSession
 	}
 

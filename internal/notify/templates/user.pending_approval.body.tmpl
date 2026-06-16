@@ -1,0 +1,18 @@
+Hi,
+
+A new user signed in via {{.Provider}} and is waiting for admin approval.
+
+  Name:     {{.UserName}}
+  Email:    {{.UserEmail}}
+  Provider: {{.Provider}}
+  Signed in at: {{.CreatedAt}}
+
+Approve or deny the request on the team page:
+
+  {{.BaseURL}}/team
+
+— MadHatter Rota
+{{- if .UnsubscribeURL}}
+
+To stop receiving these emails: {{.UnsubscribeURL}}
+{{- end }}

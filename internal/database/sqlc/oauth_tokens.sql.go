@@ -55,7 +55,7 @@ func (q *Queries) CreateOAuthToken(ctx context.Context, arg CreateOAuthTokenPara
 }
 
 const deleteOAuthToken = `-- name: DeleteOAuthToken :exec
-DELETE FROM oauth_tokens 
+DELETE FROM oauth_tokens
 WHERE user_id = ? AND provider = ?
 `
 
@@ -66,6 +66,16 @@ type DeleteOAuthTokenParams struct {
 
 func (q *Queries) DeleteOAuthToken(ctx context.Context, arg DeleteOAuthTokenParams) error {
 	_, err := q.db.ExecContext(ctx, deleteOAuthToken, arg.UserID, arg.Provider)
+	return err
+}
+
+const deleteUserOAuthTokens = `-- name: DeleteUserOAuthTokens :exec
+DELETE FROM oauth_tokens
+WHERE user_id = ?
+`
+
+func (q *Queries) DeleteUserOAuthTokens(ctx context.Context, userID string) error {
+	_, err := q.db.ExecContext(ctx, deleteUserOAuthTokens, userID)
 	return err
 }
 

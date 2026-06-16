@@ -134,14 +134,13 @@ func createUserAndSession(t *testing.T, server *Server, email, name string, isAd
 		if isAdmin {
 			adminFlag = 1
 		}
-		user, err = queries.CreateUser(ctx, sqlc.CreateUserParams{
+		user, err = queries.CreateActiveUser(ctx, sqlc.CreateActiveUserParams{
 			ID:         uuid.New().String(),
 			Email:      email,
 			Name:       name,
 			Provider:   "fake",
 			ProviderID: uuid.New().String(),
 			IsAdmin:    sql.NullInt64{Int64: adminFlag, Valid: true},
-			IsActive:   sql.NullInt64{Int64: 1, Valid: true},
 		})
 		require.NoError(t, err)
 	}

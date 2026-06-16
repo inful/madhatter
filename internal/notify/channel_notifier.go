@@ -119,6 +119,25 @@ func (n *ChannelNotifier) CoverAssigned(ctx context.Context, e CoverEvent) {
 	n.enqueue(ctx, EventCoverAssigned, e, []recipientRef{{id: e.CoverMemberID, name: e.CoverMemberName}})
 }
 
+// UserPendingApproval implements Notifier. The event is fanned out to
+// every active admin (rather than a single recipient), so this method
+// resolves the admin list directly instead of going through enqueue's
+// per-recipient shape.
+func (n *ChannelNotifier) UserPendingApproval(ctx context.Context, e UserPendingApprovalEvent) {
+	if n.resolver == nil {
+		return
+	}
+	admins, err := n.resolver.ListActiveAdmins(ctx)
+	if err != nil || len(admins) == 0 {
+		return
+	}
+	refs := make([]recipientRef, 0, len(admins))
+	for _, a := range admins {
+		refs = append(refs, recipientRef{id: a.ID, name: a.Name})
+	}
+	n.enqueue(ctx, EventUserPendingApproval, e, refs)
+}
+
 // recipientRef pairs a member id with a name hint. The name hint lets
 // callers pass the name they already loaded (e.g. from a swap join)
 // without forcing the notifier to re-query.

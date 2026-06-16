@@ -25,7 +25,20 @@ func NewUserService(db *sqlc.Queries, encryptor *TokenEncryptor) *UserService {
 	}
 }
 
+// IsUserActive reports whether a user row is currently active (not
+// pending admin approval and not admin-deactivated). The callback
+// uses this to decide whether to issue a session or render the
+// pending-approval page.
+func IsUserActive(u *sqlc.User) bool {
+	return u != nil && u.IsActive.Valid && u.IsActive.Int64 == 1
+}
+
 // GetOrCreateUser finds a user by provider info or creates a new one.
+// New users are created pending (is_active = 0) by CreateUserAsFirstAdmin
+// unless they are the very first user in the system, which is
+// bootstrapped as active + admin so the operator can log in. Callers
+// (the OAuth callback) should check IsUserActive on the returned user
+// and refuse to issue a session for a pending one.
 func (us *UserService) GetOrCreateUser(ctx context.Context, userInfo *UserInfo, providerName string) (*sqlc.User, error) {
 	// Try to find existing user by provider
 	existingUser, err := us.db.GetUserByProvider(ctx, sqlc.GetUserByProviderParams{
@@ -52,7 +65,9 @@ func (us *UserService) GetOrCreateUser(ctx context.Context, userInfo *UserInfo, 
 	// Create new user
 	userID := uuid.New().String()
 
-	// Use atomic query that checks admin count and creates user in one operation
+	// Use atomic query that checks admin count and creates user in one operation.
+	// The first-ever user becomes active + admin; everyone else is
+	// pending (is_active = 0) until an admin approves them.
 	newUser, err := us.db.CreateUserAsFirstAdmin(ctx, sqlc.CreateUserAsFirstAdminParams{
 		ID:         userID,
 		Email:      userInfo.Email,
@@ -67,12 +82,18 @@ func (us *UserService) GetOrCreateUser(ctx context.Context, userInfo *UserInfo, 
 	return &newUser, nil
 }
 
-// EnsureTeamMember ensures a corresponding team member exists for an authenticated user.
+// EnsureTeamMember ensures a corresponding team member exists for an
+// authenticated user. isActive is the user's is_active flag — when
+// false (pending admin approval), the team member is created or
+// looked up but a deactivated team member is NOT reactivated, so
+// the admin can see pending users on the team page without
+// silently restoring access.
 //
-// If the member exists, it will be reactivated (if inactive) but its existing
-// display name is preserved.
+// If the member exists and isActive is true, the member is
+// reactivated (if inactive) but its existing display name is
+// preserved.
 // If not, it will be created.
-func (us *UserService) EnsureTeamMember(ctx context.Context, userInfo *UserInfo) error {
+func (us *UserService) EnsureTeamMember(ctx context.Context, userInfo *UserInfo, isActive bool) error {
 	name, email, err := normalizeUserIdentity(userInfo)
 	if err != nil {
 		return err
@@ -80,7 +101,7 @@ func (us *UserService) EnsureTeamMember(ctx context.Context, userInfo *UserInfo)
 
 	member, err := us.db.GetMemberByEmail(ctx, email)
 	if err == nil {
-		return us.syncTeamMember(ctx, member)
+		return us.syncTeamMember(ctx, member, isActive)
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("failed to look up team member: %w", err)
@@ -93,7 +114,7 @@ func (us *UserService) EnsureTeamMember(ctx context.Context, userInfo *UserInfo)
 		if fetchErr != nil {
 			return fmt.Errorf("failed to fetch team member after unique constraint: %w", fetchErr)
 		}
-		return us.syncTeamMember(ctx, member)
+		return us.syncTeamMember(ctx, member, isActive)
 	} else {
 		return fmt.Errorf("failed to create team member: %w", err)
 	}
@@ -118,7 +139,12 @@ func (us *UserService) insertTeamMember(ctx context.Context, name, email string)
 	return err
 }
 
-func (us *UserService) syncTeamMember(ctx context.Context, member sqlc.TeamMember) error {
+func (us *UserService) syncTeamMember(ctx context.Context, member sqlc.TeamMember, isActive bool) error {
+	if !isActive {
+		// Pending user — leave the team member's activation state
+		// alone so the admin can see who is awaiting approval.
+		return nil
+	}
 	if member.IsActive.Valid && member.IsActive.Int64 == 0 {
 		if err := us.db.ActivateTeamMember(ctx, member.ID); err != nil {
 			return fmt.Errorf("failed to activate team member: %w", err)

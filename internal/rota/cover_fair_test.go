@@ -99,18 +99,18 @@ func TestEngine_MultipleSeparateLeaves(t *testing.T) {
 	t.Logf("Cover 3 (Jan 23, Bob out again): %s", memberNames[cover3])
 
 	// Expected covers. The cover rotation is a persisted state
-	// (last_date, last_index) that advances by one slot per working
-	// day. The first call seeds the state at the call's date with
-	// index 0, so:
-	//   Jan 16 → state seeded at (Jan 16, 0) → index 0 → Alice (not on leave → covers)
-	//   Jan 17 → state advances to (Jan 17, 1) → index 1 → Bob (not on leave → covers)
-	//   Jan 23 → state advances to (Jan 23, 0) → index 0 → Alice (not on leave → covers)
+	// (last_date, last_index) that records the slot of the person
+	// who actually covered. The state advances by one slot per
+	// working day relative to its last value:
+	//   Jan 16 → candidate 0 → Alice covers (not on leave) → state committed at (Jan 16, 0)
+	//   Jan 17 → candidate 0 + 1 = 1 → Bob covers (not on leave) → state committed at (Jan 17, 1)
+	//   Jan 23 → candidate 1 + 4 = 5 mod 5 = 0 → Alice covers (not on leave)
 	// The rotation wraps after a full team cycle (5 working days), so
 	// the same person may legitimately cover two non-consecutive leaves.
 	// The key property the test guards is that the rotation *advances*
 	// across leaves — it does not always return the same person.
-	require.Equal(t, aliceID, cover1, "First cover (Jan 16) should be Alice (state seeded at index 0)")
-	require.Equal(t, bobID, cover2, "Second cover (Jan 17) should be Bob (state advanced to index 1)")
+	require.Equal(t, aliceID, cover1, "First cover (Jan 16) should be Alice (candidate slot 0)")
+	require.Equal(t, bobID, cover2, "Second cover (Jan 17) should be Bob (state advanced to slot 1)")
 	require.Equal(t, aliceID, cover3, "Third cover (Jan 23) should be Alice (rotation wrapped after 5 working days)")
 
 	// Test would fail if the same person is always chosen for cover
@@ -196,15 +196,18 @@ func TestEngine_CoverRotationAcrossMultipleMembers(t *testing.T) {
 	}
 
 	// Expected covers. The cover rotation is a persisted state
-	// (last_date, last_index) that advances by one slot per working
-	// day. The first call seeds the state at the call's date with
-	// index 0, so:
-	//   Jan 15 → state seeded at (Jan 15, 0) → index 0 → Alice on leave → Bob
-	//   Jan 16 → state advances to (Jan 16, 1) → index 1 → Bob on leave → Charlie
-	//   Jan 17 → state advances to (Jan 17, 2) → index 2 → Charlie on leave → Dave
+	// (last_date, last_index) that records the slot of the person
+	// who actually covered. The state advances by one slot per
+	// working day relative to its last committed value:
+	//   Jan 15 → candidate 0 (fresh state) → Alice on leave → Bob covers
+	//     → state committed at (Jan 15, 1)
+	//   Jan 16 → candidate 1 + 1 = 2 → Charlie (only Bob is on leave) covers
+	//     → state committed at (Jan 16, 2)
+	//   Jan 17 → candidate 2 + 1 = 3 → Dave (only Charlie is on leave) covers
+	//     → state committed at (Jan 17, 3)
 	//   Jan 22 → Alice on leave, but R1 is Bob (not on leave), so no cover.
-	require.Equal(t, bobID, covers["2024-01-15"], "Bob should cover (state seeded at index 0, Alice on leave → next)")
-	require.Equal(t, charlieID, covers["2024-01-16"], "Charlie should cover (state advanced to index 1, Bob on leave → next)")
-	require.Equal(t, daveID, covers["2024-01-17"], "Dave should cover (state advanced to index 2, Charlie on leave → next)")
+	require.Equal(t, bobID, covers["2024-01-15"], "Bob should cover (candidate slot 0, Alice on leave → next)")
+	require.Equal(t, charlieID, covers["2024-01-16"], "Charlie should cover (candidate slot 2 from Jan 15 state + 1 working day)")
+	require.Equal(t, daveID, covers["2024-01-17"], "Dave should cover (candidate slot 3 from Jan 16 state + 1 working day)")
 	require.NotContains(t, covers, "2024-01-22", "No cover should be created when leave member was not scheduled")
 }

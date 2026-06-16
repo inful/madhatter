@@ -853,17 +853,19 @@ func TestEngine_CoverRotationDeterministic(t *testing.T) {
 
 	// Verify the rotation pattern. The cover rotation is a persisted
 	// state (last_date, last_index) that advances by one slot per
-	// working day. The first call seeds the state at the call's date
-	// with index 0, so:
-	//   Jan 15 → state seeded at (Jan 15, 0) → index 0 → Alice on leave → Bob
-	//   Jan 19 → state advances to (Jan 19, 0) → index 0 → Alice on leave → Bob
-	// Both dates land on index 0 (the delta from Jan 15 to Jan 19 is
-	// exactly one full team cycle of 4 working days), so the same
-	// person covers both. This is the expected behavior of the
+	// working day. The first call commits the slot of the person
+	// who actually covered (not the candidate slot). Alice is on
+	// leave, so the candidate at slot 0 is skipped and Bob (slot 1)
+	// covers; the state is seeded at (Jan 15, 1):
+	//   Jan 15 → candidate 0, findCover walks to Bob → state committed at (Jan 15, 1)
+	//   Jan 19 → candidate 1 + 4 working days = 5 mod 4 = 1 → Alice on leave → Bob
+	// The delta from Jan 15 to Jan 19 is exactly one full team cycle
+	// of 4 working days, so the second call's candidate lands on the
+	// same slot Bob occupies. This is the expected behavior of the
 	// state-based rotation: it is fully deterministic and
 	// reproducible, even if it doesn't guarantee distinct covers for
 	// every pair of dates.
-	require.Equal(t, bobID, cover1, "First cover (Jan 15) should be Bob (state seeded at index 0, Alice on leave → next)")
+	require.Equal(t, bobID, cover1, "First cover (Jan 15) should be Bob (candidate slot 0, Alice on leave → next)")
 	require.Equal(t, bobID, cover2, "Second cover (Jan 19) should be Bob (state wrapped after 4 working days)")
 }
 

@@ -74,10 +74,21 @@ func TestR2_RecordsActualCover_NotCandidate(t *testing.T) {
 
 	leaves, err := db.GetLeaveRecords(ctx)
 	require.NoError(t, err)
-	// Sort by start_date ASC: the production path processes one
-	// leave at a time and the state always moves forward. This
-	// test loop processes multiple leaves, so it must walk them
-	// in chronological order to match the production contract.
+	// Sort by start_date ASC: the per-leave web handler path
+	// processes one leave at a time and the state always moves
+	// forward, so the chronological order is implicit. This test
+	// loop processes multiple leaves in one batch, so it must
+	// walk them in chronological order explicitly — the same
+	// order the per-leave path would process them in.
+	//
+	// Note: ReassignCovers (run at server startup) iterates
+	// leaves in start_date DESC order and relies on the
+	// walk-backward branch of computeCoverRotationIndex to avoid
+	// corrupting forward-progressed state. That branch does not
+	// write, so processing leaves out of order is safe — it just
+	// means the state only reflects the latest-leave date in
+	// the batch. The web-handler path (which is the one this
+	// fix targets) is the ASC-order path.
 	sort.Slice(leaves, func(i, j int) bool {
 		return leaves[i].StartDate.Before(leaves[j].StartDate)
 	})

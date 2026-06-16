@@ -146,25 +146,45 @@ func (e *Engine) processDate(ctx context.Context, currentDate time.Time, members
 // rather than silently producing a schedule where the on-leave
 // member "covers" themselves.
 func (e *Engine) determineCoveringMember(ctx context.Context, originalMember database.TeamMember, leaves []database.LeaveRecord, members []database.TeamMember, currentDate time.Time) (database.TeamMember, error) {
+	if !originalIsOnLeave(originalMember, leaves) {
+		return originalMember, nil
+	}
+
+	// Two-phase: compute the candidate slot, let findCover
+	// resolve the actual cover (which may differ if the
+	// candidate is on leave), then commit the actual-cover
+	// slot. This is what keeps two consecutive covers from
+	// landing on the same person when the candidate is on
+	// leave — the state records the slot of the person who
+	// actually covered, so the next call advances from there.
+	candidate, err := e.computeCoverRotationIndex(ctx, currentDate, len(members))
+	if err != nil {
+		return database.TeamMember{}, err
+	}
+	cover, coverErr := e.findCover(members, leaves, candidate)
+	if coverErr != nil {
+		// No available cover (e.g. every other member is on leave)
+		// falls through to the original member: the original
+		// assignment remains in place, and the schedule still
+		// surfaces a clear "this person was supposed to be on rota
+		// but no one could cover" state. This is the historical
+		// behavior and is intentional, not an error.
+		return originalMember, nil //nolint:nilerr // no cover available falls through to the original member
+	}
+	e.recordActualCoverSlot(ctx, currentDate, members, cover.ID)
+	return cover, nil
+}
+
+// originalIsOnLeave returns true if memberID appears in leaves
+// for the current day. Extracted to keep determineCoveringMember
+// readable — the for/if nesting was a nestif warning.
+func originalIsOnLeave(member database.TeamMember, leaves []database.LeaveRecord) bool {
 	for i := range leaves {
-		if leaves[i].MemberID == originalMember.ID {
-			// The cover rotation index is read from the persisted
-			// cover_rotation_state row and advanced forward by the
-			// number of working days since the last call. The first
-			// call seeds the state at (currentDate, 0); subsequent
-			// calls advance from there.
-			coverIndex, err := e.coverRotationIndex(ctx, currentDate, len(members))
-			if err != nil {
-				return database.TeamMember{}, err
-			}
-			cover, coverErr := e.findCover(members, leaves, coverIndex)
-			if coverErr == nil {
-				return cover, nil
-			}
-			break
+		if leaves[i].MemberID == member.ID {
+			return true
 		}
 	}
-	return originalMember, nil
+	return false
 }
 
 // createAssignment writes the rota assignment for one date and, on a
@@ -255,6 +275,36 @@ func (e *Engine) findCover(members []database.TeamMember, leaves []database.Leav
 	}
 
 	return database.TeamMember{}, errors.New("no available cover found")
+}
+
+// findMemberIndex returns the position of memberID in the members
+// slice, or -1 if not found. Used to record the slot of the
+// person actually assigned as cover (so the next cover call
+// advances from that slot, not from the rotation algorithm's
+// "candidate" slot). When the member is in the slice, the
+// returned int is always in [0, len(members)).
+func (e *Engine) findMemberIndex(members []database.TeamMember, memberID string) int {
+	for i := range members {
+		if members[i].ID == memberID {
+			return i
+		}
+	}
+	return -1
+}
+
+// recordActualCoverSlot commits the slot of the cover that was
+// actually assigned, not the slot the rotation algorithm started
+// looking at. Errors are intentionally ignored here — they are
+// rare (DB-level failures on a single UPSERT) and the next call
+// would re-derive a sensible state anyway. The leave itself has
+// already been created and its status updated, so the user-facing
+// flow is complete; a missed rotation commit only affects the
+// distribution of covers on subsequent days, not the
+// correctness of this one.
+func (e *Engine) recordActualCoverSlot(ctx context.Context, d time.Time, members []database.TeamMember, coverID string) {
+	if actualIndex := e.findMemberIndex(members, coverID); actualIndex >= 0 {
+		_ = e.commitCoverRotationState(ctx, d, actualIndex)
+	}
 }
 
 // AssignCoversForLeave creates cover assignments for a leave record.
@@ -367,26 +417,34 @@ func (e *Engine) shouldSkipDate(d time.Time) bool {
 	return false
 }
 
-// coverRotationIndex returns the cover rotation index for currentDate,
-// using the persisted cover_rotation_state row as the anchor. The state
-// stores the index for a specific date; for any later date, the new
-// index is the old index plus the number of working days (weekdays
-// that are not holidays) between them, modulo teamSize.
+// computeCoverRotationIndex returns the cover rotation candidate
+// index for currentDate. It is a pure read: no state is written.
+// The caller is expected to pick the cover via findCover and then
+// call commitCoverRotationState with the slot of the cover that
+// was actually assigned — which may differ from the candidate if
+// the candidate was on leave and findCover fell through to the
+// next non-on-leave member.
 //
-// The engine only ever queries for dates >= state.last_date, so the
-// state always moves forward in time. On the first call after a fresh
-// database, the state is initialized at (currentDate, 0) — the
-// current date itself is the anchor, and the rotation advances from
-// there. This means:
-//   - No O(years_in_operation) walk on every call.
-//   - Retroactive holiday changes only affect the delta from the last
-//     stored state to the current date, not the entire history.
+// The state shape: a (last_date, last_index) pair. The stored
+// last_index is the slot of the person who actually covered
+// last_date. For any later date, the candidate is the stored
+// index plus the number of working days (weekdays that are not
+// holidays) between, modulo teamSize.
 //
-// If a caller ever queries for a date before the stored state (which
-// should not happen — the engine only looks forward), we walk backward
-// from the stored state without updating it. This is a safety net, not
-// a normal code path.
-func (e *Engine) coverRotationIndex(ctx context.Context, currentDate time.Time, teamSize int) (int, error) {
+// The engine only ever queries for dates >= state.last_date, so
+// the state always moves forward in time. On the first call
+// after a fresh database, no row exists yet and the function
+// returns 0 without writing. The caller's subsequent
+// commitCoverRotationState call seeds the row with the slot of
+// the person who actually covered currentDate — which is
+// usually 0 too, but can be > 0 if the person at index 0 is on
+// leave and findCover walked past them.
+//
+// If a caller ever queries for a date before the stored state
+// (which should not happen — the engine only looks forward), we
+// walk backward from the stored state without updating it. This
+// is a safety net, not a normal code path.
+func (e *Engine) computeCoverRotationIndex(ctx context.Context, currentDate time.Time, teamSize int) (int, error) {
 	if teamSize <= 0 {
 		return 0, nil
 	}
@@ -394,16 +452,14 @@ func (e *Engine) coverRotationIndex(ctx context.Context, currentDate time.Time, 
 
 	lastDate, lastIndex, err := e.db.GetCoverRotationState(ctx)
 	if err != nil {
-		// sql.ErrNoRows means no state yet — initialize at the
-		// current date with index 0. Any other error is a real
-		// failure and must surface.
-		if !errors.Is(err, sql.ErrNoRows) {
-			return 0, fmt.Errorf("read cover rotation state: %w", err)
+		// sql.ErrNoRows means no state yet. The caller will commit
+		// the actual-cover slot on the first successful call, so
+		// we just return the default seed value of 0 without
+		// touching the DB. Any other error is a real failure.
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, nil
 		}
-		if err := e.db.UpsertCoverRotationState(ctx, currentDate, 0); err != nil {
-			return 0, fmt.Errorf("initialize cover rotation state: %w", err)
-		}
-		return 0, nil
+		return 0, fmt.Errorf("read cover rotation state: %w", err)
 	}
 
 	lastDate = lastDate.UTC().Truncate(hoursPerDay * time.Hour)
@@ -420,13 +476,10 @@ func (e *Engine) coverRotationIndex(ctx context.Context, currentDate time.Time, 
 		// Advance forward from the stored state. The delta is bounded
 		// by how far the caller has moved since the last call (usually
 		// one or two business days), not by the total age of the
-		// installation.
+		// installation. No state write here — the caller will commit
+		// the actual-cover slot, not this candidate slot.
 		delta := e.workingDaysBetween(lastDate, currentDate)
-		newIndex := modNonNegative(lastIndex+delta, teamSize)
-		if err := e.db.UpsertCoverRotationState(ctx, currentDate, newIndex); err != nil {
-			return 0, fmt.Errorf("update cover rotation state: %w", err)
-		}
-		return newIndex, nil
+		return modNonNegative(lastIndex+delta, teamSize), nil
 
 	default:
 		// currentDate is before the stored state. The engine only
@@ -437,6 +490,22 @@ func (e *Engine) coverRotationIndex(ctx context.Context, currentDate time.Time, 
 		delta := e.workingDaysBetween(currentDate, lastDate)
 		return modNonNegative(lastIndex-delta, teamSize), nil
 	}
+}
+
+// commitCoverRotationState writes the actual-cover slot to the
+// cover_rotation_state row. The caller must call this after
+// findCover has resolved the cover member — passing the slot of
+// the person actually assigned, not the slot the rotation
+// algorithm started looking at. The delta to the next call is
+// then computed from the actual cover, so two consecutive calls
+// always produce covers that are at least one slot apart
+// (modulo team size). The "only one person available" case
+// (every other team member is on leave) is honored naturally:
+// the state advances by 0 between calls and the same person
+// covers repeatedly.
+func (e *Engine) commitCoverRotationState(ctx context.Context, currentDate time.Time, index int) error {
+	truncated := currentDate.UTC().Truncate(hoursPerDay * time.Hour)
+	return e.db.UpsertCoverRotationState(ctx, truncated, index)
 }
 
 // r1RotationIndex returns the R1 (original-HAT) rotation index for
@@ -544,11 +613,19 @@ func (e *Engine) processLeaveDate(ctx context.Context, d time.Time, members []da
 		return "", err
 	}
 
-	coverIndex, err := e.coverRotationIndex(ctx, d, len(members))
+	// Two-phase cover assignment: compute the candidate slot,
+	// let findCover resolve the actual cover (which may differ
+	// from the candidate if the candidate is on leave), then
+	// commit the actual-cover slot. Recording the slot of the
+	// person who actually covered — not the slot the rotation
+	// algorithm started looking at — is what keeps two
+	// consecutive covers from landing on the same person when
+	// the candidate is on leave.
+	candidate, err := e.computeCoverRotationIndex(ctx, d, len(members))
 	if err != nil {
 		return "", err
 	}
-	cover, err := e.findCover(members, allLeaves, coverIndex)
+	cover, err := e.findCover(members, allLeaves, candidate)
 	if err != nil {
 		// Skip if no cover available - this is intentional
 		return "", nil //nolint:nilerr // no cover available is a valid outcome, not an error
@@ -561,6 +638,8 @@ func (e *Engine) processLeaveDate(ctx context.Context, d time.Time, members []da
 	if err := e.db.UpdateLeaveStatus(ctx, leaveID, "assigned"); err != nil {
 		return "", err
 	}
+
+	e.recordActualCoverSlot(ctx, d, members, cover.ID)
 
 	return cover.ID, nil
 }

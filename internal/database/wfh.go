@@ -416,7 +416,8 @@ func (db *DB) withdrawWFH(ctx context.Context, id, memberID, actorUserID string)
 	if err != nil {
 		return errors.New("invalid stored WFH date")
 	}
-	today := time.Now().UTC().Truncate(hoursPerDay * time.Hour)
+	nowUTC := time.Now().UTC()
+	today := time.Date(nowUTC.Year(), nowUTC.Month(), nowUTC.Day(), 0, 0, 0, 0, time.UTC)
 	if wfhDate.UTC().Before(today) {
 		return ErrWFHDatePassed
 	}

@@ -341,7 +341,7 @@ func wfhWebErrorMessage(err error) string {
 	case errors.Is(err, database.ErrWFHDuplicateRequest):
 		return "A WFH request already exists for this date."
 	case errors.Is(err, database.ErrWFHDatePassed):
-		return "The selected date has already passed."
+		return "This WFH day has already passed."
 	case errors.Is(err, database.ErrWFHDateTooFar):
 		return "WFH requests can only be made up to a limited number of days in advance."
 	case errors.Is(err, database.ErrWFHRecurringContractDay):

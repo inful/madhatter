@@ -136,6 +136,11 @@ func (f *fakeNotifier) CoverAssigned(_ context.Context, _ notify.CoverEvent) {
 	f.coverAssignments++
 }
 
+func (f *fakeNotifier) UserPendingApproval(_ context.Context, _ notify.UserPendingApprovalEvent) {
+	// No-op for tests; the swap handlers in this package never fire
+	// this event — only the auth callback does.
+}
+
 // mustGetMemberID looks up a team member by email and returns their
 // id, failing the test if not found. Convenience for tests that
 // need to set up a swap with a known email.

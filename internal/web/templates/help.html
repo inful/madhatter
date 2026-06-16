@@ -32,7 +32,7 @@
         <div class="content">
             <p>Use Leave to report absences. Admins review and manage leave records from the management page.</p>
             <p>Use WFH to submit work-from-home requests. Requests are settled by policy and may be approved or denied based on capacity rules.</p>
-            <p>Approved WFH requests can be withdrawn by admins before the configured cutoff time.</p>
+            <p>Approved WFH requests can be withdrawn by the requester (or by an admin) up until midnight of the WFH day.</p>
         </div>
     </div>
 </div>
@@ -61,7 +61,7 @@
             <p>If a member has a weekday set as recurring WFH, the system treats every upcoming occurrence of that weekday in the current period as an approved request. Those rows appear in the WFH list alongside ad-hoc requests, marked with the same Approved status, and the same Withdraw button works on them. Withdrawing a single occurrence frees one quota slot for that period; the next period reverts to the configured schedule.</p>
 
             <h4 class="title is-6 mb-2 mt-4">Withdrawing</h4>
-            <p>Approved requests can be withdrawn up to a fixed number of hours before the WFH day. The cutoff exists so the on-site roster isn't disrupted the night before. Withdrawals are processed through the same flow whether the user or an admin triggers them.</p>
+            <p>Approved requests can be withdrawn by the requester or by an admin at any time before the WFH day itself. The day itself is still withdrawable, but once the day has passed the request is locked. Withdrawals are processed through the same flow whether the user or an admin triggers them.</p>
         </div>
 
         {{if .WFHConfigured}}
@@ -87,10 +87,6 @@
                 <tr>
                     <th>Period length</th>
                     <td>{{.WFHPeriodDays}} day(s)</td>
-                </tr>
-                <tr>
-                    <th>Withdrawal cutoff</th>
-                    <td>{{.WFHWithdrawalHours}} hour(s) before the WFH day</td>
                 </tr>
             </tbody>
         </table>

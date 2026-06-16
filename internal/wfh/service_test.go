@@ -44,7 +44,6 @@ func testConfig() Config {
 		PeriodDays:          7,
 		PeriodAnchor:        defaultPeriodAnchor,
 		SettlementDays:      2,
-		WithdrawalHours:     24,
 		RequestHorizonDays:  defaultRequestHorizonDays,
 	}
 }
@@ -58,7 +57,6 @@ func TestLoadConfigFromEnv_DefaultsAndOverrides(t *testing.T) {
 	assert.Equal(t, defaultPeriodDays, cfg.PeriodDays)
 	assert.Equal(t, defaultPeriodAnchor, cfg.PeriodAnchor)
 	assert.Equal(t, defaultSettlementDays, cfg.SettlementDays)
-	assert.Equal(t, defaultWithdrawalHours, cfg.WithdrawalHours)
 	assert.Equal(t, defaultRequestHorizonDays, cfg.RequestHorizonDays)
 
 	t.Setenv("WFH_ENABLED", "false")
@@ -68,7 +66,6 @@ func TestLoadConfigFromEnv_DefaultsAndOverrides(t *testing.T) {
 	t.Setenv("WFH_PERIOD_DAYS", "14")
 	t.Setenv("WFH_PERIOD_ANCHOR", "2026-02-02")
 	t.Setenv("WFH_SETTLEMENT_DAYS", "5")
-	t.Setenv("WFH_WITHDRAWAL_HOURS", "72")
 	t.Setenv("WFH_REQUEST_HORIZON_DAYS", "180")
 
 	cfg = LoadConfigFromEnv()
@@ -79,7 +76,6 @@ func TestLoadConfigFromEnv_DefaultsAndOverrides(t *testing.T) {
 	assert.Equal(t, 14, cfg.PeriodDays)
 	assert.Equal(t, "2026-02-02", cfg.PeriodAnchor)
 	assert.Equal(t, 5, cfg.SettlementDays)
-	assert.Equal(t, 72, cfg.WithdrawalHours)
 	assert.Equal(t, 180, cfg.RequestHorizonDays)
 
 	t.Setenv("WFH_ENABLED", "not-a-bool")

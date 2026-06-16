@@ -13,19 +13,18 @@ import (
 
 // WFH sentinel errors.
 var (
-	ErrWFHNotFound                 = errors.New("WFH request not found")
-	ErrWFHNotOwner                 = errors.New("you can only modify your own WFH requests")
-	ErrWFHAlreadySettled           = errors.New("WFH request has already been settled")
-	ErrWFHWithdrawalDeadlinePassed = errors.New("withdrawal deadline has passed")
-	ErrWFHDuplicateRequest         = errors.New("a WFH request already exists for this date")
-	ErrWFHInvalidDate              = errors.New("invalid date format, expected YYYY-MM-DD")
-	ErrWFHDatePassed               = errors.New("WFH date has already passed")
-	ErrWFHDateTooFar               = errors.New("WFH date is beyond the request horizon")
-	ErrWFHMemberNotFound           = errors.New("member not found")
-	ErrWFHRecurringContractDay     = errors.New("this weekday is already configured as recurring WFH for the member")
-	ErrWFHPermanentMember          = ErrWFHRecurringContractDay
-	ErrWFHNotApproved              = errors.New("WFH request is not approved")
-	ErrWFHOnHoliday                = errors.New("WFH requests cannot be made for holidays")
+	ErrWFHNotFound             = errors.New("WFH request not found")
+	ErrWFHNotOwner             = errors.New("you can only modify your own WFH requests")
+	ErrWFHAlreadySettled       = errors.New("WFH request has already been settled")
+	ErrWFHDuplicateRequest     = errors.New("a WFH request already exists for this date")
+	ErrWFHInvalidDate          = errors.New("invalid date format, expected YYYY-MM-DD")
+	ErrWFHDatePassed           = errors.New("WFH date has already passed")
+	ErrWFHDateTooFar           = errors.New("WFH date is beyond the request horizon")
+	ErrWFHMemberNotFound       = errors.New("member not found")
+	ErrWFHRecurringContractDay = errors.New("this weekday is already configured as recurring WFH for the member")
+	ErrWFHPermanentMember      = ErrWFHRecurringContractDay
+	ErrWFHNotApproved          = errors.New("WFH request is not approved")
+	ErrWFHOnHoliday            = errors.New("WFH requests cannot be made for holidays")
 )
 
 // wfhFields holds the WFH request columns selected by every read query.
@@ -381,22 +380,25 @@ func (db *DB) CancelWFHRequest(ctx context.Context, id, memberID string) error {
 	return db.UpdateWFHRequestStatus(ctx, id, WFHStatusCancelled)
 }
 
-// WithdrawWFHRequest withdraws an approved WFH request (admin action) if the withdrawal
-// deadline has not yet passed.
-func (db *DB) WithdrawWFHRequest(ctx context.Context, id, adminUserID string, withdrawalHours int) error {
-	return db.withdrawWFH(ctx, id, "", adminUserID, withdrawalHours)
+// WithdrawWFHRequest withdraws an approved WFH request (admin
+// action) as long as the WFH date has not yet passed. The same
+// rule applies to self-withdraw — the date-not-passed check is
+// the only gate.
+func (db *DB) WithdrawWFHRequest(ctx context.Context, id, adminUserID string) error {
+	return db.withdrawWFH(ctx, id, "", adminUserID)
 }
 
 // WithdrawOwnWFHRequest withdraws an approved WFH request on behalf of the owning
-// member. Enforces ownership (MemberID must match) and the withdrawal deadline.
-func (db *DB) WithdrawOwnWFHRequest(ctx context.Context, id, memberID string, withdrawalHours int) error {
-	return db.withdrawWFH(ctx, id, memberID, "", withdrawalHours)
+// member. Enforces ownership (MemberID must match). The WFH date
+// must not have passed.
+func (db *DB) WithdrawOwnWFHRequest(ctx context.Context, id, memberID string) error {
+	return db.withdrawWFH(ctx, id, memberID, "")
 }
 
 // withdrawWFH is the shared implementation for admin and self-withdrawal. The
 // memberID, when non-empty, is enforced as the owning member. The actorUserID
 // is recorded as withdrawn_by.
-func (db *DB) withdrawWFH(ctx context.Context, id, memberID, actorUserID string, withdrawalHours int) error {
+func (db *DB) withdrawWFH(ctx context.Context, id, memberID, actorUserID string) error {
 	req, err := db.GetWFHRequestByID(ctx, id)
 	if err != nil {
 		return err
@@ -408,14 +410,15 @@ func (db *DB) withdrawWFH(ctx context.Context, id, memberID, actorUserID string,
 		return ErrWFHNotOwner
 	}
 
-	// Check withdrawal deadline: must be called at least withdrawalHours before midnight of the WFH day.
+	// Withdrawable as long as the WFH date has not yet passed.
+	// "today" is still withdrawable; "yesterday" is not.
 	wfhDate, err := time.Parse("2006-01-02", req.Date)
 	if err != nil {
 		return errors.New("invalid stored WFH date")
 	}
-	deadline := wfhDate.UTC().Add(-time.Duration(withdrawalHours) * time.Hour)
-	if time.Now().UTC().After(deadline) {
-		return ErrWFHWithdrawalDeadlinePassed
+	today := time.Now().UTC().Truncate(hoursPerDay * time.Hour)
+	if wfhDate.UTC().Before(today) {
+		return ErrWFHDatePassed
 	}
 
 	_, err = db.queries.UpdateWFHRequestWithdrawn(ctx, sqlc.UpdateWFHRequestWithdrawnParams{

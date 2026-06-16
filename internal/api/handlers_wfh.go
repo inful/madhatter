@@ -78,8 +78,6 @@ func wfhDomainToHumaError(err error) error {
 		return huma.Error422UnprocessableEntity(err.Error(), nil)
 	case errors.Is(err, database.ErrWFHNotApproved):
 		return huma.Error409Conflict(err.Error())
-	case errors.Is(err, database.ErrWFHWithdrawalDeadlinePassed):
-		return huma.Error409Conflict(err.Error())
 	default:
 		return huma.Error500InternalServerError("An unexpected error occurred", err)
 	}
@@ -214,7 +212,8 @@ func (s *Server) handleCancelWFH(ctx context.Context, input *WFHIDInput) (*WFHMe
 	return resp, nil
 }
 
-// handleWithdrawWFH lets an admin withdraw an approved WFH request before the deadline.
+// handleWithdrawWFH lets an admin withdraw an approved WFH
+// request. Allowed as long as the WFH date has not yet passed.
 func (s *Server) handleWithdrawWFH(ctx context.Context, input *WFHIDInput) (*WFHMessageOutput, error) {
 	if s.authMiddleware == nil {
 		return nil, huma.Error503ServiceUnavailable("Authentication not available")
@@ -228,12 +227,7 @@ func (s *Server) handleWithdrawWFH(ctx context.Context, input *WFHIDInput) (*WFH
 		return nil, huma.Error403Forbidden("Admin access required")
 	}
 
-	withdrawalHours := 24
-	if s.wfhService != nil {
-		withdrawalHours = s.wfhService.Config().WithdrawalHours
-	}
-
-	if err := s.db.WithdrawWFHRequest(ctx, input.ID, user.UserID, withdrawalHours); err != nil {
+	if err := s.db.WithdrawWFHRequest(ctx, input.ID, user.UserID); err != nil {
 		return nil, wfhDomainToHumaError(err)
 	}
 

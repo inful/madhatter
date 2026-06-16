@@ -21,9 +21,9 @@ func futureWeekday(from time.Time, weekday time.Weekday) time.Time {
 }
 
 // nextWeekdayInRange returns the next occurrence of weekday in the
-// inclusive [start, end] range. Used by tests that need a
-// deadline-friendly date (3+ days out from now is preferred for
-// 24h-deadline tests).
+// inclusive [start, end] range. Used by tests that need a future
+// date (any date from today onward works, since withdrawal is now
+// allowed up until midnight of the WFH day).
 func nextWeekdayInRange(t *testing.T, start, end time.Time, weekday time.Weekday) time.Time {
 	t.Helper()
 	for d := start; !d.After(end); d = d.AddDate(0, 0, 1) {

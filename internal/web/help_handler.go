@@ -25,7 +25,6 @@ func (h *Handler) handleHelp(w http.ResponseWriter, r *http.Request) {
 		data["WFHMinOnsiteAbsolute"] = cfg.MinOnsiteAbsolute
 		data["WFHMaxDaysPerPeriod"] = cfg.MaxDaysPerPeriod
 		data["WFHPeriodDays"] = cfg.PeriodDays
-		data["WFHWithdrawalHours"] = cfg.WithdrawalHours
 		data["WFHRequestHorizonDays"] = cfg.RequestHorizonDays
 	} else {
 		data["WFHConfigured"] = false

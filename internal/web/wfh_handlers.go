@@ -14,9 +14,8 @@ import (
 )
 
 const (
-	maxWFHFormBytes        = 1 << 20
-	errNotTeamMember       = "You are not registered as a team member."
-	defaultWithdrawalHours = 24
+	maxWFHFormBytes  = 1 << 20
+	errNotTeamMember = "You are not registered as a team member."
 )
 
 // wfhBaseData builds the common data map for WFH templates.
@@ -68,7 +67,6 @@ func (h *Handler) handleWFHList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data["Requests"] = enrichWFHRequests(requests, h.wfhService)
-	data["WithdrawalHours"] = wfhWithdrawalHours(h.wfhService)
 
 	// Quota status.
 	if h.wfhService != nil {
@@ -205,7 +203,7 @@ func (h *Handler) handleWFHCancel(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleWFHSelfWithdraw lets the current user withdraw their own approved WFH
-// request, subject to the configured withdrawal deadline.
+// request. Allowed as long as the WFH date has not yet passed.
 func (h *Handler) handleWFHSelfWithdraw(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := chi.URLParam(r, "id")
@@ -217,12 +215,7 @@ func (h *Handler) handleWFHSelfWithdraw(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	withdrawalHours := 24
-	if h.wfhService != nil {
-		withdrawalHours = h.wfhService.Config().WithdrawalHours
-	}
-
-	if err := h.db.WithdrawOwnWFHRequest(ctx, id, memberID, withdrawalHours); err != nil {
+	if err := h.db.WithdrawOwnWFHRequest(ctx, id, memberID); err != nil {
 		http.Error(w, wfhWebErrorMessage(err), http.StatusBadRequest)
 		return
 	}
@@ -236,17 +229,8 @@ type enrichedWFHRequest struct {
 	CanWithdraw bool
 }
 
-// wfhWithdrawalHours returns the configured withdrawal window, falling back to
-// the default 24h when the WFH service is not initialized.
-func wfhWithdrawalHours(svc *wfh.Service) int {
-	if svc != nil {
-		return svc.Config().WithdrawalHours
-	}
-	return defaultWithdrawalHours
-}
-
 // enrichWFHRequests attaches the CanWithdraw flag to each request based on its
-// status and the current withdrawal deadline. nil-safe.
+// status and whether the WFH date has passed. nil-safe.
 func enrichWFHRequests(requests []database.WFHRequest, svc *wfh.Service) []enrichedWFHRequest {
 	enriched := make([]enrichedWFHRequest, len(requests))
 	for i := range requests {
@@ -286,7 +270,6 @@ func (h *Handler) handleWFHAdminPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data["Requests"] = enrichWFHRequests(requests, h.wfhService)
-	data["WithdrawalHours"] = wfhWithdrawalHours(h.wfhService)
 
 	if err := h.tmpl.ExecuteTemplate(w, "wfh_manage.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -300,11 +283,6 @@ func (h *Handler) handleWFHAdminWithdraw(w http.ResponseWriter, r *http.Request)
 
 	user := mustGetUser(ctx)
 
-	withdrawalHours := 24
-	if h.wfhService != nil {
-		withdrawalHours = h.wfhService.Config().WithdrawalHours
-	}
-
 	// Load the request before withdrawal so the notifier has the
 	// member_id and date. After the UPDATE, the request is still
 	// readable but its status is already 'withdrawn'.
@@ -314,7 +292,7 @@ func (h *Handler) handleWFHAdminWithdraw(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := h.db.WithdrawWFHRequest(ctx, id, user.UserID, withdrawalHours); err != nil {
+	if err := h.db.WithdrawWFHRequest(ctx, id, user.UserID); err != nil {
 		http.Error(w, wfhWebErrorMessage(err), http.StatusBadRequest)
 		return
 	}
@@ -372,8 +350,6 @@ func wfhWebErrorMessage(err error) string {
 		return "WFH requests cannot be made for holidays."
 	case errors.Is(err, database.ErrWFHNotApproved):
 		return "Only approved WFH requests can be withdrawn."
-	case errors.Is(err, database.ErrWFHWithdrawalDeadlinePassed):
-		return "The withdrawal deadline for this WFH day has passed."
 	default:
 		return err.Error()
 	}

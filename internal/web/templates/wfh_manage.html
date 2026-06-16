@@ -88,7 +88,7 @@
                                 </button>
                             </form>
                             {{else if eq .Status "approved"}}
-                            <span class="tag is-light is-small" title="Withdrawal deadline has passed">Past deadline</span>
+                            <span class="tag is-light is-small" title="The WFH day has already passed">Date passed</span>
                             {{end}}
                         </td>
                     </tr>
@@ -99,12 +99,10 @@
     </div>
 </div>
 
-{{if .WithdrawalHours}}
 <div class="notification is-info is-light mt-4">
     <i class="fas fa-info-circle mr-2"></i>
-    Approved WFH requests can be withdrawn up to <strong>{{.WithdrawalHours}} hours</strong> before the scheduled WFH day.
+    Approved WFH requests can be withdrawn at any time before the scheduled WFH day.
 </div>
-{{end}}
 {{else}}
 <div class="notification is-info is-light">
     <i class="fas fa-info-circle mr-2"></i> There are no WFH requests to display.

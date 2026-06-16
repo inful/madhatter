@@ -47,7 +47,6 @@ func TestHandleWFHList_MaterializesRecurringRows(t *testing.T) {
 		PeriodDays:          7,
 		PeriodAnchor:        "2026-01-05",
 		SettlementDays:      2,
-		WithdrawalHours:     24,
 		RequestHorizonDays:  90,
 	})
 	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
@@ -112,7 +111,6 @@ func TestHandleWFHRequestPost_BeyondHorizon_RendersError(t *testing.T) {
 		PeriodDays:          7,
 		PeriodAnchor:        "2026-01-05",
 		SettlementDays:      2,
-		WithdrawalHours:     24,
 		RequestHorizonDays:  90,
 	})
 	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)

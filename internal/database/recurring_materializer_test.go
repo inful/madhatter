@@ -91,7 +91,7 @@ func TestHasWFHRequestOnDate(t *testing.T) {
 		req, err := db.CreateWFHRequest(ctx, memberID, d)
 		require.NoError(t, err)
 		require.NoError(t, db.UpdateWFHRequestStatus(ctx, req.ID, WFHStatusApproved))
-		require.NoError(t, db.WithdrawOwnWFHRequest(ctx, req.ID, memberID, 24))
+		require.NoError(t, db.WithdrawOwnWFHRequest(ctx, req.ID, memberID))
 
 		exists, err := db.HasWFHRequestOnDate(ctx, memberID, d)
 		require.NoError(t, err)

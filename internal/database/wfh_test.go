@@ -50,15 +50,28 @@ func TestWithdrawOwnWFHRequest(t *testing.T) {
 		}
 	}
 
-	dateOK := futureDay(10)  // 24h withdrawal deadline still future
-	dateNear := futureDay(1) // 24h deadline already passed
+	dateOK := futureDay(10)    // comfortably in the future
+	dateToday := todayUTC()    // today is still withdrawable
+	dateYesterday := pastDay() // yesterday is past, must be rejected
 
-	t.Run("owner can withdraw", func(t *testing.T) {
+	t.Run("owner can withdraw future request", func(t *testing.T) {
 		req, err := db.CreateWFHRequest(ctx, aliceID, dateOK)
 		require.NoError(t, err)
 		require.NoError(t, db.UpdateWFHRequestStatus(ctx, req.ID, WFHStatusApproved))
 
-		err = db.WithdrawOwnWFHRequest(ctx, req.ID, aliceID, 24)
+		err = db.WithdrawOwnWFHRequest(ctx, req.ID, aliceID)
+		require.NoError(t, err)
+		got, err := db.GetWFHRequestByID(ctx, req.ID)
+		require.NoError(t, err)
+		assert.Equal(t, WFHStatusWithdrawn, got.Status)
+	})
+
+	t.Run("owner can withdraw request for today", func(t *testing.T) {
+		req, err := db.CreateWFHRequest(ctx, aliceID, dateToday)
+		require.NoError(t, err)
+		require.NoError(t, db.UpdateWFHRequestStatus(ctx, req.ID, WFHStatusApproved))
+
+		err = db.WithdrawOwnWFHRequest(ctx, req.ID, aliceID)
 		require.NoError(t, err)
 		got, err := db.GetWFHRequestByID(ctx, req.ID)
 		require.NoError(t, err)
@@ -70,7 +83,7 @@ func TestWithdrawOwnWFHRequest(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, db.UpdateWFHRequestStatus(ctx, req.ID, WFHStatusApproved))
 
-		err = db.WithdrawOwnWFHRequest(ctx, req.ID, bobID, 24)
+		err = db.WithdrawOwnWFHRequest(ctx, req.ID, bobID)
 		require.ErrorIs(t, err, ErrWFHNotOwner)
 
 		got, err := db.GetWFHRequestByID(ctx, req.ID)
@@ -78,13 +91,26 @@ func TestWithdrawOwnWFHRequest(t *testing.T) {
 		assert.Equal(t, WFHStatusApproved, got.Status)
 	})
 
-	t.Run("deadline enforced", func(t *testing.T) {
-		req, err := db.CreateWFHRequest(ctx, aliceID, dateNear)
+	t.Run("past date is rejected", func(t *testing.T) {
+		// CreateWFHRequest itself rejects past dates, so seed the
+		// past-dated row directly via the queries layer and flip
+		// the status to approved.
+		reqID := "past-row-id"
+		_, err := db.GetQueries().CreateWFHRequest(ctx, sqlc.CreateWFHRequestParams{
+			ID:       reqID,
+			MemberID: aliceID,
+			Date:     parseDate(t, dateYesterday),
+		})
 		require.NoError(t, err)
-		require.NoError(t, db.UpdateWFHRequestStatus(ctx, req.ID, WFHStatusApproved))
+		require.NoError(t, db.UpdateWFHRequestStatus(ctx, reqID, WFHStatusApproved))
 
-		err = db.WithdrawOwnWFHRequest(ctx, req.ID, aliceID, 24)
-		require.ErrorIs(t, err, ErrWFHWithdrawalDeadlinePassed)
+		err = db.WithdrawOwnWFHRequest(ctx, reqID, aliceID)
+		require.ErrorIs(t, err, ErrWFHDatePassed)
+
+		got, err := db.GetWFHRequestByID(ctx, reqID)
+		require.NoError(t, err)
+		assert.Equal(t, WFHStatusApproved, got.Status,
+			"status must not change on a rejected withdraw")
 	})
 
 	t.Run("non-approved cannot be withdrawn", func(t *testing.T) {
@@ -92,12 +118,36 @@ func TestWithdrawOwnWFHRequest(t *testing.T) {
 		require.NoError(t, err)
 		// Status is still 'pending'.
 
-		err = db.WithdrawOwnWFHRequest(ctx, req.ID, aliceID, 24)
+		err = db.WithdrawOwnWFHRequest(ctx, req.ID, aliceID)
 		require.ErrorIs(t, err, ErrWFHNotApproved)
 	})
 
 	t.Run("non-existent request returns ErrWFHNotFound", func(t *testing.T) {
-		err := db.WithdrawOwnWFHRequest(ctx, "no-such-id", aliceID, 24)
+		err := db.WithdrawOwnWFHRequest(ctx, "no-such-id", aliceID)
 		require.ErrorIs(t, err, ErrWFHNotFound)
 	})
+}
+
+// todayUTC returns today's date in YYYY-MM-DD form, suitable for
+// CreateWFHRequest. The WFH date column is a DATE; passing today's
+// calendar date in UTC is the right granularity.
+func todayUTC() string {
+	return time.Now().UTC().Format("2006-01-02")
+}
+
+// pastDay returns yesterday's date in YYYY-MM-DD form. Used by
+// past-date tests that need a row for a date already in the past.
+func pastDay() string {
+	return time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
+}
+
+// parseDate parses a YYYY-MM-DD string into time.Time at midnight
+// UTC, suitable for the WFH date column. Used by tests that
+// bypass CreateWFHRequest's past-date check to seed historical
+// rows directly via the queries layer.
+func parseDate(t *testing.T, s string) time.Time {
+	t.Helper()
+	d, err := time.Parse("2006-01-02", s)
+	require.NoError(t, err)
+	return d
 }

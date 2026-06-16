@@ -65,14 +65,15 @@ func TestWithdrawRecurringDayFreesQuotaForDifferentDay(t *testing.T) {
 	require.NoError(t, db.SetTeamMemberRecurringWFHDays(ctx, memberID, database.RecurringWFHDays{Thursday: true}))
 
 	// Materialize the next 14 days, not just the current period, so
-	// the test can pick a Thursday with a withdrawal deadline that's
-	// comfortably in the future.
+	// the test can pick a Thursday that's in the future (and therefore
+	// withdrawable).
 	materializeEnd := time.Now().UTC().AddDate(0, 0, 14)
 	_, err = svc.EnsureRecurringMaterializedForMember(ctx, memberID, time.Now().UTC(), materializeEnd)
 	require.NoError(t, err)
 
-	// Find a Thursday at least 2 days out so the 24h deadline is well
-	// in the future regardless of when the test runs.
+	// Find a Thursday at least 2 days out so the date is comfortably
+	// in the future regardless of when the test runs. Withdrawal is
+	// allowed as long as the date has not passed.
 	rows, err := db.GetWFHRequestsByMember(ctx, memberID)
 	require.NoError(t, err)
 	require.NotEmpty(t, rows)
@@ -84,7 +85,7 @@ func TestWithdrawRecurringDayFreesQuotaForDifferentDay(t *testing.T) {
 		}
 	}
 	require.NotEmpty(t, thursdayRow.ID, "no Thursday with date >= %s found", minDate)
-	require.NoError(t, db.WithdrawOwnWFHRequest(ctx, thursdayRow.ID, memberID, 24))
+	require.NoError(t, db.WithdrawOwnWFHRequest(ctx, thursdayRow.ID, memberID))
 
 	// A request for a different day in the period now has quota.
 	otherDay := futureWeekday(time.Now().UTC(), time.Friday).Format("2006-01-02")

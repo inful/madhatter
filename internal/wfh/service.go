@@ -20,7 +20,6 @@ const (
 	defaultMaxDaysPerPeriod    = 2
 	defaultPeriodDays          = 7
 	defaultSettlementDays      = 2
-	defaultWithdrawalHours     = 24
 	defaultRequestHorizonDays  = 90
 	// defaultPeriodAnchor is a known Monday used as the period epoch.
 	defaultPeriodAnchor = "2026-01-05"
@@ -42,8 +41,6 @@ type Config struct {
 	PeriodAnchor string
 	// SettlementDays is how many days ahead pending requests are auto-settled.
 	SettlementDays int
-	// WithdrawalHours is how many hours before a WFH day an admin can still withdraw it.
-	WithdrawalHours int
 	// RequestHorizonDays is how many days ahead a WFH request can be submitted.
 	RequestHorizonDays int
 }
@@ -58,7 +55,6 @@ func LoadConfigFromEnv() Config {
 		PeriodDays:          parseIntEnv("WFH_PERIOD_DAYS", defaultPeriodDays),
 		PeriodAnchor:        parseStringEnv("WFH_PERIOD_ANCHOR", defaultPeriodAnchor),
 		SettlementDays:      parseIntEnv("WFH_SETTLEMENT_DAYS", defaultSettlementDays),
-		WithdrawalHours:     parseIntEnv("WFH_WITHDRAWAL_HOURS", defaultWithdrawalHours),
 		RequestHorizonDays:  parseIntEnv("WFH_REQUEST_HORIZON_DAYS", defaultRequestHorizonDays),
 	}
 	return cfg
@@ -143,10 +139,15 @@ func (s *Service) GetQuotaStatus(ctx context.Context, memberID string) (QuotaSta
 	}, nil
 }
 
-// CanWithdraw reports whether an admin may still withdraw the WFH request for the given date.
+// CanWithdraw reports whether the WFH request for the given date
+// can still be withdrawn. A request is withdrawable as long as
+// its date is today or later (i.e., the day has not yet passed).
+// Once the date is in the past, the request is no longer
+// withdrawable — the day has already been lived and the
+// on-site roster has been acted on. This applies to both
+// self-withdraw and admin-withdraw.
 func (s *Service) CanWithdraw(wfhDate time.Time) bool {
-	deadline := wfhDate.UTC().Add(-time.Duration(s.cfg.WithdrawalHours) * time.Hour)
-	return time.Now().UTC().Before(deadline)
+	return !wfhDate.UTC().Before(todayUTC())
 }
 
 // MaxRequestDate returns the latest date (midnight UTC) up to which an

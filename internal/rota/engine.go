@@ -24,6 +24,23 @@ type Engine struct {
 	db             *database.DB
 	holidayChecker HolidayChecker
 	notifier       CoverNotifier
+
+	// reassignLastDate and reassignLastIndex hold the in-memory
+	// rotation state during a ReassignCovers run. They are reset
+	// to their zero values by ReassignCovers at the start of each
+	// run and updated by commitReassignRotationState after every
+	// cover assignment. The reassign path consults them via
+	// computeReassignRotationIndex so that multi-day leaves walk
+	// forward from the previous day's state without consulting the
+	// DB (and therefore without walking backwards over a
+	// persisted anchor that would produce wrong candidates).
+	//
+	// The ad-hoc AssignCoversForLeave path does not touch these
+	// fields. The Engine is otherwise shared between ad-hoc and
+	// reassign callers; concurrent ad-hoc calls during a reassign
+	// run are safe because they don't read or write these fields.
+	reassignLastDate  time.Time
+	reassignLastIndex int
 }
 
 // CoverNotifier is the subset of the notify.Notifier interface that
@@ -308,7 +325,27 @@ func (e *Engine) recordActualCoverSlot(ctx context.Context, d time.Time, members
 }
 
 // AssignCoversForLeave creates cover assignments for a leave record.
+// Reads and writes the ad-hoc rotation state. ReassignCovers uses
+// AssignCoversForLeaveWithReassignAnchor instead so its writes don't
+// disturb the state that single-call AssignCoversForLeave reads.
 func (e *Engine) AssignCoversForLeave(ctx context.Context, leaveID string) error {
+	return e.assignCoversForLeave(ctx, leaveID, sourceAdHoc)
+}
+
+// AssignCoversForLeaveWithReassignAnchor is the ReassignCovers-side
+// twin of AssignCoversForLeave. The cover assignment is identical,
+// but the rotation anchor read/written is the reassign one — so a
+// reassign run never disturbs the state that subsequent
+// AssignCoversForLeave calls (web form, API, manual reprocess) read.
+// Both paths write to the same cover rows; only the rotation state
+// row differs.
+func (e *Engine) AssignCoversForLeaveWithReassignAnchor(ctx context.Context, leaveID string) error {
+	return e.assignCoversForLeave(ctx, leaveID, sourceReassign)
+}
+
+// assignCoversForLeave is the shared implementation. src picks which
+// rotation anchor to read and write.
+func (e *Engine) assignCoversForLeave(ctx context.Context, leaveID string, src rotationSource) error {
 	leave, err := e.db.GetLeaveByID(ctx, leaveID)
 	if err != nil {
 		return err
@@ -324,12 +361,17 @@ func (e *Engine) AssignCoversForLeave(ctx context.Context, leaveID string) error
 		return err
 	}
 
-	coverDates, err := e.processLeaveDates(ctx, leave, members, leaveID)
+	coverDates, err := e.processLeaveDates(ctx, leave, members, leaveID, src)
 	if err != nil {
 		return err
 	}
 
-	e.fireCoverAssigned(ctx, leave, members, coverDates)
+	// Only the ad-hoc path fires CoverAssigned events. The reassign
+	// path may re-process leaves that already fired events on their
+	// first processing; firing again would duplicate notifications.
+	if src == sourceAdHoc {
+		e.fireCoverAssigned(ctx, leave, members, coverDates)
+	}
 	return nil
 }
 
@@ -386,11 +428,12 @@ func memberNameByID(members []database.TeamMember, id string) string {
 //
 // The cover rotation index for each day is computed from the date
 // alone (see coverRotationIndex), so there's no cross-day index to
-// track — the old startIndex parameter is gone.
-func (e *Engine) processLeaveDates(ctx context.Context, leave *database.LeaveRecord, members []database.TeamMember, leaveID string) (map[string][]string, error) {
+// track — the old startIndex parameter is gone. src selects which
+// rotation anchor to use for the compute/commit pair.
+func (e *Engine) processLeaveDates(ctx context.Context, leave *database.LeaveRecord, members []database.TeamMember, leaveID string, src rotationSource) (map[string][]string, error) {
 	coverDates := make(map[string][]string)
 	for d := leave.StartDate; d.Before(leave.EndDate.AddDate(0, 0, 1)); d = d.AddDate(0, 0, 1) {
-		coverID, err := e.processLeaveDate(ctx, d, members, leave, leaveID)
+		coverID, err := e.processLeaveDate(ctx, d, members, leave, leaveID, src)
 		if err != nil {
 			return nil, err
 		}
@@ -508,6 +551,88 @@ func (e *Engine) commitCoverRotationState(ctx context.Context, currentDate time.
 	return e.db.UpsertCoverRotationState(ctx, truncated, index)
 }
 
+// computeReassignRotationIndex is the ReassignCovers-side mirror of
+// computeCoverRotationIndex. It uses the in-memory rotation state
+// (reassignLastDate, reassignLastIndex) maintained by
+// commitReassignRotationState across the days of a single reassign
+// run — not the persisted reassign anchor.
+//
+// The persisted anchor is only written for record-keeping
+// (debugging tools can read "the last time ReassignCovers ran").
+// Reading it would walk BACKWARD over the leaves from the end of
+// the previous reassign, which produces a different candidate
+// than the forward walk from the empty state — the asymmetry that
+// broke idempotency before this fix. By keeping the in-memory
+// state forward-only, every reassign run is a pure function of
+// the leaves' chronological order and the team composition.
+//
+// On the first call of a reassign run the in-memory state is
+// zero-valued; we seed the candidate at index 0, the same default
+// the ad-hoc path uses when the cover_rotation_state row is
+// absent.
+func (e *Engine) computeReassignRotationIndex(_ context.Context, currentDate time.Time, teamSize int) (int, error) {
+	if teamSize <= 0 {
+		return 0, nil
+	}
+	currentDate = currentDate.UTC().Truncate(hoursPerDay * time.Hour)
+
+	if e.reassignLastDate.IsZero() {
+		// First day of this reassign run: seed at index 0.
+		return 0, nil
+	}
+
+	lastDate := e.reassignLastDate.UTC().Truncate(hoursPerDay * time.Hour)
+	switch {
+	case currentDate.Equal(lastDate):
+		return modNonNegative(e.reassignLastIndex, teamSize), nil
+	case currentDate.After(lastDate):
+		delta := e.workingDaysBetween(lastDate, currentDate)
+		return modNonNegative(e.reassignLastIndex+delta, teamSize), nil
+	default:
+		// currentDate is before the in-memory last date. This
+		// branch shouldn't fire because ReassignCovers walks
+		// leaves and days in order, but if it does (e.g. a leave
+		// range that crosses dates non-monotonically) walk
+		// backward defensively.
+		delta := e.workingDaysBetween(currentDate, lastDate)
+		return modNonNegative(e.reassignLastIndex-delta, teamSize), nil
+	}
+}
+
+// commitReassignRotationState writes the actual-cover slot to the
+// reassign anchor columns only, and updates the in-memory
+// reassignLastDate / reassignLastIndex fields that
+// computeReassignRotationIndex reads on the next day of the same
+// reassign run. The ad-hoc last_date/last_index columns are left
+// untouched, so a reassign run never disturbs the state that
+// AssignCoversForLeave reads. To make the INSERT branch of the SQL
+// UPSERT safe on a fresh database we also pass the current ad-hoc
+// values, but in normal operation the ad-hoc columns are already
+// populated by a prior cover assignment.
+func (e *Engine) commitReassignRotationState(ctx context.Context, currentDate time.Time, index int) error {
+	truncated := currentDate.UTC().Truncate(hoursPerDay * time.Hour)
+
+	// Update the in-memory state first so a subsequent call to
+	// computeReassignRotationIndex within the same reassign run
+	// sees the new anchor regardless of whether the DB write
+	// succeeded.
+	e.reassignLastDate = truncated
+	e.reassignLastIndex = index
+
+	adHocDate, adHocIndex, err := e.db.GetCoverRotationState(ctx)
+	if err != nil {
+		// sql.ErrNoRows is acceptable: on a brand-new database no
+		// ad-hoc state exists yet. Pass zero values so the INSERT
+		// branch seeds the row with placeholder ad-hoc columns.
+		if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		adHocDate = truncated
+		adHocIndex = index
+	}
+	return e.db.UpsertReassignmentAnchor(ctx, adHocDate, adHocIndex, truncated, index)
+}
+
 // r1RotationIndex returns the R1 (original-HAT) rotation index for
 // currentDate, computed from the persisted R1 sub-state of
 // cover_rotation_state. Unlike coverRotationIndex, this is a pure
@@ -589,11 +714,27 @@ func modNonNegative(x, m int) int {
 	return r
 }
 
+// rotationSource selects which of the two cover rotation anchors
+// processLeaveDate reads and writes. The ad-hoc source is what
+// AssignCoversForLeave uses today; the reassign source is what
+// ReassignCovers uses so it can walk leaves in chronological order
+// without disturbing the state that single-call AssignCoversForLeave
+// sees.
+type rotationSource int
+
+const (
+	sourceAdHoc rotationSource = iota
+	sourceReassign
+)
+
 // processLeaveDate handles a single day of leave and returns the
 // cover member's id (empty if the day was skipped or no cover was
 // found). The cover rotation index is computed from the date alone,
-// so no startIndex is needed.
-func (e *Engine) processLeaveDate(ctx context.Context, d time.Time, members []database.TeamMember, leave *database.LeaveRecord, leaveID string) (string, error) {
+// so no startIndex is needed. The rotationSource picks which pair of
+// compute/commit helpers to call, so the ad-hoc and reassign paths
+// share the findCover/createCoverAssignment/recordActualCoverSlot
+// logic but write to different state rows.
+func (e *Engine) processLeaveDate(ctx context.Context, d time.Time, members []database.TeamMember, leave *database.LeaveRecord, leaveID string, src rotationSource) (string, error) {
 	if e.shouldSkipDate(d) {
 		return "", nil
 	}
@@ -621,7 +762,7 @@ func (e *Engine) processLeaveDate(ctx context.Context, d time.Time, members []da
 	// algorithm started looking at — is what keeps two
 	// consecutive covers from landing on the same person when
 	// the candidate is on leave.
-	candidate, err := e.computeCoverRotationIndex(ctx, d, len(members))
+	candidate, err := e.computeRotationIndex(ctx, d, len(members), src)
 	if err != nil {
 		return "", err
 	}
@@ -639,9 +780,42 @@ func (e *Engine) processLeaveDate(ctx context.Context, d time.Time, members []da
 		return "", err
 	}
 
-	e.recordActualCoverSlot(ctx, d, members, cover.ID)
+	e.recordActualCoverSlotFor(ctx, d, members, cover.ID, src)
 
 	return cover.ID, nil
+}
+
+// computeRotationIndex picks the right compute helper for the source.
+// Centralizing the switch keeps the ad-hoc / reassign contract on a
+// single line in processLeaveDate so it's obvious which pairs of
+// helpers the two paths share.
+func (e *Engine) computeRotationIndex(ctx context.Context, d time.Time, teamSize int, src rotationSource) (int, error) {
+	switch src {
+	case sourceReassign:
+		return e.computeReassignRotationIndex(ctx, d, teamSize)
+	case sourceAdHoc:
+		fallthrough
+	default:
+		return e.computeCoverRotationIndex(ctx, d, teamSize)
+	}
+}
+
+// recordActualCoverSlotFor picks the right commit helper for the source.
+// Both paths write (date, actualCoverSlot) to their respective
+// rotation-state row; only the row differs.
+func (e *Engine) recordActualCoverSlotFor(ctx context.Context, d time.Time, members []database.TeamMember, coverID string, src rotationSource) {
+	idx := e.findMemberIndex(members, coverID)
+	if idx < 0 {
+		return
+	}
+	switch src {
+	case sourceReassign:
+		_ = e.commitReassignRotationState(ctx, d, idx)
+	case sourceAdHoc:
+		fallthrough
+	default:
+		_ = e.commitCoverRotationState(ctx, d, idx)
+	}
 }
 
 // isLeaveActive returns true if the status still requires cover assignments.

@@ -3,6 +3,8 @@ package rota
 import (
 	"context"
 	"fmt"
+	"sort"
+	"time"
 
 	"github.com/inful/madhatter/internal/database"
 )
@@ -26,16 +28,39 @@ type ReassignResult struct {
 
 // ReassignCovers re-runs the cover-assignment algorithm against every
 // leave in the database. It is safe to invoke at any time and is
-// designed to be called on every server startup:
+// designed to be called on every server startup.
 //
-//   - For active leaves (pending/assigned), HandleLeaveChange is called,
-//     which reconciles stale covers and re-creates covers under the
-//     current algorithm. Because of the idempotency contract on
-//     createCoverAssignment, the result is the same as the prior state
-//     when the algorithm hasn't changed.
-//   - For completed/inactive leaves, HandleLeaveChange is a no-op (the
-//     reconcile step is already a no-op for them, and AssignCoversForLeave
-//     short-circuits on inactive status).
+// Idempotency contract: calling ReassignCovers twice on the same
+// set of active leaves produces the same covers and the same
+// reassign anchor. This relies on two things working together:
+//
+//  1. Leaves are processed in chronological order (start_date
+//     ASC). Within a leave, days are processed in date order. The
+//     rotation state advances forward only on each day; no
+//     backward-walk happens, so the forward-walk asymmetry that
+//     breaks idempotency on the ad-hoc path never fires here.
+//
+//  2. The reassign run uses the separate reassign rotation anchor
+//     (last_reassign_date, last_reassign_index), not the ad-hoc
+//     one (last_date, last_index). A reassign run therefore never
+//     disturbs the state that AssignCoversForLeave (web form,
+//     API, manual reprocess) reads. Ad-hoc calls between reassigns
+//     advance the ad-hoc anchor; the next reassign starts from the
+//     unchanged reassign anchor and produces the same result.
+//
+// The reassign anchor plays no role in computing covers — the
+// rotation position is derived from the in-memory state of the
+// reassign run itself (mirroring how the ad-hoc path walks
+// forward from an empty state on the first call). The anchor is
+// written at the end of the run as a "last completed reassign"
+// checkpoint; it can be inspected for debugging but is not
+// consulted by the algorithm.
+//
+// For active leaves (pending/assigned), the per-leave pipeline is
+// reconcile + assign-with-reassign-anchor; for completed/inactive
+// leaves it's a no-op (reconcile deletes the cover row if any, and
+// AssignCoversForLeaveWithReassignAnchor short-circuits on inactive
+// status).
 //
 // The runner continues past per-leave errors: a single broken row
 // (e.g. an FK violation from a deleted member) does not abort the
@@ -47,11 +72,7 @@ type ReassignResult struct {
 // The cost on a steady-state rota is O(N) DB queries where N is the
 // number of leaves, dominated by two GetAssignmentsByDateRange calls
 // per leave for the before/after diff. For a typical 14-day window
-// with a handful of active leaves, this is a few milliseconds — small
-// enough that we don't bother tracking which leaves have been
-// "already reassigned" and which haven't. The algorithm's output is
-// the source of truth; the reassignment just makes the on-disk rota
-// match whatever the current code thinks the covers should be.
+// with a handful of active leaves, this is a few milliseconds.
 //
 // This is the self-healing property that lets a future algorithm
 // change be deployed without a data migration: the new binary ships
@@ -64,11 +85,33 @@ func (sm *ScheduleMaintenance) ReassignCovers(ctx context.Context) (ReassignResu
 		return ReassignResult{}, fmt.Errorf("reassign-covers: list leaves: %w", err)
 	}
 
+	// Process in chronological order. GetLeaveRecords orders DESC,
+	// so sort here in Go rather than changing the SQL contract
+	// (the SQL contract is shared with the admin UI which wants
+	// newest first).
+	sort.Slice(leaves, func(i, j int) bool {
+		return leaves[i].StartDate.Before(leaves[j].StartDate)
+	})
+
+	// Reset the in-memory reassign state so each run starts from a
+	// clean seed (index 0). Without this reset, a subsequent run
+	// would inherit the previous run's last-day state, and the
+	// multi-day leaves processed earlier in this run would
+	// forward-walk from a date that's actually older than them.
+	// Deferred so a panic in the per-leave loop still leaves the
+	// engine in a clean state for the next call.
+	sm.engine.reassignLastDate = time.Time{}
+	sm.engine.reassignLastIndex = 0
+	defer func() {
+		sm.engine.reassignLastDate = time.Time{}
+		sm.engine.reassignLastIndex = 0
+	}()
+
 	result := ReassignResult{}
 	for i := range leaves {
 		l := &leaves[i]
 		before := snapshotLeaveCovers(ctx, sm.db, l)
-		if err := sm.HandleLeaveChange(ctx, l.ID); err != nil {
+		if err := sm.reassignHandleLeaveChange(ctx, l); err != nil {
 			// Continue past per-leave failures: one broken row must
 			// not strand the rest of the rota in a half-reassigned
 			// state. The caller (cmd hook or CLI) decides whether to
@@ -83,6 +126,28 @@ func (sm *ScheduleMaintenance) ReassignCovers(ctx context.Context) (ReassignResu
 		}
 	}
 	return result, nil
+}
+
+// reassignHandleLeaveChange is the reassign-side mirror of
+// HandleLeaveChange. Same reconcile + assign flow, but the assign
+// step uses the reassign rotation anchor instead of the ad-hoc one.
+// Notifications are intentionally skipped here — the same cover may
+// be assigned twice (first by the ad-hoc path, then again by the
+// reassign path) and only the first notification should fire.
+//
+// The anchor that AssignCoversForLeaveWithReassignAnchor reads and
+// writes is intentionally a no-op for the idempotency-correct
+// implementation: the rotation index is derived from the reassign
+// run's in-memory state (which mirrors the ad-hoc path's forward
+// walk from an empty state), not from the persisted anchor. The
+// anchor is still written at the end as a record of "the last time
+// ReassignCovers ran", but it is not consulted by the algorithm
+// itself.
+func (sm *ScheduleMaintenance) reassignHandleLeaveChange(ctx context.Context, l *database.LeaveRecord) error {
+	if err := sm.reconcileCoversForDateRange(ctx, l.StartDate, l.EndDate); err != nil {
+		return err
+	}
+	return sm.engine.AssignCoversForLeaveWithReassignAnchor(ctx, l.ID)
 }
 
 // snapshotLeaveCovers returns a map of date -> cover member id for every

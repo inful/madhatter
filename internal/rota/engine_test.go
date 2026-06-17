@@ -728,7 +728,7 @@ func TestEngine_processLeaveDate_SkipsWeekends(t *testing.T) {
 
 	// Saturday
 	saturday := time.Date(2024, 1, 13, 0, 0, 0, 0, time.UTC)
-	_, err = engine.processLeaveDate(ctx, saturday, members, leave, "leave-id")
+	_, err = engine.processLeaveDate(ctx, saturday, members, leave, "leave-id", sourceAdHoc)
 	require.NoError(t, err)
 
 	// No assignment should be created

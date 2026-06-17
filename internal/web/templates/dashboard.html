@@ -345,6 +345,20 @@
         line-height: 1.25;
     }
 
+    /* Slightly orange tone for the WFH icon when the column
+       has hit the WFH min-onsite floor. The at-work count is
+       at (or below) the configured floor, so no more WFH can
+       be approved without breaching the policy. The rule lives
+       outside the mobile media query so the desktop chip turns
+       orange too; the mobile half still wins on the mobile
+       chip via .total-wfh.at-wfh-floor. */
+    .wfh-totals.at-wfh-floor,
+    .total-wfh.at-wfh-floor {
+        color: #b45309;
+        background: #fff4e0;
+        border-color: #fcd9a5;
+    }
+
     .today-col,
     .today-cell {
         background: rgba(102, 126, 234, 0.08);
@@ -552,17 +566,6 @@
             color: #1d4ed8;
             background: #eff6ff;
             border-color: #bfdbfe;
-        }
-
-        /* Slightly orange tone for the WFH icon when the column
-           has hit the WFH min-onsite floor. The at-work count is
-           at (or below) the configured floor, so no more WFH can
-           be approved without breaching the policy. */
-        .wfh-totals.at-wfh-floor,
-        .total-wfh.at-wfh-floor {
-            color: #b45309;
-            background: #fff4e0;
-            border-color: #fcd9a5;
         }
 
         .total-away {

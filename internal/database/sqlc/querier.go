@@ -116,6 +116,9 @@ type Querier interface {
 	// with the cover rotation's write rules (advance on every
 	// computation).
 	GetR1RotationState(ctx context.Context) (R1RotationState, error)
+	// Reads the ReassignCovers-only anchor. Returns sql.ErrNoRows if the
+	// row has never been written, which signals a fresh database.
+	GetReassignmentAnchor(ctx context.Context) (GetReassignmentAnchorRow, error)
 	GetSessionByToken(ctx context.Context, token string) (GetSessionByTokenRow, error)
 	GetSubscriptionByToken(ctx context.Context, token string) (CalendarSubscription, error)
 	GetSubscriptionsByMemberID(ctx context.Context, memberID string) ([]CalendarSubscription, error)
@@ -186,6 +189,9 @@ type Querier interface {
 	// existing one. R1 is keyed by the (date, index) pair of the
 	// most recently written original assignment.
 	UpsertR1RotationState(ctx context.Context, arg UpsertR1RotationStateParams) error
+	// Writes only the reassign columns, leaving last_date and last_index
+	// untouched so the ad-hoc path keeps advancing independently.
+	UpsertReassignmentAnchor(ctx context.Context, arg UpsertReassignmentAnchorParams) error
 }
 
 var _ Querier = (*Queries)(nil)

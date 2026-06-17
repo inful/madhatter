@@ -239,10 +239,18 @@ CREATE INDEX IF NOT EXISTS idx_notification_preferences_disabled
 -- where working_days excludes weekends and holidays. The engine only
 -- ever queries for dates >= state.last_date. See migration 000017 and
 -- Engine.coverRotationIndex in internal/rota.
+--
+-- last_reassign_date / last_reassign_index are the R2 anchor used by
+-- ReassignCovers only. The ad-hoc AssignCoversForLeave path uses
+-- last_date / last_index; ReassignCovers uses the reassign anchor.
+-- The two paths share a row so they always agree on id and there is
+-- exactly one rotation-state row to migrate. See migration 000020.
 CREATE TABLE IF NOT EXISTS cover_rotation_state (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     last_date DATE NOT NULL,
-    last_index INTEGER NOT NULL
+    last_index INTEGER NOT NULL,
+    last_reassign_date DATE,
+    last_reassign_index INTEGER
 );
 
 -- R1 (original-HAT) rotation state. Stores the last written

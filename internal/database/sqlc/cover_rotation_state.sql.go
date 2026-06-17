@@ -7,6 +7,7 @@ package sqlc
 
 import (
 	"context"
+	"database/sql"
 	"time"
 )
 
@@ -31,6 +32,26 @@ func (q *Queries) GetCoverRotationState(ctx context.Context) (GetCoverRotationSt
 	return i, err
 }
 
+const getReassignmentAnchor = `-- name: GetReassignmentAnchor :one
+SELECT last_reassign_date, last_reassign_index
+FROM cover_rotation_state
+WHERE id = 1
+`
+
+type GetReassignmentAnchorRow struct {
+	LastReassignDate  sql.NullTime  `json:"last_reassign_date"`
+	LastReassignIndex sql.NullInt64 `json:"last_reassign_index"`
+}
+
+// Reads the ReassignCovers-only anchor. Returns sql.ErrNoRows if the
+// row has never been written, which signals a fresh database.
+func (q *Queries) GetReassignmentAnchor(ctx context.Context) (GetReassignmentAnchorRow, error) {
+	row := q.db.QueryRowContext(ctx, getReassignmentAnchor)
+	var i GetReassignmentAnchorRow
+	err := row.Scan(&i.LastReassignDate, &i.LastReassignIndex)
+	return i, err
+}
+
 const upsertCoverRotationState = `-- name: UpsertCoverRotationState :exec
 INSERT INTO cover_rotation_state (id, last_date, last_index)
 VALUES (1, ?, ?)
@@ -49,5 +70,32 @@ type UpsertCoverRotationStateParams struct {
 // the CHECK (id = 1) clause, so this is the only way to write it.
 func (q *Queries) UpsertCoverRotationState(ctx context.Context, arg UpsertCoverRotationStateParams) error {
 	_, err := q.db.ExecContext(ctx, upsertCoverRotationState, arg.LastDate, arg.LastIndex)
+	return err
+}
+
+const upsertReassignmentAnchor = `-- name: UpsertReassignmentAnchor :exec
+INSERT INTO cover_rotation_state (id, last_date, last_index, last_reassign_date, last_reassign_index)
+VALUES (1, ?, ?, ?, ?)
+ON CONFLICT (id) DO UPDATE SET
+    last_reassign_date = excluded.last_reassign_date,
+    last_reassign_index = excluded.last_reassign_index
+`
+
+type UpsertReassignmentAnchorParams struct {
+	LastDate          time.Time     `json:"last_date"`
+	LastIndex         int64         `json:"last_index"`
+	LastReassignDate  sql.NullTime  `json:"last_reassign_date"`
+	LastReassignIndex sql.NullInt64 `json:"last_reassign_index"`
+}
+
+// Writes only the reassign columns, leaving last_date and last_index
+// untouched so the ad-hoc path keeps advancing independently.
+func (q *Queries) UpsertReassignmentAnchor(ctx context.Context, arg UpsertReassignmentAnchorParams) error {
+	_, err := q.db.ExecContext(ctx, upsertReassignmentAnchor,
+		arg.LastDate,
+		arg.LastIndex,
+		arg.LastReassignDate,
+		arg.LastReassignIndex,
+	)
 	return err
 }

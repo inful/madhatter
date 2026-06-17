@@ -139,6 +139,45 @@ func (db *DB) UpsertCoverRotationState(ctx context.Context, date time.Time, inde
 	})
 }
 
+// GetReassignmentAnchor returns the ReassignCovers-only anchor
+// (last_reassign_date, last_reassign_index). The valid flag is true
+// only when both fields are populated. sql.ErrNoRows and a row with
+// NULL columns are both treated as "no prior reassign" (valid=false,
+// err=nil) so callers can seed the anchor at the first leave they
+// process without special-casing the empty-database path.
+func (db *DB) GetReassignmentAnchor(ctx context.Context) (date time.Time, index int, valid bool, err error) {
+	row, qErr := db.queries.GetReassignmentAnchor(ctx)
+	if qErr != nil {
+		if errors.Is(qErr, sql.ErrNoRows) {
+			return time.Time{}, 0, false, nil
+		}
+		return time.Time{}, 0, false, qErr
+	}
+	if !row.LastReassignDate.Valid || !row.LastReassignIndex.Valid {
+		return time.Time{}, 0, false, nil
+	}
+	return row.LastReassignDate.Time, int(row.LastReassignIndex.Int64), true, nil
+}
+
+// UpsertReassignmentAnchor writes the reassign anchor without touching
+// the ad-hoc last_date / last_index columns. The first call after a
+// fresh DB seeds the row with the same last_date / last_index as the
+// ad-hoc state if any, and the new reassign values; subsequent calls
+// update only the reassign columns via the ON CONFLICT clause.
+//
+// The ad-hoc last_date / last_index parameters must always be the
+// current ad-hoc values, otherwise the INSERT branch would overwrite
+// them. In practice the engine reads the current ad-hoc state via
+// GetCoverRotationState and passes it back unchanged.
+func (db *DB) UpsertReassignmentAnchor(ctx context.Context, adHocDate time.Time, adHocIndex int, reassignDate time.Time, reassignIndex int) error {
+	return db.queries.UpsertReassignmentAnchor(ctx, sqlc.UpsertReassignmentAnchorParams{
+		LastDate:          adHocDate,
+		LastIndex:         int64(adHocIndex),
+		LastReassignDate:  sql.NullTime{Time: reassignDate, Valid: true},
+		LastReassignIndex: sql.NullInt64{Int64: int64(reassignIndex), Valid: true},
+	})
+}
+
 // GetR1RotationState returns the R1 (original-HAT) rotation state
 // (last_date, last_index). Returns sql.ErrNoRows if no R1
 // assignment has been written yet. The R1 state lives in its own

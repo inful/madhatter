@@ -15,3 +15,19 @@ VALUES (1, ?, ?)
 ON CONFLICT (id) DO UPDATE SET
     last_date = excluded.last_date,
     last_index = excluded.last_index;
+
+-- name: GetReassignmentAnchor :one
+-- Reads the ReassignCovers-only anchor. Returns sql.ErrNoRows if the
+-- row has never been written, which signals a fresh database.
+SELECT last_reassign_date, last_reassign_index
+FROM cover_rotation_state
+WHERE id = 1;
+
+-- name: UpsertReassignmentAnchor :exec
+-- Writes only the reassign columns, leaving last_date and last_index
+-- untouched so the ad-hoc path keeps advancing independently.
+INSERT INTO cover_rotation_state (id, last_date, last_index, last_reassign_date, last_reassign_index)
+VALUES (1, ?, ?, ?, ?)
+ON CONFLICT (id) DO UPDATE SET
+    last_reassign_date = excluded.last_reassign_date,
+    last_reassign_index = excluded.last_reassign_index;

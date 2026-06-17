@@ -1,0 +1,26 @@
+-- ReassignCovers uses a separate rotation anchor from the ad-hoc
+-- AssignCoversForLeave path. Storing it on the same row keeps the
+-- "single source of truth" pattern (one row, id = 1) without adding
+-- a new table.
+--
+-- Why a separate anchor: the ad-hoc path's anchor advances on every
+-- leave processed via the web form, API, or manual reprocess. If
+-- ReassignCovers read that anchor it would walk backward through the
+-- leaves (because GetLeaveRecords orders by start_date DESC), which
+-- breaks idempotency: the forward walk adds extra steps past on-leave
+-- members via findCover, but the backward walk only subtracts working
+-- days, so the recovered starting candidate differs from the
+-- forward-walked one. Two runs of ReassignCovers on the same data
+-- therefore produced different covers.
+--
+-- The reassign anchor starts at (epoch, 0) on a fresh DB and is
+-- advanced forward as ReassignCovers processes leaves in chronological
+-- order. The next ReassignCovers call starts from this anchor and
+-- walks forward through all active leaves again, producing the same
+-- result regardless of any state mutation that happened in the ad-hoc
+-- path between calls.
+--
+-- SQLite does not accept comma-separated ADD COLUMN clauses in a
+-- single ALTER TABLE, so this is split into two statements.
+ALTER TABLE cover_rotation_state ADD COLUMN last_reassign_date DATE;
+ALTER TABLE cover_rotation_state ADD COLUMN last_reassign_index INTEGER;

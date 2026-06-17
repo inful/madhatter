@@ -31,9 +31,11 @@ type CalendarSubscription struct {
 }
 
 type CoverRotationState struct {
-	ID        int64     `json:"id"`
-	LastDate  time.Time `json:"last_date"`
-	LastIndex int64     `json:"last_index"`
+	ID                int64         `json:"id"`
+	LastDate          time.Time     `json:"last_date"`
+	LastIndex         int64         `json:"last_index"`
+	LastReassignDate  sql.NullTime  `json:"last_reassign_date"`
+	LastReassignIndex sql.NullInt64 `json:"last_reassign_index"`
 }
 
 type HatSwap struct {

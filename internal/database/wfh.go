@@ -70,8 +70,6 @@ func wfhFromSQLCFields(f wfhFields) WFHRequest {
 }
 
 // CreateWFHRequest creates a new pending WFH request for the given member on the given date.
-//
-//nolint:cyclop // Validation and persistence branches are explicit for domain error clarity.
 func (db *DB) CreateWFHRequest(ctx context.Context, memberID, date string) (*WFHRequest, error) {
 	if memberID == "" || date == "" {
 		return nil, errors.New("memberID and date are required")
@@ -99,17 +97,8 @@ func (db *DB) CreateWFHRequest(ctx context.Context, memberID, date string) (*WFH
 	// ErrWFHDuplicateRequest, which the form translates to a "withdraw your
 	// recurring day first" hint.
 
-	// Reject holidays: a WFH on a non-working day is meaningless — there's no
-	// on-site capacity to consume and no presence to track. Fail fast at the
-	// data layer so the invariant is enforced regardless of the caller.
-	if db.IsHoliday(dateTime) {
-		return nil, ErrWFHOnHoliday
-	}
-
-	nowUTC := time.Now().UTC()
-	today := time.Date(nowUTC.Year(), nowUTC.Month(), nowUTC.Day(), 0, 0, 0, 0, time.UTC)
-	if dateTime.Before(today) {
-		return nil, ErrWFHDatePassed
+	if vErr := db.validateRequestDate(dateTime); vErr != nil {
+		return nil, vErr
 	}
 
 	id := uuid.New().String()
@@ -119,9 +108,13 @@ func (db *DB) CreateWFHRequest(ctx context.Context, memberID, date string) (*WFH
 		Date:     dateTime,
 	})
 	if err != nil {
-		// SQLite UNIQUE constraint violation.
+		// SQLite UNIQUE constraint violation. If the colliding row is one
+		// the user owns (a previous cancel, or a self-withdrawal), resurrect
+		// it in place — the user is allowed to change their mind. Any other
+		// status (pending, approved, denied, admin-withdrawn) keeps the
+		// existing "already exists" semantics.
 		if isUniqueConstraintError(err) {
-			return nil, ErrWFHDuplicateRequest
+			return db.resurrectOrDuplicate(ctx, memberID, dateTime)
 		}
 		return nil, err
 	}
@@ -142,6 +135,98 @@ func (db *DB) CreateWFHRequest(ctx context.Context, memberID, date string) (*WFH
 		IsRecurring: row.IsRecurring,
 	})
 	return &result, nil
+}
+
+// validateRequestDate enforces the data-layer invariants that hold for
+// any WFH request, fresh or resurrected: the date must not be a holiday
+// (no on-site capacity to consume on non-working days) and must not be
+// in the past (the day has already been lived). Shared between the
+// INSERT path in CreateWFHRequest and the resurrect path so a row that's
+// resurrected after time has passed is rejected for the same reasons a
+// fresh request would be.
+func (db *DB) validateRequestDate(dateTime time.Time) error {
+	// Reject holidays: a WFH on a non-working day is meaningless — there's no
+	// on-site capacity to consume and no presence to track. Fail fast at the
+	// data layer so the invariant is enforced regardless of the caller.
+	if db.IsHoliday(dateTime) {
+		return ErrWFHOnHoliday
+	}
+
+	nowUTC := time.Now().UTC()
+	today := time.Date(nowUTC.Year(), nowUTC.Month(), nowUTC.Day(), 0, 0, 0, 0, time.UTC)
+	if dateTime.Before(today) {
+		return ErrWFHDatePassed
+	}
+	return nil
+}
+
+// resurrectOrDuplicate handles the UNIQUE-constraint path inside
+// CreateWFHRequest. If the existing row for (member, date) is in a state
+// the user owns — 'cancelled' or self-withdrawn ('withdrawn' with
+// withdrawn_by IS NULL) — flip it back to 'pending' and clear the audit
+// fields (plus is_recurring, so a self-withdrawn recurring day is treated
+// as an ad-hoc request rather than getting stuck in pending with neither
+// settlement nor the materializer able to advance it). The user can then
+// re-request after changing their mind. Any other status (pending,
+// approved, denied, admin-withdrawn) surfaces the existing
+// ErrWFHDuplicateRequest: admin withdrawals are intentionally not
+// resurrectable because they represent an admin's decision the user
+// should not be able to override by re-requesting.
+func (db *DB) resurrectOrDuplicate(ctx context.Context, memberID string, dateTime time.Time) (*WFHRequest, error) {
+	// Re-run the data-layer invariants: the date may have moved into the
+	// past, or been added to the holiday set, between the original
+	// cancel/withdraw and the re-request. A resurrected row that fails
+	// these checks leaves the user with a pending request for an invalid
+	// date — the same state a fresh insert would reject.
+	if err := db.validateRequestDate(dateTime); err != nil {
+		return nil, err
+	}
+
+	existing, err := db.queries.GetWFHRequestByMemberAndDate(ctx, sqlc.GetWFHRequestByMemberAndDateParams{
+		MemberID: memberID,
+		Date:     dateTime,
+	})
+	if err != nil {
+		// Lookup failure (DB error or, in a race, no row) — preserve the
+		// original caller-visible behavior: a duplicate insert surfaced
+		// as "already exists".
+		return nil, ErrWFHDuplicateRequest
+	}
+	if !isUserResurrectable(existing.Status, existing.WithdrawnBy) {
+		return nil, ErrWFHDuplicateRequest
+	}
+	res, err := db.queries.ResurrectWFHRequest(ctx, existing.ID)
+	if err != nil {
+		return nil, err
+	}
+	// The SQL has a defensive status guard so a concurrent change to the
+	// row between the SELECT and the UPDATE will leave it untouched. In
+	// that case 0 rows are affected; treat the same as a non-resurrectable
+	// duplicate rather than silently returning the un-resurrected row.
+	rows, raErr := res.RowsAffected()
+	if raErr != nil {
+		return nil, raErr
+	}
+	if rows == 0 {
+		return nil, ErrWFHDuplicateRequest
+	}
+	return db.GetWFHRequestByID(ctx, existing.ID)
+}
+
+// isUserResurrectable reports whether a row in the given status (with the
+// given withdrawn_by value) is eligible to be resurrected by the owning
+// user. Cancelled rows and self-withdrawn rows (no recorded actor) are
+// user-owned and resurrectable; everything else is a final decision the
+// user should not be able to override.
+func isUserResurrectable(status string, withdrawnBy sql.NullString) bool {
+	switch status {
+	case WFHStatusCancelled:
+		return true
+	case WFHStatusWithdrawn:
+		return !withdrawnBy.Valid
+	default:
+		return false
+	}
 }
 
 // GetWFHRequestByID retrieves a WFH request by its ID.

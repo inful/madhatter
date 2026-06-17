@@ -147,6 +147,15 @@ type Querier interface {
 	MarkOutboxFailed(ctx context.Context, arg MarkOutboxFailedParams) (sql.Result, error)
 	MarkOutboxSent(ctx context.Context, id string) (sql.Result, error)
 	ReactivateUser(ctx context.Context, id string) (User, error)
+	// Flip a previously cancelled or self-withdrawn row back to pending and
+	// clear the audit fields, so the user can change their mind and re-request
+	// WFH for the same date. Only self-withdrawals are resurrectable: admin
+	// withdrawals (withdrawn_by IS NOT NULL) are preserved as final decisions.
+	// is_recurring is cleared on resurrect so the row is treated as ad-hoc:
+	// settlement filters is_recurring=0 (so recurring rows are skipped), and
+	// preserving the flag would leave the resurrected row stuck in pending
+	// with neither settlement nor the materializer able to advance it.
+	ResurrectWFHRequest(ctx context.Context, id string) (sql.Result, error)
 	// Upserts the email-enabled flag for a member. Pass 1 to enable,
 	// 0 to disable. disabled_at is set/cleared by the application
 	// before calling this query.

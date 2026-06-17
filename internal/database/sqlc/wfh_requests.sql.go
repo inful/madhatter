@@ -472,6 +472,32 @@ func (q *Queries) GetWFHRequestsByMemberAndPeriod(ctx context.Context, arg GetWF
 	return items, nil
 }
 
+const resurrectWFHRequest = `-- name: ResurrectWFHRequest :execresult
+UPDATE wfh_requests
+SET status = 'pending',
+    settled_at = NULL,
+    withdrawn_by = NULL,
+    withdrawn_at = NULL,
+    is_recurring = 0
+WHERE id = ?
+  AND (
+    status = 'cancelled'
+    OR (status = 'withdrawn' AND withdrawn_by IS NULL)
+  )
+`
+
+// Flip a previously cancelled or self-withdrawn row back to pending and
+// clear the audit fields, so the user can change their mind and re-request
+// WFH for the same date. Only self-withdrawals are resurrectable: admin
+// withdrawals (withdrawn_by IS NOT NULL) are preserved as final decisions.
+// is_recurring is cleared on resurrect so the row is treated as ad-hoc:
+// settlement filters is_recurring=0 (so recurring rows are skipped), and
+// preserving the flag would leave the resurrected row stuck in pending
+// with neither settlement nor the materializer able to advance it.
+func (q *Queries) ResurrectWFHRequest(ctx context.Context, id string) (sql.Result, error) {
+	return q.db.ExecContext(ctx, resurrectWFHRequest, id)
+}
+
 const updateWFHRequestStatus = `-- name: UpdateWFHRequestStatus :execresult
 UPDATE wfh_requests
 SET status = ?, settled_at = ?

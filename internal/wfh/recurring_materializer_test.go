@@ -137,16 +137,17 @@ func TestEnsureRecurringMaterialized_PreservesWithdrawnRow(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, db.SetTeamMemberRecurringWFHDays(ctx, memberID, database.RecurringWFHDays{Thursday: true}))
 
-	// Use a 7-day window starting from tomorrow. This guarantees:
-	//   - the picked Thursday is strictly in the future (so the DB
-	//     doesn't reject it as a past date when today is Fri–Sun), and
-	//   - exactly one Thursday falls in the window (Thursday recurs
-	//     weekly), so the materializer can't insert a *second* one
-	//     alongside the withdrawn row.
+	// Use a window starting from tomorrow and ending at the first
+	// Thursday in that range. This guarantees the window contains
+	// exactly one Thursday (the one we seed), so the materializer can't
+	// insert a *second* one alongside the withdrawn row regardless of
+	// what day-of-week the test runs on. (An earlier version of this
+	// test used a fixed 8-day window, which silently contained two
+	// Thursdays when today was Wednesday — a flaky-test bug.)
 	today := time.Now().UTC()
-	windowStart, windowEnd := today.AddDate(0, 0, 1), today.AddDate(0, 0, 8)
-	thursday := nextWeekdayInRange(t, windowStart, windowEnd, time.Thursday)
-	thursdayStr := thursday.Format("2006-01-02")
+	windowStart := today.AddDate(0, 0, 1)
+	windowEnd := nextWeekdayInRange(t, windowStart, today.AddDate(0, 0, 8), time.Thursday)
+	thursdayStr := windowEnd.Format("2006-01-02")
 	now := time.Now().UTC()
 	require.NoError(t, db.CreateApprovedRecurringWFHRequest(ctx, memberID, thursdayStr, now))
 	rows, err := db.GetWFHRequestsByMember(ctx, memberID)

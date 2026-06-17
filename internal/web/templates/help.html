@@ -173,7 +173,7 @@
 
             <h4 class="title is-6 mb-2 mt-4">Periodic reassignment (ReassignCovers)</h4>
             <p>The server runs the cover-assignment algorithm against every leave on startup (and the <code>reassign-covers</code> CLI command re-runs it on demand). The reassignment uses a separate rotation anchor from the one used for ad-hoc new-leave submissions, so a periodic reassign never disturbs the rotation position of leaves submitted through the web form or API between runs.</p>
-            <p>The reassign anchor only changes when the team composition changes (members added/removed/deactivated) or when the algorithm itself is upgraded. On unchanged data, running reassign repeatedly produces identical covers — the operation is idempotent on stable data. If a new leave is added between runs, the next reassign reprocesses from scratch and the new leave's slot is consumed by the rotation as expected.</p>
+            <p>The reassign anchor records the end of the most recent reassign run. On unchanged data it lands on the same date and slot on every run, which is what makes the operation idempotent on stable data. If a new leave is added between runs, the next reassign reprocesses from scratch and the new leave's slot is consumed by the rotation as expected.</p>
         </div>
     </div>
 </div>

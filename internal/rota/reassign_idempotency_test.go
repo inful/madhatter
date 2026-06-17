@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/inful/madhatter/internal/database"
 	"github.com/stretchr/testify/require"
 )
 
@@ -47,14 +46,12 @@ func TestReassignCovers_IdempotentWithMultiDayLeaveAndVariedWalks(t *testing.T) 
 	require.NoError(t, err)
 	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
 	require.NoError(t, err)
-	carlaID, err := db.AddTeamMember(ctx, "Carla", "carla@example.com")
+	_, err = db.AddTeamMember(ctx, "Carla", "carla@example.com")
 	require.NoError(t, err)
 	_, err = db.AddTeamMember(ctx, "Dave", "dave@example.com")
 	require.NoError(t, err)
 	_, err = db.AddTeamMember(ctx, "Eve", "eve@example.com")
 	require.NoError(t, err)
-	_ = aliceID
-	_ = carlaID
 
 	maintenance := NewScheduleMaintenance(db)
 
@@ -277,8 +274,6 @@ func TestReassignCovers_AdHocBetweenRunsShiftsCoversAsExpected(t *testing.T) {
 	require.NoError(t, err)
 	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
 	require.NoError(t, err)
-	_, err = db.AddTeamMember(ctx, "Charlie", "charlie@example.com")
-	require.NoError(t, err)
 
 	engine := NewEngine(db)
 	maintenance := NewScheduleMaintenance(db)
@@ -320,6 +315,4 @@ func TestReassignCovers_AdHocBetweenRunsShiftsCoversAsExpected(t *testing.T) {
 	thirdCovers := snapshotCovers(t, ctx, db, "2024-01-15", "2024-01-19")
 	require.Equal(t, secondCovers, thirdCovers,
 		"third reassign must produce identical covers to the second (idempotency on stable data)")
-
-	_ = database.LeaveRecord{} // keep import used; no-op
 }

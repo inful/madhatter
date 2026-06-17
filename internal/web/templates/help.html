@@ -170,6 +170,10 @@
                 <li>Across a year of random leave, the total HAT-day count — originals plus covers — comes out close to equal for every team member, with a measured spread of 1–6 days on a 5-person team over 250 working days.</li>
                 <li>Existing schedule entries are preserved: a leave that gets added after the rota is already generated only triggers a cover for the affected dates, never a regeneration. A regeneration of a sub-range reuses the persisted state, so the rotation continues from where the surrounding schedule left off instead of restarting from the first member.</li>
             </ul>
+
+            <h4 class="title is-6 mb-2 mt-4">Periodic reassignment (ReassignCovers)</h4>
+            <p>The server runs the cover-assignment algorithm against every leave on startup (and the <code>reassign-covers</code> CLI command re-runs it on demand). The reassignment uses a separate rotation anchor from the one used for ad-hoc new-leave submissions, so a periodic reassign never disturbs the rotation position of leaves submitted through the web form or API between runs.</p>
+            <p>The reassign anchor only changes when the team composition changes (members added/removed/deactivated) or when the algorithm itself is upgraded. On unchanged data, running reassign repeatedly produces identical covers — the operation is idempotent on stable data. If a new leave is added between runs, the next reassign reprocesses from scratch and the new leave's slot is consumed by the rotation as expected.</p>
         </div>
     </div>
 </div>

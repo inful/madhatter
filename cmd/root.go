@@ -24,7 +24,7 @@ var CLI struct {
 	Serve struct {
 		Port           string `default:"8080" arg:""`
 		Development    bool   `default:"false" help:"Enable development mode using fake OAuth to bypass full OAuth setup for local development"`
-		ReassignCovers bool   `default:"true" help:"On startup, re-run the cover-assignment algorithm against every leave (idempotent — safe to leave enabled)"`
+		ReassignCovers bool   `default:"true" help:"On startup, re-run the cover-assignment algorithm against every leave (idempotent on stable data — safe to leave enabled)"`
 	} `cmd:"" help:"Start web server"`
 
 	Team struct {
@@ -68,7 +68,7 @@ var CLI struct {
 		} `cmd:"" help:"Export ICS file"`
 	} `cmd:"" help:"Calendar management"`
 
-	ReassignCovers struct{} `cmd:"" help:"Re-run the cover-assignment algorithm against all leaves (idempotent — safe to run at any time)"`
+	ReassignCovers struct{} `cmd:"" help:"Re-run the cover-assignment algorithm against all leaves (idempotent on stable data — safe to run at any time)"`
 }
 
 func Execute() {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -159,20 +160,21 @@ func (db *DB) GetReassignmentAnchor(ctx context.Context) (date time.Time, index 
 	return row.LastReassignDate.Time, int(row.LastReassignIndex.Int64), true, nil
 }
 
-// UpsertReassignmentAnchor writes the reassign anchor without touching
-// the ad-hoc last_date / last_index columns. The first call after a
-// fresh DB seeds the row with the same last_date / last_index as the
-// ad-hoc state if any, and the new reassign values; subsequent calls
-// update only the reassign columns via the ON CONFLICT clause.
-//
-// The ad-hoc last_date / last_index parameters must always be the
-// current ad-hoc values, otherwise the INSERT branch would overwrite
-// them. In practice the engine reads the current ad-hoc state via
-// GetCoverRotationState and passes it back unchanged.
-func (db *DB) UpsertReassignmentAnchor(ctx context.Context, adHocDate time.Time, adHocIndex int, reassignDate time.Time, reassignIndex int) error {
-	return db.queries.UpsertReassignmentAnchor(ctx, sqlc.UpsertReassignmentAnchorParams{
-		LastDate:          adHocDate,
-		LastIndex:         int64(adHocIndex),
+// WriteReassignmentAnchor ensures the cover_rotation_state row
+// exists (so the subsequent UPDATE has something to write to on a
+// fresh DB) and then updates the reassign anchor columns. The
+// ad-hoc last_date / last_index columns are NEVER read or written
+// by this path, so a concurrent ad-hoc HandleLeaveChange is safe
+// — there is no read-modify-write window in which a stale ad-hoc
+// value could be re-written. On a fresh database the row is
+// created with NULL ad-hoc columns (last_date, last_index became
+// nullable in migration 000021 for exactly this reason); the
+// first subsequent ad-hoc HandleLeaveChange populates them.
+func (db *DB) WriteReassignmentAnchor(ctx context.Context, reassignDate time.Time, reassignIndex int) error {
+	if err := db.queries.EnsureReassignmentAnchorRow(ctx); err != nil {
+		return fmt.Errorf("ensure reassign anchor row: %w", err)
+	}
+	return db.queries.UpdateReassignmentAnchor(ctx, sqlc.UpdateReassignmentAnchorParams{
 		LastReassignDate:  sql.NullTime{Time: reassignDate, Valid: true},
 		LastReassignIndex: sql.NullInt64{Int64: int64(reassignIndex), Valid: true},
 	})

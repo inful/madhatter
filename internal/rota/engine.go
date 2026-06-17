@@ -603,12 +603,12 @@ func (e *Engine) computeReassignRotationIndex(_ context.Context, currentDate tim
 // reassign anchor columns only, and updates the in-memory
 // reassignLastDate / reassignLastIndex fields that
 // computeReassignRotationIndex reads on the next day of the same
-// reassign run. The ad-hoc last_date/last_index columns are left
-// untouched, so a reassign run never disturbs the state that
-// AssignCoversForLeave reads. To make the INSERT branch of the SQL
-// UPSERT safe on a fresh database we also pass the current ad-hoc
-// values, but in normal operation the ad-hoc columns are already
-// populated by a prior cover assignment.
+// reassign run. The ad-hoc last_date/last_index columns are NEVER
+// read or written here — WriteReassignmentAnchor does INSERT-OR-IGNORE
+// (with only id, leaving ad-hoc columns NULL on a fresh DB) plus
+// UPDATE of just the reassign columns, so there is no read-modify-
+// write window in which a concurrent ad-hoc HandleLeaveChange could
+// be clobbered.
 func (e *Engine) commitReassignRotationState(ctx context.Context, currentDate time.Time, index int) error {
 	truncated := currentDate.UTC().Truncate(hoursPerDay * time.Hour)
 
@@ -619,18 +619,7 @@ func (e *Engine) commitReassignRotationState(ctx context.Context, currentDate ti
 	e.reassignLastDate = truncated
 	e.reassignLastIndex = index
 
-	adHocDate, adHocIndex, err := e.db.GetCoverRotationState(ctx)
-	if err != nil {
-		// sql.ErrNoRows is acceptable: on a brand-new database no
-		// ad-hoc state exists yet. Pass zero values so the INSERT
-		// branch seeds the row with placeholder ad-hoc columns.
-		if !errors.Is(err, sql.ErrNoRows) {
-			return err
-		}
-		adHocDate = truncated
-		adHocIndex = index
-	}
-	return e.db.UpsertReassignmentAnchor(ctx, adHocDate, adHocIndex, truncated, index)
+	return e.db.WriteReassignmentAnchor(ctx, truncated, index)
 }
 
 // r1RotationIndex returns the R1 (original-HAT) rotation index for

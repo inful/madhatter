@@ -11,6 +11,21 @@ import (
 	"time"
 )
 
+const ensureReassignmentAnchorRow = `-- name: EnsureReassignmentAnchorRow :exec
+INSERT OR IGNORE INTO cover_rotation_state (id) VALUES (1)
+`
+
+// INSERT-OR-IGNORE the single row of cover_rotation_state. Used by
+// the reassign path so its subsequent UPDATE does not fail on a
+// fresh database where the row does not exist yet. Only the id is
+// inserted; the ad-hoc columns stay NULL (or whatever a prior
+// ad-hoc HandleLeaveChange left them as) and the reassign columns
+// are populated by the subsequent UPDATE.
+func (q *Queries) EnsureReassignmentAnchorRow(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, ensureReassignmentAnchorRow)
+	return err
+}
+
 const getCoverRotationState = `-- name: GetCoverRotationState :one
 SELECT last_date, last_index
 FROM cover_rotation_state
@@ -52,6 +67,26 @@ func (q *Queries) GetReassignmentAnchor(ctx context.Context) (GetReassignmentAnc
 	return i, err
 }
 
+const updateReassignmentAnchor = `-- name: UpdateReassignmentAnchor :exec
+UPDATE cover_rotation_state
+SET last_reassign_date = ?, last_reassign_index = ?
+WHERE id = 1
+`
+
+type UpdateReassignmentAnchorParams struct {
+	LastReassignDate  sql.NullTime  `json:"last_reassign_date"`
+	LastReassignIndex sql.NullInt64 `json:"last_reassign_index"`
+}
+
+// Updates the reassign anchor columns only. Does not touch the
+// ad-hoc last_date / last_index columns, so a concurrent ad-hoc
+// HandleLeaveChange is safe. The reassign path never reads or
+// writes the ad-hoc state.
+func (q *Queries) UpdateReassignmentAnchor(ctx context.Context, arg UpdateReassignmentAnchorParams) error {
+	_, err := q.db.ExecContext(ctx, updateReassignmentAnchor, arg.LastReassignDate, arg.LastReassignIndex)
+	return err
+}
+
 const upsertCoverRotationState = `-- name: UpsertCoverRotationState :exec
 INSERT INTO cover_rotation_state (id, last_date, last_index)
 VALUES (1, ?, ?)
@@ -70,32 +105,5 @@ type UpsertCoverRotationStateParams struct {
 // the CHECK (id = 1) clause, so this is the only way to write it.
 func (q *Queries) UpsertCoverRotationState(ctx context.Context, arg UpsertCoverRotationStateParams) error {
 	_, err := q.db.ExecContext(ctx, upsertCoverRotationState, arg.LastDate, arg.LastIndex)
-	return err
-}
-
-const upsertReassignmentAnchor = `-- name: UpsertReassignmentAnchor :exec
-INSERT INTO cover_rotation_state (id, last_date, last_index, last_reassign_date, last_reassign_index)
-VALUES (1, ?, ?, ?, ?)
-ON CONFLICT (id) DO UPDATE SET
-    last_reassign_date = excluded.last_reassign_date,
-    last_reassign_index = excluded.last_reassign_index
-`
-
-type UpsertReassignmentAnchorParams struct {
-	LastDate          time.Time     `json:"last_date"`
-	LastIndex         int64         `json:"last_index"`
-	LastReassignDate  sql.NullTime  `json:"last_reassign_date"`
-	LastReassignIndex sql.NullInt64 `json:"last_reassign_index"`
-}
-
-// Writes only the reassign columns, leaving last_date and last_index
-// untouched so the ad-hoc path keeps advancing independently.
-func (q *Queries) UpsertReassignmentAnchor(ctx context.Context, arg UpsertReassignmentAnchorParams) error {
-	_, err := q.db.ExecContext(ctx, upsertReassignmentAnchor,
-		arg.LastDate,
-		arg.LastIndex,
-		arg.LastReassignDate,
-		arg.LastReassignIndex,
-	)
 	return err
 }

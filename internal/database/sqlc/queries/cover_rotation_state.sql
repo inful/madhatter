@@ -23,11 +23,20 @@ SELECT last_reassign_date, last_reassign_index
 FROM cover_rotation_state
 WHERE id = 1;
 
--- name: UpsertReassignmentAnchor :exec
--- Writes only the reassign columns, leaving last_date and last_index
--- untouched so the ad-hoc path keeps advancing independently.
-INSERT INTO cover_rotation_state (id, last_date, last_index, last_reassign_date, last_reassign_index)
-VALUES (1, ?, ?, ?, ?)
-ON CONFLICT (id) DO UPDATE SET
-    last_reassign_date = excluded.last_reassign_date,
-    last_reassign_index = excluded.last_reassign_index;
+-- name: EnsureReassignmentAnchorRow :exec
+-- INSERT-OR-IGNORE the single row of cover_rotation_state. Used by
+-- the reassign path so its subsequent UPDATE does not fail on a
+-- fresh database where the row does not exist yet. Only the id is
+-- inserted; the ad-hoc columns stay NULL (or whatever a prior
+-- ad-hoc HandleLeaveChange left them as) and the reassign columns
+-- are populated by the subsequent UPDATE.
+INSERT OR IGNORE INTO cover_rotation_state (id) VALUES (1);
+
+-- name: UpdateReassignmentAnchor :exec
+-- Updates the reassign anchor columns only. Does not touch the
+-- ad-hoc last_date / last_index columns, so a concurrent ad-hoc
+-- HandleLeaveChange is safe. The reassign path never reads or
+-- writes the ad-hoc state.
+UPDATE cover_rotation_state
+SET last_reassign_date = ?, last_reassign_index = ?
+WHERE id = 1;

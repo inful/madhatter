@@ -76,6 +76,13 @@ type Querier interface {
 	DeleteUserOAuthTokens(ctx context.Context, userID string) error
 	DeleteUserSessions(ctx context.Context, userID string) error
 	DeleteWFHRequest(ctx context.Context, id string) error
+	// INSERT-OR-IGNORE the single row of cover_rotation_state. Used by
+	// the reassign path so its subsequent UPDATE does not fail on a
+	// fresh database where the row does not exist yet. Only the id is
+	// inserted; the ad-hoc columns stay NULL (or whatever a prior
+	// ad-hoc HandleLeaveChange left them as) and the reassign columns
+	// are populated by the subsequent UPDATE.
+	EnsureReassignmentAnchorRow(ctx context.Context) error
 	GetAPITokenByHash(ctx context.Context, tokenHash string) (ApiToken, error)
 	GetAPITokenByID(ctx context.Context, id string) (ApiToken, error)
 	GetAPITokensByUser(ctx context.Context, userID string) ([]ApiToken, error)
@@ -175,6 +182,11 @@ type Querier interface {
 	UpdateLeaveRecord(ctx context.Context, arg UpdateLeaveRecordParams) error
 	UpdateLeaveStatus(ctx context.Context, arg UpdateLeaveStatusParams) error
 	UpdateOAuthToken(ctx context.Context, arg UpdateOAuthTokenParams) error
+	// Updates the reassign anchor columns only. Does not touch the
+	// ad-hoc last_date / last_index columns, so a concurrent ad-hoc
+	// HandleLeaveChange is safe. The reassign path never reads or
+	// writes the ad-hoc state.
+	UpdateReassignmentAnchor(ctx context.Context, arg UpdateReassignmentAnchorParams) error
 	UpdateTeamMember(ctx context.Context, arg UpdateTeamMemberParams) error
 	UpdateUser(ctx context.Context, arg UpdateUserParams) error
 	UpdateUserProvider(ctx context.Context, arg UpdateUserProviderParams) error
@@ -189,9 +201,6 @@ type Querier interface {
 	// existing one. R1 is keyed by the (date, index) pair of the
 	// most recently written original assignment.
 	UpsertR1RotationState(ctx context.Context, arg UpsertR1RotationStateParams) error
-	// Writes only the reassign columns, leaving last_date and last_index
-	// untouched so the ad-hoc path keeps advancing independently.
-	UpsertReassignmentAnchor(ctx context.Context, arg UpsertReassignmentAnchorParams) error
 }
 
 var _ Querier = (*Queries)(nil)

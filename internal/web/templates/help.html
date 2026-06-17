@@ -52,6 +52,7 @@
             <h4 class="title is-6 mb-2 mt-4">On-site coverage</h4>
             <p>Every day has a minimum number of people who must be physically on site. The minimum is the larger of two values: a percentage of active members, and a hard absolute floor. The percentage is rounded up before the comparison so a fractional result never under-counts. The system uses whichever is higher so a small team can never drop below the absolute floor even when the rounded percentage would otherwise allow it.</p>
             <p>On a given day, members already on leave, members with a recurring weekday, and approved ad-hoc WFH requests all count against that day's on-site capacity. The remaining members are the pool of available WFH slots for that day.</p>
+            <p>When the day's at-work count has reached the floor, the WFH chip on the dashboard turns orange for that column to signal no more WFH can be approved that day. Any new pending request for that date will be denied at settlement time, because approving it would drop on-site coverage below the floor.</p>
 
             <h4 class="title is-6 mb-2 mt-4">Settlement</h4>
             <p>Pending WFH requests are processed in a rolling window a few days ahead, not all at once. The system reviews requests whose dates fall inside that window, decides them against the day's available slots, and leaves anything further out as pending until it enters the window.</p>
@@ -59,9 +60,12 @@
 
             <h4 class="title is-6 mb-2 mt-4">Recurring weekdays</h4>
             <p>If a member has a weekday set as recurring WFH, the system treats every upcoming occurrence of that weekday in the current period as an approved request. Those rows appear in the WFH list alongside ad-hoc requests, marked with the same Approved status, and the same Withdraw button works on them. Withdrawing a single occurrence frees one quota slot for that period; the next period reverts to the configured schedule.</p>
+            <p>If you self-withdraw a recurring occurrence and then re-request the same date, the new request is treated as ad-hoc (not recurring) and goes through normal settlement &mdash; so it may be denied if on-site coverage is at the floor. The recurring pattern for that weekday resumes from the next occurrence onward.</p>
 
             <h4 class="title is-6 mb-2 mt-4">Withdrawing</h4>
-            <p>Approved requests can be withdrawn by the requester or by an admin at any time before the WFH day itself. The day itself is still withdrawable, but once the day has passed the request is locked. Withdrawals are processed through the same flow whether the user or an admin triggers them.</p>
+            <p>Approved requests can be withdrawn by the requester or by an admin at any time before the WFH day itself. The day itself is still withdrawable, but once the day has passed the request is locked.</p>
+            <p>You can also cancel a <strong>pending</strong> request (before settlement) from your WFH list. In both cases, if you change your mind afterwards you can re-request the same date &mdash; the row is resurrected in place as a new pending request, audit fields are cleared, and it will go through settlement like any other pending request.</p>
+            <p>Admin withdrawals are different: they represent an admin's decision and cannot be reversed by re-requesting. If an admin withdraws your WFH, ask them to reinstate it if you want it back.</p>
         </div>
 
         {{if .WFHConfigured}}

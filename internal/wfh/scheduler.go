@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -18,6 +19,11 @@ type Scheduler struct {
 	wg       sync.WaitGroup
 	running  bool
 	mu       sync.Mutex
+	// ticks counts the number of times runSettle has completed, for
+	// tests that need to distinguish the immediate tick from a periodic
+	// one. Bumped in runSettle's defer so both success and error paths
+	// are counted. Safe to read concurrently via atomic.Int64.
+	ticks atomic.Int64
 }
 
 // NewScheduler creates a new WFH scheduler with a daily interval.
@@ -72,6 +78,7 @@ func (s *Scheduler) Stop() {
 }
 
 func (s *Scheduler) runSettle(ctx context.Context) {
+	defer s.ticks.Add(1)
 	if err := s.service.SettlePendingRequests(ctx); err != nil {
 		log.Printf("WFH settlement error: %v\n", err)
 	}

@@ -143,3 +143,61 @@ func TestScheduler_SkipsPurgeWhenPurgeDisabled(t *testing.T) {
 		require.NoError(t, err, "purge-disabled scheduler must not delete past rows")
 	})
 }
+
+// TestScheduler_PeriodicTickFires verifies the periodic path — not just
+// the immediate-on-Start tick. It uses synctest to advance the bubble
+// clock past one ticker interval and asserts that runSettle was called
+// at least twice. Without this test, the periodicSettle goroutine could
+// silently break (e.g. a refactor that swallows the ticker.C case)
+// without any test failing.
+func TestScheduler_PeriodicTickFires(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		db, cleanup := setupWFHTestDB(t)
+		t.Cleanup(cleanup)
+
+		cfg := testConfig()
+		cfg.MinOnsitePercentage = 0
+		cfg.MinOnsiteAbsolute = 0
+		cfg.SettlementDays = 14
+		svc := NewService(db, cfg)
+
+		scheduler := NewScheduler(svc)
+		// 1h interval — long enough that synctest.Wait() after Start
+		// does not advance the clock past the periodic tick on its
+		// own, but short enough that the test stays fast under
+		// time.Sleep.
+		scheduler.interval = time.Hour
+
+		require.NoError(t, scheduler.Start())
+		synctest.Wait()
+
+		// Immediate tick ran once. Any subsequent ticks are periodic.
+		require.Equal(t, int64(1), scheduler.ticks.Load(),
+			"start must trigger exactly one immediate runSettle")
+
+		// Advance the bubble clock past the first ticker interval.
+		// time.Sleep in a synctest bubble advances the fake clock and
+		// waits for the ticker goroutine to reach a stable point, so
+		// the periodic runSettle has executed by the time we read.
+		time.Sleep(time.Hour + time.Millisecond)
+		synctest.Wait()
+		require.GreaterOrEqual(t, scheduler.ticks.Load(), int64(2),
+			"periodic ticker must fire runSettle after the interval elapses")
+
+		// One more interval — verify the loop keeps firing rather than
+		// exiting after the first tick.
+		time.Sleep(time.Hour + time.Millisecond)
+		synctest.Wait()
+		require.GreaterOrEqual(t, scheduler.ticks.Load(), int64(3),
+			"ticker must keep firing across multiple intervals")
+
+		scheduler.Stop()
+
+		// No further ticks after Stop.
+		finalTicks := scheduler.ticks.Load()
+		time.Sleep(time.Hour + time.Millisecond)
+		synctest.Wait()
+		require.Equal(t, finalTicks, scheduler.ticks.Load(),
+			"no ticks must fire after Stop closes stopChan")
+	})
+}

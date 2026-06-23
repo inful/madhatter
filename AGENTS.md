@@ -124,6 +124,28 @@ Idempotent: the `UNIQUE(member_id, date)` constraint and the pre-insert
 existence check block duplicates. A user-withdrawn recurring row blocks
 re-materialization (the user's intent is preserved).
 
+### WFH Past-Period Purge
+The `wfh_requests` table accumulates history forever by default. To keep
+the table bounded, the WFH service hard-deletes rows whose `date` is
+strictly before the start of the previous quota period. The cutoff moves
+forward with the calendar so the same `date < cutoff` SQL works on every
+run. Three surfaces invoke the same purge:
+- **Scheduler**: `Scheduler.runSettle` calls `Service.PurgePastPeriods`
+  after each settlement tick. Gated by `WFH_PURGE_ENABLED` (default `true`)
+  AND `WFH_ENABLED` — disabling the feature turns the purge off everywhere.
+- **CLI**: `wfh purge [--apply] [--before YYYY-MM-DD]`. Dry-run by default;
+  `--before` overrides the period-derived cutoff for one-off cleans. Errors
+  with `WFH feature is disabled` when the service is off.
+- **Admin web**: `GET /admin/wfh/purge` shows the cutoff + would-delete
+  count; `POST` with `confirm=true` commits and redirects to
+  `/admin/wfh?wfh_purged=N&cutoff=YYYY-MM-DD` with a flash banner.
+
+`Service.PurgePastPeriods` and `Service.PurgePastPeriodsDryRun` both
+short-circuit to `(0, nil)` when `IsPurgeEnabled()` is false. The dry-run
+preview uses `Database.CountWFHRequestsBefore` (a `SELECT COUNT(*)`)
+so admin GETs never mutate the table. Errors are logged at the scheduler
+boundary and never block settlement; the next tick retries.
+
 ### Calendar ICS Generation
 - ICS files are generated with 0o600 permissions
 - Calendar subscriptions use UUID tokens stored in `calendar_subscriptions` table

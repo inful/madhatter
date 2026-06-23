@@ -21,6 +21,7 @@ const (
 	defaultPeriodDays          = 7
 	defaultSettlementDays      = 2
 	defaultRequestHorizonDays  = 90
+	defaultPurgeEnabled        = true
 	// defaultPeriodAnchor is a known Monday used as the period epoch.
 	defaultPeriodAnchor = "2026-01-05"
 )
@@ -43,6 +44,13 @@ type Config struct {
 	SettlementDays int
 	// RequestHorizonDays is how many days ahead a WFH request can be submitted.
 	RequestHorizonDays int
+	// PurgeEnabled controls whether past-period wfh_requests rows are
+	// automatically hard-deleted by the scheduler. When true (default),
+	// the daily scheduler runs PurgePastPeriods after each settle tick.
+	// Set to false to keep historical WFH rows indefinitely. Note that
+	// the WFH feature itself (Enabled) gates the purge as well — when
+	// Enabled is false the purge is skipped everywhere.
+	PurgeEnabled bool
 }
 
 // LoadConfigFromEnv loads WFH configuration from environment variables.
@@ -56,6 +64,7 @@ func LoadConfigFromEnv() Config {
 		PeriodAnchor:        parseStringEnv("WFH_PERIOD_ANCHOR", defaultPeriodAnchor),
 		SettlementDays:      parseIntEnv("WFH_SETTLEMENT_DAYS", defaultSettlementDays),
 		RequestHorizonDays:  parseIntEnv("WFH_REQUEST_HORIZON_DAYS", defaultRequestHorizonDays),
+		PurgeEnabled:        parseBoolEnv("WFH_PURGE_ENABLED", defaultPurgeEnabled),
 	}
 	return cfg
 }
@@ -110,6 +119,75 @@ func (s *Service) ComputePeriodBounds(date time.Time) (start, end time.Time, err
 	start = anchor.UTC().AddDate(0, 0, periodIndex*s.cfg.PeriodDays)
 	end = start.AddDate(0, 0, s.cfg.PeriodDays-1)
 	return start, end, nil
+}
+
+// IsPurgeEnabled reports whether the past-period purge is active. The
+// purge is active only when both the WFH feature is enabled and the
+// PurgeEnabled flag is true. Callers can use this to gate the CLI command
+// and the admin web button without duplicating the policy.
+func (s *Service) IsPurgeEnabled() bool {
+	return s.cfg.Enabled && s.cfg.PurgeEnabled
+}
+
+// previousPeriodStart returns the start (inclusive) of the quota period
+// immediately preceding the one containing refDate. The purge keeps rows
+// from the current and previous periods, so this is the cut-off date:
+// anything strictly before it is deleted.
+func (s *Service) previousPeriodStart(refDate time.Time) (time.Time, error) {
+	currentStart, _, err := s.ComputePeriodBounds(refDate)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return currentStart.AddDate(0, 0, -s.cfg.PeriodDays), nil
+}
+
+// PurgePastPeriods hard-deletes every wfh_requests row whose date is
+// strictly before the start of the previous quota period (relative to
+// now). Returns the cutoff date (YYYY-MM-DD) and the number of rows
+// deleted. When IsPurgeEnabled is false the function is a no-op and
+// returns ("", 0, nil) — callers wanting an error path should check
+// IsPurgeEnabled before calling.
+//
+// The deletion is non-recoverable; callers wanting a preview should
+// call PurgePastPeriodsDryRun first. The scheduler runs this after each
+// settle tick; the CLI and admin web button surface the dry-run by
+// default to keep the destructive action explicit.
+func (s *Service) PurgePastPeriods(ctx context.Context) (string, int64, error) {
+	if !s.IsPurgeEnabled() {
+		return "", 0, nil
+	}
+	cutoff, err := s.previousPeriodStart(time.Now().UTC())
+	if err != nil {
+		return "", 0, err
+	}
+	cutoffStr := cutoff.Format("2006-01-02")
+	deleted, err := s.db.PurgeWFHRequestsBefore(ctx, cutoffStr)
+	if err != nil {
+		return cutoffStr, 0, err
+	}
+	if deleted > 0 {
+		log.Printf("WFH past-period purge: deleted %d rows with date < %s\n", deleted, cutoffStr)
+	}
+	return cutoffStr, deleted, nil
+}
+
+// PurgePastPeriodsDryRun returns the cutoff date and the number of rows
+// that PurgePastPeriods WOULD delete, without touching the table. Same
+// gating as PurgePastPeriods: returns ("", 0, nil) when disabled.
+func (s *Service) PurgePastPeriodsDryRun(ctx context.Context) (string, int64, error) {
+	if !s.IsPurgeEnabled() {
+		return "", 0, nil
+	}
+	cutoff, err := s.previousPeriodStart(time.Now().UTC())
+	if err != nil {
+		return "", 0, err
+	}
+	cutoffStr := cutoff.Format("2006-01-02")
+	count, err := s.db.CountWFHRequestsBefore(ctx, cutoffStr)
+	if err != nil {
+		return cutoffStr, 0, err
+	}
+	return cutoffStr, count, nil
 }
 
 // GetQuotaStatus returns the quota status for the given member as of now.

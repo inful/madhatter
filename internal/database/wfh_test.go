@@ -151,3 +151,118 @@ func parseDate(t *testing.T, s string) time.Time {
 	require.NoError(t, err)
 	return d
 }
+
+// seedWFHRow inserts a wfh_requests row directly through the SQLC layer,
+// bypassing CreateWFHRequest's past-date guard. Used by purge tests that
+// need historical rows.
+func seedWFHRow(t *testing.T, db *DB, ctx context.Context, id, memberID, date, status string) {
+	t.Helper()
+	_, err := db.GetQueries().CreateWFHRequest(ctx, sqlc.CreateWFHRequestParams{
+		ID:       id,
+		MemberID: memberID,
+		Date:     parseDate(t, date),
+	})
+	require.NoError(t, err)
+	if status != WFHStatusPending {
+		require.NoError(t, db.UpdateWFHRequestStatus(ctx, id, status))
+	}
+}
+
+func TestCountWFHRequestsBefore(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	// Cutoff at 2026-03-15 — rows with date < cutoff should count.
+	cutoff := "2026-03-15"
+	seedWFHRow(t, db, ctx, "before-1", memberID, "2026-03-10", WFHStatusApproved)
+	seedWFHRow(t, db, ctx, "before-2", memberID, "2026-03-14", WFHStatusDenied)
+	// Cutoff itself is NOT < cutoff, so it must not be counted.
+	seedWFHRow(t, db, ctx, "at-cutoff", memberID, "2026-03-15", WFHStatusApproved)
+	seedWFHRow(t, db, ctx, "after-1", memberID, "2026-03-16", WFHStatusPending)
+	seedWFHRow(t, db, ctx, "after-2", memberID, "2026-04-01", WFHStatusApproved)
+
+	count, err := db.CountWFHRequestsBefore(ctx, cutoff)
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), count, "only strictly-before rows should be counted")
+}
+
+func TestCountWFHRequestsBefore_InvalidDate(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	_, err := db.CountWFHRequestsBefore(ctx, "not-a-date")
+	require.ErrorIs(t, err, ErrWFHInvalidDate)
+}
+
+func TestPurgeWFHRequestsBefore_DeletesOnlyPastRows(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	// Mix of statuses on both sides of the cutoff. Purge must delete
+	// strictly-past rows regardless of status, and preserve the rest.
+	cutoff := "2026-03-15"
+	seedWFHRow(t, db, ctx, "past-pending", memberID, "2026-03-10", WFHStatusPending)
+	seedWFHRow(t, db, ctx, "past-approved", memberID, "2026-03-12", WFHStatusApproved)
+	seedWFHRow(t, db, ctx, "past-denied", memberID, "2026-03-13", WFHStatusDenied)
+	seedWFHRow(t, db, ctx, "past-withdrawn", memberID, "2026-03-14", WFHStatusWithdrawn)
+	// Cutoff itself must survive (boundary check).
+	seedWFHRow(t, db, ctx, "at-cutoff-approved", memberID, "2026-03-15", WFHStatusApproved)
+	seedWFHRow(t, db, ctx, "after-pending", memberID, "2026-03-20", WFHStatusPending)
+	seedWFHRow(t, db, ctx, "after-approved", memberID, "2026-04-01", WFHStatusApproved)
+
+	deleted, err := db.PurgeWFHRequestsBefore(ctx, cutoff)
+	require.NoError(t, err)
+	assert.Equal(t, int64(4), deleted, "only the four strictly-past rows must be deleted")
+
+	// The boundary row and the two future rows must still exist.
+	_, err = db.GetWFHRequestByID(ctx, "at-cutoff-approved")
+	require.NoError(t, err)
+	_, err = db.GetWFHRequestByID(ctx, "after-pending")
+	require.NoError(t, err)
+	_, err = db.GetWFHRequestByID(ctx, "after-approved")
+	require.NoError(t, err)
+
+	// The deleted rows must be gone — GetWFHRequestByID returns ErrWFHNotFound.
+	for _, id := range []string{"past-pending", "past-approved", "past-denied", "past-withdrawn"} {
+		_, err := db.GetWFHRequestByID(ctx, id)
+		require.ErrorIs(t, err, ErrWFHNotFound, "row %s should be purged", id)
+	}
+}
+
+func TestPurgeWFHRequestsBefore_NoMatchingRowsReturnsZero(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	// Only future rows exist; nothing should be purged.
+	seedWFHRow(t, db, ctx, "future", memberID, "2026-12-31", WFHStatusApproved)
+
+	deleted, err := db.PurgeWFHRequestsBefore(ctx, "2026-01-01")
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), deleted)
+
+	// Future row survives.
+	_, err = db.GetWFHRequestByID(ctx, "future")
+	require.NoError(t, err)
+}
+
+func TestPurgeWFHRequestsBefore_InvalidDate(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	_, err := db.PurgeWFHRequestsBefore(ctx, "not-a-date")
+	require.ErrorIs(t, err, ErrWFHInvalidDate)
+}

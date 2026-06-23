@@ -24,6 +24,23 @@ func (q *Queries) CountApprovedWFHByDate(ctx context.Context, date time.Time) (i
 	return count, err
 }
 
+const countWFHRequestsBefore = `-- name: CountWFHRequestsBefore :one
+SELECT COUNT(*) AS count
+FROM wfh_requests
+WHERE date < ?
+`
+
+// Count wfh_requests rows whose date is strictly before the cutoff.
+// Used by the past-period purge dry-run to preview the affected row
+// count without touching the table. The cutoff is the start of the
+// previous quota period: rows on or after that date are kept.
+func (q *Queries) CountWFHRequestsBefore(ctx context.Context, date time.Time) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countWFHRequestsBefore, date)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createApprovedRecurringWFHRequest = `-- name: CreateApprovedRecurringWFHRequest :execresult
 INSERT INTO wfh_requests (id, member_id, date, status, is_recurring, settled_at)
 VALUES (?, ?, ?, 'approved', 1, ?)
@@ -470,6 +487,18 @@ func (q *Queries) GetWFHRequestsByMemberAndPeriod(ctx context.Context, arg GetWF
 		return nil, err
 	}
 	return items, nil
+}
+
+const purgeWFHRequestsBefore = `-- name: PurgeWFHRequestsBefore :execresult
+DELETE FROM wfh_requests WHERE date < ?
+`
+
+// NOTE: comments must follow the SQL, not precede it. sqlc v1.28.0 has a
+// parser bug that strips the trailing `?` from multi-line DELETE statements
+// ending in `< ?` when there are `--` comment lines between `-- name:` and
+// the statement. Keep this statement on a single line with comments below.
+func (q *Queries) PurgeWFHRequestsBefore(ctx context.Context, date time.Time) (sql.Result, error) {
+	return q.db.ExecContext(ctx, purgeWFHRequestsBefore, date)
 }
 
 const resurrectWFHRequest = `-- name: ResurrectWFHRequest :execresult

@@ -75,6 +75,15 @@ func (s *Scheduler) runSettle(ctx context.Context) {
 	if err := s.service.SettlePendingRequests(ctx); err != nil {
 		log.Printf("WFH settlement error: %v\n", err)
 	}
+	// Purge runs after settle so a fresh deploy self-heals into the
+	// current+previous retention policy on the first tick. Purge
+	// failures are logged, never fatal — a broken purge must not block
+	// settlement, and the next tick will retry.
+	if s.service.IsPurgeEnabled() {
+		if _, _, err := s.service.PurgePastPeriods(ctx); err != nil {
+			log.Printf("WFH past-period purge error: %v\n", err)
+		}
+	}
 }
 
 func (s *Scheduler) periodicSettle() {

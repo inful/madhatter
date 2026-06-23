@@ -13,6 +13,7 @@ import (
 	"github.com/inful/madhatter/internal/database"
 	"github.com/inful/madhatter/internal/holiday"
 	"github.com/inful/madhatter/internal/rota"
+	"github.com/inful/madhatter/internal/wfh"
 )
 
 const (
@@ -69,6 +70,13 @@ var CLI struct {
 	} `cmd:"" help:"Calendar management"`
 
 	ReassignCovers struct{} `cmd:"" help:"Re-run the cover-assignment algorithm against all leaves (idempotent on stable data — safe to run at any time)"`
+
+	WFH struct {
+		Purge struct {
+			Apply  bool   `help:"Actually delete. Without this, prints a dry-run summary."`
+			Before string `help:"Override the cutoff date (YYYY-MM-DD). Default: start of the previous quota period."`
+		} `cmd:"" help:"Purge WFH requests older than the previous quota period"`
+	} `cmd:"" help:"WFH management"`
 }
 
 func Execute() {
@@ -96,6 +104,7 @@ func Execute() {
 		"calendar subscribe <email>":       calendarSubscribeCommand,
 		"calendar export <email> <output>": calendarExportCommand,
 		"reassign-covers":                  reassignCoversCommand,
+		"wfh purge":                        wfhPurgeCommand,
 	}
 
 	if handler, exists := handlers[command]; exists {
@@ -385,8 +394,62 @@ func buildReassignmentMaintenance(db *database.DB) (*rota.ScheduleMaintenance, f
 
 // isNoOpHolidayStopErr reports whether a holiday.Service.Stop error
 // is just the well-known "scheduler was never started" response —
-// which happens on every boot when HOLIDAY_URLS is empty. The
+// which happens on every boot when HOLIDAY_URLS was empty. The
 // service returns this even though stopping was a no-op.
 func isNoOpHolidayStopErr(err error) bool {
 	return err != nil && err.Error() == "scheduler is not running"
+}
+
+// wfhPurgeCommand purges wfh_requests rows older than the start of the
+// previous quota period. Dry-run by default; pass --apply to commit.
+// --before YYYY-MM-DD overrides the period-derived cutoff for one-off
+// catch-up cleans.
+func wfhPurgeCommand(ctx context.Context, db *database.DB) {
+	svc := wfh.NewService(db, wfh.LoadConfigFromEnv())
+	if !svc.IsPurgeEnabled() {
+		fmt.Fprintln(os.Stderr, "WFH past-period purge is disabled (WFH_ENABLED=false). Nothing to do.")
+		os.Exit(1)
+	}
+
+	override := CLI.WFH.Purge.Before
+	if override != "" {
+		// Validate the override before counting so an obviously bad
+		// --before surfaces as an input error, not a silent zero.
+		if _, err := time.Parse("2006-01-02", override); err != nil {
+			fmt.Fprintf(os.Stderr, "Invalid --before date (expected YYYY-MM-DD): %s\n", override)
+			os.Exit(1)
+		}
+	}
+
+	cutoff, affected, err := runWFHPurge(ctx, db, svc, override, CLI.WFH.Purge.Apply)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "WFH purge failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	if CLI.WFH.Purge.Apply {
+		log.Printf("WFH past-period purge: deleted %d rows with date < %s\n", affected, cutoff)
+		return
+	}
+	log.Printf("WFH past-period purge (dry-run): %d rows would be deleted with date < %s\n", affected, cutoff)
+	log.Printf("Re-run with --apply to commit.\n")
+}
+
+// runWFHPurge routes the (override, apply) matrix to the right DB or
+// service method and normalises the (int64, error) and (string, int64,
+// error) return shapes. Pulled out of wfhPurgeCommand to keep the
+// apply/dry-run branches at a single nesting level.
+func runWFHPurge(ctx context.Context, db *database.DB, svc *wfh.Service, override string, apply bool) (string, int64, error) {
+	if apply {
+		if override != "" {
+			n, err := db.PurgeWFHRequestsBefore(ctx, override)
+			return override, n, err
+		}
+		return svc.PurgePastPeriods(ctx)
+	}
+	if override != "" {
+		n, err := db.CountWFHRequestsBefore(ctx, override)
+		return override, n, err
+	}
+	return svc.PurgePastPeriodsDryRun(ctx)
 }

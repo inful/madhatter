@@ -20,7 +20,21 @@
 </div>
 {{end}}
 
-<div class="mb-4 is-flex is-justify-content-flex-end">
+{{if .PurgeFlashCount}}
+<div class="notification is-success is-light mb-4">
+    <i class="fas fa-check-circle mr-2"></i>
+    Purged {{.PurgeFlashCount}} past WFH request{{if ne .PurgeFlashCount 1}}s{{end}}
+    with date < <code>{{.PurgeFlashCutoff}}</code>.
+</div>
+{{end}}
+
+<div class="mb-4 is-flex is-justify-content-flex-end" style="gap: 0.5rem;">
+    {{if .PurgeEnabled}}
+    <a href="/admin/wfh/purge" class="button is-warning is-light">
+        <span class="icon"><i class="fas fa-trash-alt"></i></span>
+        <span>Purge past periods</span>
+    </a>
+    {{end}}
     <form method="post" action="/admin/wfh/settle">
         <button type="submit" class="button is-primary"
             onclick="return confirm('Run settlement now? This will approve or deny all pending requests.')">

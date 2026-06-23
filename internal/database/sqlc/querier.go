@@ -30,6 +30,11 @@ type Querier interface {
 	CountApprovedWFHByDate(ctx context.Context, date time.Time) (int64, error)
 	CountPendingSwapsForMember(ctx context.Context, targetMemberID string) (int64, error)
 	CountPendingUsers(ctx context.Context) (int64, error)
+	// Count wfh_requests rows whose date is strictly before the cutoff.
+	// Used by the past-period purge dry-run to preview the affected row
+	// count without touching the table. The cutoff is the start of the
+	// previous quota period: rows on or after that date are kept.
+	CountWFHRequestsBefore(ctx context.Context, date time.Time) (int64, error)
 	CreateAPIToken(ctx context.Context, arg CreateAPITokenParams) (sql.Result, error)
 	// Inserts an already-active user. Used by test fixtures and the
 	// dev-mode seeder; the production OAuth flow goes through
@@ -156,6 +161,11 @@ type Querier interface {
 	MarkOutboxDead(ctx context.Context, arg MarkOutboxDeadParams) (sql.Result, error)
 	MarkOutboxFailed(ctx context.Context, arg MarkOutboxFailedParams) (sql.Result, error)
 	MarkOutboxSent(ctx context.Context, id string) (sql.Result, error)
+	// NOTE: comments must follow the SQL, not precede it. sqlc v1.28.0 has a
+	// parser bug that strips the trailing `?` from multi-line DELETE statements
+	// ending in `< ?` when there are `--` comment lines between `-- name:` and
+	// the statement. Keep this statement on a single line with comments below.
+	PurgeWFHRequestsBefore(ctx context.Context, date time.Time) (sql.Result, error)
 	ReactivateUser(ctx context.Context, id string) (User, error)
 	// Flip a previously cancelled or self-withdrawn row back to pending and
 	// clear the audit fields, so the user can change their mind and re-request

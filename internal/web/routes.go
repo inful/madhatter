@@ -95,6 +95,8 @@ func (h *Handler) registerRoutes() {
 		r.Get("/admin/wfh", h.handleWFHAdminPage)
 		r.Post("/admin/wfh/{id}/withdraw", h.handleWFHAdminWithdraw)
 		r.Post("/admin/wfh/settle", h.handleWFHAdminSettle)
+		r.Get("/admin/wfh/purge", h.handleWFHPurge)
+		r.Post("/admin/wfh/purge", h.handleWFHPurge)
 	})
 }
 

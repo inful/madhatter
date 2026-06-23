@@ -95,3 +95,24 @@ WHERE id = ?;
 SELECT COUNT(*) AS count
 FROM wfh_requests
 WHERE date = ? AND status = 'approved';
+
+-- name: CountWFHRequestsBefore :one
+-- Count wfh_requests rows whose date is strictly before the cutoff.
+-- Used by the past-period purge dry-run to preview the affected row
+-- count without touching the table. The cutoff is the start of the
+-- previous quota period: rows on or after that date are kept.
+SELECT COUNT(*) AS count
+FROM wfh_requests
+WHERE date < ?;
+
+-- name: PurgeWFHRequestsBefore :execresult
+-- NOTE: comments must follow the SQL, not precede it. sqlc v1.28.0 has a
+-- parser bug that strips the trailing `?` from multi-line DELETE statements
+-- ending in `< ?` when there are `--` comment lines between `-- name:` and
+-- the statement. Keep this statement on a single line with comments below.
+DELETE FROM wfh_requests WHERE date < ?;
+-- Hard-delete wfh_requests rows whose date is strictly before the cutoff.
+-- The cutoff is the start of the previous quota period: rows on or after
+-- that date are kept so the current and previous periods remain visible.
+-- Past-period cleanup is a no-recovery operation — callers should run the
+-- matching CountWFHRequestsBefore first when they want to preview impact.

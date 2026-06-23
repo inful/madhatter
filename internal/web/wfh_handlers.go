@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -251,6 +252,17 @@ func (h *Handler) handleWFHAdminPage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	data := h.wfhBaseData(r, "wfh_manage")
 
+	// Flash from the purge POST lands here as ?wfh_purged=N&cutoff=YYYY-MM-DD.
+	// The query string is the only carrier — it keeps the handler stateless
+	// and the message is rendered once, immediately after the action that
+	// produced it.
+	if purged := r.URL.Query().Get(wfhPurgeFlashKey); purged != "" {
+		if n, parseErr := strconv.ParseInt(purged, 10, 64); parseErr == nil && n >= 0 {
+			data["PurgeFlashCount"] = n
+			data["PurgeFlashCutoff"] = r.URL.Query().Get("cutoff")
+		}
+	}
+
 	requests, err := h.db.GetAllWFHRequests(ctx)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -270,6 +282,14 @@ func (h *Handler) handleWFHAdminPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data["Requests"] = enrichWFHRequests(requests, h.wfhService)
+
+	// Surface whether the purge button is reachable so the template
+	// can hide the link when the feature or the flag is off.
+	if h.wfhService != nil {
+		data["PurgeEnabled"] = h.wfhService.IsPurgeEnabled()
+	} else {
+		data["PurgeEnabled"] = false
+	}
 
 	if err := h.tmpl.ExecuteTemplate(w, "wfh_manage.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -325,6 +345,77 @@ func (h *Handler) handleWFHAdminSettle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, "/admin/wfh", http.StatusSeeOther)
+}
+
+// wfhPurgeFlashKey is the query-string key used to carry the post-purge
+// confirmation message from the POST handler back to the redirect target
+// on the admin WFH page. Query-string transport keeps the implementation
+// stateless and avoids any session/cookie plumbing — the message is
+// only ever shown once, immediately after the action that produced it.
+const wfhPurgeFlashKey = "wfh_purged"
+
+// handleWFHPurge serves the admin past-period purge page (GET) and
+// commits the purge when the form is confirmed (POST). Both routes are
+// mounted under safeRequireAdmin middleware, so admin status is implicit.
+//
+// When the WFH feature or purge is disabled the page renders a "not
+// available" message instead of a destructive form — keeping the route
+// addressable but the button hidden, which matches how the CLI errors
+// out and the scheduler skips the purge.
+func (h *Handler) handleWFHPurge(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	data := h.wfhBaseData(r, "wfh_purge")
+
+	if h.wfhService == nil {
+		data["Error"] = "WFH service is not enabled."
+		h.renderWFHPurge(w, r, data)
+		return
+	}
+	if !h.wfhService.IsPurgeEnabled() {
+		data["Error"] = "Past-period purge is disabled (WFH_ENABLED=false or WFH_PURGE_ENABLED=false)."
+		h.renderWFHPurge(w, r, data)
+		return
+	}
+
+	cutoff, wouldDelete, err := h.wfhService.PurgePastPeriodsDryRun(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	data["Cutoff"] = cutoff
+	data["WouldDelete"] = wouldDelete
+
+	if r.Method == http.MethodPost {
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if r.FormValue("confirm") != "true" {
+			http.Error(w, "Confirmation required.", http.StatusBadRequest)
+			return
+		}
+		// Re-compute on POST so the dry-run count cannot drift from
+		// the actual delete — if anything changed between the GET and
+		// the POST (e.g. settlement ran on the scheduler tick) we want
+		// the count we delete to match the value we just showed.
+		cutoff, deleted, err := h.wfhService.PurgePastPeriods(ctx)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		http.Redirect(w, r, "/admin/wfh?"+wfhPurgeFlashKey+"="+strconv.FormatInt(deleted, 10)+"&cutoff="+cutoff, http.StatusSeeOther)
+		return
+	}
+
+	h.renderWFHPurge(w, r, data)
+}
+
+// renderWFHPurge executes the purge template. The data map is expected
+// to contain either Error (when disabled) or Cutoff + WouldDelete.
+func (h *Handler) renderWFHPurge(w http.ResponseWriter, _ *http.Request, data map[string]any) {
+	if err := h.tmpl.ExecuteTemplate(w, "wfh_purge.html", data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 // wfhWebErrorMessage returns a user-facing message for WFH domain errors.

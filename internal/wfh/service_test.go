@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/inful/madhatter/internal/database"
+	"github.com/inful/madhatter/internal/database/sqlc"
 	"github.com/inful/madhatter/internal/notify"
 	"github.com/inful/madhatter/internal/testutil"
 	"github.com/stretchr/testify/assert"
@@ -45,6 +46,7 @@ func testConfig() Config {
 		PeriodAnchor:        defaultPeriodAnchor,
 		SettlementDays:      2,
 		RequestHorizonDays:  defaultRequestHorizonDays,
+		PurgeEnabled:        defaultPurgeEnabled,
 	}
 }
 
@@ -58,6 +60,7 @@ func TestLoadConfigFromEnv_DefaultsAndOverrides(t *testing.T) {
 	assert.Equal(t, defaultPeriodAnchor, cfg.PeriodAnchor)
 	assert.Equal(t, defaultSettlementDays, cfg.SettlementDays)
 	assert.Equal(t, defaultRequestHorizonDays, cfg.RequestHorizonDays)
+	assert.Equal(t, defaultPurgeEnabled, cfg.PurgeEnabled)
 
 	t.Setenv("WFH_ENABLED", "false")
 	t.Setenv("WFH_MIN_ONSITE_PERCENTAGE", "60.5")
@@ -67,6 +70,7 @@ func TestLoadConfigFromEnv_DefaultsAndOverrides(t *testing.T) {
 	t.Setenv("WFH_PERIOD_ANCHOR", "2026-02-02")
 	t.Setenv("WFH_SETTLEMENT_DAYS", "5")
 	t.Setenv("WFH_REQUEST_HORIZON_DAYS", "180")
+	t.Setenv("WFH_PURGE_ENABLED", "false")
 
 	cfg = LoadConfigFromEnv()
 	assert.False(t, cfg.Enabled)
@@ -77,16 +81,19 @@ func TestLoadConfigFromEnv_DefaultsAndOverrides(t *testing.T) {
 	assert.Equal(t, "2026-02-02", cfg.PeriodAnchor)
 	assert.Equal(t, 5, cfg.SettlementDays)
 	assert.Equal(t, 180, cfg.RequestHorizonDays)
+	assert.False(t, cfg.PurgeEnabled)
 
 	t.Setenv("WFH_ENABLED", "not-a-bool")
 	t.Setenv("WFH_MIN_ONSITE_PERCENTAGE", "bad")
 	t.Setenv("WFH_MIN_ONSITE_ABSOLUTE", "bad")
 	t.Setenv("WFH_REQUEST_HORIZON_DAYS", "bad")
+	t.Setenv("WFH_PURGE_ENABLED", "not-a-bool")
 	cfg = LoadConfigFromEnv()
 	assert.True(t, cfg.Enabled)
 	assert.LessOrEqual(t, math.Abs(cfg.MinOnsitePercentage-defaultMinOnsitePercentage), 0.0001)
 	assert.Equal(t, defaultMinOnsiteAbsolute, cfg.MinOnsiteAbsolute)
 	assert.Equal(t, defaultRequestHorizonDays, cfg.RequestHorizonDays)
+	assert.True(t, cfg.PurgeEnabled, "unparseable bool must fall back to the default")
 }
 
 func TestComputePeriodBounds_AcrossAnchorBoundaries(t *testing.T) {
@@ -559,4 +566,169 @@ func TestSettlePendingRequests_FiresNotifierForEachTransition(t *testing.T) {
 	for _, a := range actors {
 		assert.Equal(t, "system", a)
 	}
+}
+
+// seedPastPeriodRows inserts a wfh_requests row directly via the SQLC
+// layer to bypass CreateWFHRequest's past-date guard. Used by the
+// past-period purge tests to seed rows in the strictly-past band.
+func seedPastPeriodRows(t *testing.T, ctx context.Context, db *database.DB, memberID, date string) {
+	t.Helper()
+	id := "seed-" + date + "-" + memberID
+	_, err := db.GetQueries().CreateWFHRequest(ctx, sqlc.CreateWFHRequestParams{
+		ID:       id,
+		MemberID: memberID,
+		Date:     parsePastDate(t, date),
+	})
+	require.NoError(t, err)
+}
+
+// parsePastDate is the service-test counterpart of the database package's
+// parseDate helper. Lives here to avoid exporting internal test helpers.
+func parsePastDate(t *testing.T, s string) time.Time {
+	t.Helper()
+	d, err := time.Parse("2006-01-02", s)
+	require.NoError(t, err)
+	return d
+}
+
+// TestService_PurgePastPeriods verifies the cutoff math, the row
+// deletion, and the disabled-feature short-circuit. Uses the default
+// 7-day period and 2026-01-05 anchor so the expected cutoff is
+// deterministic regardless of the calendar date the test runs on.
+func TestService_PurgePastPeriods(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	svc := NewService(db, testConfig())
+	require.True(t, svc.IsPurgeEnabled(), "precondition: default config enables purge")
+
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	// Anchor is 2026-01-05 (Monday), PeriodDays=7. The current period
+	// bounds are computed against today's date — we'll assert against
+	// the cutoff returned by the call rather than hard-coding it.
+	today := time.Now().UTC()
+	currentStart, _, err := svc.ComputePeriodBounds(today)
+	require.NoError(t, err)
+	expectedCutoff := currentStart.AddDate(0, 0, -svc.Config().PeriodDays)
+
+	// Seed: two rows strictly before the cutoff, one at the cutoff
+	// itself, one inside the current period.
+	beforeCutoff1 := expectedCutoff.AddDate(0, 0, -10).Format("2006-01-02")
+	beforeCutoff2 := expectedCutoff.AddDate(0, 0, -1).Format("2006-01-02")
+	atCutoff := expectedCutoff.Format("2006-01-02")
+	inCurrent := currentStart.AddDate(0, 0, 1).Format("2006-01-02")
+
+	seedPastPeriodRows(t, ctx, db, memberID, beforeCutoff1)
+	seedPastPeriodRows(t, ctx, db, memberID, beforeCutoff2)
+	seedPastPeriodRows(t, ctx, db, memberID, atCutoff)
+	seedPastPeriodRows(t, ctx, db, memberID, inCurrent)
+
+	cutoff, deleted, err := svc.PurgePastPeriods(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, expectedCutoff.Format("2006-01-02"), cutoff)
+	assert.Equal(t, int64(2), deleted, "two rows before cutoff must be deleted")
+
+	// Survivors: cutoff and current-period rows still readable.
+	allRows, err := db.GetWFHRequestsByMember(ctx, memberID)
+	require.NoError(t, err)
+	require.Len(t, allRows, 2, "exactly the cutoff and current-period rows must survive")
+	dates := []string{allRows[0].Date, allRows[1].Date}
+	assert.ElementsMatch(t, []string{atCutoff, inCurrent}, dates)
+}
+
+func TestService_PurgePastPeriods_DryRunDoesNotDelete(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	svc := NewService(db, testConfig())
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	// Seed rows across periods so the dry-run has something to count.
+	today := time.Now().UTC()
+	currentStart, _, err := svc.ComputePeriodBounds(today)
+	require.NoError(t, err)
+	cutoff := currentStart.AddDate(0, 0, -svc.Config().PeriodDays)
+
+	seedPastPeriodRows(t, ctx, db, memberID, cutoff.AddDate(0, 0, -5).Format("2006-01-02"))
+	seedPastPeriodRows(t, ctx, db, memberID, cutoff.AddDate(0, 0, -1).Format("2006-01-02"))
+	seedPastPeriodRows(t, ctx, db, memberID, currentStart.Format("2006-01-02"))
+
+	gotCutoff, wouldDelete, err := svc.PurgePastPeriodsDryRun(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, cutoff.Format("2006-01-02"), gotCutoff)
+	assert.Equal(t, int64(2), wouldDelete, "two past-period rows would be deleted")
+
+	// All three rows must still exist after dry-run.
+	rows, err := db.GetWFHRequestsByMember(ctx, memberID)
+	require.NoError(t, err)
+	assert.Len(t, rows, 3, "dry-run must not modify the table")
+}
+
+func TestService_PurgePastPeriods_PurgeFlagOff(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	cfg := testConfig()
+	cfg.PurgeEnabled = false
+	svc := NewService(db, cfg)
+
+	assert.False(t, svc.IsPurgeEnabled(), "purge flag off must disable purge even when WFH is on")
+
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	today := time.Now().UTC()
+	currentStart, _, err := svc.ComputePeriodBounds(today)
+	require.NoError(t, err)
+	cutoff := currentStart.AddDate(0, 0, -svc.Config().PeriodDays)
+	seedPastPeriodRows(t, ctx, db, memberID, cutoff.AddDate(0, 0, -5).Format("2006-01-02"))
+
+	cutoffStr, deleted, err := svc.PurgePastPeriods(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, cutoffStr)
+	assert.Equal(t, int64(0), deleted)
+
+	dryCutoff, wouldDelete, err := svc.PurgePastPeriodsDryRun(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, dryCutoff)
+	assert.Equal(t, int64(0), wouldDelete)
+
+	rows, err := db.GetWFHRequestsByMember(ctx, memberID)
+	require.NoError(t, err)
+	assert.Len(t, rows, 1, "no rows must be touched when purge is disabled")
+}
+
+func TestService_PurgePastPeriods_WFHDisabled(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	cfg := testConfig()
+	cfg.Enabled = false
+	// PurgeEnabled left true — IsPurgeEnabled must still report false
+	// because the feature itself is off.
+	svc := NewService(db, cfg)
+
+	assert.False(t, svc.IsPurgeEnabled(), "feature off must disable purge regardless of PurgeEnabled")
+
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	today := time.Now().UTC()
+	currentStart, _, err := svc.ComputePeriodBounds(today)
+	require.NoError(t, err)
+	cutoff := currentStart.AddDate(0, 0, -svc.Config().PeriodDays)
+	seedPastPeriodRows(t, ctx, db, memberID, cutoff.AddDate(0, 0, -5).Format("2006-01-02"))
+
+	_, deleted, err := svc.PurgePastPeriods(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), deleted)
+
+	rows, err := db.GetWFHRequestsByMember(ctx, memberID)
+	require.NoError(t, err)
+	assert.Len(t, rows, 1, "WFH-disabled service must not purge")
 }

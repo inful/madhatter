@@ -1,0 +1,69 @@
+{{define "wfh_purge.html"}}
+{{template "base" .}}
+{{end}}
+
+{{define "wfh_purge_styles"}}
+{{end}}
+
+{{define "wfh_purge_scripts"}}
+{{end}}
+
+{{define "wfh_purge_title"}}Purge Past WFH Requests{{end}}
+
+{{define "wfh_purge_content"}}
+{{template "user_card" .}}
+{{template "page_header" (dict "Title" "Purge Past WFH Requests" "Icon" "fas fa-trash-alt" "BackHref" "/admin/wfh" "BackLabel" "Manage WFH")}}
+
+{{if .Error}}
+<div class="notification is-warning is-light mb-4">
+    <i class="fas fa-exclamation-triangle mr-2"></i> {{.Error}}
+</div>
+<a href="/admin/wfh" class="button is-light">
+    <span class="icon"><i class="fas fa-arrow-left"></i></span>
+    <span>Back to WFH management</span>
+</a>
+{{else}}
+<div class="notification is-info is-light mb-4">
+    <i class="fas fa-info-circle mr-2"></i>
+    Rows with a date strictly before the cutoff are deleted. The current
+    and previous quota periods are preserved so recent history stays visible.
+    The same cutoff is used by the CLI (<code>wfh purge</code>) and the daily
+    scheduler. This action is <strong>not recoverable</strong>.
+</div>
+
+<div class="card">
+    <header class="card-header">
+        <p class="card-header-title">
+            <i class="fas fa-calendar-times mr-2"></i> Cutoff summary
+        </p>
+    </header>
+    <div class="card-content">
+        <table class="table is-fullwidth">
+            <tbody>
+                <tr>
+                    <th>Cutoff date</th>
+                    <td><code>{{.Cutoff}}</code></td>
+                </tr>
+                <tr>
+                    <th>Rows that would be deleted</th>
+                    <td><span class="tag is-warning is-medium">{{.WouldDelete}}</span></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<form method="post" action="/admin/wfh/purge" class="mt-5">
+    <input type="hidden" name="confirm" value="true">
+    <div class="buttons is-justify-content-flex-end">
+        <a href="/admin/wfh" class="button is-light">Cancel</a>
+        <button type="submit" class="button is-danger"
+            {{if eq .WouldDelete 0}}disabled{{end}}
+            onclick="return confirm('Permanently delete {{.WouldDelete}} WFH request(s) with date < {{.Cutoff}}? This cannot be undone.')">
+            <span class="icon"><i class="fas fa-trash-alt"></i></span>
+            <span>Purge {{.WouldDelete}} request{{if ne .WouldDelete 1}}s{{end}}</span>
+        </button>
+    </div>
+</form>
+{{end}}
+{{end}}

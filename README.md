@@ -187,6 +187,7 @@ At least one provider must be configured for production authentication.
 | `WFH_SETTLEMENT_DAYS` | `2` | Number of days ahead that pending WFH requests are auto-settled. |
 | `WFH_WITHDRAWAL_HOURS` | `24` | Hours before the WFH day after which an approved request can no longer be withdrawn by the member or an admin. |
 | `WFH_REQUEST_HORIZON_DAYS` | `90` | Maximum number of days ahead a WFH request can be submitted. Requests beyond this horizon are rejected with a 422 in the API and a banner in the web form. |
+| `WFH_PURGE_ENABLED` | `true` | When `true`, the daily scheduler hard-deletes `wfh_requests` rows whose date is strictly before the start of the previous quota period. The current and previous periods are always preserved. Opt out with `WFH_PURGE_ENABLED=false`. The same cutoff is exposed via `wfh purge [--apply]` and `/admin/wfh/purge`; both default to dry-run. |
 
 #### Calendar and meetings
 

@@ -87,7 +87,24 @@ func runRestoreCandidateChecks(ctx context.Context, liveDB *sql.DB, candidateDB 
 }
 
 func validateSQLiteIntegrity(ctx context.Context, candidateDB *sql.DB) error {
-	rows, err := candidateDB.QueryContext(ctx, "PRAGMA integrity_check")
+	return checkSQLiteIntegrity(ctx, candidateDB)
+}
+
+// integrityQuerier is the subset of *sql.DB and *sql.Tx we need to
+// run PRAGMA integrity_check. Both types satisfy it; defining the
+// shared implementation here lets a single body cover both
+// validate-before-open and validate-inside-tx call sites.
+type integrityQuerier interface {
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+// checkSQLiteIntegrity runs PRAGMA integrity_check against any
+// integrityQuerier. Returns nil iff the check returns a single "ok"
+// row. Any other outcome — a failure row, an empty result, a query
+// error, or a corrupt file that prevents the query itself —
+// surfaces as an error so the caller can refuse the restore.
+func checkSQLiteIntegrity(ctx context.Context, q integrityQuerier) error {
+	rows, err := q.QueryContext(ctx, "PRAGMA integrity_check")
 	if err != nil {
 		return err
 	}

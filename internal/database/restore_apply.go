@@ -195,35 +195,11 @@ func postRestoreIntegrityChecksTx(ctx context.Context, tx *sql.Tx) error {
 	return rows.Err()
 }
 
+// validateSQLiteIntegrityTx runs the integrity check against an
+// open *sql.Tx. The shared body lives in restore_validation.go as
+// checkSQLiteIntegrity; this wrapper exists so the transactional
+// call site reads naturally and so the dedicated safety-net tests
+// can target the tx path explicitly.
 func validateSQLiteIntegrityTx(ctx context.Context, tx *sql.Tx) error {
-	rows, err := tx.QueryContext(ctx, "PRAGMA integrity_check")
-	if err != nil {
-		return err
-	}
-	defer func() {
-		_ = rows.Close()
-	}()
-
-	hasRows := false
-	for rows.Next() {
-		hasRows = true
-		var result string
-		if err := rows.Scan(&result); err != nil {
-			return err
-		}
-
-		if !strings.EqualFold(result, "ok") {
-			return fmt.Errorf("integrity check failed: %s", result)
-		}
-	}
-
-	if err := rows.Err(); err != nil {
-		return err
-	}
-
-	if !hasRows {
-		return errors.New("integrity check returned no result")
-	}
-
-	return nil
+	return checkSQLiteIntegrity(ctx, tx)
 }

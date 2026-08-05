@@ -254,3 +254,28 @@ func TestHandleHelp_Returns200(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "HAT Day Swaps")
 	assert.Contains(t, w.Body.String(), "How WFH Is Settled")
 }
+
+// TestHandler_SecurityHeadersAppliedGlobally asserts that the
+// security headers reach the response on every route the web
+// handler exposes, not just on the synthetic httptest cases used
+// by the middleware unit tests. Uses a nil auth middleware so the
+// test does not depend on a populated SessionManager — the safe*
+// middleware helpers short-circuit when h.authMiddleware is nil.
+func TestHandler_SecurityHeadersAppliedGlobally(t *testing.T) {
+	mockDB := &database.DB{}
+	mockAuthManager := &auth.AuthManager{}
+
+	handler, err := NewHandler(mockDB, mockAuthManager, nil, false, nil)
+	require.NoError(t, err)
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/help", nil)
+	w := httptest.NewRecorder()
+	handler.Router().ServeHTTP(w, req)
+
+	assert.Equal(t, 200, w.Code)
+	h := w.Header()
+	assert.Equal(t, "nosniff", h.Get("X-Content-Type-Options"))
+	assert.Equal(t, "DENY", h.Get("X-Frame-Options"))
+	assert.Equal(t, "same-origin", h.Get("Referrer-Policy"))
+	assert.NotEmpty(t, h.Get("Content-Security-Policy"))
+}

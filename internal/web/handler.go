@@ -122,6 +122,10 @@ func NewHandler(db *database.DB, authManager *auth.AuthManager, authMiddleware *
 	}
 
 	router := chi.NewRouter()
+	// Apply defensive HTTP headers to every response. Mounted first
+	// so it covers auth routes, the API mount, and the static asset
+	// handlers alike.
+	router.Use(securityHeadersMiddleware)
 	maintenance := rota.NewScheduleMaintenance(db)
 	if holidayChecker != nil {
 		maintenance.SetHolidayChecker(holidayChecker)

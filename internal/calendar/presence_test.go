@@ -250,3 +250,66 @@ func TestComputePresenceSnapshot_WeekendFlag(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, snap.IsWeekend)
 }
+
+// TestGetHATForDate_PrefersCover verifies the documented precedence:
+// when both an original and a cover assignment exist for the date,
+// the cover row wins and isCover=true is returned.
+func TestGetHATForDate_PrefersCover(t *testing.T) {
+	ctx := context.Background()
+	db := newCalendarTestDB(t)
+
+	originalID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	coverID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	date := "2026-07-15"
+	origAssignmentID, err := db.CreateRotaAssignment(ctx, date, originalID, false, nil)
+	require.NoError(t, err)
+	_, err = db.CreateRotaAssignment(ctx, date, coverID, true, &origAssignmentID)
+	require.NoError(t, err)
+
+	name, isCover, err := getHATForDate(ctx, db, date)
+	require.NoError(t, err)
+	assert.Equal(t, "Bob", name)
+	assert.True(t, isCover)
+}
+
+// TestGetHATForDate_OnlyOriginal verifies the no-cover branch.
+func TestGetHATForDate_OnlyOriginal(t *testing.T) {
+	ctx := context.Background()
+	db := newCalendarTestDB(t)
+
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	date := "2026-07-16"
+	_, err = db.CreateRotaAssignment(ctx, date, memberID, false, nil)
+	require.NoError(t, err)
+
+	name, isCover, err := getHATForDate(ctx, db, date)
+	require.NoError(t, err)
+	assert.Equal(t, "Alice", name)
+	assert.False(t, isCover)
+}
+
+// TestGetHATForDate_NoAssignments verifies the empty-result branch.
+func TestGetHATForDate_NoAssignments(t *testing.T) {
+	ctx := context.Background()
+	db := newCalendarTestDB(t)
+
+	name, isCover, err := getHATForDate(ctx, db, "2026-07-17")
+	require.NoError(t, err)
+	assert.Empty(t, name)
+	assert.False(t, isCover)
+}
+
+// TestGetHATForDate_InvalidDate verifies the date-parsing error path.
+func TestGetHATForDate_InvalidDate(t *testing.T) {
+	ctx := context.Background()
+	db := newCalendarTestDB(t)
+
+	name, isCover, err := getHATForDate(ctx, db, "not-a-date")
+	require.Error(t, err)
+	assert.Empty(t, name)
+	assert.False(t, isCover)
+}

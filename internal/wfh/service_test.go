@@ -3,6 +3,7 @@ package wfh
 import (
 	"context"
 	"math"
+	"os"
 	"path/filepath"
 	"runtime"
 	"sync"
@@ -731,4 +732,112 @@ func TestService_PurgePastPeriods_WFHDisabled(t *testing.T) {
 	rows, err := db.GetWFHRequestsByMember(ctx, memberID)
 	require.NoError(t, err)
 	assert.Len(t, rows, 1, "WFH-disabled service must not purge")
+}
+
+// TestParseBoolEnv locks in the contract of the helper that will be
+// deduped with notify/config.go::getEnvBool. The behavior must be:
+//   - empty/unset → default
+//   - "true"/"false"/"1"/"0"/etc → parsed value
+//   - anything that strconv.ParseBool rejects → default (silent fallback)
+func TestParseBoolEnv(t *testing.T) {
+	t.Run("UnsetReturnsDefault", func(t *testing.T) {
+		key := "WFH_TEST_UNSET_BOOL"
+		require.NoError(t, os.Unsetenv(key))
+		assert.True(t, parseBoolEnv(key, true))
+		assert.False(t, parseBoolEnv(key, false))
+	})
+
+	t.Run("EmptyReturnsDefault", func(t *testing.T) {
+		key := "WFH_TEST_EMPTY_BOOL"
+		t.Setenv(key, "")
+		assert.True(t, parseBoolEnv(key, true))
+		assert.False(t, parseBoolEnv(key, false))
+	})
+
+	t.Run("ParsesTruthyValues", func(t *testing.T) {
+		key := "WFH_TEST_TRUTHY_BOOL"
+		for _, v := range []string{"true", "TRUE", "True", "1", "t", "T"} {
+			t.Setenv(key, v)
+			assert.True(t, parseBoolEnv(key, false), "value %q must parse true", v)
+		}
+	})
+
+	t.Run("ParsesFalsyValues", func(t *testing.T) {
+		key := "WFH_TEST_FALSY_BOOL"
+		for _, v := range []string{"false", "FALSE", "False", "0", "f", "F"} {
+			t.Setenv(key, v)
+			assert.False(t, parseBoolEnv(key, true), "value %q must parse false", v)
+		}
+	})
+
+	t.Run("GarbageFallsBackToDefault", func(t *testing.T) {
+		key := "WFH_TEST_GARBAGE_BOOL"
+		t.Setenv(key, "not-a-bool")
+		assert.True(t, parseBoolEnv(key, true), "garbage must fall back to default true")
+		assert.False(t, parseBoolEnv(key, false), "garbage must fall back to default false")
+	})
+}
+
+// TestParseIntEnv covers the int helper used by LoadConfigFromEnv.
+// Same contract as parseBoolEnv.
+func TestParseIntEnv(t *testing.T) {
+	t.Run("UnsetReturnsDefault", func(t *testing.T) {
+		key := "WFH_TEST_UNSET_INT"
+		require.NoError(t, os.Unsetenv(key))
+		assert.Equal(t, 42, parseIntEnv(key, 42))
+	})
+
+	t.Run("ParsesValue", func(t *testing.T) {
+		key := "WFH_TEST_PARSE_INT"
+		t.Setenv(key, "7")
+		assert.Equal(t, 7, parseIntEnv(key, 0))
+	})
+
+	t.Run("GarbageFallsBackToDefault", func(t *testing.T) {
+		key := "WFH_TEST_GARBAGE_INT"
+		t.Setenv(key, "not-an-int")
+		assert.Equal(t, 99, parseIntEnv(key, 99))
+	})
+}
+
+// TestParseFloat64Env covers the float helper.
+func TestParseFloat64Env(t *testing.T) {
+	t.Run("UnsetReturnsDefault", func(t *testing.T) {
+		key := "WFH_TEST_UNSET_FLOAT"
+		require.NoError(t, os.Unsetenv(key))
+		assert.InDelta(t, 3.14, parseFloat64Env(key, 3.14), 0.0001)
+	})
+
+	t.Run("ParsesValue", func(t *testing.T) {
+		key := "WFH_TEST_PARSE_FLOAT"
+		t.Setenv(key, "2.5")
+		assert.InDelta(t, 2.5, parseFloat64Env(key, 0), 0.0001)
+	})
+
+	t.Run("GarbageFallsBackToDefault", func(t *testing.T) {
+		key := "WFH_TEST_GARBAGE_FLOAT"
+		t.Setenv(key, "nope")
+		assert.InDelta(t, 1.5, parseFloat64Env(key, 1.5), 0.0001)
+	})
+}
+
+// TestParseStringEnv covers the string helper.
+func TestParseStringEnv(t *testing.T) {
+	t.Run("UnsetReturnsDefault", func(t *testing.T) {
+		key := "WFH_TEST_UNSET_STR"
+		require.NoError(t, os.Unsetenv(key))
+		assert.Equal(t, "fallback", parseStringEnv(key, "fallback"))
+	})
+
+	t.Run("EmptyReturnsDefault", func(t *testing.T) {
+		key := "WFH_TEST_EMPTY_STR"
+		t.Setenv(key, "")
+		assert.Equal(t, "fallback", parseStringEnv(key, "fallback"))
+	})
+
+	t.Run("ParsesValue", func(t *testing.T) {
+		key := "WFH_TEST_PARSE_STR"
+		t.Setenv(key, "value")
+		assert.Equal(t, "value", parseStringEnv(key, "fallback"))
+	})
 }

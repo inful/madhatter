@@ -455,3 +455,78 @@ func TestGenerateMeetingsForDate_InvalidToken(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, day)
 }
+
+// TestGetSupportForDate_PrefersCover verifies the documented precedence:
+// when both an original and a cover assignment exist for the date,
+// the cover row wins and isCover=true is returned.
+func TestGetSupportForDate_PrefersCover(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	db, err := database.New(filepath.Join(tmpDir, "test.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	originalID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	coverID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	date := "2026-07-15"
+	origAssignmentID, err := db.CreateRotaAssignment(ctx, date, originalID, false, nil)
+	require.NoError(t, err)
+	_, err = db.CreateRotaAssignment(ctx, date, coverID, true, &origAssignmentID)
+	require.NoError(t, err)
+
+	name, isCover, err := getSupportForDate(ctx, db, date)
+	require.NoError(t, err)
+	assert.Equal(t, "Bob", name)
+	assert.True(t, isCover)
+}
+
+// TestGetSupportForDate_OnlyOriginal verifies the no-cover branch.
+func TestGetSupportForDate_OnlyOriginal(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	db, err := database.New(filepath.Join(tmpDir, "test.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	date := "2026-07-16"
+	_, err = db.CreateRotaAssignment(ctx, date, memberID, false, nil)
+	require.NoError(t, err)
+
+	name, isCover, err := getSupportForDate(ctx, db, date)
+	require.NoError(t, err)
+	assert.Equal(t, "Alice", name)
+	assert.False(t, isCover)
+}
+
+// TestGetSupportForDate_NoAssignments verifies the empty-result branch.
+func TestGetSupportForDate_NoAssignments(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	db, err := database.New(filepath.Join(tmpDir, "test.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	name, isCover, err := getSupportForDate(ctx, db, "2026-07-17")
+	require.NoError(t, err)
+	assert.Empty(t, name)
+	assert.False(t, isCover)
+}
+
+// TestGetSupportForDate_InvalidDate verifies the date-parsing error path.
+func TestGetSupportForDate_InvalidDate(t *testing.T) {
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	db, err := database.New(filepath.Join(tmpDir, "test.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	name, isCover, err := getSupportForDate(ctx, db, "not-a-date")
+	require.Error(t, err)
+	assert.Empty(t, name)
+	assert.False(t, isCover)
+}

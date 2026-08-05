@@ -559,24 +559,13 @@ func getPresenceForDate(ctx context.Context, db *database.DB, dateStr string) ([
 	return present, away, nil
 }
 
+// getSupportForDate returns the on-call member for the given date.
+// The "support" naming matches the meetings-snapshot call site;
+// semantically it is identical to getHATForDate in presence.go
+// (the day's assignment is either the original HAT or a cover),
+// so this is a thin alias to keep the call site readable.
 func getSupportForDate(ctx context.Context, db *database.DB, dateStr string) (string, bool, error) {
-	assignments, err := db.GetAssignmentsByDate(ctx, dateStr)
-	if err != nil {
-		return "", false, err
-	}
-
-	for i := range assignments {
-		if assignments[i].IsCover {
-			return assignments[i].MemberName, true, nil
-		}
-	}
-	for i := range assignments {
-		if !assignments[i].IsCover {
-			return assignments[i].MemberName, false, nil
-		}
-	}
-
-	return "", false, nil
+	return getHATForDate(ctx, db, dateStr)
 }
 
 func shuffledOrder(present []database.TeamMember, seedKey string) []database.TeamMember {

@@ -227,14 +227,6 @@ func TestICalGenerator_AddTimezoneSupport(t *testing.T) {
 	// but the method should not panic
 }
 
-func TestICalGenerator_AddCustomProperty(t *testing.T) {
-	generator := NewICalGenerator()
-
-	// This method is a placeholder for future functionality
-	// It should not panic when called
-	generator.AddCustomProperty("X-CUSTOM-KEY", "custom-value")
-}
-
 func TestGenerateTeamCalendar(t *testing.T) {
 	assignments := []database.RotaAssignment{
 		{

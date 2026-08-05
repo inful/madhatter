@@ -691,10 +691,3 @@ func (g *ICalGenerator) AddTimezoneSupport(timezone string) {
 	// as long as events use DTSTART/DTEND with TZID.
 	g.calendar.AddTimezone(timezone)
 }
-
-// AddCustomProperty adds a custom property to the calendar.
-func (g *ICalGenerator) AddCustomProperty(key, value string) {
-	// Use SetXProperty for custom properties
-	// Note: The library may not have SetXProperty, so we'll use SetXWRCalName as an example
-	// For custom properties, we might need to use AddProperty directly
-}

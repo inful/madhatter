@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"strings"
 	"sync"
@@ -56,7 +56,7 @@ func (s *Scheduler) Start() error {
 	s.running = true
 	s.mu.Unlock()
 
-	log.Printf("Starting holiday scheduler with %d URL(s)\n", len(s.urls))
+	slog.Info("starting holiday scheduler", "urls", len(s.urls))
 
 	// Run immediately on start
 	s.wg.Go(func() {
@@ -81,10 +81,10 @@ func (s *Scheduler) Stop() error {
 	s.running = false
 	s.mu.Unlock()
 
-	log.Println("Stopping holiday scheduler...")
+	slog.Info("stopping holiday scheduler")
 	close(s.stopChan)
 	s.wg.Wait()
-	log.Println("Holiday scheduler stopped")
+	slog.Info("holiday scheduler stopped")
 	return nil
 }
 
@@ -114,7 +114,7 @@ func (s *Scheduler) runFetch(ctx context.Context) {
 	}
 	s.mu.Unlock()
 
-	log.Println("Running holiday fetch...")
+	slog.Info("running holiday fetch")
 
 	holidays, err := s.fetcher.FetchMultiple(ctx, s.urls)
 
@@ -126,18 +126,18 @@ func (s *Scheduler) runFetch(ctx context.Context) {
 	if err != nil {
 		// Check if it's a partial success
 		if len(holidays) > 0 {
-			log.Printf("Warning: Partial success fetching holidays: %v\n", err)
+			slog.Warn("partial success fetching holidays", "error", err)
 			s.store.UpdateHolidays(holidays)
-			log.Printf("Updated holidays: %d events loaded\n", len(holidays))
+			slog.Info("updated holidays", "events", len(holidays))
 		} else {
-			log.Printf("Error fetching holidays: %v\n", err)
+			slog.Error("error fetching holidays", "error", err)
 			// Don't clear existing holidays on error
 		}
 		return
 	}
 
 	s.store.UpdateHolidays(holidays)
-	log.Printf("Successfully updated holidays: %d events loaded\n", len(holidays))
+	slog.Info("successfully updated holidays", "events", len(holidays))
 }
 
 // ForceFetch manually triggers a fetch operation.

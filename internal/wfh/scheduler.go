@@ -3,7 +3,7 @@ package wfh
 import (
 	"context"
 	"errors"
-	"log"
+	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -47,7 +47,7 @@ func (s *Scheduler) Start() error {
 	s.running = true
 	s.mu.Unlock()
 
-	log.Println("Starting WFH settlement scheduler")
+	slog.Info("starting WFH settlement scheduler")
 
 	// Run once immediately.
 	s.wg.Go(func() {
@@ -72,7 +72,7 @@ func (s *Scheduler) Stop() {
 	s.running = false
 	s.mu.Unlock()
 
-	log.Println("Stopping WFH settlement scheduler")
+	slog.Info("stopping WFH settlement scheduler")
 	close(s.stopChan)
 	s.wg.Wait()
 }
@@ -80,7 +80,7 @@ func (s *Scheduler) Stop() {
 func (s *Scheduler) runSettle(ctx context.Context) {
 	defer s.ticks.Add(1)
 	if err := s.service.SettlePendingRequests(ctx); err != nil {
-		log.Printf("WFH settlement error: %v\n", err)
+		slog.Error("WFH settlement error", "error", err)
 	}
 	// Purge runs after settle so a fresh deploy self-heals into the
 	// current+previous retention policy on the first tick. Purge
@@ -88,7 +88,7 @@ func (s *Scheduler) runSettle(ctx context.Context) {
 	// settlement, and the next tick will retry.
 	if s.service.IsPurgeEnabled() {
 		if _, _, err := s.service.PurgePastPeriods(ctx); err != nil {
-			log.Printf("WFH past-period purge error: %v\n", err)
+			slog.Error("WFH past-period purge error", "error", err)
 		}
 	}
 }

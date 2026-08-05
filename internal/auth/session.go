@@ -7,7 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -157,7 +157,7 @@ func (sm *SessionManager) StartCleanup(ctx context.Context) {
 			case <-ticker.C:
 				// Clean up expired sessions using the parent context
 				if err := sm.db.DeleteExpiredSessions(ctx); err != nil {
-					log.Printf("Session cleanup error: %v\n", err)
+					slog.Error("session cleanup error", "error", err)
 				}
 			case <-sm.stopCleanup:
 				return

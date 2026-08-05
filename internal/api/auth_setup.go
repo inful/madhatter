@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -31,7 +31,7 @@ func setupAuth(db *database.DB, development bool) (*auth.AuthManager, *auth.Midd
 // methods and the helper functions below — each of which gets its
 // own complexity budget.
 func setupDevelopmentAuth(db *database.DB) (*auth.AuthManager, *auth.Middleware, *auth.SessionManager, error) {
-	log.Println("Development mode: Using fake OAuth provider")
+	slog.Info("development mode: using fake OAuth provider")
 
 	encryptor, err := auth.NewTokenEncryptor()
 	if err != nil {
@@ -212,9 +212,9 @@ func setupProductionAuth(db *database.DB) (*auth.AuthManager, *auth.Middleware, 
 	authConfig := auth.LoadConfigFromEnv()
 
 	if err := authConfig.Validate(); err != nil {
-		log.Printf("WARNING: Authentication disabled - %v\n", err)
-		log.Printf("The server will start without authentication. Features requiring login will be unavailable.\n")
-		log.Printf("To enable authentication, configure OAuth provider environment variables.\n")
+		slog.Warn("authentication disabled", "error", err)
+		slog.Warn("the server will start without authentication; features requiring login will be unavailable")
+		slog.Warn("to enable authentication, configure OAuth provider environment variables")
 		return nil, nil, nil, nil
 	}
 
@@ -233,7 +233,7 @@ func setupProductionAuth(db *database.DB) (*auth.AuthManager, *auth.Middleware, 
 	for providerName := range authConfig.Providers {
 		provider, err := providerFactory.Create(providerName)
 		if err != nil {
-			log.Printf("Failed to create auth provider %q: %v\n", providerName, err)
+			slog.Warn("failed to create auth provider", "provider", providerName, "error", err)
 			continue
 		}
 		authManager.RegisterProvider(provider)

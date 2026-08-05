@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -38,7 +38,7 @@ func (s *Service) Start() error {
 	// Start the scheduler if URLs are configured
 	urls := s.scheduler.urls
 	if len(urls) == 0 {
-		log.Println("No holiday URLs configured. Set HOLIDAY_URLS environment variable to enable holiday support.")
+		slog.Info("no holiday URLs configured; set HOLIDAY_URLS environment variable to enable holiday support")
 		return nil
 	}
 
@@ -54,7 +54,7 @@ func (s *Service) Start() error {
 		return fmt.Errorf("failed to start holiday scheduler: %w", err)
 	}
 
-	log.Printf("Holiday service started with %d URL(s)\n", len(urls))
+	slog.Info("holiday service started", "urls", len(urls))
 	return nil
 }
 

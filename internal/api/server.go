@@ -9,7 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -73,7 +73,7 @@ func NewServer(db *database.DB, development bool) (*Server, error) {
 	// Initialize holiday service
 	holidayService, err := holiday.InitializeHolidayService(db)
 	if err != nil {
-		log.Printf("Warning: Failed to initialize holiday service: %v\n", err)
+		slog.Warn("failed to initialize holiday service", "error", err)
 		// Continue without holiday service - it's optional
 		holidayService = nil
 	}
@@ -168,7 +168,7 @@ func (s *Server) setupWFHService(db *database.DB) {
 	s.wfhService = wfh.NewService(db, wfhCfg)
 	s.wfhScheduler = wfh.NewScheduler(s.wfhService)
 	if startErr := s.wfhScheduler.Start(); startErr != nil {
-		log.Printf("Warning: Failed to start WFH scheduler: %v\n", startErr)
+		slog.Warn("failed to start WFH scheduler", "error", startErr)
 	}
 }
 
@@ -205,11 +205,11 @@ func (s *Server) setupSessionCleanup(ctx context.Context) {
 
 	// Start session cleanup background task (only if auth is enabled)
 	if s.sessionManager != nil {
-		log.Println("Starting session cleanup task...")
+		slog.Info("starting session cleanup task")
 		//nolint:contextcheck // Cleanup context is properly managed and canceled in StopCleanup
 		s.sessionManager.StartCleanup(s.cleanupCtx)
 	} else {
-		log.Println("Authentication disabled - skipping session cleanup")
+		slog.Info("authentication disabled, skipping session cleanup")
 	}
 }
 
@@ -224,19 +224,19 @@ func (s *Server) newScheduleMaintenance() *rota.ScheduleMaintenance {
 
 // startLeaveCleanup starts a background goroutine that deletes expired leave records daily.
 func (s *Server) startLeaveCleanup() {
-	log.Println("Starting leave record cleanup task...")
+	slog.Info("starting leave record cleanup task")
 	ticker := time.NewTicker(leaveCleanupInterval)
 	go func() {
 		defer ticker.Stop()
 		// Run immediately on start.
 		if err := s.db.DeleteExpiredLeaveRecords(s.cleanupCtx); err != nil {
-			log.Printf("Leave cleanup error: %v\n", err)
+			slog.Error("leave cleanup error", "error", err)
 		}
 		for {
 			select {
 			case <-ticker.C:
 				if err := s.db.DeleteExpiredLeaveRecords(s.cleanupCtx); err != nil {
-					log.Printf("Leave cleanup error: %v\n", err)
+					slog.Error("leave cleanup error", "error", err)
 				}
 			case <-s.cleanupCtx.Done():
 				return
@@ -250,17 +250,17 @@ func (s *Server) handleShutdownSignals(parentCtx context.Context, srv *http.Serv
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 	select {
 	case <-sigint:
-		log.Println("Shutting down server...")
+		slog.Info("shutting down server")
 		s.stopCleanup()
 		shutdownCtx, shutdownCancel := context.WithTimeout(parentCtx, shutdownTimeout)
 		defer shutdownCancel()
 
 		if err := srv.Shutdown(shutdownCtx); err != nil {
-			log.Printf("Server shutdown error: %v\n", err)
+			slog.Error("server shutdown error", "error", err)
 		}
 	case <-parentCtx.Done():
 		// Parent context canceled
-		log.Println("Parent context canceled, shutting down server...")
+		slog.Info("parent context canceled, shutting down server")
 		s.stopCleanup()
 	}
 }
@@ -304,7 +304,7 @@ func (s *Server) Start(ctx context.Context, port string) error {
 	// Handle graceful shutdown
 	go s.handleShutdownSignals(ctx, srv)
 
-	log.Printf("Server starting on port %s\n", port)
+	slog.Info("server starting", "port", port)
 	err := srv.ListenAndServe()
 	if err != nil && err != http.ErrServerClosed {
 		return err
@@ -645,12 +645,12 @@ func (s *Server) buildNotifier(db *database.DB) (*notify.ChannelNotifier, *notif
 			cfg.Email.Password,
 		)
 		chans = append(chans, ch)
-		log.Printf("notify: email channel registered (host=%s, from=%s)", cfg.Email.Host, cfg.Email.From)
+		slog.Info("notify: email channel registered", "host", cfg.Email.Host, "from", cfg.Email.From)
 	} else {
 		// No email configured — register a log channel so handlers'
 		// calls don't fail. This is the --development mode default.
 		chans = append(chans, logchannel.New(nil))
-		log.Println("notify: log channel registered (email disabled)")
+		slog.Info("notify: log channel registered (email disabled)")
 	}
 
 	// Build the worker. Its goroutine is started by Start().

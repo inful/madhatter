@@ -2,7 +2,7 @@ package web
 
 import (
 	"html/template"
-	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -67,7 +67,7 @@ func (h *Handler) handleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 	// member-not-found branch in the resolver.
 	now := time.Now().UTC()
 	if err := h.db.SetNotificationEmailEnabled(r.Context(), memberID, false, &now); err != nil {
-		log.Printf("unsubscribe: failed to persist preference: %v", err)
+		slog.Error("unsubscribe: failed to persist preference", "error", err)
 		// A FK violation means the member was deleted. Show the
 		// same "link no longer valid" page as a forged token,
 		// since the token signed for a real member whose row is
@@ -101,7 +101,7 @@ func (h *Handler) handleUnsubscribeResume(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if err := h.db.SetNotificationEmailEnabled(r.Context(), memberID, true, nil); err != nil {
-		log.Printf("unsubscribe: failed to resume: %v", err)
+		slog.Error("unsubscribe: failed to resume", "error", err)
 		// FK violation = member gone. Treat as "link no longer
 		// valid" so we don't leak that the member existed at one
 		// point.

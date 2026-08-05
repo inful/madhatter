@@ -3,7 +3,7 @@ package wfh
 import (
 	"context"
 	"errors"
-	"log"
+	"log/slog"
 	"math"
 	"sort"
 	"time"
@@ -164,7 +164,7 @@ func (s *Service) PurgePastPeriods(ctx context.Context) (string, int64, error) {
 		return cutoffStr, 0, err
 	}
 	if deleted > 0 {
-		log.Printf("WFH past-period purge: deleted %d rows with date < %s\n", deleted, cutoffStr)
+		slog.Info("WFH past-period purge completed", "deleted", deleted, "cutoff", cutoffStr)
 	}
 	return cutoffStr, deleted, nil
 }
@@ -293,7 +293,7 @@ func (s *Service) SettlePendingRequests(ctx context.Context) error {
 	// bounded to the next SettlementDays.
 	today := todayUTC()
 	if _, err := s.EnsureRecurringMaterialized(ctx, today, cutoff); err != nil {
-		log.Printf("WFH recurring materializer: %v\n", err)
+		slog.Error("WFH recurring materializer failed", "error", err)
 	}
 
 	pending, err := s.db.GetPendingForSettlement(ctx, cutoffStr)
@@ -319,7 +319,7 @@ func (s *Service) SettlePendingRequests(ctx context.Context) error {
 
 	for _, date := range dates {
 		if err := s.settleDate(ctx, date, byDate[date]); err != nil {
-			log.Printf("WFH settlement error for %s: %v\n", date, err)
+			slog.Error("WFH settlement error", "date", date, "error", err)
 		}
 	}
 	return nil
@@ -371,7 +371,7 @@ func (s *Service) settleDate(ctx context.Context, date string, pending []databas
 			status = database.WFHStatusApproved
 		}
 		if err := s.db.UpdateWFHRequestStatus(ctx, prioritized[i].ID, status); err != nil {
-			log.Printf("WFH: failed to update request %s to %s: %v\n", prioritized[i].ID, status, err)
+			slog.Error("WFH: failed to update request", "id", prioritized[i].ID, "status", status, "error", err)
 			continue
 		}
 		s.fireWFHStateChanged(ctx, prioritized[i], database.WFHStatusPending, status, "system")

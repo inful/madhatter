@@ -5,12 +5,11 @@ import (
 	"errors"
 	"log"
 	"math"
-	"os"
 	"sort"
-	"strconv"
 	"time"
 
 	"github.com/inful/madhatter/internal/database"
+	"github.com/inful/madhatter/internal/envutil"
 	"github.com/inful/madhatter/internal/notify"
 )
 
@@ -55,18 +54,17 @@ type Config struct {
 
 // LoadConfigFromEnv loads WFH configuration from environment variables.
 func LoadConfigFromEnv() Config {
-	cfg := Config{
-		Enabled:             parseBoolEnv("WFH_ENABLED", true),
-		MinOnsitePercentage: parseFloat64Env("WFH_MIN_ONSITE_PERCENTAGE", defaultMinOnsitePercentage),
-		MinOnsiteAbsolute:   parseIntEnv("WFH_MIN_ONSITE_ABSOLUTE", defaultMinOnsiteAbsolute),
-		MaxDaysPerPeriod:    parseIntEnv("WFH_MAX_DAYS_PER_PERIOD", defaultMaxDaysPerPeriod),
-		PeriodDays:          parseIntEnv("WFH_PERIOD_DAYS", defaultPeriodDays),
-		PeriodAnchor:        parseStringEnv("WFH_PERIOD_ANCHOR", defaultPeriodAnchor),
-		SettlementDays:      parseIntEnv("WFH_SETTLEMENT_DAYS", defaultSettlementDays),
-		RequestHorizonDays:  parseIntEnv("WFH_REQUEST_HORIZON_DAYS", defaultRequestHorizonDays),
-		PurgeEnabled:        parseBoolEnv("WFH_PURGE_ENABLED", defaultPurgeEnabled),
+	return Config{
+		Enabled:             envutil.Bool("WFH_ENABLED", true),
+		MinOnsitePercentage: envutil.Float64("WFH_MIN_ONSITE_PERCENTAGE", defaultMinOnsitePercentage),
+		MinOnsiteAbsolute:   envutil.Int("WFH_MIN_ONSITE_ABSOLUTE", defaultMinOnsiteAbsolute),
+		MaxDaysPerPeriod:    envutil.Int("WFH_MAX_DAYS_PER_PERIOD", defaultMaxDaysPerPeriod),
+		PeriodDays:          envutil.Int("WFH_PERIOD_DAYS", defaultPeriodDays),
+		PeriodAnchor:        envutil.String("WFH_PERIOD_ANCHOR", defaultPeriodAnchor),
+		SettlementDays:      envutil.Int("WFH_SETTLEMENT_DAYS", defaultSettlementDays),
+		RequestHorizonDays:  envutil.Int("WFH_REQUEST_HORIZON_DAYS", defaultRequestHorizonDays),
+		PurgeEnabled:        envutil.Bool("WFH_PURGE_ENABLED", defaultPurgeEnabled),
 	}
-	return cfg
 }
 
 // Service orchestrates WFH request settlement and quota management.
@@ -503,50 +501,4 @@ func (s *Service) prioritisePending(ctx context.Context, date string, pending []
 		result[i] = items[i].req
 	}
 	return result, nil
-}
-
-// --- env helpers ---
-
-func parseBoolEnv(key string, def bool) bool {
-	v := os.Getenv(key)
-	if v == "" {
-		return def
-	}
-	b, err := strconv.ParseBool(v)
-	if err != nil {
-		return def
-	}
-	return b
-}
-
-func parseIntEnv(key string, def int) int {
-	v := os.Getenv(key)
-	if v == "" {
-		return def
-	}
-	i, err := strconv.Atoi(v)
-	if err != nil {
-		return def
-	}
-	return i
-}
-
-func parseFloat64Env(key string, def float64) float64 {
-	v := os.Getenv(key)
-	if v == "" {
-		return def
-	}
-	f, err := strconv.ParseFloat(v, 64)
-	if err != nil {
-		return def
-	}
-	return f
-}
-
-func parseStringEnv(key, def string) string {
-	v := os.Getenv(key)
-	if v == "" {
-		return def
-	}
-	return v
 }

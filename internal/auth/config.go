@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/inful/madhatter/internal/envutil"
 	"gopkg.in/yaml.v3"
 )
 
@@ -115,10 +116,10 @@ func LoadConfigFromEnv() *AuthConfig {
 			ClientID:     clientID,
 			ClientSecret: os.Getenv("FORGEJO_CLIENT_SECRET"),
 			RedirectURL:  os.Getenv("FORGEJO_REDIRECT_URL"),
-			AuthURL:      getEnvOrDefault("FORGEJO_AUTH_URL", "/login/oauth/authorize"),
-			TokenURL:     getEnvOrDefault("FORGEJO_TOKEN_URL", "/login/oauth/access_token"),
-			UserInfoURL:  getEnvOrDefault("FORGEJO_USERINFO_URL", "/api/v1/user"),
-			Scope:        getEnvOrDefault("FORGEJO_SCOPE", "read:user"),
+			AuthURL:      envutil.String("FORGEJO_AUTH_URL", "/login/oauth/authorize"),
+			TokenURL:     envutil.String("FORGEJO_TOKEN_URL", "/login/oauth/access_token"),
+			UserInfoURL:  envutil.String("FORGEJO_USERINFO_URL", "/api/v1/user"),
+			Scope:        envutil.String("FORGEJO_SCOPE", "read:user"),
 		}
 	}
 
@@ -133,22 +134,15 @@ func LoadConfigFromEnv() *AuthConfig {
 			ClientID:     clientID,
 			ClientSecret: os.Getenv("GITLAB_CLIENT_SECRET"),
 			RedirectURL:  os.Getenv("GITLAB_REDIRECT_URL"),
-			AuthURL:      getEnvOrDefault("GITLAB_AUTH_URL", "https://gitlab.com/oauth/authorize"),
-			TokenURL:     getEnvOrDefault("GITLAB_TOKEN_URL", "https://gitlab.com/oauth/token"),
-			UserInfoURL:  getEnvOrDefault("GITLAB_USERINFO_URL", "https://gitlab.com/api/v4/user"),
-			Scope:        getEnvOrDefault("GITLAB_SCOPE", defaultScope),
+			AuthURL:      envutil.String("GITLAB_AUTH_URL", "https://gitlab.com/oauth/authorize"),
+			TokenURL:     envutil.String("GITLAB_TOKEN_URL", "https://gitlab.com/oauth/token"),
+			UserInfoURL:  envutil.String("GITLAB_USERINFO_URL", "https://gitlab.com/api/v4/user"),
+			Scope:        envutil.String("GITLAB_SCOPE", defaultScope),
 			AllowedGroup: os.Getenv("GITLAB_ALLOWED_GROUP"),
 		}
 	}
 
 	return config
-}
-
-func getEnvOrDefault(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
 }
 
 // Validate checks if the configuration is valid.

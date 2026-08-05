@@ -1,7 +1,6 @@
 package notify
 
 import (
-	"os"
 	"testing"
 	"time"
 
@@ -127,109 +126,4 @@ func TestSplitCSV(t *testing.T) {
 		got := splitCSV(tc.in)
 		assert.Equal(t, tc.want, got, "splitCSV(%q)", tc.in)
 	}
-}
-
-// TestGetEnvBool locks in the contract of the helper that will be
-// deduped with wfh/service.go::parseBoolEnv. Same contract as its
-// sibling: empty/unset/garbage → default; otherwise parsed.
-func TestGetEnvBool(t *testing.T) {
-	t.Run("UnsetReturnsDefault", func(t *testing.T) {
-		key := "NOTIFY_TEST_UNSET_BOOL"
-		require.NoError(t, os.Unsetenv(key))
-		assert.True(t, getEnvBool(key, true))
-		assert.False(t, getEnvBool(key, false))
-	})
-
-	t.Run("EmptyReturnsDefault", func(t *testing.T) {
-		key := "NOTIFY_TEST_EMPTY_BOOL"
-		t.Setenv(key, "")
-		assert.True(t, getEnvBool(key, true))
-		assert.False(t, getEnvBool(key, false))
-	})
-
-	t.Run("ParsesTruthyValues", func(t *testing.T) {
-		key := "NOTIFY_TEST_TRUTHY_BOOL"
-		for _, v := range []string{"true", "TRUE", "True", "1", "t", "T"} {
-			t.Setenv(key, v)
-			assert.True(t, getEnvBool(key, false), "value %q must parse true", v)
-		}
-	})
-
-	t.Run("ParsesFalsyValues", func(t *testing.T) {
-		key := "NOTIFY_TEST_FALSY_BOOL"
-		for _, v := range []string{"false", "FALSE", "False", "0", "f", "F"} {
-			t.Setenv(key, v)
-			assert.False(t, getEnvBool(key, true), "value %q must parse false", v)
-		}
-	})
-
-	t.Run("GarbageFallsBackToDefault", func(t *testing.T) {
-		key := "NOTIFY_TEST_GARBAGE_BOOL"
-		t.Setenv(key, "not-a-bool")
-		assert.True(t, getEnvBool(key, true), "garbage must fall back to default true")
-		assert.False(t, getEnvBool(key, false), "garbage must fall back to default false")
-	})
-}
-
-// TestGetEnvInt covers the int helper used by LoadConfigFromEnv.
-func TestGetEnvInt(t *testing.T) {
-	t.Run("UnsetReturnsDefault", func(t *testing.T) {
-		key := "NOTIFY_TEST_UNSET_INT"
-		require.NoError(t, os.Unsetenv(key))
-		assert.Equal(t, 42, getEnvInt(key, 42))
-	})
-
-	t.Run("ParsesValue", func(t *testing.T) {
-		key := "NOTIFY_TEST_PARSE_INT"
-		t.Setenv(key, "7")
-		assert.Equal(t, 7, getEnvInt(key, 0))
-	})
-
-	t.Run("GarbageFallsBackToDefault", func(t *testing.T) {
-		key := "NOTIFY_TEST_GARBAGE_INT"
-		t.Setenv(key, "not-an-int")
-		assert.Equal(t, 99, getEnvInt(key, 99))
-	})
-}
-
-// TestGetEnvDuration covers the duration helper.
-func TestGetEnvDuration(t *testing.T) {
-	t.Run("UnsetReturnsDefault", func(t *testing.T) {
-		key := "NOTIFY_TEST_UNSET_DUR"
-		require.NoError(t, os.Unsetenv(key))
-		assert.Equal(t, 30*time.Second, getEnvDuration(key, 30*time.Second))
-	})
-
-	t.Run("ParsesValue", func(t *testing.T) {
-		key := "NOTIFY_TEST_PARSE_DUR"
-		t.Setenv(key, "5m")
-		assert.Equal(t, 5*time.Minute, getEnvDuration(key, time.Second))
-	})
-
-	t.Run("GarbageFallsBackToDefault", func(t *testing.T) {
-		key := "NOTIFY_TEST_GARBAGE_DUR"
-		t.Setenv(key, "nope")
-		assert.Equal(t, 7*time.Second, getEnvDuration(key, 7*time.Second))
-	})
-}
-
-// TestGetEnvOrDefault covers the string helper.
-func TestGetEnvOrDefault(t *testing.T) {
-	t.Run("UnsetReturnsDefault", func(t *testing.T) {
-		key := "NOTIFY_TEST_UNSET_STR"
-		require.NoError(t, os.Unsetenv(key))
-		assert.Equal(t, "fallback", getEnvOrDefault(key, "fallback"))
-	})
-
-	t.Run("EmptyReturnsDefault", func(t *testing.T) {
-		key := "NOTIFY_TEST_EMPTY_STR"
-		t.Setenv(key, "")
-		assert.Equal(t, "fallback", getEnvOrDefault(key, "fallback"))
-	})
-
-	t.Run("ParsesValue", func(t *testing.T) {
-		key := "NOTIFY_TEST_PARSE_STR"
-		t.Setenv(key, "value")
-		assert.Equal(t, "value", getEnvOrDefault(key, "fallback"))
-	})
 }

@@ -3,8 +3,9 @@ package notify
 import (
 	"errors"
 	"os"
-	"strconv"
 	"time"
+
+	"github.com/inful/madhatter/internal/envutil"
 )
 
 // Config is the runtime configuration for the notification subsystem.
@@ -74,14 +75,14 @@ func LoadConfigFromEnv() Config {
 	// LogChannel so handlers don't fail. Operators who want email
 	// must set NOTIFY_CHANNELS=email AND NOTIFY_EMAIL_ENABLED=true.
 	channels := os.Getenv("NOTIFY_CHANNELS")
-	emailEnabled := getEnvBool("NOTIFY_EMAIL_ENABLED", false)
+	emailEnabled := envutil.Bool("NOTIFY_EMAIL_ENABLED", false)
 	var enabledChannels []string
 	if channels != "" {
 		enabledChannels = splitCSV(channels)
 	} else if emailEnabled {
 		enabledChannels = []string{ChannelEmail}
 	}
-	baseURL := getEnvOrDefault("NOTIFY_BASE_URL", "http://localhost:8080")
+	baseURL := envutil.String("NOTIFY_BASE_URL", "http://localhost:8080")
 	// PublicBaseURL is the externally-visible origin used for
 	// absolute URLs in emails (one-click unsubscribe links). In
 	// production this should be the public HTTPS host; in dev
@@ -101,13 +102,13 @@ func LoadConfigFromEnv() Config {
 			Host:     os.Getenv("NOTIFY_SMTP_HOST"),
 			User:     os.Getenv("NOTIFY_SMTP_USER"),
 			Password: os.Getenv("NOTIFY_SMTP_PASSWORD"),
-			From:     getEnvOrDefault("NOTIFY_SMTP_FROM", "MadHatter Rota <noreply@example.com>"),
+			From:     envutil.String("NOTIFY_SMTP_FROM", "MadHatter Rota <noreply@example.com>"),
 			Identity: os.Getenv("NOTIFY_SMTP_IDENTITY"),
 		},
 		Outbox: OutboxConfig{
-			PollInterval: getEnvDuration("NOTIFY_OUTBOX_POLL_INTERVAL", defaultOutboxPollInterval),
-			MaxAttempts:  getEnvInt("NOTIFY_OUTBOX_MAX_ATTEMPTS", defaultOutboxMaxAttempts),
-			BackoffBase:  getEnvDuration("NOTIFY_OUTBOX_BACKOFF_BASE", defaultOutboxBackoffBase),
+			PollInterval: envutil.Duration("NOTIFY_OUTBOX_POLL_INTERVAL", defaultOutboxPollInterval),
+			MaxAttempts:  envutil.Int("NOTIFY_OUTBOX_MAX_ATTEMPTS", defaultOutboxMaxAttempts),
+			BackoffBase:  envutil.Duration("NOTIFY_OUTBOX_BACKOFF_BASE", defaultOutboxBackoffBase),
 		},
 	}
 }
@@ -142,49 +143,6 @@ func (c Config) Validate() error {
 		return errors.New("notify: NOTIFY_OUTBOX_BACKOFF_BASE must be > 0")
 	}
 	return nil
-}
-
-func getEnvOrDefault(key, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return def
-}
-
-func getEnvBool(key string, def bool) bool {
-	v := os.Getenv(key)
-	if v == "" {
-		return def
-	}
-	b, err := strconv.ParseBool(v)
-	if err != nil {
-		return def
-	}
-	return b
-}
-
-func getEnvInt(key string, def int) int {
-	v := os.Getenv(key)
-	if v == "" {
-		return def
-	}
-	n, err := strconv.Atoi(v)
-	if err != nil {
-		return def
-	}
-	return n
-}
-
-func getEnvDuration(key string, def time.Duration) time.Duration {
-	v := os.Getenv(key)
-	if v == "" {
-		return def
-	}
-	d, err := time.ParseDuration(v)
-	if err != nil {
-		return def
-	}
-	return d
 }
 
 // splitCSV splits a comma-separated string, trimming whitespace and

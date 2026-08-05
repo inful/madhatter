@@ -155,11 +155,3 @@ func GetUserFromContext(ctx context.Context) (*sqlc.GetSessionByTokenRow, bool) 
 	user, ok := ctx.Value(UserContextKey).(*sqlc.GetSessionByTokenRow)
 	return user, ok
 }
-
-// MustGetUserFromContext extracts user information from context, panics if not found.
-func MustGetUserFromContext(ctx context.Context) *sqlc.GetSessionByTokenRow {
-	if user, ok := GetUserFromContext(ctx); ok {
-		return user
-	}
-	panic("user not found in context")
-}

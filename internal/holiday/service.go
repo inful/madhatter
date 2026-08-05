@@ -201,12 +201,3 @@ func InitializeHolidayService(db *database.DB) (*Service, error) {
 
 	return service, nil
 }
-
-// MustInitializeHolidayService is like InitializeHolidayService but panics on error.
-func MustInitializeHolidayService(db *database.DB) *Service {
-	service, err := InitializeHolidayService(db)
-	if err != nil {
-		panic(fmt.Sprintf("Failed to initialize holiday service: %v", err))
-	}
-	return service
-}

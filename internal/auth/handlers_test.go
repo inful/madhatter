@@ -1100,9 +1100,12 @@ func TestAuthManager_writeTokensResponse_Empty(t *testing.T) {
 	// Test with empty list
 	authManager.writeTokensResponse(w, []sqlc.ApiToken{})
 
-	// Assert
+	// Assert. json.NewEncoder appends a trailing newline after each
+	// Encode call; both "[]" and "[]\n" are valid JSON for an empty
+	// array, and the trailing newline is part of the documented
+	// contract of stdlib encoding/json.
 	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Equal(t, "[]", w.Body.String())
+	assert.Equal(t, "[]\n", w.Body.String())
 }
 
 // TestAuthManager_writeTokensResponse_Single tests single token.
@@ -1297,4 +1300,194 @@ func TestAuthManager_HandleGenerateAPIToken_WithExpiry(t *testing.T) {
 	token, exists := response["token"]
 	assert.True(t, exists)
 	assert.NotEmpty(t, token)
+}
+
+// TestHandleGenerateAPIToken_JSONIsValid_WithAdversarialName pins down
+// the JSON contract for the generated-token handler. Names with
+// quote / backslash / control characters must round-trip through
+// JSON safely — these are the cases that broke the old
+// fmt.Fprintf implementation. Today the response goes through
+// json.NewEncoder, so every case here is a regression anchor.
+func TestHandleGenerateAPIToken_JSONIsValid_WithAdversarialName(t *testing.T) {
+	cases := []struct {
+		name  string
+		query string
+	}{
+		{"Simple", "/api/v1/tokens/generate?name=my-token"},
+		{"WithQuote", `/api/v1/tokens/generate?name=token"`},
+		{"WithBackslash", `/api/v1/tokens/generate?name=token\backslash`},
+		{"WithControl", "/api/v1/tokens/generate?name=token%00null"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := setupTestDB(t)
+			queries := db.GetQueries()
+			encryptor, err := NewTokenEncryptor()
+			require.NoError(t, err)
+			providerFactory := NewProviderFactory(make(map[string]ProviderConfig))
+			userService := NewUserService(queries, encryptor)
+			sessionManager := NewSessionManager(queries, 24*time.Hour)
+			authManager := NewAuthManager(providerFactory, userService, sessionManager)
+
+			ctx := context.Background()
+			userID := uuid.New().String()
+			_, err = queries.CreateActiveUser(ctx, sqlc.CreateActiveUserParams{
+				ID:    userID,
+				Email: "test@example.com",
+				Name:  "Test User",
+			})
+			require.NoError(t, err)
+			sessionToken, err := sessionManager.CreateSession(ctx, userID)
+			require.NoError(t, err)
+
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, tc.query, nil)
+			req.AddCookie(&http.Cookie{ //nolint:gosec // G124 false positive: cookie has all required security attributes
+				Name:     "session_token",
+				Value:    sessionToken,
+				Path:     "/",
+				HttpOnly: true,
+				Secure:   false,
+				SameSite: http.SameSiteLaxMode,
+			})
+			w := httptest.NewRecorder()
+			authManager.HandleGenerateAPIToken(w, req)
+
+			require.Equal(t, http.StatusOK, w.Code, "name %q must still produce 200", tc.name)
+			var resp map[string]string
+			err = json.Unmarshal(w.Body.Bytes(), &resp)
+			require.NoError(t, err, "response must be valid JSON for name %q", tc.name)
+			assert.NotEmpty(t, resp["token"], "token must survive in the response for name %q", tc.name)
+		})
+	}
+}
+
+// TestHandleListAPITokens_JSONIsValid_WithAdversarialName is the
+// list-tokens counterpart. Names with quote / backslash characters
+// must round-trip through JSON safely. Each subtest sets up its own
+// DB + tokens so the simple-name baseline does not share a response
+// with the adversarial names.
+//
+// The adversarial subtests were skipped before the JSON-encoding fix;
+// they are now active regression anchors.
+func TestHandleListAPITokens_JSONIsValid_WithAdversarialName(t *testing.T) {
+	// Helper: create an AuthManager pre-loaded with one token for
+	// the given name and return a valid session cookie value.
+	setup := func(t *testing.T, name string) (authManager *AuthManager, sessionToken string) {
+		t.Helper()
+		db := setupTestDB(t)
+		queries := db.GetQueries()
+		encryptor, err := NewTokenEncryptor()
+		require.NoError(t, err)
+		providerFactory := NewProviderFactory(make(map[string]ProviderConfig))
+		userService := NewUserService(queries, encryptor)
+		sessionManager := NewSessionManager(queries, 24*time.Hour)
+		authManager = NewAuthManager(providerFactory, userService, sessionManager)
+
+		ctx := context.Background()
+		userID := uuid.New().String()
+		_, err = queries.CreateActiveUser(ctx, sqlc.CreateActiveUserParams{
+			ID:    userID,
+			Email: "test@example.com",
+			Name:  "Test User",
+		})
+		require.NoError(t, err)
+		_, err = queries.CreateAPIToken(ctx, sqlc.CreateAPITokenParams{
+			ID:        uuid.New().String(),
+			UserID:    userID,
+			Name:      name,
+			TokenHash: "hash-" + name,
+			IsActive:  sql.NullInt64{Int64: 1, Valid: true},
+		})
+		require.NoError(t, err)
+		sessionToken, err = sessionManager.CreateSession(ctx, userID)
+		require.NoError(t, err)
+		return authManager, sessionToken
+	}
+
+	// invoke: call HandleListAPITokens with a fresh request + recorder.
+	invoke := func(am *AuthManager, token string) *httptest.ResponseRecorder {
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/tokens", nil)
+		req.AddCookie(&http.Cookie{ //nolint:gosec // G124 false positive: cookie has all required security attributes
+			Name:     "session_token",
+			Value:    token,
+			Path:     "/",
+			HttpOnly: true,
+			Secure:   false,
+			SameSite: http.SameSiteLaxMode,
+		})
+		w := httptest.NewRecorder()
+		am.HandleListAPITokens(w, req)
+		return w
+	}
+
+	t.Run("SimpleNameRoundTrips", func(t *testing.T) {
+		am, token := setup(t, "simple-name")
+		w := invoke(am, token)
+		require.Equal(t, http.StatusOK, w.Code)
+		var tokens []map[string]any
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &tokens), "simple-name must produce valid JSON")
+		require.Len(t, tokens, 1)
+		assert.Equal(t, "simple-name", tokens[0]["name"])
+	})
+
+	t.Run("QuoteNameRoundTrips", func(t *testing.T) {
+		am, token := setup(t, `name with "quote"`)
+		w := invoke(am, token)
+		require.Equal(t, http.StatusOK, w.Code)
+		var tokens []map[string]any
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &tokens), "quote-bearing name must produce valid JSON")
+		require.Len(t, tokens, 1)
+		assert.Equal(t, `name with "quote"`, tokens[0]["name"])
+	})
+
+	t.Run("BackslashNameRoundTrips", func(t *testing.T) {
+		am, token := setup(t, `name with \backslash`)
+		w := invoke(am, token)
+		require.Equal(t, http.StatusOK, w.Code)
+		var tokens []map[string]any
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &tokens), "backslash-bearing name must produce valid JSON")
+		require.Len(t, tokens, 1)
+		assert.Equal(t, `name with \backslash`, tokens[0]["name"])
+	})
+}
+
+// TestHandleGenerateAPIToken_MissingName verifies the 400 contract
+// for the empty-name case. This stays as-is through the json.Marshal
+// fix but we lock it in so future changes don't drop the validation.
+func TestHandleGenerateAPIToken_MissingName(t *testing.T) {
+	db := setupTestDB(t)
+	queries := db.GetQueries()
+	encryptor, err := NewTokenEncryptor()
+	require.NoError(t, err)
+	providerFactory := NewProviderFactory(make(map[string]ProviderConfig))
+	userService := NewUserService(queries, encryptor)
+	sessionManager := NewSessionManager(queries, 24*time.Hour)
+	authManager := NewAuthManager(providerFactory, userService, sessionManager)
+
+	ctx := context.Background()
+	userID := uuid.New().String()
+	_, err = queries.CreateActiveUser(ctx, sqlc.CreateActiveUserParams{
+		ID:    userID,
+		Email: "test@example.com",
+		Name:  "Test User",
+	})
+	require.NoError(t, err)
+	sessionToken, err := sessionManager.CreateSession(ctx, userID)
+	require.NoError(t, err)
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/tokens/generate", nil)
+	req.AddCookie(&http.Cookie{ //nolint:gosec // G124 false positive: cookie has all required security attributes
+		Name:     "session_token",
+		Value:    sessionToken,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   false,
+		SameSite: http.SameSiteLaxMode,
+	})
+	w := httptest.NewRecorder()
+	authManager.HandleGenerateAPIToken(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "Token name is required")
 }

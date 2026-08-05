@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
@@ -438,6 +439,24 @@ func capitalizeProviderName(provider string) string {
 	}
 }
 
+// tokenResponse is the JSON wire shape returned by
+// HandleGenerateAPIToken. Using a struct (rather than a map[string]string)
+// makes the field-name contract explicit at compile time.
+type tokenResponse struct {
+	Token string `json:"token"`
+}
+
+// apiTokenResponse is the JSON wire shape returned by
+// writeTokensResponse. Field names match the historical contract
+// that callers depend on; introducing a new field here requires
+// bumping the API version.
+type apiTokenResponse struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	CreatedAt string `json:"created_at"`
+	IsActive  bool   `json:"is_active"`
+}
+
 // HandleGenerateAPIToken generates a new API token for the authenticated user.
 func (am *AuthManager) HandleGenerateAPIToken(w http.ResponseWriter, r *http.Request) {
 	// Get user from session
@@ -486,9 +505,12 @@ func (am *AuthManager) HandleGenerateAPIToken(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// Return token to user (only time it's shown)
+	// Return token to user (only time it's shown). The token is a
+	// base64-url-safe string with no JSON-special characters, but we
+	// route through json.Marshal anyway so the contract is enforced
+	// by the type system rather than by remembering to escape.
 	w.Header().Set("Content-Type", "application/json")
-	if _, err := fmt.Fprintf(w, `{"token": "%s"}`, token); err != nil {
+	if err := json.NewEncoder(w).Encode(tokenResponse{Token: token}); err != nil {
 		http.Error(w, "Failed to write response", http.StatusInternalServerError)
 		return
 	}
@@ -521,32 +543,26 @@ func (am *AuthManager) HandleListAPITokens(w http.ResponseWriter, r *http.Reques
 	am.writeTokensResponse(w, tokens)
 }
 
-// writeTokensResponse writes the tokens as JSON to the response.
+// writeTokensResponse writes the tokens as JSON to the response. The
+// token Name comes from a URL query parameter on the generate side,
+// so we use json.Marshal-style encoding to make sure quote /
+// backslash / control characters in the name cannot break the JSON
+// payload.
 func (am *AuthManager) writeTokensResponse(w http.ResponseWriter, tokens []sqlc.ApiToken) {
-	if _, err := w.Write([]byte("[")); err != nil {
-		http.Error(w, "Failed to write response", http.StatusInternalServerError)
-		return
-	}
+	resp := make([]apiTokenResponse, len(tokens))
 	for i := range tokens {
-		if i > 0 {
-			if _, err := w.Write([]byte(",")); err != nil {
-				http.Error(w, "Failed to write response", http.StatusInternalServerError)
-				return
-			}
-		}
-		// #nosec G602 -- bounds check is handled by range loop
-		token := tokens[i]
 		createdAt := ""
-		if token.CreatedAt.Valid {
-			createdAt = token.CreatedAt.Time.Format("2006-01-02T15:04:05Z")
+		if tokens[i].CreatedAt.Valid {
+			createdAt = tokens[i].CreatedAt.Time.Format("2006-01-02T15:04:05Z")
 		}
-		if _, err := fmt.Fprintf(w, `{"id":"%s","name":"%s","created_at":"%s","is_active":%t}`,
-			token.ID, token.Name, createdAt, token.IsActive.Valid && token.IsActive.Int64 == 1); err != nil {
-			http.Error(w, "Failed to write response", http.StatusInternalServerError)
-			return
+		resp[i] = apiTokenResponse{
+			ID:        tokens[i].ID,
+			Name:      tokens[i].Name,
+			CreatedAt: createdAt,
+			IsActive:  tokens[i].IsActive.Valid && tokens[i].IsActive.Int64 == 1,
 		}
 	}
-	if _, err := w.Write([]byte("]")); err != nil {
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		http.Error(w, "Failed to write response", http.StatusInternalServerError)
 		return
 	}

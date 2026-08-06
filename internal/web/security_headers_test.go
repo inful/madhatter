@@ -141,11 +141,48 @@ func TestSecurityHeadersMiddleware_NoHSTSLeakOnHTTP(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
 	mw := securityHeadersMiddleware(handler)
 
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 	mw.ServeHTTP(rec, req)
 
 	v := rec.Header().Get("Strict-Transport-Security")
 	require.False(t, strings.HasPrefix(v, "max-age="),
 		"HSTS leaked over plain HTTP: %q", v)
+}
+
+// TestSecurityHeadersMiddleware_AllowsCDNStylesheets locks in the
+// Content-Security-Policy allowance for the Bulma and FontAwesome
+// CDNs the base.html links. The base template's <link> tags depend
+// on these loading; a CSP of `default-src 'self'` blocks them
+// silently and the page renders with broken layout. The regression
+// in v0.19.0 surfaced exactly that — the new security-headers
+// middleware shipped with a tight CSP that broke every page.
+//
+// Update the test alongside the CSS host list when changing the
+// CDN set.
+func TestSecurityHeadersMiddleware_AllowsCDNStylesheets(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
+	mw := securityHeadersMiddleware(handler)
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	mw.ServeHTTP(rec, req)
+
+	csp := rec.Header().Get("Content-Security-Policy")
+	require.NotEmpty(t, csp, "CSP must be set")
+
+	// 'self' must be present (no regression on the strict default),
+	// and the style-src directive must explicitly include the CDN
+	// hosts the base.html <link> tags point at.
+	require.Contains(t, csp, "default-src 'self'",
+		"CSP must keep the strict 'self' default")
+	require.Contains(t, csp, "style-src 'self'",
+		"style-src must allow same-origin styles")
+	for _, host := range []string{
+		"https://cdn.jsdelivr.net",
+		"https://cdnjs.cloudflare.com",
+	} {
+		assert.Contains(t, csp, host,
+			"CSP must allow %s so Bulma / FontAwesome load", host)
+	}
 }

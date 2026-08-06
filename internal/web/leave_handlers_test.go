@@ -20,10 +20,9 @@ import (
 // and shows only that user's leave entries. Admins continue to see
 // every team member's entries.
 //
-// Today the page is mounted under the admin group in routes.go so a
-// non-admin gets a 303 redirect to /login (or 403). After the fix
-// the route moves to the auth-only group and the handler filters
-// by MemberID for non-admins.
+// The route is mounted under the protected auth-only group in
+// routes.go; the handler narrows the result set to the session
+// member's own rows when the caller is not an admin.
 func TestHandleLeaveManagement_RegularUserSeesOnlyOwn(t *testing.T) {
 	ctx := context.Background()
 	db, h, cleanup := setupLeaveTestDB(t)
@@ -405,4 +404,138 @@ func TestHandleLeaveDelete_RawHTTPRejectsEscalation(t *testing.T) {
 	require.NotNil(t, post, "raw HTTP delete must not have removed Bob's row")
 	assert.Equal(t, bobID, post.MemberID,
 		"raw HTTP delete must not have changed Bob's member_id")
+}
+
+// TestHandleLeaveManagement_NonAdminSeesEditDeleteForOwnLeave is
+// the positive counterpart to TestHandleLeaveManagement_RegularUserSeesOnlyOwn:
+// once a non-admin can reach the page, they must also be able to
+// act on their own rows. The backend already authorizes edits and
+// deletes for the row owner via canMutateLeave (see
+// TestHandleLeaveEdit_NonAdminRejectsOthersLeave), but the
+// template was gating the per-row edit/delete buttons behind
+// IsAdmin only — so a non-admin saw their leave records but no
+// way to manage them. This test renders the page as a non-admin
+// and asserts the row-level action buttons are present.
+//
+// Because the handler narrows the result set to the session
+// member's rows for non-admins, every rendered row is by
+// definition theirs, so the row-level guard in the template
+// (`or $.IsAdmin (eq .Leave.MemberID $.SelfMemberID)`) always
+// succeeds for them. The test still exercises the path so a
+// future change that re-gates the buttons under IsAdmin would
+// fail loudly.
+func TestHandleLeaveManagement_NonAdminSeesEditDeleteForOwnLeave(t *testing.T) {
+	ctx := context.Background()
+	db, h, cleanup := setupLeaveTestDB(t)
+	defer cleanup()
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	_, err = db.CreateLeaveRecord(ctx, aliceID, "2026-09-01", "2026-09-03")
+	require.NoError(t, err)
+
+	rec := httptest.NewRequestWithContext(ctx, http.MethodGet, "/leave/manage", nil)
+	rec = withUser(rec, "alice@example.com", "Alice", false)
+	rr := httptest.NewRecorder()
+	h.handleLeaveManagement(rr, rec)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	body := rr.Body.String()
+	assert.Contains(t, body, `aria-label="Edit leave record"`,
+		"non-admin must see an Edit button on their own leave row")
+	assert.Contains(t, body, `aria-label="Delete leave record"`,
+		"non-admin must see a Delete button on their own leave row")
+}
+
+// TestHandleLeaveManagement_NonAdminOmitsTeamPicker asserts that
+// the edit modal renders the hidden-input member id for a
+// non-admin rather than the admin-only team-member picker. The
+// team picker would let a non-admin re-target a leave to another
+// member — a privilege escalation vector that the backend
+// already blocks via parseLeaveEditForm forcing member_id to
+// self. Removing the picker from the non-admin view is the
+// defense-in-depth half of that contract: an attacker shouldn't
+// even see the UI affordance for the action that's about to be
+// refused.
+func TestHandleLeaveManagement_NonAdminOmitsTeamPicker(t *testing.T) {
+	ctx := context.Background()
+	db, h, cleanup := setupLeaveTestDB(t)
+	defer cleanup()
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	_, err = db.CreateLeaveRecord(ctx, aliceID, "2026-09-01", "2026-09-03")
+	require.NoError(t, err)
+
+	rec := httptest.NewRequestWithContext(ctx, http.MethodGet, "/leave/manage", nil)
+	rec = withUser(rec, "alice@example.com", "Alice", false)
+	rr := httptest.NewRecorder()
+	h.handleLeaveManagement(rr, rec)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	body := rr.Body.String()
+	assert.Contains(t, body, `id="editMemberID"`,
+		"edit modal must still include the member_id input (hidden for non-admin)")
+	assert.Contains(t, body, `name="member_id"`,
+		"edit form must still submit a member_id field")
+	// The admin-only path uses <select id="editMemberID" name="member_id">
+	// — the non-admin path uses <input type="hidden" id="editMemberID" ...>.
+	// Asserting against the literal `<select` substring catches a
+	// regression that re-adds the picker for non-admins.
+	assert.NotContains(t, body, `<select id="editMemberID"`,
+		"non-admin must not see the team-member picker in the edit modal")
+}
+
+// TestHandleLeaveEdit_NonAdminEditsOwnLeave is the positive
+// counterpart to TestHandleLeaveEdit_RawHTTPRejectsEscalation.
+// The defense-in-depth test asserts the backend refuses a
+// non-admin who tampers with the member_id field to escalate;
+// this test asserts the non-admin happy path — editing their own
+// leave via raw HTTP — actually succeeds. Without it, a future
+// refactor that locks the edit handler down to admins-only
+// would still pass the rejection test but break the user-visible
+// feature the dashboard button now advertises.
+func TestHandleLeaveEdit_NonAdminEditsOwnLeave(t *testing.T) {
+	ctx := context.Background()
+	db, h, cleanup := setupLeaveTestDB(t)
+	defer cleanup()
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	_, err = db.CreateLeaveRecord(ctx, aliceID, "2026-09-01", "2026-09-03")
+	require.NoError(t, err)
+	rows, err := db.GetLeaveRecords(ctx)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	aliceLeaveID := rows[0].ID
+
+	// Alice (non-admin) edits her own row to a new range. The
+	// form body sends her own member_id (the only valid value
+	// for a non-admin) and the new dates. The handler should
+	// accept it, redirect back to /leave/manage, and persist the
+	// change to the row on disk.
+	form := "member_id=" + aliceID + "&start_date=2026-10-05&end_date=2026-10-07"
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost,
+		"/leave/"+aliceLeaveID+"/edit", strings.NewReader(form))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req = withUser(req, "alice@example.com", "Alice", false)
+	routeCtx := chi.NewRouteContext()
+	routeCtx.URLParams.Add("id", aliceLeaveID)
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, routeCtx))
+
+	rr := httptest.NewRecorder()
+	h.handleLeaveEdit(rr, req)
+
+	require.Equal(t, http.StatusSeeOther, rr.Code,
+		"non-admin editing their own leave must redirect (303), body=%s", rr.Body.String())
+
+	post, err := db.GetLeaveByID(ctx, aliceLeaveID)
+	require.NoError(t, err)
+	require.NotNil(t, post)
+	assert.Equal(t, aliceID, post.MemberID,
+		"member_id must remain Alice's (non-admin cannot re-route)")
+	assert.Equal(t, "2026-10-05", post.StartDate.Format("2006-01-02"),
+		"start_date must reflect the new value")
+	assert.Equal(t, "2026-10-07", post.EndDate.Format("2006-01-02"),
+		"end_date must reflect the new value")
 }

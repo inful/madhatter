@@ -255,6 +255,78 @@ func TestHandleHelp_Returns200(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "How WFH Is Settled")
 }
 
+// TestDashboard_NonAdminSeesManageLeaveButton is the regression
+// guard for the issue where non-admins could not reach
+// /leave/manage from the dashboard. The route and handler were
+// already wired to support non-admins (the page filters by the
+// session member's id when the caller is not an admin), but the
+// dashboard's "Manage Leave" quick-action was nested inside the
+// IsAdmin block — so a regular user logged in and saw no entry
+// point. This test renders the dashboard template with a
+// non-admin session and asserts the link is present.
+func TestDashboard_NonAdminSeesManageLeaveButton(t *testing.T) {
+	mockDB := &database.DB{}
+	handler, err := NewHandler(mockDB, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	// Minimal dashboard data: a logged-in user who is not an admin.
+	// Other optional fields (ScheduleMatrix, presence tags, WFH
+	// quota, etc.) are deliberately omitted — their absence is
+	// guarded by {{if}} blocks in the template and renders an empty
+	// state, which is fine for this focused test. The "Template"
+	// field is the dispatch key the base layout reads to decide
+	// whether to render the login page or the dashboard content
+	// (it falls back to login when missing).
+	data := map[string]any{
+		"User":     map[string]any{"Email": "alice@example.com", "Name": "Alice"},
+		"IsAdmin":  false,
+		"Template": "dashboard",
+	}
+
+	w := httptest.NewRecorder()
+	require.NoError(t, handler.tmpl.ExecuteTemplate(w, "dashboard.html", data))
+
+	body := w.Body.String()
+	assert.Contains(t, body, `href="/leave/manage"`,
+		"non-admin must see a /leave/manage link on the dashboard")
+	assert.Contains(t, body, "Manage Leave",
+		"non-admin must see the 'Manage Leave' label on the dashboard")
+	// Sanity: the admin-only team page must NOT be reachable for a
+	// non-admin user via the dashboard — guards against the button
+	// being accidentally moved inside the admin block again.
+	assert.NotContains(t, body, `href="/team"`,
+		"non-admin must not see the admin-only Team link on the dashboard")
+}
+
+// TestDashboard_AdminSeesManageLeaveButton pairs with the non-admin
+// test above as a regression guard for admins — making the button
+// available to non-admins must not remove it from the admin view.
+// Admins already saw the link via the IsAdmin block before the fix,
+// so this asserts the rendered output still contains it after the
+// refactor that pulled the link out of that block.
+func TestDashboard_AdminSeesManageLeaveButton(t *testing.T) {
+	mockDB := &database.DB{}
+	handler, err := NewHandler(mockDB, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	data := map[string]any{
+		"User":     map[string]any{"Email": "admin@example.com", "Name": "Admin"},
+		"IsAdmin":  true,
+		"Template": "dashboard",
+	}
+
+	w := httptest.NewRecorder()
+	require.NoError(t, handler.tmpl.ExecuteTemplate(w, "dashboard.html", data))
+
+	body := w.Body.String()
+	assert.Contains(t, body, `href="/leave/manage"`,
+		"admin must still see a /leave/manage link on the dashboard")
+	assert.Contains(t, body, "Manage Leave",
+		"admin must still see the 'Manage Leave' label on the dashboard")
+	assert.Contains(t, body, `href="/team"`,
+		"admin must still see the admin-only Team link on the dashboard")
+}
+
 // TestHandler_SecurityHeadersAppliedGlobally asserts that the
 // security headers reach the response on every route the web
 // handler exposes, not just on the synthetic httptest cases used

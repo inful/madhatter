@@ -38,17 +38,19 @@ func securityHeadersMiddleware(next http.Handler) http.Handler {
 		// 'unsafe-inline' is permitted on style-src because the Go html
 		// templates include inline style attributes; tightening this
 		// requires per-template nonces and is out of scope here.
-		// style-src also allows the Bulma (jsdelivr) and FontAwesome
-		// (cdnjs) CDNs the base template links to. The security
-		// headers middleware test suite pins these hosts; a tighter
-		// CSP that drops them silently breaks every page's layout.
-		// The next iteration should vendor the CSS files locally and
-		// drop these CDN allows.
+		//
+		// All third-party assets (HTMX, Bulma, FontAwesome + webfonts)
+		// are vendored under /static/ and served by the staticHandler
+		// mounted on the chi router, so the CSP no longer needs any
+		// CDN host allows. Dropping them keeps the browser from
+		// silently blocking new external dependencies if the base
+		// template gains one in the future.
 		h.Set("Content-Security-Policy",
 			"default-src 'self'; "+
 				"img-src 'self' data:; "+
-				"style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; "+
+				"style-src 'self' 'unsafe-inline'; "+
 				"script-src 'self'; "+
+				"font-src 'self'; "+
 				"connect-src 'self'; "+
 				"frame-ancestors 'none'; "+
 				"form-action 'self'; "+

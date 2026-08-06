@@ -150,17 +150,14 @@ func TestSecurityHeadersMiddleware_NoHSTSLeakOnHTTP(t *testing.T) {
 		"HSTS leaked over plain HTTP: %q", v)
 }
 
-// TestSecurityHeadersMiddleware_AllowsCDNStylesheets locks in the
-// Content-Security-Policy allowance for the Bulma and FontAwesome
-// CDNs the base.html links. The base template's <link> tags depend
-// on these loading; a CSP of `default-src 'self'` blocks them
-// silently and the page renders with broken layout. The regression
-// in v0.19.0 surfaced exactly that — the new security-headers
-// middleware shipped with a tight CSP that broke every page.
-//
-// Update the test alongside the CSS host list when changing the
-// CDN set.
-func TestSecurityHeadersMiddleware_AllowsCDNStylesheets(t *testing.T) {
+// TestSecurityHeadersMiddleware_NoCDNHostsInCSP locks in the
+// stricter CSP that comes with the vendored assets. The
+// third-party CSS / JS / font files (HTMX, Bulma, FontAwesome)
+// all live under /static/ now, so the CSP should NOT list any
+// external CDN hosts. A future change that adds an external
+// <script> or <link> to the base template needs to vendor the
+// asset first; this test will fail and force that conversation.
+func TestSecurityHeadersMiddleware_NoCDNHostsInCSP(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
 	mw := securityHeadersMiddleware(handler)
 
@@ -171,18 +168,24 @@ func TestSecurityHeadersMiddleware_AllowsCDNStylesheets(t *testing.T) {
 	csp := rec.Header().Get("Content-Security-Policy")
 	require.NotEmpty(t, csp, "CSP must be set")
 
-	// 'self' must be present (no regression on the strict default),
-	// and the style-src directive must explicitly include the CDN
-	// hosts the base.html <link> tags point at.
+	// 'self' is the only allowed source. Anything else is a bug:
+	// either the asset was added without being vendored, or a CDN
+	// URL leaked in via copy-paste.
 	require.Contains(t, csp, "default-src 'self'",
 		"CSP must keep the strict 'self' default")
 	require.Contains(t, csp, "style-src 'self'",
 		"style-src must allow same-origin styles")
+	require.Contains(t, csp, "script-src 'self'",
+		"script-src must allow same-origin scripts")
+	require.Contains(t, csp, "font-src 'self'",
+		"font-src must allow same-origin fonts (for /static/fontawesome/webfonts)")
+
 	for _, host := range []string{
 		"https://cdn.jsdelivr.net",
 		"https://cdnjs.cloudflare.com",
+		"https://unpkg.com",
 	} {
-		assert.Contains(t, csp, host,
-			"CSP must allow %s so Bulma / FontAwesome load", host)
+		assert.NotContains(t, csp, host,
+			"CSP must not list %s — assets should be vendored under /static/", host)
 	}
 }

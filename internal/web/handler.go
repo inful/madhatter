@@ -140,6 +140,10 @@ func NewHandler(db *database.DB, authManager *auth.AuthManager, authMiddleware *
 	// so it covers auth routes, the API mount, and the static asset
 	// handlers alike.
 	router.Use(securityHeadersMiddleware)
+	// Vendored third-party assets (HTMX, Bulma, FontAwesome). Local
+	// URLs let the strict CSP keep default-src 'self' without
+	// exception; see internal/web/static.go and security_headers.go.
+	router.Handle("/static/*", staticHandler())
 	maintenance := rota.NewScheduleMaintenance(db)
 	if holidayChecker != nil {
 		maintenance.SetHolidayChecker(holidayChecker)

@@ -23,7 +23,7 @@ A comprehensive support duty management system with automatic scheduling, leave 
 - **Role-based access**: Admin and Regular user roles
 - **Development mode**: Fake OAuth provider for local testing
 - **Per-IP rate limiting**: Token-bucket limiter on `/auth/login/{provider}` (10 req/min default) and `/api/v1/tokens/*` (30 req/min default). Excessive requests get a 429 with a `Retry-After` header. Set `WFH_SETTLEMENT_DAYS` and the bucket size per route in production.
-- **Defensive HTTP response headers**: Every response carries a strict `Content-Security-Policy`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, and `Referrer-Policy: same-origin`. HTTPS requests additionally get `Strict-Transport-Security: max-age=63072000; includeSubDomains`.
+- **Defensive HTTP response headers**: Every response carries a strict `Content-Security-Policy` (`default-src 'self'` with no external exceptions), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, and `Referrer-Policy: same-origin`. HTTPS requests additionally get `Strict-Transport-Security: max-age=63072000; includeSubDomains`. The CSP can stay tight because all third-party CSS/JS/fonts (HTMX, Bulma, FontAwesome) are vendored under `internal/web/assets/` and served from `/static/*`.
 
 ### Advanced Features
 - **Automatic schedule maintenance**: 14-day rolling schedule maintained automatically

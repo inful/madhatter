@@ -121,9 +121,20 @@ func (h *Handler) handleUserDeactivate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !auth.IsAdmin(user.IsAdmin) {
-		http.Error(w, "refusing to deactivate the last admin", http.StatusForbidden)
-		return
+	// Deactivating the only active admin would leave the system
+	// without anyone able to manage it. The CountAdmins query
+	// already filters on is_active = 1, so the count is the number
+	// of admins that would remain after this deactivation.
+	if auth.IsAdmin(user.IsAdmin) {
+		adminCount, err := h.db.GetQueries().CountAdmins(ctx)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if adminCount <= 1 {
+			http.Error(w, "refusing to deactivate the last admin", http.StatusForbidden)
+			return
+		}
 	}
 
 	if _, err := h.db.GetQueries().DeactivateUser(ctx, userID); err != nil {

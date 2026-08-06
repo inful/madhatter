@@ -14,6 +14,7 @@ import (
 	"github.com/inful/madhatter/internal/database"
 	"github.com/inful/madhatter/internal/database/sqlc"
 	"github.com/inful/madhatter/internal/rota"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -302,6 +303,98 @@ func TestUserApprovalFlow_NonAdminCannotApprove(t *testing.T) {
 	post, err := db.GetQueries().GetUserByID(ctx, pending.ID)
 	require.NoError(t, err)
 	require.Equal(t, int64(0), post.IsActive.Int64)
+}
+
+// buildDeactivateRequest builds the POST request that
+// handleUserDeactivate expects: empty body, the userID wired into
+// chi's route context so chi.URLParam resolves it. Tests that need
+// an admin context chain withAdminContext on top.
+func buildDeactivateRequest(userID string) *http.Request {
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/team/users/"+userID+"/deactivate", nil)
+	routeCtx := chi.NewRouteContext()
+	routeCtx.URLParams.Add("id", userID)
+	return req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, routeCtx))
+}
+
+// TestHandleUserDeactivate_PermitsNonAdmin locks in the contract that
+// deactivating a non-admin user is always allowed. The last-admin
+// guard fires only for the only remaining admin — ordinary users
+// must be deactivate-able so the team roster can be pruned.
+func TestHandleUserDeactivate_PermitsNonAdmin(t *testing.T) {
+	db, cleanup := setupApprovalTestDB(t)
+	defer cleanup()
+	h, _ := newApprovalHandler(t, db)
+	ctx := context.Background()
+
+	admin, err := db.GetQueries().CreateActiveUser(ctx, activeUserParams("admin-d-1", "admin-d-1@example.com", "Admin One", 1))
+	require.NoError(t, err)
+	nonAdmin, err := db.GetQueries().CreateActiveUser(ctx, activeUserParams("regular-d-1", "regular-d-1@example.com", "Regular", 0))
+	require.NoError(t, err)
+
+	req := buildDeactivateRequest(nonAdmin.ID)
+	req = withAdminContext(req, admin.ID)
+	rec := httptest.NewRecorder()
+	h.handleUserDeactivate(rec, req)
+
+	require.Equal(t, http.StatusSeeOther, rec.Code, "non-admin deactivation must redirect (got status %d body %q)", rec.Code, rec.Body.String())
+
+	post, err := db.GetQueries().GetUserByID(ctx, nonAdmin.ID)
+	require.NoError(t, err)
+	require.Equal(t, int64(0), post.IsActive.Int64, "deactivation must flip is_active")
+	require.True(t, post.DeactivatedAt.Valid, "deactivation must set deactivated_at")
+}
+
+// TestHandleUserDeactivate_PermitsAdminWhenOtherAdminExists asserts
+// that one admin can be deactivated as long as another active
+// admin remains to manage the system.
+func TestHandleUserDeactivate_PermitsAdminWhenOtherAdminExists(t *testing.T) {
+	db, cleanup := setupApprovalTestDB(t)
+	defer cleanup()
+	h, _ := newApprovalHandler(t, db)
+	ctx := context.Background()
+
+	adminA, err := db.GetQueries().CreateActiveUser(ctx, activeUserParams("admin-d-2a", "admin-d-2a@example.com", "Admin A", 1))
+	require.NoError(t, err)
+	adminB, err := db.GetQueries().CreateActiveUser(ctx, activeUserParams("admin-d-2b", "admin-d-2b@example.com", "Admin B", 1))
+	require.NoError(t, err)
+
+	req := buildDeactivateRequest(adminA.ID)
+	req = withAdminContext(req, adminB.ID) // adminB performs the action
+	rec := httptest.NewRecorder()
+	h.handleUserDeactivate(rec, req)
+
+	require.Equal(t, http.StatusSeeOther, rec.Code)
+
+	post, err := db.GetQueries().GetUserByID(ctx, adminA.ID)
+	require.NoError(t, err)
+	require.Equal(t, int64(0), post.IsActive.Int64, "adminA should have been deactivated")
+	require.True(t, post.DeactivatedAt.Valid)
+}
+
+// TestHandleUserDeactivate_RefusesLastAdmin asserts the last-admin
+// invariant: an admin cannot deactivate themselves (or the only
+// other admin) when no other active admin exists.
+func TestHandleUserDeactivate_RefusesLastAdmin(t *testing.T) {
+	db, cleanup := setupApprovalTestDB(t)
+	defer cleanup()
+	h, _ := newApprovalHandler(t, db)
+	ctx := context.Background()
+
+	soloAdmin, err := db.GetQueries().CreateActiveUser(ctx, activeUserParams("solo-admin-d", "solo@example.com", "Solo", 1))
+	require.NoError(t, err)
+
+	req := buildDeactivateRequest(soloAdmin.ID)
+	req = withAdminContext(req, soloAdmin.ID)
+	rec := httptest.NewRecorder()
+	h.handleUserDeactivate(rec, req)
+
+	require.Equal(t, http.StatusForbidden, rec.Code, "the only admin must not be deactivate-able")
+	assert.Contains(t, rec.Body.String(), "refusing to deactivate the last admin")
+
+	post, err := db.GetQueries().GetUserByID(ctx, soloAdmin.ID)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), post.IsActive.Int64, "the only admin must remain active")
+	assert.False(t, post.DeactivatedAt.Valid, "the only admin must not have been deactivated")
 }
 
 // activeUserParams builds the sqlc.CreateActiveUserParams for a

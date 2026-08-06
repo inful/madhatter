@@ -83,6 +83,53 @@ func TestHandleLeaveManagement_AdminSeesAll(t *testing.T) {
 	}
 }
 
+// TestHandleLeaveReport_RawHTTPRejectsEscalation is the defense-
+// in-depth safety net: it constructs a raw HTTP POST (no UI
+// involved) and asserts the backend rejects a non-admin attempt
+// to file a leave for someone else. The other tests in this file
+// also exercise the protection but go through the user form; this
+// test demonstrates the protection holds when a non-admin
+// attacker writes a curl-equivalent request directly. If the
+// handler ever loosens the rule, this test fails.
+func TestHandleLeaveReport_RawHTTPRejectsEscalation(t *testing.T) {
+	ctx := context.Background()
+	db, h, cleanup := setupLeaveTestDB(t)
+	defer cleanup()
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	// Raw HTTP body Alice would send via curl with cookies:
+	//   curl -X POST http://host/leave/report \
+	//        -d 'member_id=<bob>&start_date=2026-10-01&end_date=2026-10-03' \
+	//        --cookie 'session_token=...'
+	form := "member_id=" + bobID + "&start_date=2026-10-01&end_date=2026-10-03"
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost,
+		"/leave/report", strings.NewReader(form))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req = withUser(req, "alice@example.com", "Alice", false)
+	rr := httptest.NewRecorder()
+	h.handleLeaveReportPost(rr, req, map[string]any{"IsAdmin": false})
+
+	require.Equal(t, http.StatusSeeOther, rr.Code,
+		"POST should succeed (with coerced member_id), not 4xx")
+
+	// Defense-in-depth: even if the response is 303, the only row
+	// written MUST be Alice's, not Bob's. A bug that lets the form
+	// value through would put a row under Bob — assert that didn't
+	// happen.
+	rows, err := db.GetLeaveRecords(ctx)
+	require.NoError(t, err)
+	for _, l := range rows {
+		assert.NotEqual(t, bobID, l.MemberID,
+			"raw HTTP form value must NOT be honored for non-admin")
+		require.Equal(t, aliceID, l.MemberID,
+			"only the session member's row may be created")
+	}
+}
+
 // TestHandleLeaveReport_NonAdminForcesSelfMemberID asserts that a
 // non-admin POSTing /leave/report with someone else's member_id is
 // silently re-routed to their own member_id. The protection is

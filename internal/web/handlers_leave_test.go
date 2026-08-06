@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"database/sql"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/inful/madhatter/internal/auth"
 	"github.com/inful/madhatter/internal/database"
+	"github.com/inful/madhatter/internal/database/sqlc"
 	"github.com/inful/madhatter/internal/rota"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -53,9 +55,18 @@ func TestLeaveCreationIntegration(t *testing.T) {
 	formData.Set("start_date", time.Now().Format("2006-01-02"))
 	formData.Set("end_date", time.Now().AddDate(0, 0, 5).Format("2006-01-02"))
 
-	// Create POST request
+	// Create POST request. Inject a session user so the handler's
+	// strict auth check (added with the non-admin-coercion fix)
+	// doesn't fail this fixture. In production the safeRequireAuth
+	// middleware always populates the user before the handler runs;
+	// here we simulate the same.
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/leave", strings.NewReader(formData.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req = req.WithContext(context.WithValue(req.Context(), auth.UserContextKey, &sqlc.GetSessionByTokenRow{
+		Email:   "test@example.com",
+		Name:    "Test User",
+		IsAdmin: sql.NullInt64{Int64: 1, Valid: true},
+	}))
 
 	// Create response recorder
 	w := httptest.NewRecorder()
@@ -150,6 +161,15 @@ func TestLeaveCreationWithInvalidData(t *testing.T) {
 			// Create POST request
 			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/leave", strings.NewReader(tc.formData.Encode()))
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			// Inject an admin session so the handler's strict auth
+			// check (added with the non-admin-coercion fix) doesn't
+			// fail this fixture. Mirrors what safeRequireAuth does
+			// in production.
+			req = req.WithContext(context.WithValue(req.Context(), auth.UserContextKey, &sqlc.GetSessionByTokenRow{
+				Email:   "test@example.com",
+				Name:    "Test User",
+				IsAdmin: sql.NullInt64{Int64: 1, Valid: true},
+			}))
 
 			// Create response recorder
 			w := httptest.NewRecorder()

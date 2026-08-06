@@ -62,12 +62,17 @@ func (h *Handler) handleLeaveReportPost(w http.ResponseWriter, r *http.Request, 
 	// member_id=someone-elses-uuid to create a leave row on
 	// someone else's behalf. Admins keep the form value as-is.
 	//
-	// No user in context means the auth middleware didn't run (this
-	// path is only reachable from tests); fall back to the form
-	// value so the legacy test fixture keeps working.
-	user, _ := auth.GetUserFromContext(ctx)
+	// In production, the safeRequireAuth middleware guarantees a
+	// user is set; if it isn't, the route is being called from a
+	// place that bypassed auth — refuse the request rather than
+	// fall through to the unprotected form path.
+	user, ok := auth.GetUserFromContext(ctx)
+	if !ok || user == nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 	memberID := r.FormValue("member_id")
-	if user != nil && !auth.IsAdminSession(user) {
+	if !auth.IsAdminSession(user) {
 		self := h.resolveMemberID(ctx, user.Email)
 		if self == "" {
 			http.Error(w, "no team member record for current user", http.StatusForbidden)

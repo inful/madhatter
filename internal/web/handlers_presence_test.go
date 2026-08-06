@@ -308,8 +308,8 @@ func TestLoadCurrentUserPresenceStatus_SwapReflectedInNextHAT(t *testing.T) {
 	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
 	require.NoError(t, err)
 
-	aliceOriginal := testutil.NextBusinessDay(time.Now().AddDate(0, 0, 2)).Format("2006-01-02")
-	bobOriginal := testutil.NextBusinessDay(time.Now().AddDate(0, 0, 4)).Format("2006-01-02")
+	aliceOriginal := testutil.NextBusinessDay(time.Now().AddDate(0, 0, 3)).Format("2006-01-02")
+	bobOriginal := testutil.NextBusinessDay(time.Now().AddDate(0, 0, 7)).Format("2006-01-02")
 
 	aliceAssignmentID, err := db.CreateRotaAssignment(ctx, aliceOriginal, aliceID, false, nil)
 	require.NoError(t, err)

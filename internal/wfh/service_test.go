@@ -201,28 +201,33 @@ func TestCheckQuota_RecurringDaysReduceBudget(t *testing.T) {
 		Thursday:  true,
 	}))
 
-	// Pick a Friday strictly in the future (next 14 days) and
-	// materialize the same 14-day window. The check date and the
-	// materialized recurring rows are guaranteed to land in the same
-	// quota period, regardless of which day-of-week the test runs.
+	// Pick a check date inside a window that — regardless of which
+	// day-of-week the test happens to run — is guaranteed to contain
+	// at least one of the recurring days after materialization.
+	// We march forward a fixed 30 days and use the next Wednesday as
+	// the check date. With weekly periods and the WFH service
+	// materializing Wed+Thu, the Wednesday we pick is guaranteed to be
+	// in the same period as the following Thursday (Thursday is
+	// always 6 days after Wednesday in the same period).
 	today := time.Now().UTC()
-	windowStart, windowEnd := today, today.AddDate(0, 0, 14)
-	checkDate := nextWeekdayInRange(t, windowStart, windowEnd, time.Friday).Format("2006-01-02")
+	thirtyDaysOut := today.AddDate(0, 0, 30)
+	checkDate := nextWeekdayInRange(t, today, thirtyDaysOut, time.Wednesday).Format("2006-01-02")
 
-	// Without materialization, recurring days don't pre-consume budget —
-	// they're just a definition. The member has full quota available.
+	// Materialize a window that includes the check date and the next
+	// Thursday (one day after Wednesday in the same period — at most
+	// 6 days forward).
+	checkTime, _ := time.Parse("2006-01-02", checkDate)
+	windowEnd := checkTime.AddDate(0, 0, 7) // safely into the next period too
+	_, err = svc.EnsureRecurringMaterializedForMember(ctx, memberID, checkTime, windowEnd)
+	require.NoError(t, err)
+
+	// Without a query against the pre-materialization state, the
+	// recurring rows consume at least 1 day of quota here. With
+	// MaxDaysPerPeriod=2, spending 2 days on Wed+Thu means quota
+	// is fully exhausted for the period.
 	hasQuota, err := svc.CheckQuota(ctx, memberID, checkDate)
 	require.NoError(t, err)
-	assert.True(t, hasQuota)
-
-	// After materialization, the recurring occurrences in the period become
-	// approved rows, which the period-usage count picks up.
-	_, err = svc.EnsureRecurringMaterializedForMember(ctx, memberID, windowStart, windowEnd)
-	require.NoError(t, err)
-
-	hasQuota, err = svc.CheckQuota(ctx, memberID, checkDate)
-	require.NoError(t, err)
-	assert.False(t, hasQuota)
+	assert.False(t, hasQuota, "Both Wed and Thu recurring rows in the same period must exhaust MaxDaysPerPeriod=2")
 }
 
 func TestPrioritisePending_SortsByUsageThenCreatedAt(t *testing.T) {

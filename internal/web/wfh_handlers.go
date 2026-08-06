@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -251,40 +252,9 @@ func enrichWFHRequests(requests []database.WFHRequest, svc *wfh.Service) []enric
 func (h *Handler) handleWFHAdminPage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	data := h.wfhBaseData(r, "wfh_manage")
+	applyPurgeFlash(data, r)
+	data["Requests"] = h.loadAdminActionableWFH(ctx)
 
-	// Flash from the purge POST lands here as ?wfh_purged=N&cutoff=YYYY-MM-DD.
-	// The query string is the only carrier — it keeps the handler stateless
-	// and the message is rendered once, immediately after the action that
-	// produced it.
-	if purged := r.URL.Query().Get(wfhPurgeFlashKey); purged != "" {
-		if n, parseErr := strconv.ParseInt(purged, 10, 64); parseErr == nil && n >= 0 {
-			data["PurgeFlashCount"] = n
-			data["PurgeFlashCutoff"] = r.URL.Query().Get("cutoff")
-		}
-	}
-
-	requests, err := h.db.GetAllWFHRequests(ctx)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// Enrich with member names.
-	members, _ := h.db.GetActiveTeamMembers(ctx)
-	memberMap := make(map[string]string, len(members))
-	for _, m := range members {
-		memberMap[m.ID] = m.Name
-	}
-	for i := range requests {
-		if name, ok := memberMap[requests[i].MemberID]; ok {
-			requests[i].MemberName = name
-		}
-	}
-
-	data["Requests"] = enrichWFHRequests(requests, h.wfhService)
-
-	// Surface whether the purge button is reachable so the template
-	// can hide the link when the feature or the flag is off.
 	if h.wfhService != nil {
 		data["PurgeEnabled"] = h.wfhService.IsPurgeEnabled()
 	} else {
@@ -293,6 +263,83 @@ func (h *Handler) handleWFHAdminPage(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.tmpl.ExecuteTemplate(w, "wfh_manage.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// applyPurgeFlash copies the purge confirmation query string
+// (wfh_purged=N&cutoff=YYYY-MM-DD) into data, so the template can
+// render the green "purged N past WFH requests" banner. The query
+// string is the only carrier — it keeps the handler stateless and
+// the message is rendered once, immediately after the action that
+// produced it.
+func applyPurgeFlash(data map[string]any, r *http.Request) {
+	purged := r.URL.Query().Get(wfhPurgeFlashKey)
+	if purged == "" {
+		return
+	}
+	n, parseErr := strconv.ParseInt(purged, 10, 64)
+	if parseErr != nil || n < 0 {
+		return
+	}
+	data["PurgeFlashCount"] = n
+	data["PurgeFlashCutoff"] = r.URL.Query().Get("cutoff")
+}
+
+// loadAdminActionableWFH fetches every WFH request, filters to the
+// rows an admin can act on (future or current dates, ad-hoc only),
+// and enriches with member names. Extracted from handleWFHAdminPage
+// so that single function doesn't carry the full complexity budget.
+func (h *Handler) loadAdminActionableWFH(ctx context.Context) []enrichedWFHRequest {
+	all, err := h.db.GetAllWFHRequests(ctx)
+	if err != nil {
+		// Caller (handleWFHAdminPage) maps this to a 500 via
+		// ExecuteTemplate's error path; we surface as an empty list
+		// rather than panic so the page can still render an
+		// empty-state for the admin.
+		return nil
+	}
+
+	filtered := filterAdminActionable(all)
+	// enrichWFHRequests sets the CanWithdraw flag the template
+	// needs to decide whether to render the "Withdraw" button.
+	enriched := enrichWFHRequests(filtered, h.wfhService)
+	for i := range enriched {
+		enrichWithMemberName(ctx, h.db, &enriched[i].WFHRequest)
+	}
+	return enriched
+}
+
+// filterAdminActionable drops past dates and recurring-WFH rows.
+// Date strings sort lexicographically the same as chronologically
+// in YYYY-MM-DD format, so a string compare is sufficient.
+func filterAdminActionable(requests []database.WFHRequest) []database.WFHRequest {
+	today := time.Now().UTC().Format("2006-01-02")
+	out := requests[:0:0]
+	for i := range requests {
+		r := &requests[i]
+		if r.Date < today {
+			continue
+		}
+		if r.IsRecurring {
+			continue
+		}
+		out = append(out, *r)
+	}
+	return out
+}
+
+// enrichWithMemberName sets the MemberName field on a single
+// request by looking up the member ID. Used by the admin page
+// after enrichWFHRequests wraps each row in enrichedWFHRequest
+// (which doesn't carry MemberName on its own). The pointer arg
+// avoids the rangeValCopy lint when the WFHRequest struct grows.
+func enrichWithMemberName(ctx context.Context, db *database.DB, req *database.WFHRequest) {
+	members, _ := db.GetActiveTeamMembers(ctx)
+	for _, m := range members {
+		if m.ID == req.MemberID {
+			req.MemberName = m.Name
+			return
+		}
 	}
 }
 

@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"database/sql"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -334,9 +335,126 @@ func TestHandleWFHPurge_DisabledHidesForm(t *testing.T) {
 	assert.NotContains(t, rr.Body.String(), `name="confirm"`, "form must not render when disabled")
 }
 
-// TestHandleWFHPurge_FlashOnAdminPage verifies the GET /admin/wfh
-// surfaces the purge confirmation banner when the redirect query
-// string carries the flash key.
+// TestHandleWFHAdminPage_FiltersPastAndRecurring asserts the admin
+// "Manage WFH Requests" page only shows rows that are
+// (a) for a future or current date (past rows are not actionable
+//
+//	from the admin side), and
+//
+// (b) NOT the result of the recurring-WFH materialiser (those rows
+//
+//	are managed by the contract, not by the admin).
+//
+// The page is the admin's view of WFH state that needs attention;
+// surfacing past or recurring rows adds noise without value. The
+// filter is applied in handleWFHAdminPage so the DB layer doesn't
+// need a separate "active-only" query — the user-facing list and
+// the past-period purge keep their existing broader queries.
+func TestHandleWFHAdminPage_FiltersPastAndRecurring(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupSwapTestDB(t)
+	defer cleanup()
+
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	_, err = db.GetQueries().CreateActiveUser(ctx, sqlc.CreateActiveUserParams{
+		ID:         "admin-1",
+		Email:      "admin@example.com",
+		Name:       "Admin",
+		Provider:   "fake",
+		ProviderID: "admin-1",
+		IsAdmin:    sql.NullInt64{Int64: 1, Valid: true},
+	})
+	require.NoError(t, err)
+
+	// Seed four rows: one past, one current/future, one future
+	// recurring, one future recurring-withdrawn (a corner case the
+	// filter must still hide).
+	today := testutil.NextBusinessDay(time.Now().UTC())
+	pastDate := today.AddDate(0, 0, -7).Format("2006-01-02")
+	currentDate := today.AddDate(0, 0, 2).Format("2006-01-02")
+	futureDate := today.AddDate(0, 0, 7).Format("2006-01-02")
+	futureDate2 := today.AddDate(0, 0, 14).Format("2006-01-02")
+
+	_, err = db.GetQueries().CreateWFHRequest(ctx, sqlc.CreateWFHRequestParams{
+		ID:       "wfh-past",
+		MemberID: memberID,
+		Date:     parseYMD(t, pastDate),
+	})
+	require.NoError(t, err)
+	_, err = db.GetQueries().CreateWFHRequest(ctx, sqlc.CreateWFHRequestParams{
+		ID:       "wfh-current",
+		MemberID: memberID,
+		Date:     parseYMD(t, currentDate),
+	})
+	require.NoError(t, err)
+
+	// Two recurring rows. IsRecurring=true is the only thing the
+	// filter checks, so any rows the materialiser would have inserted
+	// are equivalent here. Use the low-level CreateApprovedRecurring
+	// path that the materialiser itself uses.
+	now := time.Now().UTC()
+	_, err = db.GetQueries().CreateApprovedRecurringWFHRequest(ctx, sqlc.CreateApprovedRecurringWFHRequestParams{
+		ID:        "rec-1",
+		MemberID:  memberID,
+		Date:      parseYMD(t, futureDate),
+		SettledAt: sql.NullTime{Time: now, Valid: true},
+	})
+	require.NoError(t, err)
+	_, err = db.GetQueries().CreateApprovedRecurringWFHRequest(ctx, sqlc.CreateApprovedRecurringWFHRequestParams{
+		ID:        "rec-2",
+		MemberID:  memberID,
+		Date:      parseYMD(t, futureDate2),
+		SettledAt: sql.NullTime{Time: now, Valid: true},
+	})
+	require.NoError(t, err)
+
+	// Confirm the seed left us with 4 rows.
+	all, err := db.GetAllWFHRequests(ctx)
+	require.NoError(t, err)
+	require.Len(t, all, 4, "seed must leave four rows in the table")
+
+	// Hit the admin page.
+	svc := wfh.NewService(db, wfh.Config{
+		Enabled:             true,
+		MinOnsitePercentage: 50,
+		MinOnsiteAbsolute:   1,
+		MaxDaysPerPeriod:    2,
+		PeriodDays:          7,
+		PeriodAnchor:        "2026-01-05",
+		SettlementDays:      2,
+		RequestHorizonDays:  90,
+	})
+	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+	h.wfhService = svc
+
+	rec := httptest.NewRequestWithContext(ctx, http.MethodGet, "/admin/wfh", nil)
+	rec = withUser(rec, "admin@example.com", "Admin", true)
+	rr := httptest.NewRecorder()
+	h.handleWFHAdminPage(rr, rec)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	body := rr.Body.String()
+
+	// Past and recurring rows must not appear in the rendered table.
+	for _, hidden := range []string{pastDate, futureDate, futureDate2} {
+		assert.NotContains(t, body, hidden,
+			"date %s should be filtered out of the admin page", hidden)
+	}
+	// The one row that survives (currentDate, ad-hoc) must show up.
+	assert.Contains(t, body, currentDate,
+		"current/future ad-hoc date must appear in the admin page")
+}
+
+// parseYMD is a small helper to keep the test data block readable.
+func parseYMD(t *testing.T, s string) time.Time {
+	t.Helper()
+	v, err := time.Parse("2006-01-02", s)
+	require.NoError(t, err)
+	return v
+}
+
 func TestHandleWFHPurge_FlashOnAdminPage(t *testing.T) {
 	ctx := context.Background()
 	db, cleanup := setupSwapTestDB(t)

@@ -313,3 +313,96 @@ func setupLeaveTestDB(t *testing.T) (*database.DB, *Handler, func()) {
 	}
 	return db, h, func() { _ = db.Close() }
 }
+
+// TestHandleLeaveEdit_RawHTTPRejectsEscalation is the
+// defense-in-depth safety net for the edit path. It constructs a
+// raw POST (httptest equivalent of curl) and asserts that the
+// backend blocks a non-admin attempt to mutate another member's
+// leave row. The handler's auth check happens BEFORE form
+// parsing, so a tampered form value is never even read. If the
+// canMutateLeave check is ever loosened, this test fails.
+func TestHandleLeaveEdit_RawHTTPRejectsEscalation(t *testing.T) {
+	ctx := context.Background()
+	db, h, cleanup := setupLeaveTestDB(t)
+	defer cleanup()
+
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+	_, err = db.CreateLeaveRecord(ctx, bobID, "2026-09-10", "2026-09-12")
+	require.NoError(t, err)
+	rows, err := db.GetLeaveRecords(ctx)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	bobLeaveID := rows[0].ID
+
+	// The raw HTTP body Alice (non-admin) would send via curl. Note
+	// the `member_id=Bob's-id` field — the attacker expects the
+	// handler to honor it, which would re-route the row to Bob.
+	body := "member_id=" + bobID + "&start_date=2099-01-01&end_date=2099-01-02"
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost,
+		"/leave/"+bobLeaveID+"/edit", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req = withUser(req, "alice@example.com", "Alice", false)
+	routeCtx := chi.NewRouteContext()
+	routeCtx.URLParams.Add("id", bobLeaveID)
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, routeCtx))
+
+	rr := httptest.NewRecorder()
+	h.handleLeaveEdit(rr, req)
+
+	// Defense-in-depth: 403, AND the row is unchanged on disk.
+	assert.Equal(t, http.StatusForbidden, rr.Code,
+		"raw HTTP edit of another member's leave must be rejected")
+	post, err := db.GetLeaveByID(ctx, bobLeaveID)
+	require.NoError(t, err)
+	assert.Equal(t, "2026-09-10", post.StartDate.Format("2006-01-02"),
+		"raw HTTP edit must not have changed Bob's start_date")
+	assert.Equal(t, "2026-09-12", post.EndDate.Format("2006-01-02"),
+		"raw HTTP edit must not have changed Bob's end_date")
+	assert.Equal(t, bobID, post.MemberID,
+		"raw HTTP edit must not have changed Bob's member_id")
+}
+
+// TestHandleLeaveDelete_RawHTTPRejectsEscalation is the
+// defense-in-depth safety net for the delete path. Pairs with the
+// edit raw-HTTP test above; covers the surface the attacker would
+// probe first since DELETE is the highest-impact mutation.
+func TestHandleLeaveDelete_RawHTTPRejectsEscalation(t *testing.T) {
+	ctx := context.Background()
+	db, h, cleanup := setupLeaveTestDB(t)
+	defer cleanup()
+
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+	_, err = db.CreateLeaveRecord(ctx, bobID, "2026-09-10", "2026-09-12")
+	require.NoError(t, err)
+	rows, err := db.GetLeaveRecords(ctx)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	bobLeaveID := rows[0].ID
+
+	// Raw DELETE attempt from Alice against Bob's row. The handler's
+	// auth check happens before any DB write.
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost,
+		"/leave/"+bobID+"/delete", nil)
+	routeCtx := chi.NewRouteContext()
+	routeCtx.URLParams.Add("id", bobLeaveID)
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, routeCtx))
+	req = withUser(req, "alice@example.com", "Alice", false)
+	rr := httptest.NewRecorder()
+	h.handleLeaveDelete(rr, req)
+
+	assert.Equal(t, http.StatusForbidden, rr.Code,
+		"raw HTTP delete of another member's leave must be rejected")
+
+	// Defense-in-depth: the row must still be on disk.
+	post, err := db.GetLeaveByID(ctx, bobLeaveID)
+	require.NoError(t, err)
+	require.NotNil(t, post, "raw HTTP delete must not have removed Bob's row")
+	assert.Equal(t, bobID, post.MemberID,
+		"raw HTTP delete must not have changed Bob's member_id")
+}

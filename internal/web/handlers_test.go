@@ -330,17 +330,23 @@ func TestDashboard_AdminSeesManageLeaveButton(t *testing.T) {
 		"admin must still see the admin-only Team link on the dashboard")
 }
 
-// TestDashboard_QuickActionsUseDropdown guards the rework that
-// collapsed the inline quick-actions grid into a Bulma dropdown.
-// Each item now lives inside a .dropdown-menu as a .dropdown-item
-// so the menu can collapse on page load instead of sprawling
-// across the card. Asserting on the wrapper class and on the
-// .dropdown-item marker catches a regression that puts the
-// buttons back into a flat grid (which would defeat the rework
-// the user asked for). The trigger button must be labeled "Quick
-// Actions" so the affordance stays discoverable when the menu is
-// closed.
-func TestDashboard_QuickActionsUseDropdown(t *testing.T) {
+// TestDashboard_QuickActionsInUserCard guards the rework that moved
+// the Quick Actions dropdown from a standalone dashboard card into
+// the global user identity card at the top of every authenticated
+// page. The trigger, menu, and items live inside base.html's
+// global_user_menu block now (rendered via {{template
+// "global_user_menu" .}} when .User is set). The dashboard itself no
+// longer owns a Quick Actions card.
+//
+// The rendered dashboard.html goes through base.html's layout, so
+// the dropdown markup is in the output. Asserting on the wrapper id,
+// the trigger button, the menu role, and the .dropdown-item class
+// catches a regression that puts the buttons back into a flat grid
+// or moves them outside the user card (which would defeat the move).
+//
+// The dropdown trigger must be labeled "Quick Actions" so the
+// affordance stays discoverable when the menu is closed.
+func TestDashboard_QuickActionsInUserCard(t *testing.T) {
 	mockDB := &database.DB{}
 	handler, err := NewHandler(mockDB, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
 	require.NoError(t, err)
@@ -360,8 +366,23 @@ func TestDashboard_QuickActionsUseDropdown(t *testing.T) {
 	require.NoError(t, handler.tmpl.ExecuteTemplate(w, "dashboard.html", data))
 
 	body := w.Body.String()
-	assert.Contains(t, body, `id="quickActionsDropdown"`,
-		"dropdown wrapper must be present on the dashboard")
+
+	// The dropdown wrapper must appear inside the user card, not
+	// in its own dedicated card. Asserting on the DOM order — user
+	// card markup before the dropdown markup before the dashboard
+	// heading — catches a regression that puts the dropdown back in
+	// a standalone card.
+	userMenuIdx := strings.Index(body, `class="card global-user-menu"`)
+	dropdownIdx := strings.Index(body, `id="quickActionsDropdown"`)
+	headingIdx := strings.Index(body, `<h1 class="title is-2 has-text-primary"`)
+	require.NotEqual(t, -1, userMenuIdx, "global user card must render for a logged-in user")
+	require.NotEqual(t, -1, dropdownIdx, "dropdown wrapper must be present on the dashboard")
+	require.NotEqual(t, -1, headingIdx, "dashboard heading must render")
+	assert.Less(t, userMenuIdx, dropdownIdx,
+		"user card must render before the dropdown trigger")
+	assert.Less(t, dropdownIdx, headingIdx,
+		"dropdown must live inside the user card (before the dashboard heading)")
+
 	assert.Contains(t, body, `id="quickActionsTrigger"`,
 		"dropdown trigger button must be present on the dashboard")
 	assert.Contains(t, body, `aria-haspopup="true"`,
@@ -378,14 +399,14 @@ func TestDashboard_QuickActionsUseDropdown(t *testing.T) {
 		"dropdown must include the Swap HAT Day label")
 	// The status badge on Swap HAT Day must render inside the
 	// dropdown item so the pending-count affordance survives the
-	// grid-to-dropdown conversion.
+	// move to the user card.
 	assert.Contains(t, body, `<span class="tag is-danger is-small ml-2">3</span>`,
 		"Swap HAT Day dropdown item must show the pending-count badge")
-	// The old grid marker class must NOT be present — catching a
-	// regression that leaves the grid markup behind alongside the
-	// dropdown would double the actions on screen.
-	assert.NotContains(t, body, "quick-actions-grid",
-		"old inline grid markup must not survive in the rendered output")
+	// The old standalone Quick Actions card had its own card-header
+	// with a bolt icon. Catching that string in the rendered output
+	// would mean the dropdown was moved back into its own card.
+	assert.NotContains(t, body, `<i class="fas fa-bolt mr-2"></i> Quick Actions`,
+		"Quick Actions must not have its own card header — it lives inside the user card now")
 	// SSR state: dropdown must be closed on initial render. A bug
 	// that ships `is-active` in the markup would surprise every
 	// user with an open menu on page load.
@@ -416,6 +437,57 @@ func TestHandler_SecurityHeadersAppliedGlobally(t *testing.T) {
 	assert.Equal(t, "DENY", h.Get("X-Frame-Options"))
 	assert.Equal(t, "same-origin", h.Get("Referrer-Policy"))
 	assert.NotEmpty(t, h.Get("Content-Security-Policy"))
+}
+
+// TestQuickActionsAvailableOnNonDashboardPages asserts that the
+// Quick Actions dropdown is reachable from any authenticated page,
+// not only the dashboard. The dropdown moved from a dashboard-only
+// card to the global user identity card (base.html's
+// global_user_menu block) so every page in the authenticated flow
+// exposes the same Quick Actions affordance — including
+// /help, which the dashboard admin doesn't use as a navigation
+// surface but the help page is where unauthenticated visitors end
+// up first via the Help button.
+//
+// We render the leave_management template (a non-dashboard page
+// that base.html already serves in dev mode) and assert that the
+// dropdown wrapper, trigger, and the user card are all present.
+// Catching a regression that accidentally re-gates the dropdown
+// to dashboard.html only would mean users on /team, /leave/manage,
+// etc. lose the Quick Actions affordance.
+func TestQuickActionsAvailableOnNonDashboardPages(t *testing.T) {
+	mockDB := &database.DB{}
+	handler, err := NewHandler(mockDB, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	// Render a non-dashboard page (leave_management) with a logged-in
+	// non-admin user. The dropdown should appear in the rendered HTML
+	// via the user card, even though the page isn't the dashboard.
+	data := map[string]any{
+		"User":          map[string]any{"Email": "alice@example.com", "Name": "Alice"},
+		"IsAdmin":       false,
+		"Template":      "leave_management",
+		"Leaves":        []database.LeaveRecord{},
+		"Members":       []database.TeamMember{},
+		"SelfMemberID":  "",
+	}
+
+	w := httptest.NewRecorder()
+	require.NoError(t, handler.tmpl.ExecuteTemplate(w, "leave_management.html", data))
+
+	body := w.Body.String()
+	assert.Contains(t, body, `class="card global-user-menu"`,
+		"user identity card must render on non-dashboard authenticated pages")
+	assert.Contains(t, body, `id="quickActionsDropdown"`,
+		"Quick Actions dropdown must render on non-dashboard authenticated pages")
+	assert.Contains(t, body, `id="quickActionsTrigger"`,
+		"Quick Actions trigger must render on non-dashboard authenticated pages")
+	// The personal-section items are always present; admin items
+	// only appear for admins. Use the always-present "Manage Leave"
+	// label as a quick smoke-test that the dropdown content rendered
+	// (not just the wrapper).
+	assert.Contains(t, body, "Manage Leave",
+		"dropdown content must include the always-available Manage Leave item")
 }
 
 // TestTemplatesHaveNoInlineEventHandlers is the regression guard for

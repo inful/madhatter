@@ -28,19 +28,23 @@ import (
 	"github.com/inful/madhatter/internal/notify/channels"
 	emailchannel "github.com/inful/madhatter/internal/notify/channels/email"
 	logchannel "github.com/inful/madhatter/internal/notify/channels/log"
+	"github.com/inful/madhatter/internal/ratelimit"
 	"github.com/inful/madhatter/internal/rota"
 	"github.com/inful/madhatter/internal/wfh"
 )
 
 const (
-	lookaheadDays          = 365
-	calendarDaysLookahead  = 30
-	serverReadTimeout      = 15 * time.Second
-	serverWriteTimeout     = 15 * time.Second
-	serverIdleTimeout      = 60 * time.Second
-	sessionCleanupInterval = 1 * time.Hour  // Clean up expired sessions every hour.
-	leaveCleanupInterval   = 24 * time.Hour // Clean up expired leave records once a day.
-	shutdownTimeout        = 30 * time.Second
+	lookaheadDays           = 365
+	calendarDaysLookahead   = 30
+	serverReadTimeout       = 15 * time.Second
+	serverWriteTimeout      = 15 * time.Second
+	serverIdleTimeout       = 60 * time.Second
+	sessionCleanupInterval  = 1 * time.Hour  // Clean up expired sessions every hour.
+	leaveCleanupInterval    = 24 * time.Hour // Clean up expired leave records once a day.
+	shutdownTimeout         = 30 * time.Second
+	defaultTokenRatePerIP   = 30   // token bucket capacity per IP for /api/v1/tokens/*
+	defaultTokenRateRefillS = 60.0 // seconds over which a full bucket refills
+	defaultTokenRateRefill  = defaultTokenRatePerIP / defaultTokenRateRefillS
 )
 
 type Server struct {
@@ -56,6 +60,7 @@ type Server struct {
 	wfhScheduler   *wfh.Scheduler
 	notifier       *notify.ChannelNotifier
 	notifyWorker   *notify.Worker
+	tokenRateLimit *ratelimit.Limiter
 	//nolint:containedctx // Context is used for graceful shutdown
 	cleanupCtx    context.Context
 	cleanupCancel context.CancelFunc
@@ -123,6 +128,11 @@ func NewServer(db *database.DB, development bool) (*Server, error) {
 	// Create HUMA API with Chi adapter and security scheme documentation
 	s.api = humachi.New(router, buildHumaConfig())
 
+	// Default rate limit on the token mint / revoke endpoints: 30
+	// requests per minute per IP. Tests can swap or disable via
+	// SetTokenRateLimiter.
+	s.tokenRateLimit = ratelimit.New(defaultTokenRatePerIP, defaultTokenRateRefill)
+
 	// Register all operations
 	s.registerOperations(development)
 	if err := s.registerWebRoutes(development); err != nil {
@@ -170,6 +180,14 @@ func (s *Server) setupWFHService(db *database.DB) {
 	if startErr := s.wfhScheduler.Start(); startErr != nil {
 		slog.Warn("failed to start WFH scheduler", "error", startErr)
 	}
+}
+
+// SetTokenRateLimiter swaps the default token-bucket rate limiter
+// for the API token endpoints. Tests use this to install a tiny
+// bucket so they can exercise the 429 path quickly. A nil value
+// disables rate limiting on the token routes.
+func (s *Server) SetTokenRateLimiter(limiter *ratelimit.Limiter) {
+	s.tokenRateLimit = limiter
 }
 
 // setupNotifier builds the notification system and wires it into

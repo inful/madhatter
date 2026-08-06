@@ -195,6 +195,7 @@ func (s *Server) registerOperations(development bool) {
 		Security: []map[string][]string{
 			{"sessionAuth": {}},
 		},
+		Middlewares: []func(huma.Context, func(huma.Context)){s.tokenRateLimitMiddleware},
 	}, s.handleGenerateAPIToken)
 
 	huma.Register(s.api, huma.Operation{

@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/inful/madhatter/internal/auth"
+	"github.com/inful/madhatter/internal/ratelimit"
 )
 
 func (h *Handler) registerRoutes() {
@@ -16,7 +17,17 @@ func (h *Handler) registerRoutes() {
 		if !h.development {
 			h.router.HandleFunc("/login", h.authManager.HandleLoginView)
 		}
-		h.router.HandleFunc("/auth/login/{provider}", h.authManager.HandleLogin)
+		// The OAuth initiation route is the one an attacker would
+		// brute-force against. Apply the per-IP rate limit so a
+		// single source can't drive the whole login flow at full
+		// TCP speed. The callback and logout routes are not limited
+		// because they require a session/state machine to do damage.
+		if h.authRateLimiter != nil {
+			h.router.With(ratelimit.MiddlewareFactory(h.authRateLimiter)).
+				HandleFunc("/auth/login/{provider}", h.authManager.HandleLogin)
+		} else {
+			h.router.HandleFunc("/auth/login/{provider}", h.authManager.HandleLogin)
+		}
 		h.router.HandleFunc("/auth/callback", h.authManager.HandleCallback)
 		h.router.HandleFunc("/auth/logout", h.authManager.HandleLogout)
 	} else {

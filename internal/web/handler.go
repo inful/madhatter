@@ -12,6 +12,7 @@ import (
 	"github.com/inful/madhatter/internal/calendar"
 	"github.com/inful/madhatter/internal/database"
 	"github.com/inful/madhatter/internal/notify"
+	"github.com/inful/madhatter/internal/ratelimit"
 	"github.com/inful/madhatter/internal/rota"
 	"github.com/inful/madhatter/internal/wfh"
 )
@@ -26,6 +27,14 @@ const (
 	maxStringLength              = 255
 	dictKeyValuePairs            = 2
 	schemeHTTPS                  = "https"
+
+	// defaultAuthRateLimit is the bucket capacity for the OAuth
+	// login route. 10 requests per minute per IP is enough for
+	// normal use (a person clicking the wrong button, refreshing)
+	// and tight enough that brute-forcing a code or token would take
+	// years.
+	defaultAuthRateLimit  = 10
+	defaultAuthRateRefill = 10.0 / 60.0 // 10 tokens / 60s ≈ 0.1667 tokens/s
 )
 
 type Handler struct {
@@ -44,6 +53,11 @@ type Handler struct {
 	pendingRestore map[string]pendingRestoreItem
 	wfhService     *wfh.Service
 	notifier       notify.Notifier
+
+	// Per-IP rate limiter used by the OAuth login route. Defaults
+	// to 10 requests per minute per IP; tests can swap a smaller
+	// bucket in via SetRateLimiters to exercise the 429 path.
+	authRateLimiter *ratelimit.Limiter
 
 	// Unsubscribe plumbing. The secret is shared with the renderer
 	// and the email channel via unsubscribeURLFn so URLs minted
@@ -132,15 +146,16 @@ func NewHandler(db *database.DB, authManager *auth.AuthManager, authMiddleware *
 	}
 
 	h := &Handler{
-		db:             db,
-		maintenance:    maintenance,
-		tmpl:           tmpl,
-		router:         router,
-		authManager:    authManager,
-		authMiddleware: authMiddleware,
-		holidayChecker: holidayChecker,
-		development:    development,
-		pendingRestore: make(map[string]pendingRestoreItem),
+		db:              db,
+		maintenance:     maintenance,
+		tmpl:            tmpl,
+		router:          router,
+		authManager:     authManager,
+		authMiddleware:  authMiddleware,
+		holidayChecker:  holidayChecker,
+		development:     development,
+		pendingRestore:  make(map[string]pendingRestoreItem),
+		authRateLimiter: ratelimit.New(defaultAuthRateLimit, defaultAuthRateRefill),
 	}
 
 	h.registerRoutes()
@@ -156,6 +171,14 @@ func NewHandler(db *database.DB, authManager *auth.AuthManager, authMiddleware *
 // SetWFHService sets the WFH service on the handler.
 func (h *Handler) SetWFHService(svc *wfh.Service) {
 	h.wfhService = svc
+}
+
+// SetAuthRateLimiter swaps the default auth route rate limiter for
+// the given bucket. Tests use this to install a tiny limit so they
+// can exercise the 429 path quickly. A nil value disables rate
+// limiting on the auth route.
+func (h *Handler) SetAuthRateLimiter(limiter *ratelimit.Limiter) {
+	h.authRateLimiter = limiter
 }
 
 // SetNotifier wires the notification dispatcher. Handlers call into

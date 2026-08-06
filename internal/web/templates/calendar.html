@@ -149,30 +149,5 @@
 {{end}}
 
 {{define "calendar_scripts"}}
-<script>
-    function copyTextFromBox(boxId) {
-        const urlBox = document.getElementById(boxId);
-        const urlText = urlBox.dataset.url || '';
-        const textarea = document.createElement('textarea');
-        textarea.value = urlText;
-        textarea.style.position = 'fixed';
-        textarea.style.opacity = '0';
-        document.body.appendChild(textarea);
-        textarea.select();
-
-        try {
-            document.execCommand('copy');
-            const notification = document.getElementById('copy-notification');
-            notification.style.display = 'block';
-            setTimeout(() => {
-                notification.style.display = 'none';
-            }, 2000);
-        } catch (err) {
-            console.error('Failed to copy:', err);
-            alert('Failed to copy URL. Please copy it manually.');
-        } finally {
-            document.body.removeChild(textarea);
-        }
-    }
-</script>
+<script src="/static/js/calendar.js"></script>
 {{end}}

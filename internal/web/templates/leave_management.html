@@ -150,35 +150,5 @@
 {{end}}
 
 {{define "leave_management_scripts"}}
-<script>
-    function showEditModal(id, memberID, startDate, endDate) {
-        const modal = document.getElementById('editModal');
-        const form = document.getElementById('editForm');
-        const memberSelect = document.getElementById('editMemberID');
-        const startDateInput = document.getElementById('editStartDate');
-        const endDateInput = document.getElementById('editEndDate');
-
-        form.action = '/leave/' + id + '/edit';
-        memberSelect.value = memberID;
-        startDateInput.value = startDate;
-        endDateInput.value = endDate;
-
-        modal.classList.add('is-active');
-    }
-
-    function closeEditModal() {
-        const modal = document.getElementById('editModal');
-        modal.classList.remove('is-active');
-    }
-
-    // Close modal on Escape key; ensure listener is only added once.
-    if (!window._leaveManagementEscListener) {
-        window._leaveManagementEscListener = function(event) {
-            if (event.key === 'Escape') {
-                closeEditModal();
-            }
-        };
-        document.addEventListener('keydown', window._leaveManagementEscListener);
-    }
-</script>
+<script src="/static/js/leave-management.js"></script>
 {{end}}

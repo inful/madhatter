@@ -395,33 +395,5 @@
 {{end}}
 
 {{define "team_scripts"}}
-<script>
-    function showEditModal(id, name, email) {
-        const modal = document.getElementById('editModal');
-        const form = document.getElementById('editForm');
-        const nameInput = document.getElementById('editName');
-        const emailInput = document.getElementById('editEmail');
-
-        form.action = '/team/' + id + '/edit';
-        nameInput.value = name;
-        emailInput.value = email;
-
-        modal.classList.add('is-active');
-    }
-
-    function closeEditModal() {
-        const modal = document.getElementById('editModal');
-        modal.classList.remove('is-active');
-    }
-
-    // Close modal on Escape key; ensure listener is only added once.
-    if (!window.__teamEditModalEscListenerAdded) {
-        document.addEventListener('keydown', function(event) {
-            if (event.key === 'Escape') {
-                closeEditModal();
-            }
-        });
-        window.__teamEditModalEscListenerAdded = true;
-    }
-</script>
+<script src="/static/js/team.js"></script>
 {{end}}

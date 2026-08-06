@@ -327,6 +327,69 @@ func TestDashboard_AdminSeesManageLeaveButton(t *testing.T) {
 		"admin must still see the admin-only Team link on the dashboard")
 }
 
+// TestDashboard_QuickActionsUseDropdown guards the rework that
+// collapsed the inline quick-actions grid into a Bulma dropdown.
+// Each item now lives inside a .dropdown-menu as a .dropdown-item
+// so the menu can collapse on page load instead of sprawling
+// across the card. Asserting on the wrapper class and on the
+// .dropdown-item marker catches a regression that puts the
+// buttons back into a flat grid (which would defeat the rework
+// the user asked for). The trigger button must be labeled "Quick
+// Actions" so the affordance stays discoverable when the menu is
+// closed.
+func TestDashboard_QuickActionsUseDropdown(t *testing.T) {
+	mockDB := &database.DB{}
+	handler, err := NewHandler(mockDB, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	// PendingSwapCount exercises the conditional badge inside the
+	// Swap HAT Day dropdown item — without it the badge code path
+	// wouldn't be hit by the test and a regression that drops the
+	// tag could slip through.
+	data := map[string]any{
+		"User":             map[string]any{"Email": "alice@example.com", "Name": "Alice"},
+		"IsAdmin":          false,
+		"PendingSwapCount": 3,
+		"Template":         "dashboard",
+	}
+
+	w := httptest.NewRecorder()
+	require.NoError(t, handler.tmpl.ExecuteTemplate(w, "dashboard.html", data))
+
+	body := w.Body.String()
+	assert.Contains(t, body, `id="quickActionsDropdown"`,
+		"dropdown wrapper must be present on the dashboard")
+	assert.Contains(t, body, `id="quickActionsTrigger"`,
+		"dropdown trigger button must be present on the dashboard")
+	assert.Contains(t, body, `aria-haspopup="true"`,
+		"trigger button must declare aria-haspopup for assistive tech")
+	assert.Contains(t, body, `aria-expanded="false"`,
+		"trigger button must start with aria-expanded=false (SSR closed state)")
+	assert.Contains(t, body, `role="menu"`,
+		"dropdown menu must declare role=menu for assistive tech")
+	assert.Contains(t, body, `class="dropdown-item"`,
+		"quick-action entries must be rendered as Bulma .dropdown-item")
+	assert.Contains(t, body, "Manage Leave",
+		"dropdown must include the Manage Leave label")
+	assert.Contains(t, body, "Swap HAT Day",
+		"dropdown must include the Swap HAT Day label")
+	// The status badge on Swap HAT Day must render inside the
+	// dropdown item so the pending-count affordance survives the
+	// grid-to-dropdown conversion.
+	assert.Contains(t, body, `<span class="tag is-danger is-small ml-2">3</span>`,
+		"Swap HAT Day dropdown item must show the pending-count badge")
+	// The old grid marker class must NOT be present — catching a
+	// regression that leaves the grid markup behind alongside the
+	// dropdown would double the actions on screen.
+	assert.NotContains(t, body, "quick-actions-grid",
+		"old inline grid markup must not survive in the rendered output")
+	// SSR state: dropdown must be closed on initial render. A bug
+	// that ships `is-active` in the markup would surprise every
+	// user with an open menu on page load.
+	assert.NotRegexp(t, `id="quickActionsDropdown"[^>]*class="[^"]*is-active`, body,
+		"dropdown must start closed (no is-active class on the wrapper in SSR)")
+}
+
 // TestHandler_SecurityHeadersAppliedGlobally asserts that the
 // security headers reach the response on every route the web
 // handler exposes, not just on the synthetic httptest cases used

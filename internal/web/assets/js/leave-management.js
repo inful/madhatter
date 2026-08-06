@@ -1,0 +1,51 @@
+// Leave Management page modal — opens / closes the edit modal and
+// wires the Esc-to-close listener.
+//
+// Why an external file: the page's strict CSP (`script-src 'self'`)
+// blocks inline <script> blocks. Vendoring the script under /static/
+// alongside the other third-party assets (htmx, bulma, fontawesome)
+// is the supported way to run page-specific JS — see
+// security_headers.go.
+//
+// Behaviour:
+//   - showEditModal fills the modal form with the row's id / member /
+//     dates and flips it visible (Bulma .is-active class).
+//   - closeEditModal hides the modal.
+//   - One Esc listener is attached at module-load time and guarded by
+//     a window-scoped flag so re-renders (e.g. via HTMX) don't stack
+//     duplicate handlers.
+(function () {
+    function showEditModal(id, memberID, startDate, endDate) {
+        var modal = document.getElementById('editModal');
+        var form = document.getElementById('editForm');
+        var memberSelect = document.getElementById('editMemberID');
+        var startDateInput = document.getElementById('editStartDate');
+        var endDateInput = document.getElementById('editEndDate');
+
+        form.action = '/leave/' + id + '/edit';
+        memberSelect.value = memberID;
+        startDateInput.value = startDate;
+        endDateInput.value = endDate;
+
+        modal.classList.add('is-active');
+    }
+
+    function closeEditModal() {
+        var modal = document.getElementById('editModal');
+        if (modal) {
+            modal.classList.remove('is-active');
+        }
+    }
+
+    window.showEditModal = showEditModal;
+    window.closeEditModal = closeEditModal;
+
+    if (!window._leaveManagementEscListener) {
+        window._leaveManagementEscListener = function (event) {
+            if (event.key === 'Escape') {
+                closeEditModal();
+            }
+        };
+        document.addEventListener('keydown', window._leaveManagementEscListener);
+    }
+})();

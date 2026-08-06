@@ -47,55 +47,64 @@
         </p>
     </header>
     <div class="card-content">
-        <div class="buttons is-centered quick-actions-grid">
-            {{if .IsAdmin}}
-                <a href="/team" class="button is-primary action-btn">
-                    <i class="fas fa-users mr-1"></i> Team
-                </a>
-                <a href="/schedule/generate" class="button is-success action-btn">
-                    <i class="fas fa-calendar-plus mr-1"></i> Schedule
-                </a>
-                <a href="/admin/wfh" class="button is-success action-btn">
-                    <i class="fas fa-home mr-1"></i> Manage WFH
-                </a>
-                <a href="/calendar/subscriptions" class="button is-light action-btn">
-                    <i class="fas fa-rss mr-1"></i> Subscriptions
-                </a>
-                <a href="/admin/database/backup" class="button is-dark action-btn">
-                    <i class="fas fa-database mr-1"></i> Backup DB
-                </a>
-                <a href="/admin/database/restore" class="button is-danger action-btn">
-                    <i class="fas fa-upload mr-1"></i> Validate Restore
-                </a>
-            {{end}}
-            <a href="/leave/report" class="button is-info action-btn">
-                <i class="fas fa-plane-departure mr-1"></i> Leave
-            </a>
-            <a href="/leave/manage" class="button is-warning action-btn">
-                <i class="fas fa-calendar-times mr-1"></i> Manage Leave
-            </a>
-            <a href="/swaps" class="button is-link action-btn">
-                <i class="fas fa-exchange-alt mr-1"></i> Swap HAT Day
-                {{if .PendingSwapCount}}
-                    <span class="tag is-danger ml-1">{{.PendingSwapCount}}</span>
-                {{end}}
-            </a>
-            {{if .CurrentUserWFHQuotaExhausted}}
-                <a href="/wfh" class="button is-success is-light action-btn"
-                    title="WFH quota is used. Visit the WFH page to withdraw an approved request and free a slot.">
-                    <i class="fas fa-home mr-1"></i> WFH
-                </a>
-            {{else}}
-                <a href="/wfh" class="button is-success action-btn">
-                    <i class="fas fa-home mr-1"></i> WFH
-                </a>
-            {{end}}
-            <a href="/calendar" class="button is-warning action-btn">
-                <i class="fas fa-calendar-star mr-1"></i> Calendar
-            </a>
-            <a href="/help" class="button is-info is-light action-btn">
-                <i class="fas fa-book mr-1"></i> Help
-            </a>
+        <div class="has-text-centered quick-actions-dropdown">
+            <div class="dropdown is-right" id="quickActionsDropdown">
+                <div class="dropdown-trigger">
+                    <button class="button is-light action-btn" id="quickActionsTrigger"
+                            aria-haspopup="true" aria-controls="quickActionsMenu" aria-expanded="false">
+                        <span class="icon is-small"><i class="fas fa-bolt"></i></span>
+                        <span>Quick Actions</span>
+                        <span class="icon is-small"><i class="fas fa-angle-down"></i></span>
+                    </button>
+                </div>
+                <div class="dropdown-menu" id="quickActionsMenu" role="menu">
+                    <div class="dropdown-content">
+                        {{if .IsAdmin}}
+                            <a href="/team" class="dropdown-item">
+                                <i class="fas fa-users mr-2"></i> Team
+                            </a>
+                            <a href="/schedule/generate" class="dropdown-item">
+                                <i class="fas fa-calendar-plus mr-2"></i> Schedule
+                            </a>
+                            <a href="/admin/wfh" class="dropdown-item">
+                                <i class="fas fa-home mr-2"></i> Manage WFH
+                            </a>
+                            <a href="/calendar/subscriptions" class="dropdown-item">
+                                <i class="fas fa-rss mr-2"></i> Subscriptions
+                            </a>
+                            <a href="/admin/database/backup" class="dropdown-item">
+                                <i class="fas fa-database mr-2"></i> Backup DB
+                            </a>
+                            <a href="/admin/database/restore" class="dropdown-item">
+                                <i class="fas fa-upload mr-2"></i> Validate Restore
+                            </a>
+                            <hr class="dropdown-divider">
+                        {{end}}
+                        <a href="/leave/report" class="dropdown-item">
+                            <i class="fas fa-plane-departure mr-2"></i> Leave
+                        </a>
+                        <a href="/leave/manage" class="dropdown-item">
+                            <i class="fas fa-calendar-times mr-2"></i> Manage Leave
+                        </a>
+                        <a href="/swaps" class="dropdown-item">
+                            <i class="fas fa-exchange-alt mr-2"></i> Swap HAT Day
+                            {{if .PendingSwapCount}}
+                                <span class="tag is-danger is-small ml-2">{{.PendingSwapCount}}</span>
+                            {{end}}
+                        </a>
+                        <a href="/wfh" class="dropdown-item"
+                            {{if .CurrentUserWFHQuotaExhausted}}title="WFH quota is used. Visit the WFH page to withdraw an approved request and free a slot."{{end}}>
+                            <i class="fas fa-home mr-2"></i> WFH
+                        </a>
+                        <a href="/calendar" class="dropdown-item">
+                            <i class="fas fa-calendar-star mr-2"></i> Calendar
+                        </a>
+                        <a href="/help" class="dropdown-item">
+                            <i class="fas fa-book mr-2"></i> Help
+                        </a>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 </div>
@@ -428,8 +437,12 @@
         min-height: 1.68rem;
     }
 
-    .quick-actions-grid {
-        gap: 0.5rem;
+    /* The Bulma dropdown-menu shrinks to fit its trigger by default, which
+       truncates labels like "Validate Restore". A min-width keeps the menu
+       readable without the trigger needing to be as wide as the longest
+       label. */
+    .quick-actions-dropdown .dropdown-menu {
+        min-width: 240px;
     }
 
     @media (min-width: 769px) and (max-width: 1100px) {
@@ -453,31 +466,6 @@
 
         .status-meta {
             margin-top: 0.55rem !important;
-        }
-
-        .quick-actions-grid {
-            display: grid;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
-            justify-items: stretch;
-            align-items: stretch;
-            gap: 0.45rem;
-            margin: 0;
-        }
-
-        .quick-actions-grid .action-btn {
-            margin: 0 !important;
-            width: 100%;
-            justify-content: center;
-            min-height: 2.1rem;
-            font-size: 0.8rem;
-            padding-left: 0.5rem;
-            padding-right: 0.5rem;
-        }
-
-        .quick-actions-grid .action-btn .tag {
-            margin-left: 0.25rem !important;
-            font-size: 0.62rem;
-            height: 1.6em;
         }
     }
 
@@ -630,4 +618,5 @@
 {{end}}
 
 {{define "dashboard_scripts"}}
+<script src="/static/js/dashboard.js"></script>
 {{end}}

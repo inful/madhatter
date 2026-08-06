@@ -55,7 +55,7 @@
             <p>When the day's at-work count has reached the floor, the WFH chip on the dashboard turns orange for that column to signal no more WFH can be approved that day. Any new pending request for that date will be denied at settlement time, because approving it would drop on-site coverage below the floor.</p>
 
             <h4 class="title is-6 mb-2 mt-4">Settlement</h4>
-            <p>Pending WFH requests are processed in a rolling window a few days ahead, not all at once. The system reviews requests whose dates fall inside that window, decides them against the day's available slots, and leaves anything further out as pending until it enters the window.</p>
+            <p>Pending WFH requests are processed in a rolling window of one full quota period ahead (7 days by default), not all at once. The system reviews requests whose dates fall inside that window, decides them against the day's available slots, and leaves anything further out as pending until it enters the window. The scheduler runs every {{.WFHSettlementInterval}} so a request submitted during business hours is usually settled within the same quarter-hour.</p>
             <p>When more members request WFH on the same day than there are slots, requests are prioritised by who has used the fewest WFH days in the current period. Ties are broken by who submitted first.</p>
 
             <h4 class="title is-6 mb-2 mt-4">Recurring weekdays</h4>
@@ -75,6 +75,10 @@
                 <tr>
                     <th>Settlement window</th>
                     <td>{{.WFHSettlementDays}} day(s) ahead</td>
+                </tr>
+                <tr>
+                    <th>Settlement tick</th>
+                    <td>Every {{.WFHSettlementInterval}}</td>
                 </tr>
                 <tr>
                     <th>Request horizon</th>

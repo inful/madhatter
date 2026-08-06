@@ -491,8 +491,43 @@ Before committing changes, ensure:
 2. **No linter issues**: `golangci-lint run`
 3. **Code formatted**: `gofumpt -w .`
 4. **SQLC generated** (if schema/queries changed): `sqlc generate`
-5. **Documentation updated**: Check for outdated references
+5. **Documentation triggers checked**: see [Documentation Triggers](#documentation-triggers) below. For every changed file, identify which docs need updating and include them in the same commit. Stale docs caught later in a release tag are a smell — every change ships with its own docs.
 6. **No broken links**: Verify all file references in docs
+
+## Documentation Triggers
+
+Documentation is part of the same commit as the change that requires it — not a follow-up. When the commit lands, the docs in `main` already describe the new behaviour. For every change, walk this table before committing:
+
+| Change category | Files to update | Specific edits |
+|---|---|---|
+| New or renamed env var in `internal/*/service.go` `LoadConfigFromEnv` | `README.md` config table (env-vars section) and `internal/web/templates/help.html` (config table if the var surfaces in `/help`) | Add a row to the env-var table with default + meaning; if it appears in `help_handler.go`, also add a row to the help config table |
+| Existing env var's default changes | `README.md` config table, `help.html` config table, and any in-line doc comment that quotes the old default | Update the default column; grep for the var name in `*.md` and `*.html` to catch inline references |
+| New user-facing web feature | `README.md` (Features list) and `internal/web/templates/help.html` (relevant section) | Add a bullet to the matching feature section; add a paragraph to help if the feature has user-visible behaviour worth explaining |
+| New user-facing API endpoint | `README.md` (Features) and `CONSOLIDATED_REFERENCE.md` (API Endpoints) | Bullet + endpoint entry |
+| New CLI subcommand | `README.md` (Features / CLI) and `CONSOLIDATED_REFERENCE.md` (CLI Commands) | Add to both lists |
+| In-app help text | `internal/web/templates/help.html` | Update the prose and config table; check the handler that sets the data context (`help_handler.go`) exposes any new fields |
+| Internal refactor (no user-visible change) | Nothing | Don't add user-facing noise — but do mention internal-only changes in the commit body so the next agent knows the surface didn't change |
+| Bug fix in user-visible flow | Mention in commit body | The PR description is the changelog; no separate doc file unless the bug had a documented workaround |
+
+**Concrete commands to run before commit** when the change touches an env var, the help page, or the README feature list:
+
+```sh
+# 1. If you added or renamed an env var, confirm the row exists in both:
+grep -n "WFH_.*=" README.md        # adjust prefix; covers all WFH_ env vars
+grep -n "WFH_.*=" internal/web/templates/help.html
+# If grep misses a var, you forgot to document it.
+
+# 2. If you changed an env-var default, the README and help.html
+#    tables must show the new value, not the old one. Grep for
+#    the var name and read the line.
+grep -A1 "WFH_SETTLEMENT_DAYS" README.md
+grep -A1 "WFH_SETTLEMENT_DAYS" internal/web/templates/help.html
+
+# 3. If you added a help-handler field, the template must reference it.
+grep -n "WFH" internal/web/templates/help.html | grep -v "<!--"
+```
+
+A PR is incomplete if a code change ships without its documentation. The CI / lint gate does not catch this — only the author can.
 
 ## Common Pitfalls to Avoid
 

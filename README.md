@@ -22,6 +22,8 @@ A comprehensive support duty management system with automatic scheduling, leave 
 - **Session management**: Secure token hashing (SHA-256) and encryption (AES-256-GCM)
 - **Role-based access**: Admin and Regular user roles
 - **Development mode**: Fake OAuth provider for local testing
+- **Per-IP rate limiting**: Token-bucket limiter on `/auth/login/{provider}` (10 req/min default) and `/api/v1/tokens/*` (30 req/min default). Excessive requests get a 429 with a `Retry-After` header. Set `WFH_SETTLEMENT_DAYS` and the bucket size per route in production.
+- **Defensive HTTP response headers**: Every response carries a strict `Content-Security-Policy`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, and `Referrer-Policy: same-origin`. HTTPS requests additionally get `Strict-Transport-Security: max-age=63072000; includeSubDomains`.
 
 ### Advanced Features
 - **Automatic schedule maintenance**: 14-day rolling schedule maintained automatically
@@ -29,6 +31,7 @@ A comprehensive support duty management system with automatic scheduling, leave 
 - **Event-driven updates**: Schedule updates triggered on team changes, leave reports
 - **Dual-mode generation**: Fill gaps vs. regenerate from scratch
 - **Presence tracking**: Visual indicators for who's available and on leave
+- **Work From Home (WFH)**: Ad-hoc requests plus contractual recurring weekdays. The settlement scheduler auto-approves or denies pending requests within a configurable window ahead. Members can withdraw approved requests up until the WFH day itself. See the [Configuration](#work-from-home-wfh) table for the knobs.
 - **Email notifications**: Team members are emailed on HAT-swap requests, WFH state changes, and cover assignments. See [NOTIFICATIONS.md](docs/NOTIFICATIONS.md).
 
 ## Quick Start
@@ -184,10 +187,11 @@ At least one provider must be configured for production authentication.
 | `WFH_MAX_DAYS_PER_PERIOD` | `2` | Max WFH days per quota period, counting pending and approved requests and contractual recurring weekdays. |
 | `WFH_PERIOD_DAYS` | `7` | Length of one WFH quota period. |
 | `WFH_PERIOD_ANCHOR` | `2026-01-05` | Reference date used to compute WFH periods. Must use `YYYY-MM-DD`. |
-| `WFH_SETTLEMENT_DAYS` | `2` | Number of days ahead that pending WFH requests are auto-settled. |
+| `WFH_SETTLEMENT_DAYS` | `7` | Number of days ahead that pending WFH requests are auto-settled. The default matches `WFH_PERIOD_DAYS` so a request submitted any time in the current period is settled by the next scheduler tick. |
 | `WFH_WITHDRAWAL_HOURS` | `24` | Hours before the WFH day after which an approved request can no longer be withdrawn by the member or an admin. |
 | `WFH_REQUEST_HORIZON_DAYS` | `90` | Maximum number of days ahead a WFH request can be submitted. Requests beyond this horizon are rejected with a 422 in the API and a banner in the web form. |
 | `WFH_PURGE_ENABLED` | `true` | When `true`, the daily scheduler hard-deletes `wfh_requests` rows whose date is strictly before the start of the previous quota period. The current and previous periods are always preserved. Opt out with `WFH_PURGE_ENABLED=false`. The same cutoff is exposed via `wfh purge [--apply]` and `/admin/wfh/purge`; both default to dry-run. |
+| `WFH_SETTLEMENT_INTERVAL` | `15m` | Period between settlement scheduler ticks (Go duration format, e.g. `5m`, `1h`, `30s`). Lower values reduce the perceived latency between a request submission and the approve/deny decision; higher values save on CPU. |
 
 #### Calendar and meetings
 

@@ -23,10 +23,12 @@ The Support Rota System is a comprehensive solution for managing team support du
 - **Round-robin scheduling**: One weekday per person per rotation cycle
 - **Leave management**: Unified system for sick leave, vacation, and other unavailability
 - **Automatic cover assignment**: System automatically assigns covers when someone is on leave
+- **Work From Home (WFH)**: Ad-hoc requests plus contractual recurring weekdays, with an auto-settling scheduler that respects a configurable on-site minimum and per-period quota
 - **Calendar subscriptions**: Personal ICS calendar URLs for any calendar app
 - **Web dashboard**: HTMX-based user interface
 - **REST API**: HUMA-based API with automatic OpenAPI documentation
 - **CLI tools**: Kong-based command-line interface
+- **Defense in depth**: Per-IP rate limiting on auth and token endpoints, strict CSP + X-Frame-Options + HSTS-on-HTTPS response headers, AES-256-GCM-encrypted OAuth tokens at rest, SHA-256-hashed session cookies
 
 ---
 

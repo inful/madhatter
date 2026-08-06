@@ -21,6 +21,7 @@ func (h *Handler) handleHelp(w http.ResponseWriter, r *http.Request) {
 		cfg := h.wfhService.Config()
 		data["WFHConfigured"] = true
 		data["WFHSettlementDays"] = cfg.SettlementDays
+		data["WFHSettlementInterval"] = cfg.SettlementInterval.String()
 		data["WFHMinOnsitePercentage"] = cfg.MinOnsitePercentage
 		data["WFHMinOnsiteAbsolute"] = cfg.MinOnsiteAbsolute
 		data["WFHMaxDaysPerPeriod"] = cfg.MaxDaysPerPeriod

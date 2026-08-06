@@ -11,7 +11,8 @@
 <div class="card">
     <header class="card-header">
         <p class="card-header-title">
-            <i class="fas fa-list mr-2"></i> All Leave Records
+            <i class="fas fa-list mr-2"></i>
+            {{if .IsAdmin}}All Leave Records{{else}}My Leave Records{{end}}
         </p>
     </header>
     <div class="card-content">
@@ -72,7 +73,9 @@
             </div>
         {{else}}
             <div class="empty-state">
-                <p class="has-text-grey mb-3">No leave records found</p>
+                <p class="has-text-grey mb-3">
+                    {{if .IsAdmin}}No leave records found{{else}}You have no leave records yet{{end}}
+                </p>
                 <p class="is-size-7">Report leave to add records</p>
                 <a href="/leave/report" class="button is-primary mt-3">
                     <i class="fas fa-plus mr-2"></i> Report Leave
@@ -93,6 +96,7 @@
         </header>
         <form id="editForm" method="POST">
             <section class="modal-card-body">
+                {{if .IsAdmin}}
                 <div class="field">
                     <label class="label">Team Member</label>
                     <div class="control">
@@ -105,6 +109,9 @@
                         </div>
                     </div>
                 </div>
+                {{else}}
+                <input type="hidden" id="editMemberID" name="member_id" value="{{.SelfMemberID}}">
+                {{end}}
                 <div class="field">
                     <label class="label">Start Date</label>
                     <div class="control">

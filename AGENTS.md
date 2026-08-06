@@ -493,6 +493,101 @@ Before committing changes, ensure:
 4. **SQLC generated** (if schema/queries changed): `sqlc generate`
 5. **Documentation triggers checked**: see [Documentation Triggers](#documentation-triggers) below. For every changed file, identify which docs need updating and include them in the same commit. Stale docs caught later in a release tag are a smell — every change ships with its own docs.
 6. **No broken links**: Verify all file references in docs
+7. **Security guarantees verified** (if the change touches
+   any handler that mutates per-user data): see
+   [Security Guarantees](#security-guarantees) below. The
+   raw-HTTP safety net must catch the mutation, not just
+   the form-body path.
+
+## Security Guarantees
+
+These guarantees are non-negotiable. Every change that touches a
+web handler or the API surface must preserve them. They exist
+because the UI is a *surface* for the protections — the actual
+authorisation must be in the backend so a crafted `curl` request
+cannot escalate.
+
+### The contract
+
+1. **The DB never receives an unauthorised write.** Any handler
+   that mutates per-user data (create / edit / delete of a row
+   scoped to a member or owner) MUST check ownership BEFORE
+   parsing the form body. The check fires on the loaded row, not
+   on the form's `member_id` field.
+
+2. **Missing session is a hard 401.** A handler MUST refuse with
+   `401 Unauthorized` when the session is missing from the
+   context. There is no permissive fallback ("if no user, use
+   the form value"). The `safeRequireAuth` middleware guarantees
+   a user in production; the handler's strict check is defense
+   in depth against middleware bypass or future refactors.
+
+3. **Cross-user writes go through the canMutate check, not the
+   form value.** A non-admin can only mutate rows they own. A
+   tampered form value that re-routes the write to another user
+   MUST be silently coerced to the session's own id (e.g.
+   `member_id` on leave report) OR cause the request to be
+   refused with `403 Forbidden` (e.g. edit/delete of another
+   member's row). The choice depends on whether the action is
+   *create-with-owner* (coerce) or *modify-existing* (refuse).
+
+4. **Defaults that exist for the test fixture alone are a smell.**
+   If a handler has a `if user != nil { ... }` fallback "because
+   the legacy test fixture doesn't inject a user", the test
+   fixture is wrong — fix the fixture to inject a user. The
+   handler's strict check is what catches a real production
+   regression.
+
+### How to test it
+
+For every per-user-data mutation the change introduces or
+modifies, add **two** safety-net tests, matching the existing
+pattern in `internal/web/leave_handlers_test.go`:
+
+- A **form-body test** (the existing test) — exercises the
+  handler via the UI-shaped body.
+- A **raw-HTTP safety net** — constructs the request via
+  `httptest.NewRequest` (the Go equivalent of `curl` with a
+  session cookie), bypassing the form/template entirely, and
+  asserts:
+  - The response is the correct failure status (`401` for
+    missing session, `403` for non-owner attempting a modify,
+    `3xx` for non-admin attempting a create-with-owner — but
+    with the row's `MemberID` forced to self, not the form value).
+  - The row on disk is **unchanged** (or, for the create path,
+    under the session's own id, not the tampered value).
+
+A bug that lets the request through to the form parse, or
+honours the tampered `member_id`, fails the raw-HTTP test
+before any UI change is shipped.
+
+### When to add the tests
+
+Any change that adds, removes, or modifies a handler that:
+- Creates / updates / deletes a row scoped to a member or owner
+- Touches the `member_id` form value path
+- Loosens or removes a `canMutate` / `mustGetUser` style check
+- Moves a route out of an auth middleware group
+
+If the change is internal-only and doesn't touch those paths,
+no new safety-net test is needed — but the existing tests must
+still pass, so re-run them.
+
+## Documentation Triggers
+
+Documentation is part of the same commit as the change that requires it — not a follow-up. When the commit lands, the docs in `main` already describe the new behaviour. For every change, walk this table before committing:
+
+| Change category | Files to update | Specific edits |
+|---|---|---|
+| New or renamed env var in `internal/*/service.go` `LoadConfigFromEnv` | `README.md` config table (env-vars section) and `internal/web/templates/help.html` (config table if the var surfaces in `/help`) | Add a row to the env-var table with default + meaning; if it appears in `help_handler.go`, also add a row to the help config table |
+| Existing env var's default changes | `README.md` config table, `help.html` config table, and any in-line doc comment that quotes the old default | Update the default column; grep for the var name in `*.md` and `*.html` to catch inline references |
+| New user-facing web feature | `README.md` (Features list) and `internal/web/templates/help.html` (relevant section) | Add a bullet to the matching feature section; add a paragraph to help if the feature has user-visible behaviour worth explaining |
+| New user-facing API endpoint | `README.md` (Features) and `CONSOLIDATED_REFERENCE.md` (API Endpoints) | Bullet + endpoint entry |
+| New CLI subcommand | `README.md` (Features / CLI) and `CONSOLIDATED_REFERENCE.md` (CLI Commands) | Add to both lists |
+| In-app help text | `internal/web/templates/help.html` | Update the prose and config table; check the handler that sets the data context (`help_handler.go`) exposes any new fields |
+| Internal refactor (no user-visible change) | Nothing | Don't add user-facing noise — but do mention internal-only changes in the commit body so the next agent knows the surface didn't change |
+| Bug fix in user-visible flow | Mention in commit body | The PR description is the changelog; no separate doc file unless the bug had a documented workaround |
+| Change that adds/relaxes a per-user-data mutation handler | `internal/web/*_test.go` (raw-HTTP safety net) | The new guarantee: a non-admin POST against another member's row must produce the right failure status AND leave the row unchanged. See [Security Guarantees](#security-guarantees) |
 
 ## Documentation Triggers
 

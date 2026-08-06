@@ -10,6 +10,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/inful/madhatter/internal/auth"
 	"github.com/inful/madhatter/internal/database"
+	"github.com/inful/madhatter/internal/rota"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -80,6 +81,84 @@ func TestHandleLeaveManagement_AdminSeesAll(t *testing.T) {
 	for _, d := range []string{"2026-09-01", "2026-09-10"} {
 		assert.Contains(t, rr.Body.String(), d, "admin must see all dates including %s", d)
 	}
+}
+
+// TestHandleLeaveReport_NonAdminForcesSelfMemberID asserts that a
+// non-admin POSTing /leave/report with someone else's member_id is
+// silently re-routed to their own member_id. The protection is
+// silent (no 403) so a casual user who picks the wrong member from
+// the form doesn't see an error — but the DB write is locked to
+// the session's own member.
+func TestHandleLeaveReport_NonAdminForcesSelfMemberID(t *testing.T) {
+	ctx := context.Background()
+	db, h, cleanup := setupLeaveTestDB(t)
+	defer cleanup()
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	// Alice (non-admin) submits the form with Bob's member_id.
+	// The handler must force this to Alice's own id, leaving
+	// Bob's row count unchanged.
+	form := "member_id=" + bobID + "&start_date=2026-10-01&end_date=2026-10-03"
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost,
+		"/leave/report", strings.NewReader(form))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req = withUser(req, "alice@example.com", "Alice", false)
+	rr := httptest.NewRecorder()
+	h.handleLeaveReportPost(rr, req, map[string]any{"IsAdmin": false})
+
+	require.Equal(t, http.StatusSeeOther, rr.Code,
+		"non-admin POST must succeed (with member_id coerced to self)")
+
+	// Bob must still have zero leave rows — Alice's tampered form
+	// value did not create a row on Bob's behalf.
+	bobs, err := db.GetLeaveRecords(ctx)
+	require.NoError(t, err)
+	for _, l := range bobs {
+		assert.NotEqual(t, bobID, l.MemberID,
+			"non-admin must not be able to create a leave for Bob")
+	}
+
+	// Alice must have exactly one new row.
+	alices, err := db.GetLeaveRecords(ctx)
+	require.NoError(t, err)
+	require.Len(t, alices, 1, "Alice should have one leave row after the POST")
+	assert.Equal(t, aliceID, alices[0].MemberID,
+		"member_id on the created row must be Alice's, not Bob's")
+}
+
+// TestHandleLeaveReport_AdminMemberIDRespected asserts the
+// admin path: an admin POSTing with Bob's member_id creates a row
+// for Bob (the form value is honored). Pairs with the non-admin
+// test above as a positive control.
+func TestHandleLeaveReport_AdminMemberIDRespected(t *testing.T) {
+	ctx := context.Background()
+	db, h, cleanup := setupLeaveTestDB(t)
+	defer cleanup()
+
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	form := "member_id=" + bobID + "&start_date=2026-10-01&end_date=2026-10-03"
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost,
+		"/leave/report", strings.NewReader(form))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req = withUser(req, "admin@example.com", "Admin", true)
+	rr := httptest.NewRecorder()
+	h.handleLeaveReportPost(rr, req, map[string]any{"IsAdmin": true})
+
+	require.Equal(t, http.StatusSeeOther, rr.Code)
+
+	rows, err := db.GetLeaveRecords(ctx)
+	require.NoError(t, err)
+	require.Len(t, rows, 1, "admin must create one row")
+	assert.Equal(t, bobID, rows[0].MemberID,
+		"admin POST with Bob's id must create a row for Bob")
 }
 
 // TestHandleLeaveEdit_NonAdminRejectsOthersLeave asserts a non-admin
@@ -171,13 +250,19 @@ func TestHandleLeaveDelete_NonAdminRejectsOthersLeave(t *testing.T) {
 // backed so the leave ID is stable across queries within a single
 // test invocation. The returned Handler has a parsed template so
 // the leave-management page can render to a body the test can
-// grep.
+// grep, and a real ScheduleMaintenance so the report flow can run
+// end-to-end without panicking on a nil maintenance.
 func setupLeaveTestDB(t *testing.T) (*database.DB, *Handler, func()) {
 	t.Helper()
 	db, err := database.New(t.TempDir() + "/leave_test.db")
 	require.NoError(t, err)
 	tmpl, err := parseTemplates()
 	require.NoError(t, err)
-	h := &Handler{db: db, authMiddleware: &auth.Middleware{}, tmpl: tmpl}
+	h := &Handler{
+		db:             db,
+		authMiddleware: &auth.Middleware{},
+		tmpl:           tmpl,
+		maintenance:    rota.NewScheduleMaintenance(db),
+	}
 	return db, h, func() { _ = db.Close() }
 }

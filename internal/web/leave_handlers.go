@@ -31,6 +31,12 @@ func (h *Handler) handleLeaveReport(w http.ResponseWriter, r *http.Request) {
 	if user, ok := auth.GetUserFromContext(ctx); ok {
 		data["User"] = user
 		data["IsAdmin"] = auth.IsAdminSession(user)
+		// Non-admins can only report leave for themselves; surface
+		// the resolved self member id so the form can render a
+		// disabled "you" field instead of the team picker.
+		if !auth.IsAdminSession(user) {
+			data["SelfMemberID"] = h.resolveMemberID(ctx, user.Email)
+		}
 	}
 
 	if r.Method == http.MethodPost {
@@ -50,7 +56,26 @@ func (h *Handler) handleLeaveReportPost(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
+	// For non-admins, ignore the form-supplied member_id and
+	// force it to the session's own member record. This closes the
+	// privilege-escalation vector where a curious user POSTs
+	// member_id=someone-elses-uuid to create a leave row on
+	// someone else's behalf. Admins keep the form value as-is.
+	//
+	// No user in context means the auth middleware didn't run (this
+	// path is only reachable from tests); fall back to the form
+	// value so the legacy test fixture keeps working.
+	user, _ := auth.GetUserFromContext(ctx)
 	memberID := r.FormValue("member_id")
+	if user != nil && !auth.IsAdminSession(user) {
+		self := h.resolveMemberID(ctx, user.Email)
+		if self == "" {
+			http.Error(w, "no team member record for current user", http.StatusForbidden)
+			return
+		}
+		memberID = self
+	}
+
 	startDate := r.PostForm.Get("start_date")
 	endDate := r.PostForm.Get("end_date")
 

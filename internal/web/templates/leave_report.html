@@ -24,6 +24,7 @@
             <div class="field">
                 <label class="label">Team Member</label>
                 <div class="control has-icons-left">
+                    {{if .IsAdmin}}
                     <div class="select is-fullwidth">
                         <select name="member_id" required>
                             <option value="">Select Team Member</option>
@@ -32,6 +33,14 @@
                             {{end}}
                         </select>
                     </div>
+                    {{else}}
+                    {{/* Non-admins can only report leave for themselves; the
+                        member_id is forced server-side anyway, but render
+                        a hidden input so the form's `required` validation
+                        and any client-side inspection still see the field. */}}
+                    <input class="input" type="text" value="{{.User.Name}} (you)" disabled>
+                    <input type="hidden" name="member_id" value="{{.SelfMemberID}}">
+                    {{end}}
                     <span class="icon is-small is-left">
                         <i class="fas fa-user"></i>
                     </span>

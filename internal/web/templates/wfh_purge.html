@@ -53,17 +53,17 @@
     </div>
 </div>
 
-<form method="post" action="/admin/wfh/purge" class="mt-5">
-    <input type="hidden" name="confirm" value="true">
-    <div class="buttons is-justify-content-flex-end">
-        <a href="/admin/wfh" class="button is-light">Cancel</a>
-        <button type="submit" class="button is-danger"
-            {{if eq .WouldDelete 0}}disabled{{end}}
-            onclick="return confirm('Permanently delete {{.WouldDelete}} WFH request(s) with date < {{.Cutoff}}? This cannot be undone.')">
-            <span class="icon"><i class="fas fa-trash-alt"></i></span>
-            <span>Purge {{.WouldDelete}} request{{if ne .WouldDelete 1}}s{{end}}</span>
-        </button>
-    </div>
-</form>
+    <form method="post" action="/admin/wfh/purge" class="mt-5"
+          data-confirm="Permanently delete {{.WouldDelete}} WFH request(s) with date < {{.Cutoff}}? This cannot be undone.">
+        <input type="hidden" name="confirm" value="true">
+        <div class="buttons is-justify-content-flex-end">
+            <a href="/admin/wfh" class="button is-light">Cancel</a>
+            <button type="submit" class="button is-danger"
+                {{if eq .WouldDelete 0}}disabled{{end}}>
+                <span class="icon"><i class="fas fa-trash-alt"></i></span>
+                <span>Purge {{.WouldDelete}} request{{if ne .WouldDelete 1}}s{{end}}</span>
+            </button>
+        </div>
+    </form>
 {{end}}
 {{end}}

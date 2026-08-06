@@ -35,9 +35,9 @@
         <span>Purge past periods</span>
     </a>
     {{end}}
-    <form method="post" action="/admin/wfh/settle">
-        <button type="submit" class="button is-primary"
-            onclick="return confirm('Run settlement now? This will approve or deny all pending requests.')">
+    <form method="post" action="/admin/wfh/settle"
+          data-confirm="Run settlement now? This will approve or deny all pending requests.">
+        <button type="submit" class="button is-primary">
             <span class="icon"><i class="fas fa-gavel"></i></span>
             <span>Settle Pending Requests</span>
         </button>
@@ -94,9 +94,9 @@
                         </td>
                         <td>
                             {{if .CanWithdraw}}
-                            <form method="post" action="/admin/wfh/{{.ID}}/withdraw" style="display:inline">
-                                <button type="submit" class="button is-small is-warning is-light"
-                                    onclick="return confirm('Withdraw this approved WFH request?')">
+                            <form method="post" action="/admin/wfh/{{.ID}}/withdraw" style="display:inline"
+                                  data-confirm="Withdraw this approved WFH request?">
+                                <button type="submit" class="button is-small is-warning is-light">
                                     <span class="icon"><i class="fas fa-undo"></i></span>
                                     <span>Withdraw</span>
                                 </button>

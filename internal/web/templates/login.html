@@ -16,7 +16,7 @@
     <div class="login-content">
         {{if .Error}}
         <div class="notification is-danger">
-            <button class="delete" onclick="this.parentElement.remove()"></button>
+            <button class="delete" data-dismiss-notification></button>
             {{.Error}}
         </div>
         {{end}}

@@ -38,6 +38,22 @@
     window.showEditModal = showEditModal;
     window.closeEditModal = closeEditModal;
 
+    // Delegated handler for the data-edit-team action — the per-row
+    // Edit button carries the row's id/name/email as data-* attrs (the
+    // CSP-safe replacement for the old onclick='showEditModal(...)'
+    // attribute, which the page's strict script-src CSP blocks).
+    document.addEventListener('click', function (event) {
+        var target = event.target.closest('[data-edit-team]');
+        if (!target) {
+            return;
+        }
+        showEditModal(
+            target.dataset.id,
+            target.dataset.name,
+            target.dataset.email
+        );
+    });
+
     if (!window._teamEditModalEscListener) {
         window._teamEditModalEscListener = function (event) {
             if (event.key === 'Escape') {

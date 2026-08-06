@@ -40,6 +40,23 @@
     window.showEditModal = showEditModal;
     window.closeEditModal = closeEditModal;
 
+    // Delegated handler for the data-edit-leave action — the per-row
+    // Edit button carries the row's id/member/start/end as data-* attrs
+    // (the CSP-safe replacement for the old onclick='showEditModal(...)'
+    // attribute, which the page's strict script-src CSP blocks).
+    document.addEventListener('click', function (event) {
+        var target = event.target.closest('[data-edit-leave]');
+        if (!target) {
+            return;
+        }
+        showEditModal(
+            target.dataset.id,
+            target.dataset.memberId,
+            target.dataset.startDate,
+            target.dataset.endDate
+        );
+    });
+
     if (!window._leaveManagementEscListener) {
         window._leaveManagementEscListener = function (event) {
             if (event.key === 'Escape') {

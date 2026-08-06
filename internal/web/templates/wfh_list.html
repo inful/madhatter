@@ -111,18 +111,18 @@
                         <td>{{.CreatedAt.Format "2006-01-02 15:04"}}</td>
                         <td>
                             {{if eq .Status "pending"}}
-                            <form method="post" action="/wfh/{{.ID}}/cancel" style="display:inline">
-                                <button type="submit" class="button is-small is-danger is-light"
-                                    onclick="return confirm('Cancel this WFH request?')">
+                            <form method="post" action="/wfh/{{.ID}}/cancel" style="display:inline"
+                                  data-confirm="Cancel this WFH request?">
+                                <button type="submit" class="button is-small is-danger is-light">
                                     <span class="icon"><i class="fas fa-times"></i></span>
                                     <span>Cancel</span>
                                 </button>
                             </form>
                             {{else if eq .Status "approved"}}
                                 {{if .CanWithdraw}}
-                                <form method="post" action="/wfh/{{.ID}}/withdraw" style="display:inline">
-                                    <button type="submit" class="button is-small is-warning is-light"
-                                        onclick="return confirm('Withdraw this approved WFH request? Quota will be freed.')">
+                                <form method="post" action="/wfh/{{.ID}}/withdraw" style="display:inline"
+                                      data-confirm="Withdraw this approved WFH request? Quota will be freed.">
+                                    <button type="submit" class="button is-small is-warning is-light">
                                         <span class="icon"><i class="fas fa-undo"></i></span>
                                         <span>Withdraw</span>
                                     </button>

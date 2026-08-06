@@ -5,6 +5,9 @@ import (
 	"html/template"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/inful/madhatter/internal/auth"
@@ -413,4 +416,80 @@ func TestHandler_SecurityHeadersAppliedGlobally(t *testing.T) {
 	assert.Equal(t, "DENY", h.Get("X-Frame-Options"))
 	assert.Equal(t, "same-origin", h.Get("Referrer-Policy"))
 	assert.NotEmpty(t, h.Get("Content-Security-Policy"))
+}
+
+// TestTemplatesHaveNoInlineEventHandlers is the regression guard for
+// the CSP-driven script/handler extraction. The page's strict CSP is
+// 'script-src \\'self\\” (security_headers.go) — inline <script>
+// blocks AND inline event-handler attributes (onclick, onsubmit, etc.)
+// are blocked. Any future template that adds an inline handler will
+// silently break the corresponding feature in browser with no
+// compile-time feedback. This test walks every .html file under
+// internal/web/templates/ and fails on any inline handler attribute
+// so the regression is caught at `go test` time, not in production.
+//
+// The check is at the source level rather than the rendered-output
+// level because Go templates don't add inline handler attributes
+// during rendering — if it's not in the source, it won't be in the
+// HTML the browser receives. Source-level scanning is also O(N files)
+// instead of O(N templates × render cost) and produces a more useful
+// error message (the file and approximate location).
+func TestTemplatesHaveNoInlineEventHandlers(t *testing.T) {
+	// Attributes whose presence indicates an inline handler. The set
+	// is small because Go templates don't add attributes the source
+	// doesn't declare; new ones only land here when a developer adds
+	// a new onclick=, onsubmit=, etc.
+	forbidden := []string{
+		"onclick=",
+		"ondblclick=",
+		"onmousedown=",
+		"onmouseup=",
+		"onmouseover=",
+		"onmouseout=",
+		"onmousemove=",
+		"onkeydown=",
+		"onkeyup=",
+		"onkeypress=",
+		"onfocus=",
+		"onblur=",
+		"onchange=",
+		"onsubmit=",
+		"onload=",
+		"onerror=",
+	}
+
+	// Walk the templates directory. The test runs from the package
+	// directory so a relative path is fine; the entries come from
+	// os.ReadDir which constrains the listing to that directory.
+	const root = "templates"
+	entries, err := os.ReadDir(root)
+	require.NoError(t, err, "reading templates directory")
+
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".html") {
+			continue
+		}
+		path := filepath.Join(root, entry.Name())
+		//nolint:gosec // G304: entry.Name() comes from os.ReadDir on the templates directory; the path stays inside the package tree and is never user-controlled.
+		contents, err := os.ReadFile(path)
+		require.NoError(t, err, "reading %s", path)
+
+		body := string(contents)
+		// Lowercase the file before scanning so we catch onclick=,
+		// ONCLICK=, and OnClick= uniformly.
+		lower := strings.ToLower(body)
+		for _, attr := range forbidden {
+			if !strings.Contains(lower, attr) {
+				continue
+			}
+			// Locate the line number so the failure message points
+			// the next agent at the offending source line.
+			idx := strings.Index(lower, attr)
+			line := 1 + strings.Count(body[:idx], "\n")
+			t.Errorf(
+				"%s line %d: inline event handler %q is CSP-blocked. Use a data-* attribute + delegated addEventListener in the page's external JS instead. See internal/web/assets/js/common.js for the pattern.",
+				path, line, attr,
+			)
+		}
+	}
 }

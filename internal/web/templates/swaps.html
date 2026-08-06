@@ -202,9 +202,9 @@
                                 {{end}}
                             {{end}}
                             {{if $.IsAdmin}}
-                                <form method="POST" action="/swaps/{{.ID}}/delete" style="display:inline">
-                                    <button type="submit" class="button is-small is-danger is-light"
-                                        onclick="return confirm('Delete this swap record?')">
+                                <form method="POST" action="/swaps/{{.ID}}/delete" style="display:inline"
+                                      data-confirm="Delete this swap record?">
+                                    <button type="submit" class="button is-small is-danger is-light">
                                         <i class="fas fa-trash"></i>
                                     </button>
                                 </form>

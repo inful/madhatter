@@ -124,10 +124,10 @@
                                     </form>
 
                                     <div class="member-actions">
-                                        <button class="button is-small is-info is-light" onclick='showEditModal("{{js .ID}}", "{{js .Name}}", "{{js .Email}}")' aria-label="Edit team member">
+                                        <button class="button is-small is-info is-light" data-edit-team data-id="{{.ID}}" data-name="{{.Name}}" data-email="{{.Email}}" aria-label="Edit team member">
                                             <i class="fas fa-edit"></i>
                                         </button>
-                                        <form method="POST" action="/team/{{.ID}}/delete" onsubmit="return confirm(&quot;Are you sure you want to delete {{js .Name}}? This will also remove all associated assignments.&quot;);">
+                                        <form method="POST" action="/team/{{.ID}}/delete" data-confirm="Are you sure you want to delete {{.Name}}? This will also remove all associated assignments.">
                                             <button type="submit" class="button is-small is-danger is-light" aria-label="Delete team member">
                                                 <i class="fas fa-trash"></i>
                                             </button>
@@ -283,13 +283,13 @@
 {{end}}
 
 <div id="editModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="editModalTitle">
-    <div class="modal-background" onclick="closeEditModal()"></div>
+    <div class="modal-background" data-close-modal></div>
     <div class="modal-card">
         <header class="modal-card-head">
             <p class="modal-card-title" id="editModalTitle">
                 <i class="fas fa-edit mr-2"></i> Edit Team Member
             </p>
-            <button class="delete" aria-label="close" onclick="closeEditModal()"></button>
+            <button class="delete" aria-label="close" data-close-modal></button>
         </header>
         <form id="editForm" method="POST">
             <section class="modal-card-body">
@@ -316,7 +316,7 @@
                 <button type="submit" class="button is-success">
                     <i class="fas fa-save mr-2"></i> Save Changes
                 </button>
-                <button type="button" class="button" onclick="closeEditModal()">Cancel</button>
+                <button type="button" class="button" data-close-modal>Cancel</button>
             </footer>
         </form>
     </div>

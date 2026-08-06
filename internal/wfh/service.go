@@ -18,9 +18,22 @@ const (
 	defaultMinOnsiteAbsolute   = 1
 	defaultMaxDaysPerPeriod    = 2
 	defaultPeriodDays          = 7
-	defaultSettlementDays      = 2
-	defaultRequestHorizonDays  = 90
-	defaultPurgeEnabled        = true
+	// defaultSettlementDays covers one full period so a request
+	// submitted on day N for any day in the current or next period
+	// is settled by the next scheduler tick. The previous value of 2
+	// left a five-day gap that surfaced as "still pending over the
+	// weekend" reports.
+	defaultSettlementDays     = 7
+	defaultRequestHorizonDays = 90
+	defaultPurgeEnabled       = true
+	// defaultSettlementInterval is the period between scheduler
+	// ticks. 15 minutes keeps the perceived lag between submitting a
+	// request and seeing the approve/deny decision under 15 minutes
+	// for ops that want a near-real-time feel, while still cheap on
+	// CPU. A daily tick (the previous default) is fine for back-office
+	// processing but means a request submitted at 4:55pm waits until
+	// midnight to be settled.
+	defaultSettlementInterval = 15 * time.Minute
 	// defaultPeriodAnchor is a known Monday used as the period epoch.
 	defaultPeriodAnchor = "2026-01-05"
 )
@@ -41,6 +54,11 @@ type Config struct {
 	PeriodAnchor string
 	// SettlementDays is how many days ahead pending requests are auto-settled.
 	SettlementDays int
+	// SettlementInterval is the period between scheduler ticks. A
+	// shorter value reduces the perceived latency between submission
+	// and the approve/deny decision but adds light DB load. Defaults
+	// to 15 minutes; can be set via WFH_SETTLEMENT_INTERVAL.
+	SettlementInterval time.Duration
 	// RequestHorizonDays is how many days ahead a WFH request can be submitted.
 	RequestHorizonDays int
 	// PurgeEnabled controls whether past-period wfh_requests rows are
@@ -62,9 +80,19 @@ func LoadConfigFromEnv() Config {
 		PeriodDays:          envutil.Int("WFH_PERIOD_DAYS", defaultPeriodDays),
 		PeriodAnchor:        envutil.String("WFH_PERIOD_ANCHOR", defaultPeriodAnchor),
 		SettlementDays:      envutil.Int("WFH_SETTLEMENT_DAYS", defaultSettlementDays),
+		SettlementInterval:  defaultSettlementIntervalFromEnv(),
 		RequestHorizonDays:  envutil.Int("WFH_REQUEST_HORIZON_DAYS", defaultRequestHorizonDays),
 		PurgeEnabled:        envutil.Bool("WFH_PURGE_ENABLED", defaultPurgeEnabled),
 	}
+}
+
+// defaultSettlementIntervalFromEnv reads WFH_SETTLEMENT_INTERVAL
+// (time.ParseDuration format like "15m", "1h", "30s") and falls back
+// to defaultSettlementInterval on missing / unparseable values. The
+// helper exists so the scheduler-test default and the production
+// default can stay in lockstep without duplicating the parse logic.
+func defaultSettlementIntervalFromEnv() time.Duration {
+	return envutil.Duration("WFH_SETTLEMENT_INTERVAL", defaultSettlementInterval)
 }
 
 // Service orchestrates WFH request settlement and quota management.

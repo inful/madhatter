@@ -9,8 +9,6 @@ import (
 	"time"
 )
 
-const defaultSettlementInterval = 24 * time.Hour
-
 // Scheduler runs the WFH settlement job on a configurable interval.
 type Scheduler struct {
 	service  *Service
@@ -26,11 +24,19 @@ type Scheduler struct {
 	ticks atomic.Int64
 }
 
-// NewScheduler creates a new WFH scheduler with a daily interval.
+// NewScheduler creates a new WFH scheduler. The tick interval comes
+// from the service config (WFH_SETTLEMENT_INTERVAL env var, default
+// 15 minutes). The old constant of 24h was too coarse for an
+// interactive UI — a 15-minute tick keeps the perceived settlement
+// latency under the typical request workflow.
 func NewScheduler(service *Service) *Scheduler {
+	interval := defaultSettlementInterval
+	if service != nil && service.Config().SettlementInterval > 0 {
+		interval = service.Config().SettlementInterval
+	}
 	return &Scheduler{
 		service:  service,
-		interval: defaultSettlementInterval,
+		interval: interval,
 		stopChan: make(chan struct{}),
 	}
 }

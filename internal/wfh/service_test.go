@@ -737,3 +737,104 @@ func TestService_PurgePastPeriods_WFHDisabled(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, rows, 1, "WFH-disabled service must not purge")
 }
+
+// TestLoadConfigFromEnv_DefaultSettlementWindowCoversAPeriod locks
+// the contract that the default SettlementDays is at least one
+// full quota period. The previous default of 2 left a five-day
+// gap in coverage — a request submitted on Thursday for the
+// following Monday would stay pending over the weekend, then be
+// settled only after the Saturday scheduler tick crossed the
+// 2-day horizon. With PeriodDays=7, the default SettlementDays
+// must be at least 7 to cover the typical "plan next week" workflow.
+func TestLoadConfigFromEnv_DefaultSettlementWindowCoversAPeriod(t *testing.T) {
+	// Make sure no env override is in play.
+	t.Setenv("WFH_SETTLEMENT_DAYS", "")
+
+	cfg := LoadConfigFromEnv()
+	assert.GreaterOrEqual(t, cfg.SettlementDays, cfg.PeriodDays,
+		"the default settlement window (%d days) must cover at least one full period (%d days)",
+		cfg.SettlementDays, cfg.PeriodDays)
+}
+
+// TestLoadConfigFromEnv_DefaultSettlementIntervalIsSubHour locks the
+// contract that the default settlement scheduler tick is faster
+// than once per hour. A 24-hour tick is fine for back-office
+// processing but means a request submitted at 4:55pm waits until
+// the next tick at midnight, leaving the user looking at a
+// pending status for hours. Sub-hour ticks keep the perceived
+// latency under typical request windows.
+func TestLoadConfigFromEnv_DefaultSettlementIntervalIsSubHour(t *testing.T) {
+	t.Setenv("WFH_SETTLEMENT_INTERVAL", "")
+
+	interval := defaultSettlementIntervalFromEnv()
+	assert.Less(t, interval, time.Hour,
+		"the default settlement interval (%s) must be sub-hour", interval)
+}
+
+// TestSettlePendingRequests_CoversNextWeekMonday reproduces the
+// user-reported scenario: a member submits a WFH request for the
+// Monday of the next period (today+5 in the default 7-day
+// configuration). The settlement must approve or deny the request
+// in a single tick, not leave it pending for the weekend.
+func TestSettlePendingRequests_CoversNextWeekMonday(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	// Use the production defaults so the test catches regressions
+	// if someone narrows the window again.
+	t.Setenv("WFH_SETTLEMENT_DAYS", "")
+	t.Setenv("WFH_MIN_ONSITE_PERCENTAGE", "0")
+	t.Setenv("WFH_MIN_ONSITE_ABSOLUTE", "0")
+	svc := NewService(db, LoadConfigFromEnv())
+
+	// Sanity: the contract this test is locking in.
+	require.GreaterOrEqual(t, svc.Config().SettlementDays, 5,
+		"this test depends on the settlement window being at least 5 days")
+
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	// today + 5 business days. testutil.NextBusinessDay handles the
+	// weekend-skip so the request lands on a workday.
+	today := time.Now().UTC()
+	date := testutil.NextBusinessDay(today.AddDate(0, 0, 5)).Format("2006-01-02")
+
+	_, err = db.CreateWFHRequest(ctx, memberID, date)
+	require.NoError(t, err)
+
+	require.NoError(t, svc.SettlePendingRequests(ctx))
+
+	reqs, err := db.GetWFHRequestsByMember(ctx, memberID)
+	require.NoError(t, err)
+	require.Len(t, reqs, 1, "exactly one request should exist")
+	assert.NotEqual(t, database.WFHStatusPending, reqs[0].Status,
+		"a request %s in the future must not be stuck in pending after one settle tick", date)
+}
+
+// TestSchedulerInterval_OverrideFromEnv locks in the env override
+// for the scheduler interval. The default is sub-hour; ops can
+// lower it (1m) or raise it (4h) via WFH_SETTLEMENT_INTERVAL.
+func TestSchedulerInterval_OverrideFromEnv(t *testing.T) {
+	cases := []struct {
+		name string
+		env  string
+		want time.Duration
+	}{
+		{"default sub-hour", "", 15 * time.Minute},
+		{"one minute", "1m", time.Minute},
+		{"two hours", "2h", 2 * time.Hour},
+		{"half hour", "30m", 30 * time.Minute},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.env != "" {
+				t.Setenv("WFH_SETTLEMENT_INTERVAL", tc.env)
+			} else {
+				t.Setenv("WFH_SETTLEMENT_INTERVAL", "")
+			}
+			got := defaultSettlementIntervalFromEnv()
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}

@@ -276,9 +276,17 @@ func TestLoadCurrentUserPresenceStatus_AllLeaveDays_NoNextHAT(t *testing.T) {
 	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
 	require.NoError(t, err)
 
-	// Two upcoming HAT days, both entirely covered by leave.
-	firstHAT := testutil.NextBusinessDay(time.Now().AddDate(0, 0, 1)).Format("2006-01-02")
-	lastHAT := testutil.NextBusinessDay(time.Now().AddDate(0, 0, 2)).Format("2006-01-02")
+	// Two upcoming HAT days, both entirely covered by leave. The
+	// offsets are computed via NextBusinessDays rather than the
+	// legacy NextBusinessDay(time.Now().AddDate(0, 0, K)) +
+	// NextBusinessDay(time.Now().AddDate(0, 0, K+1)) pattern,
+	// which collapses to the same date when K crosses a weekend
+	// boundary (today=Friday was the trigger here — K=1 lands on
+	// Saturday and K=2 on Sunday, both rolling to Monday, tripping
+	// the UNIQUE rota_assignments(date, is_cover) constraint).
+	hatDays := testutil.NextBusinessDays(time.Now(), 2)
+	firstHAT := hatDays[0].Format("2006-01-02")
+	lastHAT := hatDays[1].Format("2006-01-02")
 	_, err = db.CreateRotaAssignment(ctx, firstHAT, aliceID, false, nil)
 	require.NoError(t, err)
 	_, err = db.CreateRotaAssignment(ctx, lastHAT, aliceID, false, nil)

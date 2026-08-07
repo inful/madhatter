@@ -464,12 +464,12 @@ func TestQuickActionsAvailableOnNonDashboardPages(t *testing.T) {
 	// non-admin user. The dropdown should appear in the rendered HTML
 	// via the user card, even though the page isn't the dashboard.
 	data := map[string]any{
-		"User":          map[string]any{"Email": "alice@example.com", "Name": "Alice"},
-		"IsAdmin":       false,
-		"Template":      "leave_management",
-		"Leaves":        []database.LeaveRecord{},
-		"Members":       []database.TeamMember{},
-		"SelfMemberID":  "",
+		"User":         map[string]any{"Email": "alice@example.com", "Name": "Alice"},
+		"IsAdmin":      false,
+		"Template":     "leave_management",
+		"Leaves":       []database.LeaveRecord{},
+		"Members":      []database.TeamMember{},
+		"SelfMemberID": "",
 	}
 
 	w := httptest.NewRecorder()

@@ -208,9 +208,32 @@
     .swapped-assignment-tag { cursor: help; }
     .swap-icon { font-size: 0.8rem; opacity: 0.85; }
     .schedule-matrix-wrap {
+        position: relative;
         border: 1px solid rgba(102, 126, 234, 0.18);
         border-radius: 10px;
         overflow-x: auto;
+    }
+
+    /* The schedule matrix has a fixed min-width that overflows the
+       wrap on most laptop viewports. The browser shows a scrollbar
+       at the bottom but no visible cue at the top/side that more
+       content exists past the visible edge. This fade gives users
+       a hint that they can scroll right without obscuring the
+       table content. The fade is pure CSS (no JS scroll-state
+       tracking) — always visible rather than scroll-aware, which
+       is the conventional pattern for this kind of overflow
+       affordance. */
+    .schedule-matrix-wrap::after {
+        content: "";
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        width: 2.5rem;
+        background: linear-gradient(to left, rgba(255, 255, 255, 0.95), rgba(255, 255, 255, 0));
+        pointer-events: none;
+        border-top-right-radius: 10px;
+        border-bottom-right-radius: 10px;
     }
 
     .mobile-schedule-cards {

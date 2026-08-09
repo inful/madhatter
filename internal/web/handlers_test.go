@@ -505,6 +505,66 @@ func TestHandler_SecurityHeadersAppliedGlobally(t *testing.T) {
 	assert.NotEmpty(t, h.Get("Content-Security-Policy"))
 }
 
+// TestScheduleMatrixHasScrollHintFade guards the right-edge fade
+// gradient that signals scrollable overflow on the schedule matrix.
+// The matrix has a fixed min-width (860px on the table) that
+// overflows the wrap on most laptop viewports — the browser shows
+// a horizontal scrollbar at the bottom but no visible cue at the top
+// or right that more content exists past the visible edge. The
+// fade is the user-facing affordance: a soft white-to-transparent
+// gradient on the right edge of the wrap that suggests the matrix
+// continues.
+//
+// Source-level scan: the CSS rule is broadcast inline in the
+// rendered HTML (no external stylesheet), so checking the rendered
+// output is equivalent to checking the source. Asserting on the
+// specific selector + gradient + pointer-events:none catches:
+//   - A regression that drops the rule (the fade disappears and the
+//     overflow becomes invisible again)
+//   - A regression that changes the gradient direction (the fade
+//     appears on the wrong side)
+//   - A regression that forgets pointer-events:none (the fade
+//     blocks clicks on the rightmost table cells)
+func TestScheduleMatrixHasScrollHintFade(t *testing.T) {
+	mockDB := &database.DB{}
+	handler, err := NewHandler(mockDB, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	// Minimal data — the matrix loads without team members, which
+	// is the empty-state case. The CSS rule is on the wrap, not the
+	// table, so it renders regardless of matrix content.
+	data := map[string]any{
+		"User":     map[string]any{"Email": "alice@example.com", "Name": "Alice"},
+		"IsAdmin":  false,
+		"Template": "dashboard",
+	}
+
+	w := httptest.NewRecorder()
+	require.NoError(t, handler.tmpl.ExecuteTemplate(w, "dashboard.html", data))
+
+	body := w.Body.String()
+
+	// The fade must be a pseudo-element on the matrix wrap, anchored
+	// to the right edge, with a gradient that fades to transparent so
+	// the underlying table content is visible through the fade.
+	assert.Contains(t, body, ".schedule-matrix-wrap::after",
+		"scroll hint fade must be a pseudo-element on the matrix wrap")
+	assert.Contains(t, body, "linear-gradient(to left,",
+		"fade must run from right (opaque) to left (transparent)")
+	assert.Contains(t, body, "rgba(255, 255, 255, 0.95)",
+		"fade must start near-white to match the table background")
+	assert.Contains(t, body, "rgba(255, 255, 255, 0)",
+		"fade must end transparent so the table content shows through")
+	assert.Contains(t, body, "pointer-events: none",
+		"fade must not block clicks on the rightmost table cells")
+
+	// The wrap must be position:relative for the absolute-positioned
+	// pseudo-element to anchor to it. Without this, the fade would
+	// float to the top-left of the page.
+	assert.Contains(t, body, ".schedule-matrix-wrap {",
+		"matrix wrap must be defined as the fade anchor")
+}
+
 // TestQuickActionsAvailableOnNonDashboardPages asserts that the
 // Quick Actions dropdown is reachable from any authenticated page,
 // not only the dashboard. The dropdown moved from a dashboard-only

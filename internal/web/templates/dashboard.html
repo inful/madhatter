@@ -40,6 +40,35 @@
 </div>
 {{end}}
 
+{{if .CurrentHATName}}
+{{/* HAT banner — the most-asked question of a rota app, promoted
+     above the schedule matrix so the answer is visible without
+     scanning the matrix. Purple theme matches the HAT chip color
+     in the matrix and the existing .assignment-chip / .has-hat
+     row styling. Rendered between the status card and the schedule
+     card so the page reads: who am I → who's on support → the
+     team schedule. Lives outside the status-card if-block so the
+     banner appears even when the user has no presence data — the
+     "who's on support today" answer is independent of "where am I". */}}
+<div class="hat-banner card mb-4">
+    <div class="hat-banner-content">
+        <div class="hat-banner-icon">
+            <i class="fas fa-hat-wizard"></i>
+        </div>
+        <div class="hat-banner-info">
+            <span class="hat-banner-label">HAT today</span>
+            <span class="hat-banner-name">{{.CurrentHATName}}</span>
+            {{if .CurrentHATIsOnLeave}}
+                <span class="hat-banner-status">
+                    <i class="fas fa-plane-departure mr-1"></i>{{.CurrentHATPrimaryName}} on leave
+                </span>
+            {{end}}
+        </div>
+        <a href="/calendar" class="hat-banner-action">View schedule →</a>
+    </div>
+</div>
+{{end}}
+
 {{else}}
     {{if .AuthEnabled}}
     <div class="notification is-info is-light">
@@ -182,6 +211,81 @@
         border: 1px solid rgba(102, 126, 234, 0.16);
         background: linear-gradient(180deg, rgba(102, 126, 234, 0.05) 0%, rgba(255, 255, 255, 0.92) 100%);
         box-shadow: 0 6px 14px rgba(25, 35, 70, 0.08);
+    }
+
+    /* The HAT banner shares the page's card-based rhythm but uses a
+       purple theme to match the HAT chip color in the matrix
+       (and the existing .assignment-chip / .has-hat row styling).
+       The purple → white gradient is the visual affordance: it
+       says "important role, answered at the top of the page" without
+       being a screamer button. The flex layout keeps the three
+       zones (icon, info, action) aligned on a single row on
+       desktop and stacks on narrow viewports. */
+    .hat-banner {
+        border: 1px solid rgba(139, 92, 246, 0.28);
+        background: linear-gradient(180deg, rgba(139, 92, 246, 0.08) 0%, rgba(255, 255, 255, 0.95) 100%);
+        box-shadow: 0 6px 14px rgba(139, 92, 246, 0.12);
+    }
+
+    .hat-banner-content {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+
+    .hat-banner-icon {
+        font-size: 1.6rem;
+        color: #6d28d9;
+        flex-shrink: 0;
+        width: 2rem;
+        text-align: center;
+    }
+
+    .hat-banner-info {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 0.15rem;
+        min-width: 0;
+    }
+
+    .hat-banner-label {
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #6d28d9;
+        font-weight: 700;
+    }
+
+    .hat-banner-name {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: #2d3748;
+        line-height: 1.2;
+        /* Long names (e.g. when the schedule stretches across
+           cultures) should ellipsis rather than push the icon and
+           action out of the available width. */
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .hat-banner-status {
+        font-size: 0.8rem;
+        color: #b45309;
+        margin-top: 0.15rem;
+    }
+
+    .hat-banner-action {
+        color: #6d28d9;
+        text-decoration: none;
+        font-weight: 600;
+        font-size: 0.9rem;
+        flex-shrink: 0;
+    }
+
+    .hat-banner-action:hover {
+        text-decoration: underline;
     }
 
     .status-top {
@@ -425,6 +529,18 @@
     }
 
     @media (max-width: 768px) {
+        /* On narrow viewports the HAT banner keeps its three-zone
+           layout but lets the action wrap below the info so the name
+           and status aren't crushed by the "View schedule →" link. */
+        .hat-banner-content {
+            flex-wrap: wrap;
+        }
+
+        .hat-banner-action {
+            width: 100%;
+            text-align: right;
+        }
+
         .schedule-matrix-wrap {
             display: none;
         }

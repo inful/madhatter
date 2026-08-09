@@ -11,6 +11,7 @@ import (
 
 	"github.com/inful/madhatter/internal/auth"
 	"github.com/inful/madhatter/internal/database"
+	"github.com/inful/madhatter/internal/rota"
 )
 
 const (
@@ -52,6 +53,11 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	// Load the HAT banner (today's HAT + cover status) after the
+	// schedule is ensured — the banner needs the assignment row to
+	// exist so the answer is consistent with the matrix below.
+	h.loadCurrentHAT(ctx, data)
 
 	// Load dashboard data.
 	h.loadDashboardData(ctx, data)
@@ -284,6 +290,103 @@ func (h *Handler) loadDashboardData(ctx context.Context, data map[string]any) {
 	}
 
 	h.loadMeetingsToken(ctx, data)
+}
+
+// loadCurrentHAT populates the HAT banner data — the most-asked
+// question of a rota app: who is on support today. Sets:
+//
+//   - CurrentHATName: name of the person actually on call today
+//     (the cover if the primary is on leave, otherwise the primary).
+//   - CurrentHATIsOnLeave: true when the primary HAT is on leave
+//     today (regardless of whether a cover was assigned).
+//   - CurrentHATPrimaryName: name of the primary HAT, used in the
+//     "X on leave" status note when the primary is on leave.
+//
+// The banner is rendered between the status card and the schedule
+// card on the dashboard. If no primary assignment exists for today
+// (the schedule maintenance guarantees a 14-day window, so this
+// should be rare — first day of operation, before maintenance runs,
+// or a fixture gap), no data fields are set and the template
+// suppresses the banner.
+//
+// Cover assignment is the engine's existing mechanism: when the
+// primary HAT is on leave, the engine reassigns the day to a cover
+// and the cover is the person actually on call. The on-call name
+// reported by the banner is the cover in that case; the primary's
+// name is reported alongside the "on leave" status so the user gets
+// the full story in one glance.
+func (h *Handler) loadCurrentHAT(ctx context.Context, data map[string]any) {
+	today := time.Now().Format("2006-01-02")
+
+	assignments, err := h.db.GetAssignmentsByDate(ctx, today)
+	if err != nil {
+		return
+	}
+
+	primary, cover := splitPrimaryAndCover(assignments)
+	if primary == nil {
+		return // No HAT today — template suppresses the banner.
+	}
+
+	onLeave := h.isPrimaryOnLeaveToday(ctx, primary.MemberID, today)
+	onCallMemberID := primary.MemberID
+	if onLeave && cover != nil {
+		onCallMemberID = cover.MemberID
+	}
+
+	onCallMember, err := h.db.GetMemberByID(ctx, onCallMemberID)
+	if err != nil || onCallMember == nil {
+		return
+	}
+
+	primaryMember, _ := h.db.GetMemberByID(ctx, primary.MemberID)
+
+	data["CurrentHATName"] = onCallMember.Name
+	data["CurrentHATIsOnLeave"] = onLeave
+	if primaryMember != nil {
+		data["CurrentHATPrimaryName"] = primaryMember.Name
+	}
+}
+
+// splitPrimaryAndCover separates today's assignments into the
+// primary (IsCover=false) and the cover (IsCover=true). The
+// schedule engine guarantees at most one of each for any given day,
+// so the result is at most one primary and at most one cover.
+func splitPrimaryAndCover(assignments []database.RotaAssignment) (primary, cover *database.RotaAssignment) {
+	for i := range assignments {
+		if assignments[i].IsCover {
+			cover = &assignments[i]
+		} else {
+			primary = &assignments[i]
+		}
+	}
+	return primary, cover
+}
+
+// isPrimaryOnLeaveToday reports whether the named member has an
+// active leave record (status pending or assigned per the engine's
+// definition) that covers today. The status filter is shared with
+// the engine's reassignment logic so the dashboard's "is on leave"
+// answer stays consistent with the engine's actual cover path.
+func (h *Handler) isPrimaryOnLeaveToday(ctx context.Context, memberID, today string) bool {
+	leaves, err := h.db.GetLeaveRecords(ctx)
+	if err != nil {
+		return false
+	}
+	for i := range leaves {
+		if leaves[i].MemberID != memberID {
+			continue
+		}
+		if !rota.IsLeaveActive(leaves[i].Status) {
+			continue
+		}
+		start := leaves[i].StartDate.Format("2006-01-02")
+		end := leaves[i].EndDate.Format("2006-01-02")
+		if start <= today && today <= end {
+			return true
+		}
+	}
+	return false
 }
 
 // loadMeetingsToken surfaces the user's first calendar subscription

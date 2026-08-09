@@ -352,7 +352,7 @@ func (e *Engine) assignCoversForLeave(ctx context.Context, leaveID string, src r
 	}
 
 	// If leave is not active, nothing to do (reconciliation handles cleanup)
-	if !isLeaveActive(leave.Status) {
+	if !IsLeaveActive(leave.Status) {
 		return nil
 	}
 
@@ -807,8 +807,14 @@ func (e *Engine) recordActualCoverSlotFor(ctx context.Context, d time.Time, memb
 	}
 }
 
-// isLeaveActive returns true if the status still requires cover assignments.
-func isLeaveActive(status string) bool {
+// IsLeaveActive returns true if the status still requires cover
+// assignments. Pending and assigned leaves are live; rejected,
+// cancelled, and completed leaves are stale and do not trigger the
+// cover path. Exported so the dashboard loader (and any other
+// consumer that needs to reason about "is this leave still in effect
+// for scheduling purposes") shares the engine's definition rather
+// than duplicating it.
+func IsLeaveActive(status string) bool {
 	s := strings.ToLower(strings.TrimSpace(status))
 	return s == "pending" || s == "assigned"
 }

@@ -414,6 +414,72 @@ func TestDashboard_QuickActionsInUserCard(t *testing.T) {
 		"dropdown must start closed (no is-active class on the wrapper in SSR)")
 }
 
+// TestUserCard_QuickActionsIsPrimaryNav asserts the visual hierarchy
+// of the global user identity card. Quick Actions is the primary
+// navigation launcher (12+ actions, used most often), so it carries
+// the is-primary Bulma style and default size — the visual anchor
+// of the actions column. Help and Logout are infrequent utility
+// actions, so they stay as is-small is-light / is-small is-danger
+// is-light versions of the same button shape. The mix previously
+// shipped with Quick Actions as is-small is-light (visually equal
+// to Help/Logout), which read as "three misc buttons" rather than
+// "primary nav + utility buttons" — a hierarchy bug.
+//
+// Asserting on the rendered class strings catches a regression that
+// (a) reverts Quick Actions to is-light (loss of nav anchor) or
+// (b) escalates Help/Logout to is-primary (visual noise). The
+// order-of-elements check (Quick Actions DOM position before Help
+// and Logout) catches a regression that reorders the columns.
+func TestUserCard_QuickActionsIsPrimaryNav(t *testing.T) {
+	mockDB := &database.DB{}
+	handler, err := NewHandler(mockDB, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	data := map[string]any{
+		"User":     map[string]any{"Email": "alice@example.com", "Name": "Alice"},
+		"IsAdmin":  false,
+		"Template": "dashboard",
+	}
+
+	w := httptest.NewRecorder()
+	require.NoError(t, handler.tmpl.ExecuteTemplate(w, "dashboard.html", data))
+
+	body := w.Body.String()
+
+	// Quick Actions is the primary nav launcher — is-primary, default size.
+	assert.Contains(t, body, `class="button is-primary action-btn"`,
+		"Quick Actions trigger must be styled as the primary action (is-primary)")
+
+	// Quick Actions must NOT be small. The previous design treated it as
+	// a peer of Help/Logout (is-small). That mismatch — visually loud
+	// duotone icon/chevron inside a small button — is what the
+	// primary-styling fix undoes.
+	assert.NotRegexp(t, `id="quickActionsTrigger"[^>]*class="[^"]*is-small`,
+		"Quick Actions trigger must not be is-small — primary size sets it apart from utility buttons")
+
+	// Help stays as a small, light info button (utility).
+	assert.Contains(t, body, `class="button is-small is-info is-light"`,
+		"Help button must retain its small utility styling")
+	// Logout stays as a small, light danger button (destructive utility).
+	assert.Contains(t, body, `class="button is-small is-danger is-light"`,
+		"Logout button must retain its small destructive-utility styling")
+
+	// Action order: Quick Actions first (closest to identity), then
+	// Help, then Logout. The dropdown's DOM position must precede
+	// both Help and Logout so it stays the leftmost action in the
+	// column (the conventional nav-launcher position).
+	quickActionsIdx := strings.Index(body, `id="quickActionsDropdown"`)
+	helpIdx := strings.Index(body, `href="/help"`)
+	logoutIdx := strings.Index(body, `href="/auth/logout"`)
+	require.NotEqual(t, -1, quickActionsIdx)
+	require.NotEqual(t, -1, helpIdx)
+	require.NotEqual(t, -1, logoutIdx)
+	assert.Less(t, quickActionsIdx, helpIdx,
+		"Quick Actions must render before Help (leftmost action in the column)")
+	assert.Less(t, helpIdx, logoutIdx,
+		"Help must render before Logout (utility grouping)")
+}
+
 // TestHandler_SecurityHeadersAppliedGlobally asserts that the
 // security headers reach the response on every route the web
 // handler exposes, not just on the synthetic httptest cases used

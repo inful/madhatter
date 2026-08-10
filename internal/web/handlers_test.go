@@ -607,6 +607,97 @@ func TestScheduleMatrixHasScrollHintFade(t *testing.T) {
 		"fade must not block clicks on the rightmost table cells")
 }
 
+// TestScheduleMatrixHasAccessibleStructure guards the screen-reader
+// affordances on the dashboard's schedule matrix. The matrix is the
+// primary data view of the page — the user can scan who is where for
+// the next two weeks — so screen-reader users need to navigate it
+// the same way sighted users do: by team member (row) and by day
+// (column).
+//
+// The matrix previously had no caption, no scope attributes, and no
+// programmatic relationship between header cells and data cells.
+// Screen readers could only announce "row 3 of 4" without telling
+// the user which row or column. The fix:
+//
+//   - Adds an <caption class="is-sr-only"> describing the matrix
+//     (rows are members, columns are business days) and the cell
+//     semantics (status, HAT assignment). Screen readers announce
+//     the caption as the table's identity.
+//   - Adds scope="col" to the day-header <th> elements so screen
+//     readers can announce "Tuesday, August 11" when reading a
+//     cell in that column.
+//   - Adds scope="row" to the member-name <th> so screen readers
+//     can announce "Alice" when reading a cell in that row.
+//
+// The "is-sr-only" Bulma class hides the caption visually (it's
+// still in the DOM and read by screen readers) so the matrix's
+// visual appearance is unchanged.
+func TestScheduleMatrixHasAccessibleStructure(t *testing.T) {
+	mockDB := &database.DB{}
+	handler, err := NewHandler(mockDB, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	// The matrix is only rendered when .ScheduleMatrix is non-nil.
+	// Provide a minimal matrix (one day, one member) so the
+	// accessibility attributes are actually in the output. The test
+	// only checks structural attributes that don't depend on the
+	// matrix's contents.
+	matrix := &scheduleMatrix{
+		Days: []scheduleMatrixDay{
+			{DateISO: "2026-08-10", DateDisplay: "Mon, Aug 10", IsToday: true},
+		},
+		Rows: []scheduleMatrixRow{
+			{Member: database.TeamMember{Name: "Alice"}, Cells: []scheduleMatrixCell{
+				{Status: "onsite", Label: "On-site", IsToday: true},
+			}},
+		},
+	}
+	data := map[string]any{
+		"User":           map[string]any{"Email": "alice@example.com", "Name": "Alice"},
+		"IsAdmin":        false,
+		"Template":       "dashboard",
+		"ScheduleMatrix": matrix,
+	}
+
+	w := httptest.NewRecorder()
+	require.NoError(t, handler.tmpl.ExecuteTemplate(w, "dashboard.html", data))
+
+	body := w.Body.String()
+
+	// The matrix must have a screen-reader-only caption. The
+	// caption describes the structure (rows = members, columns =
+	// days) and the cell semantics, so a screen reader user knows
+	// what each cell represents when navigating the table.
+	assert.Contains(t, body, `<caption class="is-sr-only">`,
+		"matrix must have a screen-reader-only caption")
+	assert.Contains(t, body, "Rows are team members",
+		"caption must describe the row dimension (team members)")
+	assert.Contains(t, body, "columns are business days",
+		"caption must describe the column dimension (business days)")
+
+	// The day-header cells must declare scope=col so screen
+	// readers can announce the day when reading a cell in that
+	// column. The corner cell (top-left) is also a <th> and
+	// gets scope=col — it's a column header for the implicit
+	// "member" column.
+	assert.Contains(t, body, `<th class="member-col" scope="col">`,
+		"the corner <th> must declare scope=col")
+	assert.Contains(t, body, `scope="col"`,
+		"each day-header <th> must declare scope=col")
+	// The day-col class is present too — confirm via a more
+	// specific substring that doesn't depend on whether the day
+	// is also marked today (in which case the class becomes
+	// "day-col today-col").
+	assert.Regexp(t, `<th class="day-col[^"]*" scope="col"`, body,
+		"each day-header <th> must carry the day-col class with scope=col")
+
+	// The member-name cells in each row must declare scope=row so
+	// screen readers can announce the team member when reading a
+	// cell in that row.
+	assert.Contains(t, body, `<th class="member-col" scope="row">`,
+		"each member-name <th> must declare scope=row")
+}
+
 // TestQuickActionsAvailableOnNonDashboardPages asserts that the
 // Quick Actions dropdown is reachable from any authenticated page,
 // not only the dashboard. The dropdown moved from a dashboard-only

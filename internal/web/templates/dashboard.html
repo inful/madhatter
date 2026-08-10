@@ -126,11 +126,14 @@
             <div class="schedule-matrix-overflow">
             <div class="table-container schedule-matrix-wrap">
                 <table class="table is-fullwidth is-bordered is-hoverable schedule-matrix-table">
+                    <caption class="is-sr-only">
+                        Team schedule for the next two weeks. Rows are team members, columns are business days. Each cell shows the member's status for that day: on-site, working from home, on leave, or no data. A HAT assignment marker indicates the team member is on call that day.
+                    </caption>
                     <thead>
                         <tr>
-                            <th class="member-col"></th>
+                            <th class="member-col" scope="col"></th>
                             {{range .ScheduleMatrix.Days}}
-                                <th class="day-col{{if .IsToday}} today-col{{end}}">
+                                <th class="day-col{{if .IsToday}} today-col{{end}}" scope="col">
                                     {{if $.MeetingsToken}}
                                     <a class="day-head-link" href="/calendar/{{$.MeetingsToken}}/meetings/{{.DateISO}}.html" title="View meetings for {{.DateDisplay}}">
                                         <div class="day-head">{{.DateDisplay}}</div>
@@ -150,7 +153,7 @@
                     <tbody>
                         {{range .ScheduleMatrix.Rows}}
                             <tr>
-                                <th class="member-col">{{.Member.Name}}</th>
+                                <th class="member-col" scope="row">{{.Member.Name}}</th>
                                 {{range .Cells}}
                                     <td class="status-cell status-{{.Status}}{{if .IsToday}} today-cell{{end}}{{if .Assigned}} has-hat{{end}}"{{if and .Swapped .SwapInfo}} title="{{.SwapInfo}}"{{end}}>
                                         <span class="status-chip">

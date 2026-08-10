@@ -12,7 +12,9 @@
 <div class="card status-card mb-4">
     <div class="card-content">
         <div class="status-top">
-            <span class="status-title"><i class="fas fa-location-dot mr-1"></i> Your status today</span>
+            <span class="status-section-label">
+                <i class="fas fa-location-dot mr-1"></i> Today
+            </span>
             {{if eq .CurrentUserPresenceStatus "WFH"}}
                 <span class="tag is-info is-light"><i class="fas fa-home mr-1"></i> WFH</span>
             {{else if eq .CurrentUserPresenceStatus "On leave"}}
@@ -26,6 +28,9 @@
         </div>
 
         <div class="tags status-meta mt-3 mb-0">
+            <span class="status-section-label">
+                <i class="fas fa-clock mr-1"></i> Coming up
+            </span>
             {{if .CurrentUserNextHATDay}}
                 <span class="tag is-link is-light"><i class="fas fa-hat-wizard mr-1"></i> Next HAT: {{.CurrentUserNextHATDay}}</span>
             {{end}}
@@ -278,7 +283,14 @@
         gap: 0.5rem;
     }
 
-    .status-title {
+    /* Section labels (Today / Coming up) — bold, slightly muted
+       text that visually marks the boundary between the two halves
+       of the status card. The same class is used for both sections
+       so they're styled consistently. The label sits inline with
+       its tags via the parent .status-top / .status-meta flex
+       containers, but the bold weight + dark color makes it read
+       as a header rather than a tag. */
+    .status-section-label {
         font-weight: 700;
         color: #2d3748;
         margin-right: 0.35rem;

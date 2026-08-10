@@ -698,6 +698,59 @@ func TestScheduleMatrixHasAccessibleStructure(t *testing.T) {
 		"each member-name <th> must declare scope=row")
 }
 
+// TestDashboard_StatusCardHasTodayAndComingUpSections guards the
+// "today vs next" grouping in the status card. The card has two
+// rows of tags: the user's current state (On-site / WFH / On leave
+// + HAT day) and future occurrences (Next HAT / Next WFH / Next
+// leave). The grouping only makes sense if both rows are explicitly
+// labeled "Today" and "Coming up" — otherwise the user just sees a
+// pile of tags with no signal about which is current state vs which
+// is forward-looking.
+//
+// The test renders the dashboard with presence data so the status
+// card appears (it lives inside the {{if .CurrentUserPresenceStatus}}
+// guard). It then asserts both labels are present in the rendered
+// output, and that they each appear exactly once (no duplicate
+// labels from copy-paste errors).
+func TestDashboard_StatusCardHasTodayAndComingUpSections(t *testing.T) {
+	mockDB := &database.DB{}
+	handler, err := NewHandler(mockDB, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	// Presence data is required for the status card to render. The
+	// value doesn't matter for the test - any non-empty value flips
+	// the {{if .CurrentUserPresenceStatus}} guard on.
+	data := map[string]any{
+		"User":                      map[string]any{"Email": "alice@example.com", "Name": "Alice"},
+		"IsAdmin":                   false,
+		"Template":                  "dashboard",
+		"CurrentUserPresenceStatus": "On-site",
+	}
+
+	w := httptest.NewRecorder()
+	require.NoError(t, handler.tmpl.ExecuteTemplate(w, "dashboard.html", data))
+
+	body := w.Body.String()
+
+	// Both sections must be labeled. The text content of the label
+	// is what matters (a regression that reorders or renames the
+	// label still shows the text "Today" or "Coming up" in the
+	// output).
+	assert.Contains(t, body, "Today",
+		"status card must have a 'Today' section label")
+	assert.Contains(t, body, "Coming up",
+		"status card must have a 'Coming up' section label")
+
+	// Each label must appear exactly once. A duplicate would mean
+	// the template emitted the label twice (e.g., a copy-paste bug)
+	// or the label is reused in another context. Either way, it's a
+	// structural problem worth catching.
+	assert.Equal(t, 1, strings.Count(body, "Today"),
+		"'Today' label must appear exactly once in the body")
+	assert.Equal(t, 1, strings.Count(body, "Coming up"),
+		"'Coming up' label must appear exactly once in the body")
+}
+
 // TestQuickActionsAvailableOnNonDashboardPages asserts that the
 // Quick Actions dropdown is reachable from any authenticated page,
 // not only the dashboard. The dropdown moved from a dashboard-only

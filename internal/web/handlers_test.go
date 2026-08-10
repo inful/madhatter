@@ -258,15 +258,54 @@ func TestHandleHelp_Returns200(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "How WFH Is Settled")
 }
 
-// TestDashboard_NonAdminSeesManageLeaveButton is the regression
-// guard for the issue where non-admins could not reach
-// /leave/manage from the dashboard. The route and handler were
-// already wired to support non-admins (the page filters by the
-// session member's id when the caller is not an admin), but the
-// dashboard's "Manage Leave" quick-action was nested inside the
-// IsAdmin block — so a regular user logged in and saw no entry
-// point. This test renders the dashboard template with a
-// non-admin session and asserts the link is present.
+// TestPageHeader_HeadingIsReasonablySized is the regression guard
+// for the page-header h1 size. The previous is-2 + 32-39px clamp
+// rendered at sizes appropriate for a marketing landing page; for
+// the dashboard (and the rest of the authenticated pages) the h1
+// is a contextual anchor — "Dashboard", "Team", "Leave Management"
+// — that should not compete with the HAT banner or the schedule
+// matrix for attention. The contract is:
+//   - The h1 carries the is-3 class (Bulma's h3 size = 1.5rem
+//     default, tuned down further by the page-header CSS).
+//   - The page-header CSS targets .title.is-3, not .title.is-2, so
+//     a regression that swaps the class back to is-2 wouldn't
+//     silently land a too-large heading on every page.
+//   - The h1 class names "Dashboard" via the page_header Title arg
+//     so the test can render any page that uses page_header (every
+//     authenticated page does).
+func TestPageHeader_HeadingIsReasonablySized(t *testing.T) {
+	mockDB := &database.DB{}
+	handler, err := NewHandler(mockDB, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	data := map[string]any{
+		"User":     map[string]any{"Email": "alice@example.com", "Name": "Alice"},
+		"IsAdmin":  false,
+		"Template": "dashboard",
+	}
+
+	w := httptest.NewRecorder()
+	require.NoError(t, handler.tmpl.ExecuteTemplate(w, "dashboard.html", data))
+
+	body := w.Body.String()
+
+	// The h1 must use the smaller is-3 class, not is-2 (which was
+	// the regression-prone larger size).
+	assert.Contains(t, body, `<h1 class="title is-3 has-text-primary">`,
+		"page-header h1 must use the is-3 class (Bulma h3, with the project's smaller clamp override)")
+	assert.NotContains(t, body, `<h1 class="title is-2`,
+		"page-header h1 must not use the oversized is-2 class — that was the original problem")
+
+	// The CSS must target the new selector. Without this, a CSS
+	// regression (e.g. someone renames the class but forgets to
+	// update the style block) would re-introduce the oversized
+	// heading silently.
+	assert.Contains(t, body, ".page-header .title.is-3",
+		"page-header CSS must scope the size override to .title.is-3")
+	assert.NotContains(t, body, ".page-header .title.is-2",
+		"page-header CSS must not still scope the old .title.is-2 selector — the size override is gone")
+}
+
 func TestDashboard_NonAdminSeesManageLeaveButton(t *testing.T) {
 	mockDB := &database.DB{}
 	handler, err := NewHandler(mockDB, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
@@ -374,7 +413,7 @@ func TestDashboard_QuickActionsInUserCard(t *testing.T) {
 	// a standalone card.
 	userMenuIdx := strings.Index(body, `class="card global-user-menu"`)
 	dropdownIdx := strings.Index(body, `id="quickActionsDropdown"`)
-	headingIdx := strings.Index(body, `<h1 class="title is-2 has-text-primary"`)
+	headingIdx := strings.Index(body, `<h1 class="title is-3 has-text-primary"`)
 	require.NotEqual(t, -1, userMenuIdx, "global user card must render for a logged-in user")
 	require.NotEqual(t, -1, dropdownIdx, "dropdown wrapper must be present on the dashboard")
 	require.NotEqual(t, -1, headingIdx, "dashboard heading must render")

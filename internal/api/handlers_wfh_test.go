@@ -78,5 +78,5 @@ func TestWFHAPI_RequestBeyondHorizon_Returns422(t *testing.T) {
 	resp := api.Post("/api/v1/wfh", map[string]string{"date": farFuture.Format("2006-01-02")}, "Cookie: session_token="+sessionToken)
 
 	assert.Equal(t, http.StatusUnprocessableEntity, resp.Code)
-	assert.Contains(t, resp.Body.String(), "beyond the request horizon", "response body must name the horizon error")
+	assert.Contains(t, resp.Body.String(), "limited number of days in advance", "response body must name the horizon error")
 }

@@ -2,7 +2,6 @@ package web
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -467,30 +466,13 @@ func (h *Handler) renderWFHPurge(w http.ResponseWriter, _ *http.Request, data ma
 
 // wfhWebErrorMessage returns a user-facing message for WFH domain errors.
 //
-//nolint:cyclop // Exhaustive domain-to-message mapping; each sentinel is a case.
+// The message comes from the shared database.WFHErrorFor table so adding
+// a new ErrWFH* sentinel only requires an entry in that table.
 func wfhWebErrorMessage(err error) string {
-	switch {
-	case errors.Is(err, database.ErrWFHNotFound):
-		return "WFH request not found."
-	case errors.Is(err, database.ErrWFHNotOwner):
-		return "You can only modify your own WFH requests."
-	case errors.Is(err, database.ErrWFHAlreadySettled):
-		return "This WFH request has already been settled and cannot be cancelled."
-	case errors.Is(err, database.ErrWFHDuplicateRequest):
-		return "A WFH request already exists for this date."
-	case errors.Is(err, database.ErrWFHDatePassed):
-		return "This WFH day has already passed."
-	case errors.Is(err, database.ErrWFHDateTooFar):
-		return "WFH requests can only be made up to a limited number of days in advance."
-	case errors.Is(err, database.ErrWFHRecurringContractDay):
-		return "This date falls on your contractual recurring WFH day."
-	case errors.Is(err, database.ErrWFHOnHoliday):
-		return "WFH requests cannot be made for holidays."
-	case errors.Is(err, database.ErrWFHNotApproved):
-		return "Only approved WFH requests can be withdrawn."
-	default:
-		return err.Error()
+	if info, ok := database.WFHErrorFor(err); ok {
+		return info.Message
 	}
+	return err.Error()
 }
 
 // wfhBeyondHorizonMessage formats a user-facing message for a request that

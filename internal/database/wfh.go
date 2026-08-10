@@ -3,6 +3,7 @@ package database
 import (
 	"database/sql"
 	"errors"
+	"net/http"
 	"strings"
 	"time"
 )
@@ -22,6 +23,48 @@ var (
 	ErrWFHNotApproved          = errors.New("WFH request is not approved")
 	ErrWFHOnHoliday            = errors.New("WFH requests cannot be made for holidays")
 )
+
+// WFHErrorInfo describes the transport-level meaning of a WFH sentinel
+// error. The database package is the single source of truth for which HTTP
+// status each WFH error maps to and what user-facing message applies —
+// both the API (huma) and web handlers consult this table to produce their
+// own error format.
+type WFHErrorInfo struct {
+	Status  int    // HTTP status code
+	Message string // User-facing message safe to surface
+}
+
+// wfhErrorTable maps each WFH sentinel error to its transport-level info.
+// Adding a new ErrWFH* sentinel requires adding a row here so both the API
+// and web layers route it correctly.
+var wfhErrorTable = []struct {
+	sentinel error
+	info     WFHErrorInfo
+}{
+	{ErrWFHNotFound, WFHErrorInfo{Status: http.StatusNotFound, Message: "WFH request not found."}},
+	{ErrWFHNotOwner, WFHErrorInfo{Status: http.StatusForbidden, Message: "You can only modify your own WFH requests."}},
+	{ErrWFHAlreadySettled, WFHErrorInfo{Status: http.StatusConflict, Message: "This WFH request has already been settled and cannot be cancelled."}},
+	{ErrWFHDuplicateRequest, WFHErrorInfo{Status: http.StatusConflict, Message: "A WFH request already exists for this date."}},
+	{ErrWFHInvalidDate, WFHErrorInfo{Status: http.StatusUnprocessableEntity, Message: "invalid date format, expected YYYY-MM-DD"}},
+	{ErrWFHDatePassed, WFHErrorInfo{Status: http.StatusUnprocessableEntity, Message: "This WFH day has already passed."}},
+	{ErrWFHDateTooFar, WFHErrorInfo{Status: http.StatusUnprocessableEntity, Message: "WFH requests can only be made up to a limited number of days in advance."}},
+	{ErrWFHMemberNotFound, WFHErrorInfo{Status: http.StatusUnprocessableEntity, Message: "Member not found."}},
+	{ErrWFHRecurringContractDay, WFHErrorInfo{Status: http.StatusConflict, Message: "This date falls on your contractual recurring WFH day."}},
+	{ErrWFHOnHoliday, WFHErrorInfo{Status: http.StatusUnprocessableEntity, Message: "WFH requests cannot be made for holidays."}},
+	{ErrWFHNotApproved, WFHErrorInfo{Status: http.StatusConflict, Message: "Only approved WFH requests can be withdrawn."}},
+}
+
+// WFHErrorFor returns the transport-level info for err if it is (or wraps)
+// a known WFH sentinel error. Returns ok=false for any other error so
+// callers can decide on a generic fallback (typically a 500).
+func WFHErrorFor(err error) (WFHErrorInfo, bool) {
+	for _, e := range wfhErrorTable {
+		if errors.Is(err, e.sentinel) {
+			return e.info, true
+		}
+	}
+	return WFHErrorInfo{}, false
+}
 
 // wfhFields holds the WFH request columns selected by every read query.
 // sqlc v1.31 emits a per-query *Row type, so adapters in this file copy the

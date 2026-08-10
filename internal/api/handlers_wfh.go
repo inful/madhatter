@@ -53,34 +53,14 @@ type WFHSettleOutput struct {
 
 // wfhDomainToHumaError maps WFH domain errors to appropriate HUMA HTTP errors.
 //
-//nolint:cyclop // Exhaustive domain-to-HTTP mapping is intentionally explicit.
+// The status code and body come from the shared database.WFHErrorFor table
+// so adding a new ErrWFH* sentinel only requires an entry in that table.
 func wfhDomainToHumaError(err error) error {
-	switch {
-	case errors.Is(err, database.ErrWFHNotFound):
-		return huma.Error404NotFound(err.Error())
-	case errors.Is(err, database.ErrWFHNotOwner):
-		return huma.Error403Forbidden(err.Error())
-	case errors.Is(err, database.ErrWFHAlreadySettled):
-		return huma.Error409Conflict(err.Error())
-	case errors.Is(err, database.ErrWFHDuplicateRequest):
-		return huma.Error409Conflict(err.Error())
-	case errors.Is(err, database.ErrWFHDatePassed):
-		return huma.Error422UnprocessableEntity(err.Error(), nil)
-	case errors.Is(err, database.ErrWFHDateTooFar):
-		return huma.Error422UnprocessableEntity(err.Error(), nil)
-	case errors.Is(err, database.ErrWFHInvalidDate):
-		return huma.Error422UnprocessableEntity(err.Error(), nil)
-	case errors.Is(err, database.ErrWFHMemberNotFound):
-		return huma.Error422UnprocessableEntity(err.Error(), nil)
-	case errors.Is(err, database.ErrWFHRecurringContractDay):
-		return huma.Error409Conflict(err.Error())
-	case errors.Is(err, database.ErrWFHOnHoliday):
-		return huma.Error422UnprocessableEntity(err.Error(), nil)
-	case errors.Is(err, database.ErrWFHNotApproved):
-		return huma.Error409Conflict(err.Error())
-	default:
+	info, ok := database.WFHErrorFor(err)
+	if !ok {
 		return huma.Error500InternalServerError("An unexpected error occurred", err)
 	}
+	return huma.NewError(info.Status, info.Message)
 }
 
 // resolveWFHMemberID resolves the team member ID for the logged-in user; returns

@@ -3,6 +3,8 @@ package database
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -265,4 +267,204 @@ func TestPurgeWFHRequestsBefore_InvalidDate(t *testing.T) {
 
 	_, err := db.PurgeWFHRequestsBefore(ctx, "not-a-date")
 	require.ErrorIs(t, err, ErrWFHInvalidDate)
+}
+
+// TestWFHErrorFor_KnownSentinels pins every WFH sentinel error to its
+// transport-level status and user-facing message. The api and web layers
+// consult this table, so adding a new ErrWFH* without a row here will
+// silently fall back to a 500.
+func TestWFHErrorFor_KnownSentinels(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name       string
+		err        error
+		wantStatus int
+		wantMsg    string
+	}{
+		{"NotFound", ErrWFHNotFound, 404, "WFH request not found."},
+		{"NotOwner", ErrWFHNotOwner, 403, "You can only modify your own WFH requests."},
+		{"AlreadySettled", ErrWFHAlreadySettled, 409, "This WFH request has already been settled and cannot be cancelled."},
+		{"DuplicateRequest", ErrWFHDuplicateRequest, 409, "A WFH request already exists for this date."},
+		{"InvalidDate", ErrWFHInvalidDate, 422, "invalid date format, expected YYYY-MM-DD"},
+		{"DatePassed", ErrWFHDatePassed, 422, "This WFH day has already passed."},
+		{"DateTooFar", ErrWFHDateTooFar, 422, "WFH requests can only be made up to a limited number of days in advance."},
+		{"MemberNotFound", ErrWFHMemberNotFound, 422, "Member not found."},
+		{"RecurringContractDay", ErrWFHRecurringContractDay, 409, "This date falls on your contractual recurring WFH day."},
+		// ErrWFHPermanentMember is an alias for ErrWFHRecurringContractDay; errors.Is must still match.
+		{"PermanentMember alias", ErrWFHPermanentMember, 409, "This date falls on your contractual recurring WFH day."},
+		{"OnHoliday", ErrWFHOnHoliday, 422, "WFH requests cannot be made for holidays."},
+		{"NotApproved", ErrWFHNotApproved, 409, "Only approved WFH requests can be withdrawn."},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			info, ok := WFHErrorFor(tc.err)
+			require.True(t, ok, "WFHErrorFor must recognize %T as a WFH sentinel", tc.err)
+			assert.Equal(t, tc.wantStatus, info.Status)
+			assert.Equal(t, tc.wantMsg, info.Message)
+		})
+	}
+}
+
+// TestWFHErrorFor_WrappedSentinel ensures WFHErrorFor unwraps via errors.Is
+// so handlers can pass through fmt.Errorf("%w", sentinel, ...) chains
+// without losing the mapping.
+func TestWFHErrorFor_WrappedSentinel(t *testing.T) {
+	t.Parallel()
+
+	wrapped := fmt.Errorf("context: %w", ErrWFHNotFound)
+
+	info, ok := WFHErrorFor(wrapped)
+	require.True(t, ok)
+	assert.Equal(t, 404, info.Status)
+	assert.Equal(t, "WFH request not found.", info.Message)
+}
+
+// TestWFHErrorFor_UnknownError ensures non-WFH errors return ok=false so the
+// caller can decide on a generic fallback (typically a 500).
+func TestWFHErrorFor_UnknownError(t *testing.T) {
+	t.Parallel()
+
+	info, ok := WFHErrorFor(errors.New("some unrelated failure"))
+	require.False(t, ok)
+	assert.Empty(t, info.Status)
+	assert.Empty(t, info.Message)
+}
+
+// TestWFHErrorFor_Nil confirms nil doesn't panic and reports no match.
+func TestWFHErrorFor_Nil(t *testing.T) {
+	t.Parallel()
+
+	info, ok := WFHErrorFor(nil)
+	require.False(t, ok)
+	assert.Empty(t, info.Status)
+}
+
+// TestWFHFromSQLCFields pins the sql-null → domain conversion so future
+// refactors of the sqlc adapter don't silently lose pointer fields or
+// flip IsRecurring.
+func TestWFHFromSQLCFields(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 3, 15, 9, 30, 0, 0, time.UTC)
+	earlier := time.Date(2026, 3, 14, 17, 0, 0, 0, time.UTC)
+	date := time.Date(2026, 5, 20, 0, 0, 0, 0, time.UTC)
+	actor := "admin-1"
+
+	cases := []struct {
+		name string
+		in   wfhFields
+		want WFHRequest
+	}{
+		{
+			name: "all optional fields invalid",
+			in: wfhFields{
+				ID: "row-1", MemberID: "alice", Date: date,
+				Status: WFHStatusApproved, IsRecurring: 1,
+			},
+			want: WFHRequest{
+				ID: "row-1", MemberID: "alice", Date: "2026-05-20",
+				Status: WFHStatusApproved, IsRecurring: true,
+				CreatedAt: time.Time{}, SettledAt: nil, WithdrawnBy: nil, WithdrawnAt: nil,
+			},
+		},
+		{
+			name: "IsRecurring zero is false",
+			in: wfhFields{
+				ID: "row-2", MemberID: "bob", Date: date,
+				Status: WFHStatusPending, IsRecurring: 0,
+			},
+			want: WFHRequest{
+				ID: "row-2", MemberID: "bob", Date: "2026-05-20",
+				Status: WFHStatusPending, IsRecurring: false,
+				CreatedAt: time.Time{}, SettledAt: nil, WithdrawnBy: nil, WithdrawnAt: nil,
+			},
+		},
+		{
+			name: "IsRecurring nonzero non-one is false",
+			in: wfhFields{
+				ID: "row-3", MemberID: "carol", Date: date,
+				Status: WFHStatusApproved, IsRecurring: 7,
+			},
+			want: WFHRequest{
+				ID: "row-3", MemberID: "carol", Date: "2026-05-20",
+				Status: WFHStatusApproved, IsRecurring: false,
+				CreatedAt: time.Time{}, SettledAt: nil, WithdrawnBy: nil, WithdrawnAt: nil,
+			},
+		},
+		{
+			name: "all optional fields valid",
+			in: wfhFields{
+				ID: "row-4", MemberID: "dave", Date: date,
+				Status:      WFHStatusWithdrawn,
+				CreatedAt:   sql.NullTime{Time: now, Valid: true},
+				SettledAt:   sql.NullTime{Time: earlier, Valid: true},
+				WithdrawnBy: sql.NullString{String: actor, Valid: true},
+				WithdrawnAt: sql.NullTime{Time: now, Valid: true},
+				IsRecurring: 1,
+			},
+			want: WFHRequest{
+				ID: "row-4", MemberID: "dave", Date: "2026-05-20",
+				Status:      WFHStatusWithdrawn,
+				CreatedAt:   now,
+				SettledAt:   &earlier,
+				WithdrawnBy: &actor,
+				WithdrawnAt: &now,
+				IsRecurring: true,
+			},
+		},
+		{
+			name: "Date formats as YYYY-MM-DD regardless of timezone input",
+			in: wfhFields{
+				ID: "row-5", MemberID: "eve", Date: date,
+				Status: WFHStatusApproved,
+			},
+			want: WFHRequest{
+				ID: "row-5", MemberID: "eve", Date: "2026-05-20",
+				Status: WFHStatusApproved, CreatedAt: time.Time{},
+				SettledAt: nil, WithdrawnBy: nil, WithdrawnAt: nil,
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got := wfhFromSQLCFields(tc.in)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+// TestWFHFromSQLCFields_PointersIndependent ensures the optional pointer
+// fields are not aliased across calls — a regression would mean callers
+// holding a slice of WFHRequest see later writes mutate earlier entries.
+func TestWFHFromSQLCFields_PointersIndependent(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 3, 15, 9, 30, 0, 0, time.UTC)
+	earlier := time.Date(2026, 3, 14, 17, 0, 0, 0, time.UTC)
+
+	base := wfhFields{
+		ID: "row-1", MemberID: "alice", Date: now,
+		Status:      WFHStatusApproved,
+		SettledAt:   sql.NullTime{Time: earlier, Valid: true},
+		WithdrawnBy: sql.NullString{String: "admin", Valid: true},
+		WithdrawnAt: sql.NullTime{Time: now, Valid: true},
+	}
+
+	first := wfhFromSQLCFields(base)
+	second := wfhFromSQLCFields(base)
+
+	require.NotNil(t, first.SettledAt)
+	require.NotNil(t, second.SettledAt)
+	*first.SettledAt = time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC)
+	*first.WithdrawnAt = time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC)
+	*first.WithdrawnBy = "tampered"
+
+	assert.Equal(t, earlier, *second.SettledAt, "second SettledAt must not alias first")
+	assert.Equal(t, now, *second.WithdrawnAt, "second WithdrawnAt must not alias first")
+	assert.Equal(t, "admin", *second.WithdrawnBy, "second WithdrawnBy must not alias first")
 }

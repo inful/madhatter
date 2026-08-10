@@ -54,20 +54,23 @@
     <div class="card-content">
         <div class="table-container">
             <table class="table is-fullwidth is-striped is-hoverable">
+                <caption class="is-sr-only">
+                    All WFH requests — member name, date, status, when requested, when settled, and admin actions.
+                </caption>
                 <thead>
                     <tr>
-                        <th>Member</th>
-                        <th>Date</th>
-                        <th>Status</th>
-                        <th>Requested</th>
-                        <th>Settled</th>
-                        <th>Actions</th>
+                        <th scope="col">Member</th>
+                        <th scope="col">Date</th>
+                        <th scope="col">Status</th>
+                        <th scope="col">Requested</th>
+                        <th scope="col">Settled</th>
+                        <th scope="col">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     {{range .Requests}}
                     <tr>
-                        <td><strong>{{.MemberName}}</strong></td>
+                        <th scope="row"><strong>{{.MemberName}}</strong></th>
                         <td>{{.Date}}</td>
                         <td>
                             {{if eq .Status "pending"}}

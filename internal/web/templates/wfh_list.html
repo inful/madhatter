@@ -81,18 +81,21 @@
     <div class="card-content">
         <div class="table-container">
             <table class="table is-fullwidth is-striped is-hoverable">
+                <caption class="is-sr-only">
+                    Your WFH requests — date, status, when you requested them, and available actions for each.
+                </caption>
                 <thead>
                     <tr>
-                        <th>Date</th>
-                        <th>Status</th>
-                        <th>Requested</th>
-                        <th>Actions</th>
+                        <th scope="col">Date</th>
+                        <th scope="col">Status</th>
+                        <th scope="col">Requested</th>
+                        <th scope="col">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     {{range .Requests}}
                     <tr>
-                        <td><strong>{{.Date}}</strong></td>
+                        <th scope="row"><strong>{{.Date}}</strong></th>
                         <td>
                             {{if eq .Status "pending"}}
                             <span class="tag is-warning is-light"><i class="fas fa-clock mr-1"></i> Pending</span>

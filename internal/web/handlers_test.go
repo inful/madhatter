@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -892,6 +893,98 @@ func TestDashboard_HATBanner(t *testing.T) {
 		assert.Contains(t, body, `class="card-header-title"`,
 			"the fallback card-header-title must render when no HAT is set")
 	})
+}
+
+// TestTemplatesHaveAccessibleTables is the source-level guard for
+// the screen-reader affordances on every <table> in the templates.
+// The schedule matrix got <caption> + scope="col" + scope="row"
+// in commit 1bb2aee, and the other tables in the codebase have the
+// same problems the matrix had. This test walks every template
+// file and asserts each <table>:
+//   - has a <caption class="is-sr-only"> describing the table
+//   - if it has a <thead>, has at least one <th scope="col"> in
+//     <thead> (column headers get a scope)
+//   - has at least one <th scope="row"> in <tbody> (row headers
+//     or key-value labels get a scope)
+//
+// The conditional scope="col" check matters because not every
+// table is a columnar data table. Some tables (wfh_purge, help's
+// WFH config) are key-value layouts with no <thead>; their <th>
+// elements are row labels in <tbody>, not column headers in
+// <thead>. The unconditional scope="row" check covers both
+// key-value tables and data tables with row headers.
+//
+// Source-level scanning is appropriate because Go templates don't
+// inject accessibility attributes during rendering - if the
+// attributes aren't in the source, they won't be in the rendered
+// output. Catching the regression at the source level means a
+// future developer who adds a new <table> can't accidentally ship
+// an inaccessible table without the test failing.
+func TestTemplatesHaveAccessibleTables(t *testing.T) {
+	files, err := filepath.Glob(filepath.Join("templates", "*.html"))
+	require.NoError(t, err)
+	require.NotEmpty(t, files, "expected at least one template file in templates/")
+
+	// Match a <table> ... </table> block. Use a non-greedy regex
+	// so multiple tables on the same page (swaps has two) are
+	// each captured separately.
+	tableBlock := regexp.MustCompile(`(?s)<table\b[^>]*>.*?</table>`)
+	hasThead := regexp.MustCompile(`(?s)<thead\b[^>]*>.*?</thead>`)
+	colScope := regexp.MustCompile(`<th[^>]*\sscope="col"`)
+	rowScope := regexp.MustCompile(`<th[^>]*\sscope="row"`)
+	caption := regexp.MustCompile(`<caption class="is-sr-only">`)
+
+	for _, file := range files {
+		//nolint:gosec // G304: file comes from filepath.Glob on the
+		// template directory, not user input.
+		body, err := os.ReadFile(file)
+		require.NoError(t, err)
+		content := string(body)
+
+		// Skip files without tables.
+		if !strings.Contains(content, "<table") {
+			continue
+		}
+
+		// Walk each <table> block independently. Some files
+		// (swaps) have two tables, and each must satisfy the
+		// accessibility requirements on its own.
+		tableMatches := tableBlock.FindAllStringIndex(content, -1)
+		require.NotEmpty(t, tableMatches,
+			"%s: file has <table> tag but the regex didn't match - update the tableBlock pattern", file)
+
+		for i, m := range tableMatches {
+			block := content[m[0]:m[1]]
+			// Every <table> must have a screen-reader-only
+			// <caption>. The "is-sr-only" Bulma class hides it
+			// visually; the caption is still in the DOM and read
+			// by screen readers as the table's identity. Without
+			// a caption, a screen reader user enters the table
+			// with no context about what they're about to read.
+			assert.Regexp(t, caption, block,
+				"%s: table #%d must have a screen-reader-only <caption>", file, i+1)
+
+			// Every <th> in <thead> must declare scope="col" so
+			// screen readers can announce the column header when
+			// reading a cell in that column. Only enforced if the
+			// table has a <thead> (i.e. it's a columnar data
+			// table, not a key-value layout like wfh_purge or
+			// help's WFH config that has no column headers).
+			if hasThead.MatchString(block) {
+				assert.Regexp(t, colScope, block,
+					"%s: table #%d has <thead> but no <th scope=\"col\">", file, i+1)
+			}
+
+			// Every table must have at least one <th scope="row">.
+			// For data tables this is the first cell of each row
+			// (e.g. the member name); for key-value tables this is
+			// the label cell. Either way, a screen reader needs
+			// a scope="row" header to announce which row / which
+			// record a cell belongs to.
+			assert.Regexp(t, rowScope, block,
+				"%s: table #%d has no <th scope=\"row\">", file, i+1)
+		}
+	}
 }
 
 // TestTemplatesHaveNoInlineEventHandlers is the regression guard for

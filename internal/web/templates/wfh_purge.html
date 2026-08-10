@@ -39,13 +39,16 @@
     </header>
     <div class="card-content">
         <table class="table is-fullwidth">
+            <caption class="is-sr-only">
+                WFH purge preview — the cutoff date and the number of WFH request rows that would be deleted by this purge.
+            </caption>
             <tbody>
                 <tr>
-                    <th>Cutoff date</th>
+                    <th scope="row">Cutoff date</th>
                     <td><code>{{.Cutoff}}</code></td>
                 </tr>
                 <tr>
-                    <th>Rows that would be deleted</th>
+                    <th scope="row">Rows that would be deleted</th>
                     <td><span class="tag is-warning is-medium">{{.WouldDelete}}</span></td>
                 </tr>
             </tbody>

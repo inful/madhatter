@@ -19,22 +19,25 @@
         {{if .Leaves}}
             <div class="table-container">
                 <table class="table is-fullwidth is-hoverable">
+                    <caption class="is-sr-only">
+                        All leave records — member, start date, end date, status, when created, and available actions.
+                    </caption>
                     <thead>
                         <tr>
-                            <th>Member</th>
-                            <th>Start Date</th>
-                            <th>End Date</th>
-                            <th>Status</th>
-                            <th>Created</th>
-                            <th>Actions</th>
+                            <th scope="col">Member</th>
+                            <th scope="col">Start Date</th>
+                            <th scope="col">End Date</th>
+                            <th scope="col">Status</th>
+                            <th scope="col">Created</th>
+                            <th scope="col">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         {{range .Leaves}}
                         <tr>
-                            <td>
+                            <th scope="row">
                                 <strong>{{.MemberName}}</strong>
-                            </td>
+                            </th>
                             <td>{{.Leave.StartDate.Format "2006-01-02"}}</td>
                             <td>{{.Leave.EndDate.Format "2006-01-02"}}</td>
                             <td>

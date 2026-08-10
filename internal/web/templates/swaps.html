@@ -26,23 +26,26 @@
     <div class="card-content">
         <div class="table-container">
             <table class="table is-fullwidth is-striped is-hoverable">
+                <caption class="is-sr-only">
+                    Incoming HAT-day swap requests — from, their HAT day, your HAT day, when requested, and available actions.
+                </caption>
                 <thead>
                     <tr>
-                        <th>From</th>
-                        <th>Their HAT Day</th>
-                        <th>Your HAT Day</th>
-                        <th>Requested</th>
-                        <th>Actions</th>
+                        <th scope="col">From</th>
+                        <th scope="col">Their HAT Day</th>
+                        <th scope="col">Your HAT Day</th>
+                        <th scope="col">Requested</th>
+                        <th scope="col">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     {{range .Incoming}}
                     <tr>
-                        <td>
+                        <th scope="row">
                             <span class="has-text-weight-semibold">
                                 <i class="fas fa-user mr-1"></i>{{.RequesterName}}
                             </span>
-                        </td>
+                        </th>
                         <td>
                             <span class="tag is-link is-light">
                                 <i class="fas fa-hat-wizard mr-1"></i>{{.RequesterDate}}
@@ -161,21 +164,24 @@
     <div class="card-content">
         <div class="table-container">
             <table class="table is-fullwidth is-striped is-hoverable">
+                <caption class="is-sr-only">
+                    Other HAT-day swap requests — from, their HAT day, target member, target's HAT day, status, date, and admin actions.
+                </caption>
                 <thead>
                     <tr>
-                        <th>From</th>
-                        <th>Their HAT Day</th>
-                        <th>Target</th>
-                        <th>Their HAT Day</th>
-                        <th>Status</th>
-                        <th>Date</th>
-                        <th></th>
+                        <th scope="col">From</th>
+                        <th scope="col">Their HAT Day</th>
+                        <th scope="col">Target</th>
+                        <th scope="col">Their HAT Day</th>
+                        <th scope="col">Status</th>
+                        <th scope="col">Date</th>
+                        <th scope="col"></th>
                     </tr>
                 </thead>
                 <tbody>
                     {{range .Others}}
                     <tr>
-                        <td>{{.RequesterName}}</td>
+                        <th scope="row">{{.RequesterName}}</th>
                         <td><span class="tag is-link is-light">{{.RequesterDate}}</span></td>
                         <td>{{.TargetName}}</td>
                         <td><span class="tag is-info is-light">{{.TargetDate}}</span></td>

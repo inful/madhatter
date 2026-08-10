@@ -59,18 +59,21 @@
         {{if .Subscriptions}}
         <div class="table-container">
             <table class="table is-fullwidth is-hoverable">
+                <caption class="is-sr-only">
+                    Calendar subscriptions — member ID, token prefix, creation date, and last-used date for each subscription.
+                </caption>
                 <thead>
                     <tr>
-                        <th>Member ID</th>
-                        <th>Token</th>
-                        <th>Created</th>
-                        <th>Last Used</th>
+                        <th scope="col">Member ID</th>
+                        <th scope="col">Token</th>
+                        <th scope="col">Created</th>
+                        <th scope="col">Last Used</th>
                     </tr>
                 </thead>
                 <tbody>
                     {{range .Subscriptions}}
                     <tr>
-                        <td><code>{{.MemberID}}</code></td>
+                        <th scope="row"><code>{{.MemberID}}</code></th>
                         <td><code>{{slice .Token 0 8}}…</code></td>
                         <td>{{.CreatedAt.Format "2006-01-02"}}</td>
                         <td>

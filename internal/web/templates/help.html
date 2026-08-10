@@ -71,21 +71,24 @@
         {{if .WFHConfigured}}
         <h4 class="title is-6 mb-2 mt-4">Current configuration</h4>
         <table class="table is-fullwidth is-striped is-hoverable is-size-7">
+            <caption class="is-sr-only">
+                Current WFH configuration — settlement window, settlement tick, request horizon, and minimum on-site coverage.
+            </caption>
             <tbody>
                 <tr>
-                    <th>Settlement window</th>
+                    <th scope="row">Settlement window</th>
                     <td>{{.WFHSettlementDays}} day(s) ahead</td>
                 </tr>
                 <tr>
-                    <th>Settlement tick</th>
+                    <th scope="row">Settlement tick</th>
                     <td>Every {{.WFHSettlementInterval}}</td>
                 </tr>
                 <tr>
-                    <th>Request horizon</th>
+                    <th scope="row">Request horizon</th>
                     <td>Ad-hoc requests accepted up to {{.WFHRequestHorizonDays}} day(s) in advance</td>
                 </tr>
                 <tr>
-                    <th>Minimum on-site coverage</th>
+                    <th scope="row">Minimum on-site coverage</th>
                     <td>{{printf "%.0f" .WFHMinOnsitePercentage}}% of active members, with a floor of {{.WFHMinOnsiteAbsolute}} person(s)</td>
                 </tr>
                 <tr>

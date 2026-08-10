@@ -40,56 +40,33 @@
 </div>
 {{end}}
 
-{{if .CurrentHATName}}
-{{/* HAT banner — the most-asked question of a rota app, promoted
-     above the schedule matrix so the answer is visible without
-     scanning the matrix. Purple theme matches the HAT chip color
-     in the matrix and the existing .assignment-chip / .has-hat
-     row styling. Rendered between the status card and the schedule
-     card so the page reads: who am I → who's on support → the
-     team schedule. Lives outside the status-card if-block so the
-     banner appears even when the user has no presence data — the
-     "who's on support today" answer is independent of "where am I". */}}
-<div class="hat-banner card mb-4">
-    <div class="hat-banner-content">
-        <div class="hat-banner-icon">
-            <i class="fas fa-hat-wizard"></i>
-        </div>
-        <div class="hat-banner-info">
-            <span class="hat-banner-label">HAT today</span>
-            <span class="hat-banner-name">{{.CurrentHATName}}</span>
-            {{if .CurrentHATIsOnLeave}}
-                <span class="hat-banner-status">
-                    <i class="fas fa-plane-departure mr-1"></i>{{.CurrentHATPrimaryName}} on leave
-                </span>
-            {{end}}
-        </div>
-        <a href="/calendar" class="hat-banner-action">View schedule →</a>
-    </div>
-</div>
-{{end}}
-
-{{else}}
-    {{if .AuthEnabled}}
-    <div class="notification is-info is-light">
-        <p class="has-text-weight-semibold mb-2">Login to access personalized features.</p>
-        <a href="/login" class="button is-primary is-small action-btn">
-            <i class="fas fa-sign-in-alt mr-1"></i> Login
-        </a>
-    </div>
-    {{else}}
-    <div class="notification is-warning is-light">
-        <p class="has-text-weight-semibold mb-2">Authentication is disabled on this server.</p>
-        <p class="is-size-7 has-text-grey">Configure OAuth provider environment variables to enable login.</p>
-    </div>
-    {{end}}
-{{end}}
+{{/* The HAT banner is no longer a standalone card; it's been
+     merged into the schedule card's header below. The "who's on
+     support today" answer is the natural lead-in to "here's the
+     team's schedule for the week" — the two are conceptually
+     one unit, and putting them in the same card removes a ~80px
+     vertical gap that previously sat between them. */}}
 
 <div class="card">
     <header class="card-header">
+        {{if .CurrentHATName}}
+        <div class="hat-banner-header-content">
+            <i class="fas fa-hat-wizard hat-banner-header-icon"></i>
+            <div class="hat-banner-header-info">
+                <span class="hat-banner-header-label">HAT today</span>
+                <span class="hat-banner-header-name">{{.CurrentHATName}}</span>
+                {{if .CurrentHATIsOnLeave}}
+                    <span class="hat-banner-header-status">
+                        <i class="fas fa-plane-departure mr-1"></i>{{.CurrentHATPrimaryName}} on leave
+                    </span>
+                {{end}}
+            </div>
+        </div>
+        {{else}}
         <p class="card-header-title">
             <i class="fas fa-calendar-alt mr-2"></i> Schedule
         </p>
+        {{end}}
     </header>
     <div class="card-content">
         {{if .NoTeamMessage}}
@@ -203,6 +180,21 @@
         {{end}}
     </div>
 </div>
+{{else}}
+    {{if .AuthEnabled}}
+    <div class="notification is-info is-light">
+        <p class="has-text-weight-semibold mb-2">Login to access personalized features.</p>
+        <a href="/login" class="button is-primary is-small action-btn">
+            <i class="fas fa-sign-in-alt mr-1"></i> Login
+        </a>
+    </div>
+    {{else}}
+    <div class="notification is-warning is-light">
+        <p class="has-text-weight-semibold mb-2">Authentication is disabled on this server.</p>
+        <p class="is-size-7 has-text-grey">Configure OAuth provider environment variables to enable login.</p>
+    </div>
+    {{end}}
+{{end}}
 {{end}}
 
 {{define "dashboard_styles"}}
@@ -213,75 +205,61 @@
         box-shadow: 0 6px 14px rgba(25, 35, 70, 0.08);
     }
 
-    /* The HAT banner shares the page's card-based rhythm but uses a
-       purple theme to match the HAT chip color in the matrix
-       (and the existing .assignment-chip / .has-hat row styling).
-       The purple → white gradient is the visual affordance: it
-       says "important role, answered at the top of the page" without
-       being a screamer button. The flex layout keeps the three
-       zones (icon, info, action) aligned on a single row on
-       desktop and stacks on narrow viewports. */
-    .hat-banner {
-        border: 1px solid rgba(139, 92, 246, 0.28);
-        background: linear-gradient(180deg, rgba(139, 92, 246, 0.08) 0%, rgba(255, 255, 255, 0.95) 100%);
-        box-shadow: 0 6px 14px rgba(139, 92, 246, 0.12);
-    }
-
-    .hat-banner-content {
+    /* The HAT banner was promoted into the schedule card's header.
+       The same purple theme (matching the HAT chip in the matrix
+       and the .assignment-chip / .has-hat row styling) carries
+       through, but the layout is now a single-row flex that fits
+       the card-header context. The card-header background already
+       has a light blue gradient from the existing .card-header
+       rule, so we layer the HAT-specific sizing on top without
+       duplicating the card's chrome. The "View schedule →" link
+       was dropped — the user is already on the schedule card, so
+       a link to it is dead weight. */
+    .hat-banner-header-content {
         display: flex;
         align-items: center;
-        gap: 1rem;
+        gap: 0.85rem;
+        padding: 0.65rem 1rem;
+        width: 100%;
     }
 
-    .hat-banner-icon {
-        font-size: 1.6rem;
+    .hat-banner-header-icon {
+        font-size: 1.4rem;
         color: #6d28d9;
         flex-shrink: 0;
-        width: 2rem;
+        width: 1.75rem;
         text-align: center;
     }
 
-    .hat-banner-info {
+    .hat-banner-header-info {
         flex: 1;
         display: flex;
         flex-direction: column;
-        gap: 0.15rem;
+        gap: 0.1rem;
         min-width: 0;
     }
 
-    .hat-banner-label {
-        font-size: 0.7rem;
+    .hat-banner-header-label {
+        font-size: 0.65rem;
         text-transform: uppercase;
         letter-spacing: 0.06em;
         color: #6d28d9;
         font-weight: 700;
     }
 
-    .hat-banner-name {
-        font-size: 1.25rem;
+    .hat-banner-header-name {
+        font-size: 1.1rem;
         font-weight: 700;
         color: #2d3748;
         line-height: 1.2;
-        /* Long names (e.g. when the schedule stretches across
-           cultures) should ellipsis rather than push the icon and
-           action out of the available width. */
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
     }
 
-    .hat-banner-status {
-        font-size: 0.8rem;
+    .hat-banner-header-status {
+        font-size: 0.75rem;
         color: #b45309;
-        margin-top: 0.15rem;
-    }
-
-    .hat-banner-action {
-        color: #6d28d9;
-        text-decoration: none;
-        font-weight: 600;
-        font-size: 0.9rem;
-        flex-shrink: 0;
     }
 
     .hat-banner-action:hover {

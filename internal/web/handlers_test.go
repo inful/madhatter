@@ -655,26 +655,26 @@ func TestQuickActionsAvailableOnNonDashboardPages(t *testing.T) {
 		"dropdown content must include the always-available Manage Leave item")
 }
 
-// TestDashboard_HATBanner guards the top-level HAT banner that
-// surfaces the most-asked question of a rota app: who is on support
-// today. The banner is rendered between the status card and the
-// schedule card, and is suppressed when CurrentHATName is empty
-// (the schedule maintenance guarantees a primary assignment for
-// today, but the template must still gracefully handle the empty
-// case — first day of operation, fixture gaps, etc.).
+// TestDashboard_HATBanner guards the HAT info that surfaces
+// the most-asked question of a rota app: who is on support
+// today. The HAT info is rendered as the SCHEDULE CARD's header
+// (not a standalone card anymore) — the answer is the natural
+// lead-in to "here's the team's schedule for the week," and
+// putting them in the same card reclaims a ~80px vertical gap.
 //
 // Three cases covered:
-//   - Normal: HAT today is Alice, no leave flag → banner shows Alice
-//     and no "on leave" status.
-//   - On leave: HAT today is Bob (the cover), CurrentHATIsOnLeave is
-//     true → banner shows Bob with "(Alice) on leave" status note.
-//   - Empty: CurrentHATName is empty → banner is suppressed entirely.
+//   - Normal: HAT today is Alice, no leave flag → header shows
+//     Alice and no "on leave" status.
+//   - On leave: HAT today is Bob (the cover), CurrentHATIsOnLeave
+//     is true → header shows Bob with "(Alice) on leave" status.
+//   - Empty: CurrentHATName is empty → header shows the standard
+//     "Schedule" title as a fallback.
 func TestDashboard_HATBanner(t *testing.T) {
 	mockDB := &database.DB{}
 	handler, err := NewHandler(mockDB, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
 	require.NoError(t, err)
 
-	t.Run("renders primary HAT", func(t *testing.T) {
+	t.Run("renders primary HAT in schedule header", func(t *testing.T) {
 		data := map[string]any{
 			"User":                  map[string]any{"Email": "alice@example.com", "Name": "Alice"},
 			"IsAdmin":               false,
@@ -688,21 +688,22 @@ func TestDashboard_HATBanner(t *testing.T) {
 		require.NoError(t, handler.tmpl.ExecuteTemplate(w, "dashboard.html", data))
 
 		body := w.Body.String()
-		assert.Contains(t, body, `class="hat-banner card mb-4"`,
-			"HAT banner wrapper must be present")
 		assert.Contains(t, body, "HAT today",
-			"banner must include the 'HAT today' label")
-		assert.Contains(t, body, "Alice",
-			"banner must include the HAT's name")
-		assert.Contains(t, body, `href="/calendar"`,
-			"banner must include a link to the schedule")
+			"header must include the 'HAT today' label")
+		assert.Contains(t, body, `<span class="hat-banner-header-name">Alice</span>`,
+			"header must include the HAT's name in the new banner-header selector")
+		// The standalone banner class is gone — the HAT info now
+		// lives in .hat-banner-header-content inside the schedule
+		// card's card-header element.
+		assert.NotContains(t, body, `class="hat-banner card mb-4"`,
+			"the standalone hat-banner card must be gone — HAT info now lives in the schedule card header")
 		// When the HAT isn't on leave, no "on leave" status note
 		// should appear.
 		assert.NotContains(t, body, "on leave",
-			"banner must not show 'on leave' when the HAT is on the rota")
+			"header must not show 'on leave' when the HAT is on the rota")
 	})
 
-	t.Run("renders cover with on-leave status", func(t *testing.T) {
+	t.Run("renders cover with on-leave status in schedule header", func(t *testing.T) {
 		data := map[string]any{
 			"User":                  map[string]any{"Email": "alice@example.com", "Name": "Alice"},
 			"IsAdmin":               false,
@@ -716,13 +717,13 @@ func TestDashboard_HATBanner(t *testing.T) {
 		require.NoError(t, handler.tmpl.ExecuteTemplate(w, "dashboard.html", data))
 
 		body := w.Body.String()
-		assert.Contains(t, body, "<span class=\"hat-banner-name\">Bob</span>",
-			"banner must show the cover's name as the on-call person")
+		assert.Contains(t, body, `<span class="hat-banner-header-name">Bob</span>`,
+			"header must show the cover's name as the on-call person")
 		assert.Contains(t, body, "Alice on leave",
-			"banner must show the primary's name in the on-leave status note")
+			"header must show the primary's name in the on-leave status note")
 	})
 
-	t.Run("suppressed when no HAT today", func(t *testing.T) {
+	t.Run("falls back to plain Schedule title when no HAT today", func(t *testing.T) {
 		// Even the rest of the data is set; the empty CurrentHATName
 		// is the gate. Pass CurrentHATName as an explicit empty string
 		// (not unset) so the if-check sees a deterministic value.
@@ -736,10 +737,13 @@ func TestDashboard_HATBanner(t *testing.T) {
 		require.NoError(t, handler.tmpl.ExecuteTemplate(w, "dashboard.html", data))
 
 		body := w.Body.String()
+		// The HAT-info block must be suppressed when no HAT is set.
 		assert.NotContains(t, body, "HAT today",
-			"banner must be suppressed when no HAT is set")
-		assert.NotContains(t, body, `class="hat-banner"`,
-			"banner wrapper must not render when no HAT is set")
+			"header must be the plain Schedule title when no HAT is set")
+		// The fallback to the plain card-header-title should render
+		// the standard "Schedule" label.
+		assert.Contains(t, body, `class="card-header-title"`,
+			"the fallback card-header-title must render when no HAT is set")
 	})
 }
 

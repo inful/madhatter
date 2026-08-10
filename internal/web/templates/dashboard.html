@@ -123,6 +123,7 @@
                 {{end}}
             </div>
 
+            <div class="schedule-matrix-overflow">
             <div class="table-container schedule-matrix-wrap">
                 <table class="table is-fullwidth is-bordered is-hoverable schedule-matrix-table">
                     <thead>
@@ -172,6 +173,7 @@
                         {{end}}
                     </tbody>
                 </table>
+            </div>
             </div>
         {{else}}
             <div class="empty-state">
@@ -290,7 +292,6 @@
     .swapped-assignment-tag { cursor: help; }
     .swap-icon { font-size: 0.8rem; opacity: 0.85; }
     .schedule-matrix-wrap {
-        position: relative;
         border: 1px solid rgba(102, 126, 234, 0.18);
         border-radius: 10px;
         overflow-x: auto;
@@ -301,11 +302,24 @@
        at the bottom but no visible cue at the top/side that more
        content exists past the visible edge. This fade gives users
        a hint that they can scroll right without obscuring the
-       table content. The fade is pure CSS (no JS scroll-state
-       tracking) — always visible rather than scroll-aware, which
-       is the conventional pattern for this kind of overflow
+       table content.
+
+       The fade is anchored to .schedule-matrix-overflow (a wrapper
+       added around .schedule-matrix-wrap) rather than to the wrap
+       itself, so it stays at the right edge of the *visible* area
+       even as the user scrolls the table horizontally. A fade on
+       the wrap itself would scroll along with the content, which
+       looks weird: the user expects the gradient to mark the
+       right edge of what they can see, not the right edge of the
+       (off-screen) content. The fade is pure CSS (no JS scroll-
+       state tracking) — always visible rather than scroll-aware,
+       which is the conventional pattern for this kind of overflow
        affordance. */
-    .schedule-matrix-wrap::after {
+    .schedule-matrix-overflow {
+        position: relative;
+    }
+
+    .schedule-matrix-overflow::after {
         content: "";
         position: absolute;
         top: 0;

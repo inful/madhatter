@@ -583,11 +583,20 @@ func TestScheduleMatrixHasScrollHintFade(t *testing.T) {
 
 	body := w.Body.String()
 
-	// The fade must be a pseudo-element on the matrix wrap, anchored
-	// to the right edge, with a gradient that fades to transparent so
-	// the underlying table content is visible through the fade.
-	assert.Contains(t, body, ".schedule-matrix-wrap::after",
-		"scroll hint fade must be a pseudo-element on the matrix wrap")
+	// The fade must be a pseudo-element on the new wrapper
+	// (.schedule-matrix-overflow) — not on the wrap itself. If the
+	// fade lives on the wrap, it's a child of the overflow-x: auto
+	// scrolling container and scrolls along with the table, which
+	// looks weird: the user expects the gradient to mark the right
+	// edge of what they can see, not the right edge of off-screen
+	// content. Anchoring to the wrapper keeps the fade at the
+	// visible right edge regardless of scroll position.
+	assert.Contains(t, body, ".schedule-matrix-overflow::after",
+		"scroll hint fade must be a pseudo-element on the matrix wrapper, not on the scrolling wrap")
+	assert.NotContains(t, body, ".schedule-matrix-wrap::after",
+		"scroll hint fade must NOT be on the matrix wrap — that anchor scrolls with the content")
+	assert.Contains(t, body, ".schedule-matrix-overflow {",
+		"matrix wrapper must be defined as the fade anchor")
 	assert.Contains(t, body, "linear-gradient(to left,",
 		"fade must run from right (opaque) to left (transparent)")
 	assert.Contains(t, body, "rgba(255, 255, 255, 0.95)",
@@ -596,12 +605,6 @@ func TestScheduleMatrixHasScrollHintFade(t *testing.T) {
 		"fade must end transparent so the table content shows through")
 	assert.Contains(t, body, "pointer-events: none",
 		"fade must not block clicks on the rightmost table cells")
-
-	// The wrap must be position:relative for the absolute-positioned
-	// pseudo-element to anchor to it. Without this, the fade would
-	// float to the top-left of the page.
-	assert.Contains(t, body, ".schedule-matrix-wrap {",
-		"matrix wrap must be defined as the fade anchor")
 }
 
 // TestQuickActionsAvailableOnNonDashboardPages asserts that the

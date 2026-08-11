@@ -467,8 +467,13 @@ func (h *Handler) renderWFHPurge(w http.ResponseWriter, _ *http.Request, data ma
 // wfhWebErrorMessage returns a user-facing message for WFH domain errors.
 //
 // The message comes from the shared database.WFHErrorFor table so adding
-// a new ErrWFH* sentinel only requires an entry in that table.
+// a new ErrWFH* sentinel only requires an entry in that table. A nil
+// error maps to an empty string so callers can pass through a possibly-
+// nil result without first guarding the call site.
 func wfhWebErrorMessage(err error) string {
+	if err == nil {
+		return ""
+	}
 	if info, ok := database.WFHErrorFor(err); ok {
 		return info.Message
 	}

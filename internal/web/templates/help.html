@@ -113,6 +113,21 @@
 <div class="card">
     <header class="card-header">
         <p class="card-header-title">
+            <i class="fas fa-broom mr-2"></i> WFH Past-Period Purge
+        </p>
+    </header>
+    <div class="card-content">
+        <div class="content">
+            <p>The <code>wfh_requests</code> table accumulates history forever by default, so a long-running deployment would grow without bound. To keep it bounded, the settlement scheduler hard-deletes rows whose date is strictly before the start of the previous quota period after each tick. The current and previous periods are always preserved.</p>
+            <p>Admins can preview or run the same purge from the web UI at <a href="/admin/wfh/purge">/admin/wfh/purge</a> (admin only). <code>GET</code> shows the cutoff and the row count that would be deleted; <code>POST</code> with <code>confirm=true</code> commits the deletion and redirects back with a flash banner. The web preview never mutates the table.</p>
+            <p>The same operation is exposed on the CLI as <code>wfh purge</code> (dry-run by default; pass <code>--apply</code> to commit, or <code>--before YYYY-MM-DD</code> to override the period-derived cutoff for a one-off catch-up clean). Errors with <code>WFH feature is disabled</code> when <code>WFH_ENABLED=false</code>. Set <code>WFH_PURGE_ENABLED=false</code> to opt out of the scheduler-driven cleanup without disabling the WFH feature as a whole.</p>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <header class="card-header">
+        <p class="card-header-title">
             <i class="fas fa-exchange-alt mr-2"></i> HAT Day Swaps
         </p>
     </header>

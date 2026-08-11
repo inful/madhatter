@@ -31,7 +31,7 @@ A comprehensive support duty management system with automatic scheduling, leave 
 - **Event-driven updates**: Schedule updates triggered on team changes, leave reports
 - **Dual-mode generation**: Fill gaps vs. regenerate from scratch
 - **Presence tracking**: Visual indicators for who's available and on leave
-- **Work From Home (WFH)**: Ad-hoc requests plus contractual recurring weekdays. The settlement scheduler auto-approves or denies pending requests within a configurable window ahead. Members can withdraw approved requests up until the WFH day itself. See the [Configuration](#work-from-home-wfh) table for the knobs.
+- **Work From Home (WFH)**: Ad-hoc requests plus contractual recurring weekdays. The settlement scheduler auto-approves or denies pending requests within a configurable window ahead. Members can withdraw approved requests up until the WFH day itself. A daily purge keeps the `wfh_requests` table bounded by hard-deleting rows older than the previous quota period (opt-out via `WFH_PURGE_ENABLED=false`). See the [Configuration](#work-from-home-wfh) table for the knobs.
 - **Email notifications**: Team members are emailed on HAT-swap requests, WFH state changes, and cover assignments. See [NOTIFICATIONS.md](docs/NOTIFICATIONS.md).
 
 ## Quick Start
@@ -440,6 +440,19 @@ This uses a fake OAuth provider that automatically creates an admin user.
 ./support-rota calendar subscribe email@example.com
 ./support-rota calendar export email@example.com output.ics
 ```
+
+### WFH Management
+```bash
+# Dry-run by default; prints the cutoff and how many rows would be deleted.
+./support-rota wfh purge
+
+# Commit the deletion.
+./support-rota wfh purge --apply
+
+# One-off catch-up clean with a custom cutoff.
+./support-rota wfh purge --before 2024-01-01 --apply
+```
+The cutoff defaults to the start of the previous quota period (computed from `WFH_PERIOD_ANCHOR` and `WFH_PERIOD_DAYS`). The same operation is exposed at `GET /admin/wfh/purge` for a preview and `POST /admin/wfh/purge` to commit from the web UI. Errors with `WFH feature is disabled` when `WFH_ENABLED=false`.
 
 ## Development
 

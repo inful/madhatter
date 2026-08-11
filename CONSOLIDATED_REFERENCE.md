@@ -23,7 +23,7 @@ The Support Rota System is a comprehensive solution for managing team support du
 - **Round-robin scheduling**: One weekday per person per rotation cycle
 - **Leave management**: Unified system for sick leave, vacation, and other unavailability
 - **Automatic cover assignment**: System automatically assigns covers when someone is on leave
-- **Work From Home (WFH)**: Ad-hoc requests plus contractual recurring weekdays, with an auto-settling scheduler that respects a configurable on-site minimum and per-period quota
+- **Work From Home (WFH)**: Ad-hoc requests plus contractual recurring weekdays, with an auto-settling scheduler that respects a configurable on-site minimum and per-period quota. A daily purge hard-deletes rows from `wfh_requests` whose date is before the previous quota period (gated by `WFH_PURGE_ENABLED`, default `true`).
 - **Calendar subscriptions**: Personal ICS calendar URLs for any calendar app
 - **Web dashboard**: HTMX-based user interface
 - **REST API**: HUMA-based API with automatic OpenAPI documentation
@@ -208,6 +208,19 @@ CREATE TABLE calendar_subscriptions (
 ./support-rota calendar export alice@example.com alice.ics
 ```
 
+### WFH Management
+```bash
+# Dry-run: print the cutoff date and the number of rows that would be deleted.
+./support-rota wfh purge
+
+# Commit the deletion.
+./support-rota wfh purge --apply
+
+# Override the cutoff for a one-off catch-up clean (YYYY-MM-DD).
+./support-rota wfh purge --before 2024-01-01 --apply
+```
+The cutoff defaults to the start of the previous quota period (computed from `WFH_PERIOD_ANCHOR` and `WFH_PERIOD_DAYS`). Errors with `WFH feature is disabled` when `WFH_ENABLED=false`. The same operation is exposed at `GET /admin/wfh/purge` (preview) and `POST /admin/wfh/purge` (commit).
+
 ---
 
 ## Web Interface
@@ -218,6 +231,8 @@ CREATE TABLE calendar_subscriptions (
 - **Leave Report** (`/leave/report`) - Report leave with auto-cover
 - **Schedule View** (`/schedule/current`) - Current week schedule
 - **Calendar** (`/calendar`) - Calendar subscription management
+- **WFH Manage** (`/admin/wfh`) - Approve, deny, and withdraw WFH requests (admin only)
+- **WFH Purge** (`/admin/wfh/purge`) - Preview and hard-delete `wfh_requests` rows older than the previous quota period (admin only)
 
 ### HTMX Features
 - Dynamic form submissions without page reloads

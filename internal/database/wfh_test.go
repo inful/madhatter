@@ -128,6 +128,73 @@ func TestWithdrawOwnWFHRequest(t *testing.T) {
 		err := db.WithdrawOwnWFHRequest(ctx, "no-such-id", aliceID)
 		require.ErrorIs(t, err, ErrWFHNotFound)
 	})
+
+	// Recurring-row cases: the materializer creates auto-approved rows
+	// with is_recurring=1. Users must be able to self-withdraw these
+	// just like ad-hoc rows; the IsRecurring flag is metadata that
+	// describes *why* the row exists, not a gate on the withdrawal.
+	// A regression here would either silently disable user control over
+	// recurring days (the help page documents that self-withdrawal
+	// works) or, worse, re-materialize a withdrawn row and undo the
+	// user's choice.
+	//
+	// Each subtest seeds its own fresh member so the prior ad-hoc
+	// subtests' rows don't pollute the (member, date) unique
+	// constraint or the row count.
+	t.Run("owner can withdraw future recurring request", func(t *testing.T) {
+		carolID, err := db.AddTeamMember(ctx, "Carol", "carol@example.com")
+		require.NoError(t, err)
+
+		date := futureDay(25)
+		require.NoError(t, db.CreateApprovedRecurringWFHRequest(ctx, carolID, date, time.Now().UTC()))
+
+		rows, err := db.GetWFHRequestsByMember(ctx, carolID)
+		require.NoError(t, err)
+		require.Len(t, rows, 1, "fresh member must have exactly one row")
+		recurringID := rows[0].ID
+		require.True(t, rows[0].IsRecurring, "seeded row must have is_recurring=1")
+		require.Equal(t, WFHStatusApproved, rows[0].Status)
+
+		err = db.WithdrawOwnWFHRequest(ctx, recurringID, carolID)
+		require.NoError(t, err, "recurring rows must be self-withdrawable just like ad-hoc rows")
+
+		got, err := db.GetWFHRequestByID(ctx, recurringID)
+		require.NoError(t, err)
+		assert.Equal(t, WFHStatusWithdrawn, got.Status, "status flips to withdrawn")
+		assert.True(t, got.IsRecurring, "IsRecurring flag must be preserved so the audit trail still records that this was a recurring occurrence the user opted out of")
+		assert.Nil(t, got.WithdrawnBy, "self-withdraw must leave withdrawn_by NULL — the admin-withdraw path is the only one that records an actor")
+	})
+
+	t.Run("owner can withdraw recurring request for today", func(t *testing.T) {
+		// Use Dave so the (member, date) unique constraint on
+		// dateToday doesn't collide with Alice's earlier ad-hoc
+		// "today" row.
+		daveID, err := db.AddTeamMember(ctx, "Dave", "dave@example.com")
+		require.NoError(t, err)
+
+		require.NoError(t, db.CreateApprovedRecurringWFHRequest(ctx, daveID, dateToday, time.Now().UTC()))
+
+		rows, err := db.GetWFHRequestsByMember(ctx, daveID)
+		require.NoError(t, err)
+		require.Len(t, rows, 1)
+
+		err = db.WithdrawOwnWFHRequest(ctx, rows[0].ID, daveID)
+		require.NoError(t, err, "today's recurring row must be withdrawable")
+
+		got, err := db.GetWFHRequestByID(ctx, rows[0].ID)
+		require.NoError(t, err)
+		assert.Equal(t, WFHStatusWithdrawn, got.Status)
+		assert.True(t, got.IsRecurring, "IsRecurring flag preserved")
+	})
+
+	// Note: the second half of the recurring-withdraw contract —
+	// that the materializer won't re-insert a withdrawn recurring
+	// row — is already pinned by
+	// TestEnsureRecurringMaterialized_PreservesWithdrawnRow in
+	// internal/wfh/recurring_materializer_test.go. The database
+	// layer only cares that WithdrawOwnWFHRequest flips the status
+	// correctly; the materializer's skip-on-existing-row logic is
+	// orthogonal.
 }
 
 // todayUTC returns today's date in YYYY-MM-DD form, suitable for

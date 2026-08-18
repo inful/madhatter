@@ -136,19 +136,38 @@ func (h *Handler) loadCurrentUserPresenceStatus(ctx context.Context, data map[st
 		return
 	}
 
-	if member.IsRecurringWFHOn(time.Now()) {
-		data["CurrentUserPresenceStatus"] = currentUserStatusWFH
-		return
-	}
-
-	wfhRequests, err := h.db.GetWFHRequestsByDateAndStatus(ctx, today, database.WFHStatusApproved)
-	if err == nil {
-		for i := range wfhRequests {
-			if wfhRequests[i].MemberID == member.ID {
+	// WFH status: look up today's row for this member across all
+	// statuses (not just approved). The DB is the source of truth — a
+	// withdrawn, denied, cancelled, or pending row means the member
+	// is NOT actually WFH today, regardless of their contractual
+	// recurring weekday. Falling back to IsRecurringWFHOn before the
+	// DB lookup was the bug: a self-withdrawn recurring WFH would
+	// silently surface as "WFH" on the dashboard until the next
+	// materialiser tick noticed the withdrawal.
+	allWFHRequests, wfhErr := h.db.GetWFHRequestsByDate(ctx, today)
+	if wfhErr == nil {
+		for i := range allWFHRequests {
+			if allWFHRequests[i].MemberID != member.ID {
+				continue
+			}
+			if allWFHRequests[i].Status == database.WFHStatusApproved {
 				data["CurrentUserPresenceStatus"] = currentUserStatusWFH
 				return
 			}
+			// Explicit non-approved row (withdrawn, denied, cancelled,
+			// pending). Honor the decision over the contractual pattern.
+			data["CurrentUserPresenceStatus"] = currentUserStatusOnSite
+			return
 		}
+	}
+
+	// No row exists for today. Project the contractual recurring
+	// weekday forward — the materialiser will create an approved row on
+	// its next run. This is the only path where the recurring weekday
+	// drives the answer.
+	if member.IsRecurringWFHOn(time.Now()) {
+		data["CurrentUserPresenceStatus"] = currentUserStatusWFH
+		return
 	}
 
 	data["CurrentUserPresenceStatus"] = currentUserStatusOnSite
@@ -686,7 +705,7 @@ func (h *Handler) getUpcomingPresenceFrom(ctx context.Context, start time.Time) 
 			return nil, leaveErr
 		}
 
-		wfhRequests, wfhErr := h.db.GetWFHRequestsByDateAndStatus(ctx, dateStr, database.WFHStatusApproved)
+		wfhRequests, wfhErr := h.db.GetWFHRequestsByDate(ctx, dateStr)
 		if wfhErr != nil {
 			return nil, wfhErr
 		}
@@ -694,6 +713,15 @@ func (h *Handler) getUpcomingPresenceFrom(ctx context.Context, start time.Time) 
 		away := make([]presenceLeave, 0, len(leaveRecords))
 		onLeave := make(map[string]struct{})
 		wfhMemberIDs := make(map[string]struct{}, len(wfhRequests))
+		// explicitNonWFHSet tracks members whose wfh_requests row for
+		// this date is in a non-approved status (withdrawn, denied,
+		// cancelled, or pending). The IsRecurringWFHOn fallback below
+		// must NOT add these members to wfhMemberIDs — an explicit
+		// withdrawal or denial must take precedence over the contractual
+		// recurring weekday, otherwise self-withdraw is silently undone
+		// on the dashboard until the next settlement tick re-materializes
+		// the row.
+		explicitNonWFHSet := make(map[string]struct{}, len(wfhRequests))
 		for i := range leaveRecords {
 			leave := &leaveRecords[i]
 			member, ok := memberMap[leave.MemberID]
@@ -705,13 +733,26 @@ func (h *Handler) getUpcomingPresenceFrom(ctx context.Context, start time.Time) 
 		}
 
 		for i := range wfhRequests {
-			wfhMemberIDs[wfhRequests[i].MemberID] = struct{}{}
+			if wfhRequests[i].Status == database.WFHStatusApproved {
+				wfhMemberIDs[wfhRequests[i].MemberID] = struct{}{}
+			} else {
+				explicitNonWFHSet[wfhRequests[i].MemberID] = struct{}{}
+			}
 		}
 
 		for i := range members {
-			if members[i].IsRecurringWFHOn(current) {
-				wfhMemberIDs[members[i].ID] = struct{}{}
+			if !members[i].IsRecurringWFHOn(current) {
+				continue
 			}
+			// Honor any explicit non-approved decision for this date.
+			// Without this guard a self-withdrawn recurring WFH still
+			// surfaces as WFH on the dashboard until the next materializer
+			// run sees the withdrawn row, leaving the user confused for
+			// an unbounded window.
+			if _, explicitNonWFH := explicitNonWFHSet[members[i].ID]; explicitNonWFH {
+				continue
+			}
+			wfhMemberIDs[members[i].ID] = struct{}{}
 		}
 
 		present := buildPresenceList(memberMap, onLeave)

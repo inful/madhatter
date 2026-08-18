@@ -427,3 +427,128 @@ func TestLoadCurrentUserPresenceStatus_RecurringWFH(t *testing.T) {
 	}
 	assert.Equal(t, true, data["CurrentUserHasHATDay"])
 }
+
+// TestLoadCurrentUserPresenceStatus_WithdrawnRecurringWFH_ShowsOnSite
+// regression test for the "withdrawn recurring WFH still shows as WFH"
+// dashboard bug: when a member self-withdraws their approved recurring
+// WFH row for today, the status badge must report "On-site", not "WFH".
+// The contractual recurring weekday must not silently override the
+// explicit withdrawal decision.
+func TestLoadCurrentUserPresenceStatus_WithdrawnRecurringWFH_ShowsOnSite(t *testing.T) {
+	now := time.Now()
+	if now.Weekday() == time.Saturday || now.Weekday() == time.Sunday {
+		t.Skip("test only runs on weekdays — IsRecurringWFHOn must fire")
+	}
+
+	ctx := context.Background()
+	db, cleanup := setupPresenceTestDB(t)
+	defer cleanup()
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	// Permanent recurring WFH makes IsRecurringWFHOn(now) return true
+	// regardless of which weekday the test runs on.
+	require.NoError(t, db.SetTeamMemberPermanentWFH(ctx, aliceID, true))
+
+	today := time.Now().Format("2006-01-02")
+	// The materializer would normally insert this row; we seed it
+	// directly so the test doesn't depend on the wfh service.
+	require.NoError(t, db.CreateApprovedRecurringWFHRequest(ctx, aliceID, today, time.Now().UTC()))
+
+	// Locate the materialized row and withdraw it.
+	rows, err := db.GetWFHRequestsByMember(ctx, aliceID)
+	require.NoError(t, err)
+	require.Len(t, rows, 1, "seed must produce exactly one row")
+	require.NoError(t, db.WithdrawOwnWFHRequest(ctx, rows[0].ID, aliceID))
+
+	handler := &Handler{db: db}
+	data := map[string]any{}
+
+	handler.loadCurrentUserPresenceStatus(ctx, data, "alice@example.com")
+
+	// After the withdrawal, the member has no live WFH for today. The
+	// contractual recurring weekday must not silently re-add them.
+	assert.Equal(t, currentUserStatusOnSite, data["CurrentUserPresenceStatus"],
+		"withdrawing today's recurring WFH must flip the status badge to On-site")
+}
+
+// TestGetUpcomingPresenceFrom_WithdrawnRecurringWFH_NotInWFHSet regression
+// test for the same dashboard bug, on the schedule-matrix path. A member
+// who has self-withdrawn their approved recurring WFH row for a given
+// date must NOT appear in the WFH column for that date, even though
+// the date matches their contractual recurring weekday.
+func TestGetUpcomingPresenceFrom_WithdrawnRecurringWFH_NotInWFHSet(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupPresenceTestDB(t)
+	defer cleanup()
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	// Pick a known Monday at least a week in the future so the recurring
+	// row passes the "not in the past" gate in CreateApprovedRecurringWFHRequest
+	// AND the Tuesday we're targeting is a real weekday we can assert on.
+	futureMonday := testutil.NextBusinessDay(time.Now().AddDate(0, 0, 14))
+	for futureMonday.Weekday() != time.Monday {
+		futureMonday = futureMonday.AddDate(0, 0, 1)
+	}
+	tuesday := futureMonday.AddDate(0, 0, 1)
+	require.Equal(t, time.Tuesday, tuesday.Weekday())
+
+	require.NoError(t, db.SetTeamMemberRecurringWFHDays(ctx, aliceID, database.RecurringWFHDays{
+		Tuesday: true,
+	}))
+
+	tuesdayStr := tuesday.Format("2006-01-02")
+	require.NoError(t, db.CreateApprovedRecurringWFHRequest(ctx, aliceID, tuesdayStr, time.Now().UTC()))
+
+	// Withdraw Alice's recurring row for Tuesday.
+	allRows, err := db.GetWFHRequestsByMember(ctx, aliceID)
+	require.NoError(t, err)
+	require.Len(t, allRows, 1)
+	require.NoError(t, db.WithdrawOwnWFHRequest(ctx, allRows[0].ID, aliceID))
+
+	handler := &Handler{db: db, holidayChecker: func(time.Time) bool { return false }}
+	presence, err := handler.getUpcomingPresenceFrom(ctx, futureMonday)
+	require.NoError(t, err)
+	require.NotEmpty(t, presence)
+
+	// Find the Tuesday column.
+	var tuesdayDay *presenceDay
+	for i := range presence {
+		if presence[i].DateISO == tuesdayStr {
+			tuesdayDay = &presence[i]
+			break
+		}
+	}
+	require.NotNil(t, tuesdayDay, "Tuesday must appear in the upcoming presence")
+
+	// Withdrawn recurring WFH must NOT place Alice in the WFH column.
+	for _, m := range tuesdayDay.WFH {
+		assert.NotEqual(t, aliceID, m.ID,
+			"withdrawn recurring WFH must not surface in the WFH column for that date")
+	}
+
+	// And she MUST appear on-site instead (still active, not on leave).
+	found := false
+	for _, m := range tuesdayDay.Present {
+		if m.ID == aliceID {
+			found = true
+			break
+		}
+	}
+	assert.True(t, found,
+		"member with withdrawn recurring WFH must surface on-site, not in WFH")
+
+	// Sanity: Bob (no recurring pattern) must appear on-site too.
+	bobOnSite := false
+	for _, m := range tuesdayDay.Present {
+		if m.ID == bobID {
+			bobOnSite = true
+			break
+		}
+	}
+	assert.True(t, bobOnSite, "Bob (no recurring pattern) must appear on-site")
+}

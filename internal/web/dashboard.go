@@ -15,9 +15,10 @@ import (
 )
 
 const (
-	currentUserStatusOnLeave = "On leave"
-	currentUserStatusWFH     = "WFH"
-	currentUserStatusOnSite  = "On-site"
+	currentUserStatusOnLeave    = "On leave"
+	currentUserStatusConference = "@conference"
+	currentUserStatusWFH        = "WFH"
+	currentUserStatusOnSite     = "On-site"
 )
 
 func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
@@ -133,6 +134,14 @@ func (h *Handler) loadCurrentUserPresenceStatus(ctx context.Context, data map[st
 
 	if _, onLeave := leaveDates[today]; onLeave {
 		data["CurrentUserPresenceStatus"] = currentUserStatusOnLeave
+		// Tagged conference leaves surface as "@conference" on the
+		// Today badge so the user can tell at a glance that they're
+		// away for a different reason than a plain day off. The plain
+		// "On leave" text stays for everything else so the badge
+		// keeps its original meaning for the common case.
+		if isConferenceLeaveToday(ctx, h.db, member.ID, today) {
+			data["CurrentUserPresenceStatus"] = currentUserStatusConference
+		}
 		return
 	}
 
@@ -504,7 +513,15 @@ func buildScheduleMatrix(presence []presenceDay, floor int) scheduleMatrix {
 			switch {
 			case isAwayMember(day, member.ID):
 				cell.Status = "away"
-				cell.Label = "Away"
+				cell.LeaveType = awayLeaveType(day, member.ID)
+				// Differentiate conference leaves on the cell label so
+				// the matrix reads "Conference" instead of a generic
+				// "Away" when the row is a tagged conference day.
+				if cell.LeaveType == database.LeaveTypeConference {
+					cell.Label = "Conference"
+				} else {
+					cell.Label = "Away"
+				}
 			case isWFHMember(day, member.ID):
 				cell.Status = "wfh"
 				cell.Label = "WFH"
@@ -554,6 +571,18 @@ func isAwayMember(day presenceDay, memberID string) bool {
 	return false
 }
 
+// awayLeaveType reports the leave_type for the absent member in the
+// day, or empty when the member isn't away. The matrix cell needs the
+// type to render a distinct badge for conference leaves.
+func awayLeaveType(day presenceDay, memberID string) string {
+	for i := range day.Away {
+		if day.Away[i].Member.ID == memberID {
+			return day.Away[i].LeaveType
+		}
+	}
+	return ""
+}
+
 // getUpcomingHolidays returns upcoming holidays for the configured lookahead days.
 func (h *Handler) getUpcomingHolidays() []map[string]any {
 	var holidays []map[string]any
@@ -588,6 +617,25 @@ func (h *Handler) isBusinessDay(date time.Time) bool {
 	}
 
 	return true
+}
+
+// isConferenceLeaveToday reports whether the member has an active
+// leave row for today whose leave_type is "conference". Used by
+// loadCurrentUserPresenceStatus to swap the "On leave" badge text
+// for "@conference". Returns false on any DB error so the badge
+// falls back to the safer plain "On leave" rather than crashing.
+func isConferenceLeaveToday(ctx context.Context, db *database.DB, memberID, today string) bool {
+	leaves, err := db.GetLeaveByDate(ctx, today)
+	if err != nil {
+		return false
+	}
+	for i := range leaves {
+		if leaves[i].MemberID != memberID {
+			continue
+		}
+		return leaves[i].LeaveType == database.LeaveTypeConference
+	}
+	return false
 }
 
 func (h *Handler) getUpcomingPresence(ctx context.Context) ([]presenceDay, error) {
@@ -729,7 +777,14 @@ func (h *Handler) getUpcomingPresenceFrom(ctx context.Context, start time.Time) 
 				continue
 			}
 			onLeave[leave.MemberID] = struct{}{}
-			away = append(away, presenceLeave{Member: member})
+			// Default LeaveType to plain leave so the template's switch
+			// doesn't have to special-case an empty value (older rows
+			// pre-migration, or anything that ever bypassed validation).
+			leaveType := leave.LeaveType
+			if leaveType == "" {
+				leaveType = database.LeaveTypeLeave
+			}
+			away = append(away, presenceLeave{Member: member, LeaveType: leaveType})
 		}
 
 		for i := range wfhRequests {

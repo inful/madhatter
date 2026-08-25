@@ -69,7 +69,7 @@ func TestDeleteTeamMemberWithRelatedRecords(t *testing.T) {
 	require.NoError(t, err)
 
 	// 3. Create a leave record
-	_, err = db.CreateLeaveRecord(ctx, memberID, "2025-01-16", "2025-01-17")
+	_, err = db.CreateLeaveRecord(ctx, memberID, "2025-01-16", "2025-01-17", LeaveTypeLeave)
 	require.NoError(t, err)
 
 	// Attempt to delete the team member - this should succeed with CASCADE

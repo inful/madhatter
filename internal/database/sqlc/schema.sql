@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS leave_records (
     end_date DATE NOT NULL,
     cover_member_id TEXT,
     status TEXT NOT NULL,
+    leave_type TEXT NOT NULL DEFAULT 'leave' CHECK (leave_type IN ('leave', 'conference')),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (member_id) REFERENCES team_members(id) ON DELETE CASCADE,
     FOREIGN KEY (cover_member_id) REFERENCES team_members(id) ON DELETE SET NULL

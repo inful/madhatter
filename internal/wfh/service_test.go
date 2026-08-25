@@ -299,7 +299,7 @@ func TestSettlePendingRequests_ApprovesHighestPriorityWithinSlots(t *testing.T) 
 	daveID, err := db.AddTeamMember(ctx, "Dave", "dave@example.com")
 	require.NoError(t, err)
 
-	_, err = db.CreateLeaveRecord(ctx, daveID, targetDateStr, targetDateStr)
+	_, err = db.CreateLeaveRecord(ctx, daveID, targetDateStr, targetDateStr, database.LeaveTypeLeave)
 	require.NoError(t, err)
 
 	bobUsed, err := db.CreateWFHRequest(ctx, bobID, todayStr)
@@ -537,7 +537,7 @@ func TestSettlePendingRequests_FiresNotifierForEachTransition(t *testing.T) {
 	require.NoError(t, err)
 
 	// Dave on leave so on-site capacity is reduced.
-	_, err = db.CreateLeaveRecord(ctx, daveID, targetDateStr, targetDateStr)
+	_, err = db.CreateLeaveRecord(ctx, daveID, targetDateStr, targetDateStr, database.LeaveTypeLeave)
 	require.NoError(t, err)
 
 	// Bob's earlier WFH today reduces available slots for tomorrow.

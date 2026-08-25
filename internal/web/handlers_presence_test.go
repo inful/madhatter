@@ -39,7 +39,7 @@ func TestGetUpcomingPresenceFrom_SkipsNonBusinessDays(t *testing.T) {
 	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
 	require.NoError(t, err)
 
-	_, err = db.CreateLeaveRecord(ctx, bobID, "2024-01-08", "2024-01-08")
+	_, err = db.CreateLeaveRecord(ctx, bobID, "2024-01-08", "2024-01-08", database.LeaveTypeLeave)
 	require.NoError(t, err)
 
 	holidayChecker := func(date time.Time) bool {
@@ -123,7 +123,7 @@ func TestLoadCurrentUserPresenceStatus_SetsHatDayAndLeave(t *testing.T) {
 	_, err = db.CreateRotaAssignment(ctx, tomorrow, aliceID, false, nil)
 	require.NoError(t, err)
 
-	_, err = db.CreateLeaveRecord(ctx, aliceID, today, today)
+	_, err = db.CreateLeaveRecord(ctx, aliceID, today, today, database.LeaveTypeLeave)
 	require.NoError(t, err)
 	_, err = db.CreateWFHRequest(ctx, aliceID, tomorrow)
 	require.NoError(t, err)
@@ -223,7 +223,7 @@ func TestLoadCurrentUserPresenceStatus_CoverDutyToday_OnLeave_StillHidesBadge(t 
 	require.NoError(t, err)
 	_, err = db.CreateRotaAssignment(ctx, today, aliceID, true, &bobAssignmentID)
 	require.NoError(t, err)
-	_, err = db.CreateLeaveRecord(ctx, aliceID, today, today)
+	_, err = db.CreateLeaveRecord(ctx, aliceID, today, today, database.LeaveTypeLeave)
 	require.NoError(t, err)
 
 	handler := &Handler{db: db}
@@ -251,7 +251,7 @@ func TestLoadCurrentUserPresenceStatus_RejectedLeave_DoesNotHideHAT(t *testing.T
 	hatDay := testutil.NextBusinessDay(time.Now().AddDate(0, 0, 1)).Format("2006-01-02")
 	_, err = db.CreateRotaAssignment(ctx, hatDay, aliceID, false, nil)
 	require.NoError(t, err)
-	leaveID, err := db.CreateLeaveRecord(ctx, aliceID, hatDay, hatDay)
+	leaveID, err := db.CreateLeaveRecord(ctx, aliceID, hatDay, hatDay, database.LeaveTypeLeave)
 	require.NoError(t, err)
 	require.NoError(t, db.UpdateLeaveStatus(ctx, leaveID, "rejected"))
 
@@ -293,7 +293,7 @@ func TestLoadCurrentUserPresenceStatus_AllLeaveDays_NoNextHAT(t *testing.T) {
 	require.NoError(t, err)
 
 	// Leave spans from the first HAT day through the last.
-	_, err = db.CreateLeaveRecord(ctx, aliceID, firstHAT, lastHAT)
+	_, err = db.CreateLeaveRecord(ctx, aliceID, firstHAT, lastHAT, database.LeaveTypeLeave)
 	require.NoError(t, err)
 
 	handler := &Handler{db: db}
@@ -426,6 +426,111 @@ func TestLoadCurrentUserPresenceStatus_RecurringWFH(t *testing.T) {
 		assert.Equal(t, currentUserStatusOnSite, data["CurrentUserPresenceStatus"])
 	}
 	assert.Equal(t, true, data["CurrentUserHasHATDay"])
+}
+
+// TestLoadCurrentUserPresenceStatus_ConferenceLeaveShowsAtConference is
+// the regression test for the "@conference" badge: when a member has a
+// conference-tagged leave for today, the status badge must report
+// "@conference", not the generic "On leave" string.
+func TestLoadCurrentUserPresenceStatus_ConferenceLeaveShowsAtConference(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupPresenceTestDB(t)
+	defer cleanup()
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	today := time.Now().Format("2006-01-02")
+	_, err = db.CreateLeaveRecord(ctx, aliceID, today, today, database.LeaveTypeConference)
+	require.NoError(t, err)
+
+	handler := &Handler{db: db}
+	data := map[string]any{}
+
+	handler.loadCurrentUserPresenceStatus(ctx, data, "alice@example.com")
+
+	assert.Equal(t, currentUserStatusConference, data["CurrentUserPresenceStatus"],
+		"conference leave must surface as @conference on the Today badge")
+}
+
+// TestLoadCurrentUserPresenceStatus_PlainLeaveStaysOnLeave pins the
+// default behavior: a plain (non-conference) leave still surfaces as
+// the original "On leave" string, so the existing UX is preserved for
+// every row that predates the leave_type field.
+func TestLoadCurrentUserPresenceStatus_PlainLeaveStaysOnLeave(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupPresenceTestDB(t)
+	defer cleanup()
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	today := time.Now().Format("2006-01-02")
+	_, err = db.CreateLeaveRecord(ctx, aliceID, today, today, database.LeaveTypeLeave)
+	require.NoError(t, err)
+
+	handler := &Handler{db: db}
+	data := map[string]any{}
+
+	handler.loadCurrentUserPresenceStatus(ctx, data, "alice@example.com")
+
+	assert.Equal(t, currentUserStatusOnLeave, data["CurrentUserPresenceStatus"],
+		"plain leave must keep surfacing as On leave")
+}
+
+// TestGetUpcomingPresenceFrom_ConferenceLeaveTagsCell ensures the
+// schedule-matrix cell carries the LeaveType so the template can swap
+// the icon. The matrix's "Away" status stays — only the chip
+// metadata changes.
+func TestGetUpcomingPresenceFrom_ConferenceLeaveTagsCell(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupPresenceTestDB(t)
+	defer cleanup()
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	// Pin a future Monday so the second business day (Tuesday) lands
+	// at least one calendar day in the future (CreateLeaveRecord
+	// rejects past dates).
+	futureMonday := testutil.NextBusinessDay(time.Now().AddDate(0, 0, 14))
+	for futureMonday.Weekday() != time.Monday {
+		futureMonday = futureMonday.AddDate(0, 0, 1)
+	}
+	tuesday := futureMonday.AddDate(0, 0, 1)
+	tuesdayStr := tuesday.Format("2006-01-02")
+
+	// Alice = conference leave, Bob = plain leave — same day.
+	_, err = db.CreateLeaveRecord(ctx, aliceID, tuesdayStr, tuesdayStr, database.LeaveTypeConference)
+	require.NoError(t, err)
+	_, err = db.CreateLeaveRecord(ctx, bobID, tuesdayStr, tuesdayStr, database.LeaveTypeLeave)
+	require.NoError(t, err)
+
+	handler := &Handler{db: db, holidayChecker: func(time.Time) bool { return false }}
+	presence, err := handler.getUpcomingPresenceFrom(ctx, futureMonday)
+	require.NoError(t, err)
+
+	// Find the Tuesday column and check the per-member LeaveType
+	// metadata by looking at the day's Away list.
+	var tuesdayDay *presenceDay
+	for i := range presence {
+		if presence[i].DateISO == tuesdayStr {
+			tuesdayDay = &presence[i]
+			break
+		}
+	}
+	require.NotNil(t, tuesdayDay, "Tuesday must appear in the upcoming presence")
+
+	gotTypes := make(map[string]string)
+	for _, away := range tuesdayDay.Away {
+		gotTypes[away.Member.ID] = away.LeaveType
+	}
+	assert.Equal(t, database.LeaveTypeConference, gotTypes[aliceID],
+		"Alice's Away entry must carry leave_type=conference")
+	assert.Equal(t, database.LeaveTypeLeave, gotTypes[bobID],
+		"Bob's Away entry must carry leave_type=leave")
 }
 
 // TestLoadCurrentUserPresenceStatus_WithdrawnRecurringWFH_ShowsOnSite

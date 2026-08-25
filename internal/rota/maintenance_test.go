@@ -286,7 +286,7 @@ func TestScheduleMaintenance_HandleLeaveChange_LeaveCreatesCover(t *testing.T) {
 	targetDateStr := targetDate.Format("2006-01-02")
 
 	// Create leave for the target date
-	leaveID, err := db.CreateLeaveRecord(ctx, members[0].ID, targetDateStr, targetDateStr)
+	leaveID, err := db.CreateLeaveRecord(ctx, members[0].ID, targetDateStr, targetDateStr, database.LeaveTypeLeave)
 	require.NoError(t, err)
 
 	// Handle leave change
@@ -342,7 +342,7 @@ func TestScheduleMaintenance_HandleLeaveChange_DeleteRemovesCover(t *testing.T) 
 	targetDateStr := targetDate.Format("2006-01-02")
 
 	// Create leave and get cover assignment
-	leaveID, err := db.CreateLeaveRecord(ctx, members[0].ID, targetDateStr, targetDateStr)
+	leaveID, err := db.CreateLeaveRecord(ctx, members[0].ID, targetDateStr, targetDateStr, database.LeaveTypeLeave)
 	require.NoError(t, err)
 
 	err = maintenance.HandleLeaveChange(ctx, leaveID)
@@ -722,7 +722,7 @@ func TestScheduleMaintenance_DeleteLeave_RestoresOriginalAssignments(t *testing.
 	assert.Equal(t, charlieID, originalWed)
 
 	// Create leave for Bob covering Tue–Wed.
-	leaveID, err := db.CreateLeaveRecord(ctx, bobID, tue.Format("2006-01-02"), wed.Format("2006-01-02"))
+	leaveID, err := db.CreateLeaveRecord(ctx, bobID, tue.Format("2006-01-02"), wed.Format("2006-01-02"), database.LeaveTypeLeave)
 	require.NoError(t, err)
 
 	err = maintenance.HandleLeaveChange(ctx, leaveID)

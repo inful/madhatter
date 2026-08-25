@@ -44,7 +44,7 @@ func (h *Handler) handleLeaveReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.renderLeaveReportForm(w, r, data, "", "", "", "")
+	h.renderLeaveReportForm(w, r, data, "", "", "", "", "")
 }
 
 func (h *Handler) handleLeaveReportPost(w http.ResponseWriter, r *http.Request, data map[string]any) {
@@ -84,15 +84,20 @@ func (h *Handler) handleLeaveReportPost(w http.ResponseWriter, r *http.Request, 
 	startDate := r.PostForm.Get("start_date")
 	endDate := r.PostForm.Get("end_date")
 
+	// Accept the typed value as-is; CreateLeaveRecord defaults bad
+	// input to plain leave so a malformed form value can't fail the
+	// write with an opaque DB error.
+	leaveType := r.FormValue("leave_type")
+
 	// Validate dates before hitting the database.
 	if err := validateLeaveDates(startDate, endDate); err != nil {
-		h.renderLeaveReportForm(w, r, data, err.Error(), memberID, startDate, endDate)
+		h.renderLeaveReportForm(w, r, data, err.Error(), memberID, startDate, endDate, leaveType)
 		return
 	}
 
-	leaveID, err := h.db.CreateLeaveRecord(ctx, memberID, startDate, endDate)
+	leaveID, err := h.db.CreateLeaveRecord(ctx, memberID, startDate, endDate, leaveType)
 	if err != nil {
-		h.renderLeaveReportForm(w, r, data, err.Error(), memberID, startDate, endDate)
+		h.renderLeaveReportForm(w, r, data, err.Error(), memberID, startDate, endDate, leaveType)
 		return
 	}
 
@@ -104,7 +109,7 @@ func (h *Handler) handleLeaveReportPost(w http.ResponseWriter, r *http.Request, 
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
-func (h *Handler) renderLeaveReportForm(w http.ResponseWriter, r *http.Request, data map[string]any, errMsg, memberID, startDate, endDate string) {
+func (h *Handler) renderLeaveReportForm(w http.ResponseWriter, r *http.Request, data map[string]any, errMsg, memberID, startDate, endDate, leaveType string) {
 	ctx := r.Context()
 
 	members, err := h.db.GetActiveTeamMembers(ctx)
@@ -120,6 +125,12 @@ func (h *Handler) renderLeaveReportForm(w http.ResponseWriter, r *http.Request, 
 		data["SelectedMemberID"] = memberID
 		data["StartDate"] = startDate
 		data["EndDate"] = endDate
+		// Default to plain leave so the dropdown renders cleanly when
+		// the form is re-rendered without a prior user choice.
+		if leaveType == "" {
+			leaveType = database.LeaveTypeLeave
+		}
+		data["SelectedLeaveType"] = leaveType
 	}
 
 	if err := h.tmpl.ExecuteTemplate(w, "leave_report.html", data); err != nil {
@@ -264,7 +275,7 @@ func (h *Handler) handleLeaveEdit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Parse and validate the form body.
-	memberID, startDate, endDate, ok := parseLeaveEditForm(w, r, isAdmin, selfMemberID)
+	memberID, startDate, endDate, leaveType, ok := parseLeaveEditForm(w, r, isAdmin, selfMemberID, existing.LeaveType)
 	if !ok {
 		return
 	}
@@ -272,7 +283,7 @@ func (h *Handler) handleLeaveEdit(w http.ResponseWriter, r *http.Request) {
 	// existing (loaded during the auth check above) carries the row's
 	// status, which is managed by the scheduling engine and must be
 	// preserved across an edit.
-	if err := h.db.UpdateLeaveRecord(ctx, leaveID, memberID, startDate, endDate, existing.Status); err != nil {
+	if err := h.db.UpdateLeaveRecord(ctx, leaveID, memberID, startDate, endDate, existing.Status, leaveType); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -287,15 +298,20 @@ func (h *Handler) handleLeaveEdit(w http.ResponseWriter, r *http.Request) {
 }
 
 // parseLeaveEditForm parses the edit form body, validates the
-// inputs, and returns the three values the handler needs. Extracted
-// from handleLeaveEdit so the parent function stays under the
-// cyclop 10 budget. On validation failure it writes the error to w
-// and returns ok=false so the caller can just `return`.
-func parseLeaveEditForm(w http.ResponseWriter, r *http.Request, isAdmin bool, selfMemberID string) (memberID, startDate, endDate string, ok bool) {
+// inputs, and returns the values the handler needs. Extracted from
+// handleLeaveEdit so the parent function stays under the cyclop 10
+// budget. On validation failure it writes the error to w and returns
+// ok=false so the caller can just `return`.
+//
+// existingLeaveType is the leave_type currently stored on the row. If
+// the form doesn't send a leave_type value (older clients, hand-rolled
+// curl), fall back to that so an edit doesn't silently reset the type
+// to plain leave.
+func parseLeaveEditForm(w http.ResponseWriter, r *http.Request, isAdmin bool, selfMemberID, existingLeaveType string) (memberID, startDate, endDate, leaveType string, ok bool) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxLeaveFormBytes)
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
-		return "", "", "", false
+		return "", "", "", "", false
 	}
 
 	// For non-admins, force the leave's member to themselves so a
@@ -306,26 +322,30 @@ func parseLeaveEditForm(w http.ResponseWriter, r *http.Request, isAdmin bool, se
 	}
 	startDate = strings.TrimSpace(r.PostForm.Get("start_date"))
 	endDate = strings.TrimSpace(r.PostForm.Get("end_date"))
+	leaveType = strings.TrimSpace(r.PostForm.Get("leave_type"))
+	if leaveType == "" {
+		leaveType = existingLeaveType
+	}
 
 	if memberID == "" {
 		http.Error(w, "member_id cannot be empty", http.StatusBadRequest)
-		return "", "", "", false
+		return "", "", "", "", false
 	}
 	if startDate == "" {
 		http.Error(w, "start_date cannot be empty", http.StatusBadRequest)
-		return "", "", "", false
+		return "", "", "", "", false
 	}
 	if endDate == "" {
 		http.Error(w, "end_date cannot be empty", http.StatusBadRequest)
-		return "", "", "", false
+		return "", "", "", "", false
 	}
 
 	if err := validateLeaveDates(startDate, endDate); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
-		return "", "", "", false
+		return "", "", "", "", false
 	}
 
-	return memberID, startDate, endDate, true
+	return memberID, startDate, endDate, leaveType, true
 }
 
 func (h *Handler) handleLeaveDelete(w http.ResponseWriter, r *http.Request) {

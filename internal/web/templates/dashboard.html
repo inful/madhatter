@@ -17,6 +17,8 @@
             </span>
             {{if eq .CurrentUserPresenceStatus "WFH"}}
                 <span class="tag is-info is-light"><i class="fas fa-home mr-1"></i> WFH</span>
+            {{else if eq .CurrentUserPresenceStatus "@conference"}}
+                <span class="tag is-link is-light" title="Conference leave — tagged as a conference day"><i class="fas fa-people-group mr-1"></i> @conference</span>
             {{else if eq .CurrentUserPresenceStatus "On leave"}}
                 <span class="tag is-warning is-light"><i class="fas fa-plane-departure mr-1"></i> On leave</span>
             {{else}}
@@ -103,13 +105,15 @@
                         <div class="mobile-day-members">
                             {{range $row := $.ScheduleMatrix.Rows}}
                                 {{$cell := index $row.Cells $dayIndex}}
-                                <div class="mobile-member-row status-{{$cell.Status}}{{if $cell.Assigned}} has-hat{{end}}">
+                                <div class="mobile-member-row status-{{$cell.Status}}{{if $cell.Assigned}} has-hat{{end}}" {{if eq $cell.LeaveType "conference"}}data-leave-type="conference"{{end}}>
                                     <span class="mobile-member-name" title="{{$row.Member.Name}}">{{$row.Member.Name}}</span>
                                     <div class="mobile-member-state">
                                         <span class="status-chip">
                                             {{if eq $cell.Status "onsite"}}<i class="fas fa-building mr-1"></i>{{end}}
                                             {{if eq $cell.Status "wfh"}}<i class="fas fa-home mr-1"></i>{{end}}
-                                            {{if eq $cell.Status "away"}}<i class="fas fa-plane-departure mr-1"></i>{{end}}
+                                            {{if eq $cell.Status "away"}}
+                                                {{if eq $cell.LeaveType "conference"}}<i class="fas fa-people-group mr-1"></i>{{else}}<i class="fas fa-plane-departure mr-1"></i>{{end}}
+                                            {{end}}
                                             {{if eq $cell.Status "none"}}<i class="fas fa-minus mr-1"></i>{{end}}
                                             {{$cell.Label}}
                                         </span>
@@ -160,11 +164,13 @@
                             <tr>
                                 <th class="member-col" scope="row">{{.Member.Name}}</th>
                                 {{range .Cells}}
-                                    <td class="status-cell status-{{.Status}}{{if .IsToday}} today-cell{{end}}{{if .Assigned}} has-hat{{end}}"{{if and .Swapped .SwapInfo}} title="{{.SwapInfo}}"{{end}}>
+                                    <td class="status-cell status-{{.Status}}{{if .IsToday}} today-cell{{end}}{{if .Assigned}} has-hat{{end}}" {{if eq .LeaveType "conference"}}data-leave-type="conference"{{end}}{{if and .Swapped .SwapInfo}} title="{{.SwapInfo}}"{{end}}>
                                         <span class="status-chip">
                                             {{if eq .Status "onsite"}}<i class="fas fa-building mr-1"></i>{{end}}
                                             {{if eq .Status "wfh"}}<i class="fas fa-home mr-1"></i>{{end}}
-                                            {{if eq .Status "away"}}<i class="fas fa-plane-departure mr-1"></i>{{end}}
+                                            {{if eq .Status "away"}}
+                                                {{if eq .LeaveType "conference"}}<i class="fas fa-people-group mr-1"></i>{{else}}<i class="fas fa-plane-departure mr-1"></i>{{end}}
+                                            {{end}}
                                             {{if eq .Status "none"}}<i class="fas fa-minus mr-1"></i>{{end}}
                                             {{.Label}}
                                         </span>
@@ -479,6 +485,20 @@
         background: #fff7ed;
         border-color: #fed7aa;
         color: #c2410c;
+    }
+
+    /* Conference-leave variant: same "away" status for layout, but the
+       cells use a link/blue palette so they're visually distinct from
+       a plain away day without changing the status class. The per-cell
+       fa-people-group icon does most of the visual work; this just
+       colours the chip background so the difference holds when scanning a
+       dense matrix. */
+    .status-away.conference-leave .status-chip,
+    td.status-cell[data-leave-type="conference"] .status-chip,
+    .mobile-member-row.status-away[data-leave-type="conference"] .status-chip {
+        background: #eef4ff;
+        border-color: #c7d8ff;
+        color: #1d4ed8;
     }
 
     .status-none .status-chip {

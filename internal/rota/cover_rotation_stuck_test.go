@@ -68,21 +68,21 @@ func TestEngine_CoverRotationWithFutureCoverStuck(t *testing.T) {
 
 	// Add a leave for Jan 16 (Bob's scheduled day). The planted future
 	// cover on Jan 26 must not affect the cover chosen for Jan 16.
-	leave1ID, err := db.CreateLeaveRecord(ctx, bobID, "2024-01-16", "2024-01-16")
+	leave1ID, err := db.CreateLeaveRecord(ctx, bobID, "2024-01-16", "2024-01-16", database.LeaveTypeLeave)
 	require.NoError(t, err)
 	err = engine.AssignCoversForLeave(ctx, leave1ID)
 	require.NoError(t, err)
 
 	// Add a second leave for Jan 17 (Charlie's day). The future cover on
 	// Jan 26 must not anchor the rotation here either.
-	leave2ID, err := db.CreateLeaveRecord(ctx, charlieID, "2024-01-17", "2024-01-17")
+	leave2ID, err := db.CreateLeaveRecord(ctx, charlieID, "2024-01-17", "2024-01-17", database.LeaveTypeLeave)
 	require.NoError(t, err)
 	err = engine.AssignCoversForLeave(ctx, leave2ID)
 	require.NoError(t, err)
 
 	// And a third leave for Jan 18 (Dave's day). Same — the future
 	// cover must not pin successive new leaves to the same person.
-	leave3ID, err := db.CreateLeaveRecord(ctx, daveID, "2024-01-18", "2024-01-18")
+	leave3ID, err := db.CreateLeaveRecord(ctx, daveID, "2024-01-18", "2024-01-18", database.LeaveTypeLeave)
 	require.NoError(t, err)
 	err = engine.AssignCoversForLeave(ctx, leave3ID)
 	require.NoError(t, err)

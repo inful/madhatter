@@ -14,7 +14,20 @@ type ReportLeaveInput struct {
 		MemberID  string `json:"member_id"`
 		StartDate string `format:"date" json:"start_date"`
 		EndDate   string `format:"date" json:"end_date"`
+		LeaveType string `default:"leave" enum:"leave,conference" json:"leave_type,omitempty"`
 	}
+}
+
+// normalizeLeaveType coerces empty / invalid values to plain leave so
+// the API stays backwards-compatible with clients that don't send the
+// new leave_type field. The DB CHECK constraint would reject invalid
+// values at INSERT time, but failing at the boundary gives the client
+// a clearer error than a 500 from the SQL driver.
+func normalizeLeaveType(v string) string {
+	if database.IsValidLeaveType(v) {
+		return v
+	}
+	return database.LeaveTypeLeave
 }
 
 type ReportLeaveOutput struct {
@@ -41,7 +54,7 @@ func (s *Server) handleReportLeave(ctx context.Context, input *ReportLeaveInput)
 	}
 
 	// Create leave record
-	leaveID, err := s.db.CreateLeaveRecord(ctx, input.Body.MemberID, input.Body.StartDate, input.Body.EndDate)
+	leaveID, err := s.db.CreateLeaveRecord(ctx, input.Body.MemberID, input.Body.StartDate, input.Body.EndDate, normalizeLeaveType(input.Body.LeaveType))
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to create leave record", err)
 	}
@@ -139,6 +152,7 @@ type UpdateLeaveInput struct {
 		MemberID  string `json:"member_id"`
 		StartDate string `format:"date" json:"start_date"`
 		EndDate   string `format:"date" json:"end_date"`
+		LeaveType string `default:"leave" enum:"leave,conference" json:"leave_type,omitempty"`
 	}
 }
 
@@ -171,7 +185,7 @@ func (s *Server) handleUpdateLeave(ctx context.Context, input *UpdateLeaveInput)
 		return nil, huma.Error500InternalServerError("Failed to fetch leave record", err)
 	}
 
-	if err := s.db.UpdateLeaveRecord(ctx, input.ID, input.Body.MemberID, input.Body.StartDate, input.Body.EndDate, existing.Status); err != nil {
+	if err := s.db.UpdateLeaveRecord(ctx, input.ID, input.Body.MemberID, input.Body.StartDate, input.Body.EndDate, existing.Status, normalizeLeaveType(input.Body.LeaveType)); err != nil {
 		return nil, huma.Error500InternalServerError("Failed to update leave record", err)
 	}
 

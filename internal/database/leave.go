@@ -9,9 +9,17 @@ import (
 	"github.com/inful/madhatter/internal/database/sqlc"
 )
 
-func (db *DB) CreateLeaveRecord(ctx context.Context, memberID, startDate, endDate string) (string, error) {
+func (db *DB) CreateLeaveRecord(ctx context.Context, memberID, startDate, endDate, leaveType string) (string, error) {
 	if memberID == "" || startDate == "" || endDate == "" {
 		return "", errors.New("memberID, startDate, and endDate are required")
+	}
+
+	// Default missing/invalid type to plain leave so older callers (and
+	// any in-flight form code) keep their previous behavior. The DB
+	// CHECK constraint would catch invalid values anyway, but failing
+	// at the boundary with a clearer message saves a round trip.
+	if !IsValidLeaveType(leaveType) {
+		leaveType = LeaveTypeLeave
 	}
 
 	// Verify member exists
@@ -32,6 +40,7 @@ func (db *DB) CreateLeaveRecord(ctx context.Context, memberID, startDate, endDat
 		MemberID:  memberID,
 		StartDate: startTime,
 		EndDate:   endTime,
+		LeaveType: leaveType,
 	}
 
 	_, err = db.queries.CreateLeaveRecord(ctx, params)
@@ -69,6 +78,7 @@ func (db *DB) GetLeaveByDate(ctx context.Context, date string) ([]LeaveRecord, e
 			EndDate:       l.EndDate,
 			CoverMemberID: coverMemberID,
 			Status:        l.Status,
+			LeaveType:     l.LeaveType,
 			CreatedAt:     l.CreatedAt.Time,
 		}
 	}
@@ -100,6 +110,7 @@ func (db *DB) GetLeaveByID(ctx context.Context, leaveID string) (*LeaveRecord, e
 		EndDate:       leave.EndDate,
 		CoverMemberID: coverMemberID,
 		Status:        leave.Status,
+		LeaveType:     leave.LeaveType,
 		CreatedAt:     leave.CreatedAt.Time,
 	}, nil
 }
@@ -134,6 +145,7 @@ func (db *DB) GetLeaveRecords(ctx context.Context, statusFilter ...string) ([]Le
 			EndDate:       l.EndDate,
 			CoverMemberID: coverMemberID,
 			Status:        l.Status,
+			LeaveType:     l.LeaveType,
 			CreatedAt:     l.CreatedAt.Time,
 		}
 	}
@@ -159,9 +171,16 @@ func parseLeaveDates(startDate, endDate string) (time.Time, time.Time, error) {
 	return startTime, endTime, nil
 }
 
-func (db *DB) UpdateLeaveRecord(ctx context.Context, leaveID, memberID, startDate, endDate, status string) error {
+func (db *DB) UpdateLeaveRecord(ctx context.Context, leaveID, memberID, startDate, endDate, status, leaveType string) error {
 	if leaveID == "" || memberID == "" || startDate == "" || endDate == "" || status == "" {
 		return errors.New("leaveID, memberID, startDate, endDate, and status are required")
+	}
+
+	// Same default-to-leave policy as CreateLeaveRecord. The CHECK
+	// constraint would reject an invalid value at INSERT/UPDATE time,
+	// but coercing at the boundary keeps error messages actionable.
+	if !IsValidLeaveType(leaveType) {
+		leaveType = LeaveTypeLeave
 	}
 
 	// Verify member exists
@@ -181,6 +200,7 @@ func (db *DB) UpdateLeaveRecord(ctx context.Context, leaveID, memberID, startDat
 		StartDate: startTime,
 		EndDate:   endTime,
 		Status:    status,
+		LeaveType: leaveType,
 		ID:        leaveID,
 	}
 

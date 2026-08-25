@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/inful/madhatter/internal/database"
 	"github.com/stretchr/testify/require"
 )
 
@@ -43,7 +44,7 @@ func TestReassignCovers_StableOnSteadyState(t *testing.T) {
 	endDate := time.Date(2024, 1, 19, 0, 0, 0, 0, time.UTC)
 	require.NoError(t, engine.GenerateSchedule(ctx, startDate, endDate))
 
-	leaveID, err := db.CreateLeaveRecord(ctx, bobID, "2024-01-16", "2024-01-18")
+	leaveID, err := db.CreateLeaveRecord(ctx, bobID, "2024-01-16", "2024-01-18", database.LeaveTypeLeave)
 	require.NoError(t, err)
 	require.NoError(t, maintenance.HandleLeaveChange(ctx, leaveID))
 
@@ -99,11 +100,11 @@ func TestReassignCovers_HandlesMultipleLeaves(t *testing.T) {
 	require.NoError(t, engine.GenerateSchedule(ctx, startDate, endDate))
 
 	// Create three single-day leaves.
-	l1, err := db.CreateLeaveRecord(ctx, bobID, "2024-01-16", "2024-01-16")
+	l1, err := db.CreateLeaveRecord(ctx, bobID, "2024-01-16", "2024-01-16", database.LeaveTypeLeave)
 	require.NoError(t, err)
-	l2, err := db.CreateLeaveRecord(ctx, charlieID, "2024-01-17", "2024-01-17")
+	l2, err := db.CreateLeaveRecord(ctx, charlieID, "2024-01-17", "2024-01-17", database.LeaveTypeLeave)
 	require.NoError(t, err)
-	l3, err := db.CreateLeaveRecord(ctx, daveID, "2024-01-18", "2024-01-18")
+	l3, err := db.CreateLeaveRecord(ctx, daveID, "2024-01-18", "2024-01-18", database.LeaveTypeLeave)
 	require.NoError(t, err)
 
 	// Initial pass: each leave needs a cover assigned.
@@ -148,7 +149,7 @@ func TestReassignCovers_OnlyAffectsActiveLeaves(t *testing.T) {
 	// cleanup only fires on the next HandleLeaveChange call (which
 	// runs reconcileCoversForDateRange), so we must re-invoke it after
 	// the status change to model the real production workflow.
-	leaveID, err := db.CreateLeaveRecord(ctx, aliceID, "2024-01-15", "2024-01-15")
+	leaveID, err := db.CreateLeaveRecord(ctx, aliceID, "2024-01-15", "2024-01-15", database.LeaveTypeLeave)
 	require.NoError(t, err)
 	require.NoError(t, maintenance.HandleLeaveChange(ctx, leaveID))
 	require.NoError(t, db.UpdateLeaveStatus(ctx, leaveID, "completed"))
@@ -160,7 +161,7 @@ func TestReassignCovers_OnlyAffectsActiveLeaves(t *testing.T) {
 	require.Empty(t, completedCovers["2024-01-15"], "completed leave should have its cover removed")
 
 	// Bob is on leave Tue; an active leave.
-	bobLeaveID, err := db.CreateLeaveRecord(ctx, bobID, "2024-01-16", "2024-01-16")
+	bobLeaveID, err := db.CreateLeaveRecord(ctx, bobID, "2024-01-16", "2024-01-16", database.LeaveTypeLeave)
 	require.NoError(t, err)
 	require.NoError(t, maintenance.HandleLeaveChange(ctx, bobLeaveID))
 
@@ -223,7 +224,7 @@ func TestReassignCovers_RespectsHolidayChecker(t *testing.T) {
 	// Bob is on leave all week, so covers should be assigned for
 	// Mon (2024-01-15) and Wed-Fri (2024-01-17 to 2024-01-19), but
 	// NOT for the holiday Tue (2024-01-16).
-	leaveID, err := db.CreateLeaveRecord(ctx, bobID, "2024-01-15", "2024-01-19")
+	leaveID, err := db.CreateLeaveRecord(ctx, bobID, "2024-01-15", "2024-01-19", database.LeaveTypeLeave)
 	require.NoError(t, err)
 	require.NoError(t, maintenance.HandleLeaveChange(ctx, leaveID))
 
@@ -271,7 +272,7 @@ func TestReassignCovers_CreatesCoverForUnprocessedLeave(t *testing.T) {
 	// Create a leave for Jan 16 (Bob's scheduled day) but do NOT call
 	// HandleLeaveChange on it — the realistic "old record" case where
 	// the cover was never assigned.
-	leaveID, err := db.CreateLeaveRecord(ctx, bobID, "2024-01-16", "2024-01-16")
+	leaveID, err := db.CreateLeaveRecord(ctx, bobID, "2024-01-16", "2024-01-16", database.LeaveTypeLeave)
 	require.NoError(t, err)
 	_ = leaveID
 

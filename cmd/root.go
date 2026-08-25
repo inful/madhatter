@@ -169,7 +169,7 @@ func leaveReportCommand(ctx context.Context, db *database.DB) {
 		member = &database.TeamMember{ID: CLI.Leave.Report.MemberID}
 	}
 
-	leaveID, err := db.CreateLeaveRecord(ctx, member.ID, CLI.Leave.Report.Start, CLI.Leave.Report.End)
+	leaveID, err := db.CreateLeaveRecord(ctx, member.ID, CLI.Leave.Report.Start, CLI.Leave.Report.End, database.LeaveTypeLeave)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

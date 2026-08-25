@@ -169,7 +169,7 @@ func TestPresenceTodayEndpoint(t *testing.T) {
 	today := time.Now().Format("2006-01-02")
 
 	// Bob is away today.
-	_, err = server.db.CreateLeaveRecord(ctx, bobID, today, today)
+	_, err = server.db.CreateLeaveRecord(ctx, bobID, today, today, database.LeaveTypeLeave)
 	require.NoError(t, err)
 
 	// Alice is on support today.
@@ -320,6 +320,64 @@ func TestLeaveEndpoints(t *testing.T) {
 			}
 		}
 		assert.True(t, coverFound, "Should have at least one cover assignment")
+	})
+
+	t.Run("ReportLeaveWithLeaveType", func(t *testing.T) {
+		// A client passing leave_type=conference must have the value
+		// persisted on the row. This is the form-body coverage for the
+		// new API field.
+		input := &ReportLeaveInput{}
+		input.Body.MemberID = aliceID
+		input.Body.StartDate = "2024-01-18"
+		input.Body.EndDate = "2024-01-18"
+		input.Body.LeaveType = "conference"
+
+		resp, err := server.handleReportLeave(ctx, input)
+		require.NoError(t, err)
+
+		got2, err := server.db.GetLeaveByID(ctx, resp.Body.LeaveID)
+		require.NoError(t, err)
+		assert.Equal(t, "conference", got2.LeaveType,
+			"leave_type=conference must persist on the row")
+	})
+
+	t.Run("ReportLeaveDefaultsToLeave", func(t *testing.T) {
+		// A client that doesn't send leave_type (older clients, hand-rolled
+		// curl) must have the row default to plain leave, matching the
+		// previous behavior. This pins the API's backwards-compat
+		// contract introduced with the leave_type field.
+		input := &ReportLeaveInput{}
+		input.Body.MemberID = aliceID
+		input.Body.StartDate = "2024-01-19"
+		input.Body.EndDate = "2024-01-19"
+		input.Body.LeaveType = ""
+
+		resp, err := server.handleReportLeave(ctx, input)
+		require.NoError(t, err)
+
+		got2, err := server.db.GetLeaveByID(ctx, resp.Body.LeaveID)
+		require.NoError(t, err)
+		assert.Equal(t, "leave", got2.LeaveType,
+			"a missing leave_type must default to plain leave")
+	})
+
+	t.Run("ReportLeaveRejectsBogusType", func(t *testing.T) {
+		// An invalid leave_type must be coerced to plain leave rather
+		// than produce a 500 — the DB CHECK constraint would otherwise
+		// surface as an opaque driver failure.
+		input := &ReportLeaveInput{}
+		input.Body.MemberID = aliceID
+		input.Body.StartDate = "2024-01-23"
+		input.Body.EndDate = "2024-01-23"
+		input.Body.LeaveType = "bogus"
+
+		resp, err := server.handleReportLeave(ctx, input)
+		require.NoError(t, err)
+
+		got2, err := server.db.GetLeaveByID(ctx, resp.Body.LeaveID)
+		require.NoError(t, err)
+		assert.Equal(t, "leave", got2.LeaveType,
+			"an invalid leave_type must coerce to plain leave rather than 500")
 	})
 
 	t.Run("UpdateLeaveRecord", func(t *testing.T) {

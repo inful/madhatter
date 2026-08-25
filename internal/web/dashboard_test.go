@@ -63,7 +63,7 @@ func TestLoadCurrentHAT_WithCoverOnLeave(t *testing.T) {
 	_, err = db.CreateRotaAssignment(ctx, today, bobID, true, nil)
 	require.NoError(t, err)
 
-	leaveID, err := db.CreateLeaveRecord(ctx, aliceID, today, today)
+	leaveID, err := db.CreateLeaveRecord(ctx, aliceID, today, today, database.LeaveTypeLeave)
 	require.NoError(t, err)
 	// 'assigned' is the canonical active state (the engine's
 	// reassignment flow flips 'pending' → 'assigned' once the cover
@@ -104,7 +104,7 @@ func TestLoadCurrentHAT_IgnoresRejectedLeave(t *testing.T) {
 	_, err = db.CreateRotaAssignment(ctx, today, aliceID, false, nil)
 	require.NoError(t, err)
 
-	leaveID, err := db.CreateLeaveRecord(ctx, aliceID, today, today)
+	leaveID, err := db.CreateLeaveRecord(ctx, aliceID, today, today, database.LeaveTypeLeave)
 	require.NoError(t, err)
 	require.NoError(t, db.UpdateLeaveStatus(ctx, leaveID, "rejected"))
 

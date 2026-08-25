@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/inful/madhatter/internal/database"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -90,11 +91,11 @@ func TestRegenerateScheduleWithLeave(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create leave records FIRST (before generating schedule)
-	_, err = db.CreateLeaveRecord(ctx, aliceID, "2024-01-15", "2024-01-15") // Monday
+	_, err = db.CreateLeaveRecord(ctx, aliceID, "2024-01-15", "2024-01-15", database.LeaveTypeLeave) // Monday
 	require.NoError(t, err)
-	_, err = db.CreateLeaveRecord(ctx, bobID, "2024-01-16", "2024-01-16") // Tuesday
+	_, err = db.CreateLeaveRecord(ctx, bobID, "2024-01-16", "2024-01-16", database.LeaveTypeLeave) // Tuesday
 	require.NoError(t, err)
-	_, err = db.CreateLeaveRecord(ctx, charlieID, "2024-01-17", "2024-01-17") // Wednesday
+	_, err = db.CreateLeaveRecord(ctx, charlieID, "2024-01-17", "2024-01-17", database.LeaveTypeLeave) // Wednesday
 	require.NoError(t, err)
 
 	// Now regenerate schedule (this simulates the "regenerate from scratch" button)
@@ -158,15 +159,15 @@ func TestRegenerateWithMultipleLeaves(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create 5 leave records (more than team size to test wrapping)
-	_, err = db.CreateLeaveRecord(ctx, aliceID, "2024-01-15", "2024-01-15")
+	_, err = db.CreateLeaveRecord(ctx, aliceID, "2024-01-15", "2024-01-15", database.LeaveTypeLeave)
 	require.NoError(t, err)
-	_, err = db.CreateLeaveRecord(ctx, bobID, "2024-01-16", "2024-01-16")
+	_, err = db.CreateLeaveRecord(ctx, bobID, "2024-01-16", "2024-01-16", database.LeaveTypeLeave)
 	require.NoError(t, err)
-	_, err = db.CreateLeaveRecord(ctx, charlieID, "2024-01-17", "2024-01-17")
+	_, err = db.CreateLeaveRecord(ctx, charlieID, "2024-01-17", "2024-01-17", database.LeaveTypeLeave)
 	require.NoError(t, err)
-	_, err = db.CreateLeaveRecord(ctx, daveID, "2024-01-18", "2024-01-18")
+	_, err = db.CreateLeaveRecord(ctx, daveID, "2024-01-18", "2024-01-18", database.LeaveTypeLeave)
 	require.NoError(t, err)
-	_, err = db.CreateLeaveRecord(ctx, aliceID, "2024-01-19", "2024-01-19")
+	_, err = db.CreateLeaveRecord(ctx, aliceID, "2024-01-19", "2024-01-19", database.LeaveTypeLeave)
 	require.NoError(t, err)
 
 	// Generate schedule

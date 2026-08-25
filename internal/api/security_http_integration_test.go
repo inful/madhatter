@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/inful/madhatter/internal/database"
 	"github.com/inful/madhatter/internal/database/sqlc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -391,9 +392,9 @@ func TestAPIAuth_AllOperations(t *testing.T) {
 		time.Date(2024, 1, 31, 0, 0, 0, 0, time.UTC),
 	))
 
-	leaveToUpdate, err := server.db.CreateLeaveRecord(ctx, memberA, "2024-01-17", "2024-01-17")
+	leaveToUpdate, err := server.db.CreateLeaveRecord(ctx, memberA, "2024-01-17", "2024-01-17", database.LeaveTypeLeave)
 	require.NoError(t, err)
-	leaveToDelete, err := server.db.CreateLeaveRecord(ctx, memberA, "2024-01-18", "2024-01-18")
+	leaveToDelete, err := server.db.CreateLeaveRecord(ctx, memberA, "2024-01-18", "2024-01-18", database.LeaveTypeLeave)
 	require.NoError(t, err)
 
 	calToken, err := server.db.CreateCalendarSubscription(ctx, memberA)

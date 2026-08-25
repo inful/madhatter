@@ -35,7 +35,7 @@ func TestEngine_AssignCoversForLeave_Idempotent(t *testing.T) {
 
 	// Bob on leave Mon-Fri (a multi-day leave so the cover rotates
 	// through the rest of the team on each day).
-	leaveID, err := db.CreateLeaveRecord(ctx, bobID, "2024-01-15", "2024-01-19")
+	leaveID, err := db.CreateLeaveRecord(ctx, bobID, "2024-01-15", "2024-01-19", database.LeaveTypeLeave)
 	require.NoError(t, err)
 	require.NoError(t, engine.AssignCoversForLeave(ctx, leaveID))
 
@@ -77,7 +77,7 @@ func TestEngine_HandleLeaveChange_Idempotent(t *testing.T) {
 	endDate := time.Date(2024, 1, 19, 0, 0, 0, 0, time.UTC)
 	require.NoError(t, engine.GenerateSchedule(ctx, startDate, endDate))
 
-	leaveID, err := db.CreateLeaveRecord(ctx, bobID, "2024-01-16", "2024-01-18")
+	leaveID, err := db.CreateLeaveRecord(ctx, bobID, "2024-01-16", "2024-01-18", database.LeaveTypeLeave)
 	require.NoError(t, err)
 	require.NoError(t, maintenance.HandleLeaveChange(ctx, leaveID))
 
@@ -139,7 +139,7 @@ func TestEngine_AssignCoversForLeave_StableAcrossMultipleRuns(t *testing.T) {
 	run := func() []string {
 		covers := make([]string, 0, len(pattern))
 		for _, p := range pattern {
-			id, err := db.CreateLeaveRecord(ctx, p.member, p.date, p.date)
+			id, err := db.CreateLeaveRecord(ctx, p.member, p.date, p.date, database.LeaveTypeLeave)
 			require.NoError(t, err)
 			require.NoError(t, engine.AssignCoversForLeave(ctx, id))
 			covers = append(covers, getCoverMemberID(t, ctx, db, p.date))

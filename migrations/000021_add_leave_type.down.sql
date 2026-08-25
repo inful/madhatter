@@ -1,0 +1,1 @@
+ALTER TABLE leave_records DROP COLUMN leave_type;

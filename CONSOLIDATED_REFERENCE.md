@@ -108,14 +108,16 @@ CREATE TABLE leave_records (
     member_id TEXT NOT NULL,
     start_date DATE NOT NULL,
     end_date DATE NOT NULL,
-    type TEXT NOT NULL, -- 'sick', 'vacation', 'other'
     cover_member_id TEXT,
     status TEXT NOT NULL, -- 'pending', 'assigned', 'completed'
+    leave_type TEXT NOT NULL DEFAULT 'leave' CHECK (leave_type IN ('leave', 'conference')),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (member_id) REFERENCES team_members(id),
-    FOREIGN KEY (cover_member_id) REFERENCES team_members(id)
+    FOREIGN KEY (member_id) REFERENCES team_members(id) ON DELETE CASCADE,
+    FOREIGN KEY (cover_member_id) REFERENCES team_members(id) ON DELETE SET NULL
 );
 ```
+
+`leave_type` tags a leave as plain `leave` (default) or `conference`. The tag is purely a UI signal: the dashboard's "Today" badge swaps "On leave" for "@conference" and the schedule-matrix cell swaps the plane icon for a people-group icon. Scheduling, cover assignment, and quotas are unchanged.
 
 ### rota_assignments
 ```sql

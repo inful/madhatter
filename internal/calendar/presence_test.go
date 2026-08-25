@@ -85,9 +85,9 @@ func TestComputePresenceSnapshot_TwoOnLeaveThreeOnSite(t *testing.T) {
 	require.NoError(t, err)
 
 	// Alice and Bob on leave today.
-	_, err = db.CreateLeaveRecord(ctx, aliceID, "2026-06-10", "2026-06-10")
+	_, err = db.CreateLeaveRecord(ctx, aliceID, "2026-06-10", "2026-06-10", database.LeaveTypeLeave)
 	require.NoError(t, err)
-	_, err = db.CreateLeaveRecord(ctx, bobID, "2026-06-10", "2026-06-10")
+	_, err = db.CreateLeaveRecord(ctx, bobID, "2026-06-10", "2026-06-10", database.LeaveTypeLeave)
 	require.NoError(t, err)
 
 	b := newPresenceBuilder(db, nil, nil, "seed")

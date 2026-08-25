@@ -88,7 +88,8 @@ type presenceDay struct {
 }
 
 type presenceLeave struct {
-	Member database.TeamMember
+	Member    database.TeamMember
+	LeaveType string // empty for plain leave; "conference" for conference leave
 }
 
 type scheduleMatrix struct {
@@ -126,6 +127,11 @@ type scheduleMatrixCell struct {
 	IsToday   bool
 	DateISO   string
 	DateLabel string
+	// LeaveType is the leave_records.leave_type value when Status is
+	// "away". Empty when the member is not on leave. The template
+	// uses it to pick the per-cell icon and tag color so conference
+	// leaves are visually distinct from plain leave.
+	LeaveType string
 }
 
 func NewHandler(db *database.DB, authManager *auth.AuthManager, authMiddleware *auth.Middleware, development bool, holidayChecker func(time.Time) bool) (*Handler, error) {

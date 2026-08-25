@@ -68,6 +68,22 @@
             </div>
 
             <div class="field">
+                <label class="label">Leave Type</label>
+                <div class="control has-icons-left">
+                    <div class="select is-fullwidth">
+                        <select name="leave_type">
+                            <option value="leave" {{if or (not .SelectedLeaveType) (eq .SelectedLeaveType "leave")}}selected{{end}}>Leave</option>
+                            <option value="conference" {{if eq .SelectedLeaveType "conference"}}selected{{end}}>Conference</option>
+                        </select>
+                    </div>
+                    <span class="icon is-small is-left">
+                        <i class="fas fa-tag"></i>
+                    </span>
+                </div>
+                <p class="help">Tagged leaves appear with a different icon on the dashboard and calendar.</p>
+            </div>
+
+            <div class="field">
                 <div class="control">
                     <button type="submit" class="button is-primary is-fullwidth submit-btn">
                         <i class="fas fa-paper-plane mr-2"></i> Report Leave

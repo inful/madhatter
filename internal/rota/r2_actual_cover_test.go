@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/inful/madhatter/internal/database"
 	"github.com/stretchr/testify/require"
 )
 
@@ -67,7 +68,7 @@ func TestR2_RecordsActualCover_NotCandidate(t *testing.T) {
 	for d := startDate; !d.After(endDate); d = d.AddDate(0, 0, 1) {
 		dateStr := d.Format("2006-01-02")
 		for _, mid := range []string{aliceID, bobID, charlieID} {
-			_, err = db.CreateLeaveRecord(ctx, mid, dateStr, dateStr)
+			_, err = db.CreateLeaveRecord(ctx, mid, dateStr, dateStr, database.LeaveTypeLeave)
 			require.NoError(t, err)
 		}
 	}
@@ -157,7 +158,7 @@ func TestR2_OnlyOnePersonAvailable_FallsBackToSameSlot(t *testing.T) {
 	// is on leave. Bob is the only available cover.
 	dateStr := "2024-01-15"
 	for _, mid := range []string{aliceID, charlieID} {
-		_, err = db.CreateLeaveRecord(ctx, mid, dateStr, dateStr)
+		_, err = db.CreateLeaveRecord(ctx, mid, dateStr, dateStr, database.LeaveTypeLeave)
 		require.NoError(t, err)
 	}
 

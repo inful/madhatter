@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/inful/madhatter/internal/database"
 	"github.com/stretchr/testify/require"
 )
 
@@ -40,7 +41,7 @@ func TestEngine_CoverReplacement(t *testing.T) {
 	require.False(t, assignments[0].IsCover)
 
 	// Alice takes leave -> Bob should cover
-	aliceLeaveID, err := db.CreateLeaveRecord(ctx, aliceID, "2024-01-15", "2024-01-15")
+	aliceLeaveID, err := db.CreateLeaveRecord(ctx, aliceID, "2024-01-15", "2024-01-15", database.LeaveTypeLeave)
 	require.NoError(t, err)
 	err = engine.AssignCoversForLeave(ctx, aliceLeaveID)
 	require.NoError(t, err)
@@ -64,7 +65,7 @@ func TestEngine_CoverReplacement(t *testing.T) {
 	require.Equal(t, bobID, *cover, "Bob should be covering")
 
 	// Now Bob takes leave -> Charlie should replace Bob as cover
-	bobLeaveID, err := db.CreateLeaveRecord(ctx, bobID, "2024-01-15", "2024-01-15")
+	bobLeaveID, err := db.CreateLeaveRecord(ctx, bobID, "2024-01-15", "2024-01-15", database.LeaveTypeLeave)
 	require.NoError(t, err)
 	err = engine.AssignCoversForLeave(ctx, bobLeaveID)
 	require.NoError(t, err)
@@ -112,7 +113,7 @@ func TestEngine_CoverReplacement_MultiDay(t *testing.T) {
 	require.NoError(t, err)
 
 	// Alice takes leave Mon-Wed -> Bob should cover all three days
-	aliceLeaveID, _ := db.CreateLeaveRecord(ctx, aliceID, "2024-01-15", "2024-01-17")
+	aliceLeaveID, _ := db.CreateLeaveRecord(ctx, aliceID, "2024-01-15", "2024-01-17", database.LeaveTypeLeave)
 	err = engine.AssignCoversForLeave(ctx, aliceLeaveID)
 	require.NoError(t, err)
 
@@ -127,7 +128,7 @@ func TestEngine_CoverReplacement_MultiDay(t *testing.T) {
 	require.Equal(t, bobID, mondayCover)
 
 	// Bob takes leave on Wednesday -> Charlie should replace Bob on Wednesday only
-	bobLeaveID, _ := db.CreateLeaveRecord(ctx, bobID, "2024-01-17", "2024-01-17")
+	bobLeaveID, _ := db.CreateLeaveRecord(ctx, bobID, "2024-01-17", "2024-01-17", database.LeaveTypeLeave)
 	err = engine.AssignCoversForLeave(ctx, bobLeaveID)
 	require.NoError(t, err)
 

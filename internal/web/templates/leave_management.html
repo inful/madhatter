@@ -27,6 +27,7 @@
                             <th scope="col">Member</th>
                             <th scope="col">Start Date</th>
                             <th scope="col">End Date</th>
+                            <th scope="col">Type</th>
                             <th scope="col">Status</th>
                             <th scope="col">Created</th>
                             <th scope="col">Actions</th>
@@ -40,6 +41,17 @@
                             </th>
                             <td>{{.Leave.StartDate.Format "2006-01-02"}}</td>
                             <td>{{.Leave.EndDate.Format "2006-01-02"}}</td>
+                            <td>
+                                {{if eq .Leave.LeaveType "conference"}}
+                                    <span class="tag is-link is-light" title="Conference leave — shown with a different icon on the dashboard">
+                                        <i class="fas fa-people-group mr-1"></i> Conference
+                                    </span>
+                                {{else}}
+                                    <span class="tag is-light">
+                                        <i class="fas fa-plane-departure mr-1"></i> Leave
+                                    </span>
+                                {{end}}
+                            </td>
                             <td>
                                 {{if eq .Leave.Status "pending"}}
                                     <span class="tag is-warning">
@@ -57,7 +69,7 @@
                             <td>
                                 {{if or $.IsAdmin (eq .Leave.MemberID $.SelfMemberID)}}
                                     <button class="button is-small is-info is-light mr-1"
-                                            data-edit-leave data-id="{{.Leave.ID}}" data-member-id="{{.Leave.MemberID}}" data-start-date="{{.Leave.StartDate.Format "2006-01-02"}}" data-end-date="{{.Leave.EndDate.Format "2006-01-02"}}"
+                                            data-edit-leave data-id="{{.Leave.ID}}" data-member-id="{{.Leave.MemberID}}" data-start-date="{{.Leave.StartDate.Format "2006-01-02"}}" data-end-date="{{.Leave.EndDate.Format "2006-01-02"}}" data-leave-type="{{.Leave.LeaveType}}"
                                             aria-label="Edit leave record">
                                         <i class="fas fa-edit"></i>
                                     </button>
@@ -125,6 +137,17 @@
                     <label class="label">End Date</label>
                     <div class="control">
                         <input id="editEndDate" class="input" type="date" name="end_date" required>
+                    </div>
+                </div>
+                <div class="field">
+                    <label class="label">Leave Type</label>
+                    <div class="control">
+                        <div class="select is-fullwidth">
+                            <select id="editLeaveType" name="leave_type">
+                                <option value="leave">Leave</option>
+                                <option value="conference">Conference</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
             </section>

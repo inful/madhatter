@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/inful/madhatter/internal/database"
 	"github.com/stretchr/testify/require"
 )
 
@@ -65,7 +66,7 @@ func TestReassignCovers_IdempotentWithMultiDayLeaveAndVariedWalks(t *testing.T) 
 	}
 
 	// Bob on leave Mon-Fri.
-	bobLeaveID, err := db.CreateLeaveRecord(ctx, bobID, "2024-01-15", "2024-01-19")
+	bobLeaveID, err := db.CreateLeaveRecord(ctx, bobID, "2024-01-15", "2024-01-19", database.LeaveTypeLeave)
 	require.NoError(t, err)
 	require.NoError(t, maintenance.HandleLeaveChange(ctx, bobLeaveID))
 
@@ -75,7 +76,7 @@ func TestReassignCovers_IdempotentWithMultiDayLeaveAndVariedWalks(t *testing.T) 
 	// Pre-fix, the backward walk subtracted only delta from the
 	// actual cover slot, not (delta + walks), so it computed a
 	// different candidate than the forward walk.
-	aliceLeaveID, err := db.CreateLeaveRecord(ctx, aliceID, "2024-01-18", "2024-01-19")
+	aliceLeaveID, err := db.CreateLeaveRecord(ctx, aliceID, "2024-01-18", "2024-01-19", database.LeaveTypeLeave)
 	require.NoError(t, err)
 	require.NoError(t, maintenance.HandleLeaveChange(ctx, aliceLeaveID))
 
@@ -151,7 +152,7 @@ func TestReassignCovers_NewLeaveBetweenRunsIsPickedUp(t *testing.T) {
 	// First leave: Bob on Mon-Wed (Jan 15-17). Bob is the original
 	// on Mon (Jan 15), so HandleLeaveChange creates a cover on
 	// that day.
-	leave1ID, err := db.CreateLeaveRecord(ctx, bobID, "2024-01-15", "2024-01-17")
+	leave1ID, err := db.CreateLeaveRecord(ctx, bobID, "2024-01-15", "2024-01-17", database.LeaveTypeLeave)
 	require.NoError(t, err)
 	require.NoError(t, maintenance.HandleLeaveChange(ctx, leave1ID))
 
@@ -168,7 +169,7 @@ func TestReassignCovers_NewLeaveBetweenRunsIsPickedUp(t *testing.T) {
 	// is the realistic "old record" case where a leave predates
 	// the cover-assignment system, or an admin backfilled a
 	// future leave via a database import.
-	_, err = db.CreateLeaveRecord(ctx, aliceID, "2024-01-18", "2024-01-18")
+	_, err = db.CreateLeaveRecord(ctx, aliceID, "2024-01-18", "2024-01-18", database.LeaveTypeLeave)
 	require.NoError(t, err)
 
 	// Second reassign: must process both leaves and create the
@@ -225,7 +226,7 @@ func TestReassignCovers_DoesNotDisturbAdHocState(t *testing.T) {
 	// Bob is the original on Tue (Jan 16) and Fri (Jan 19) in this
 	// 3-person rotation. Use Jan 16 so HandleLeaveChange has a
 	// non-trivial effect (advances the ad-hoc state, creates a cover).
-	bobLeaveID, err := db.CreateLeaveRecord(ctx, bobID, "2024-01-16", "2024-01-16")
+	bobLeaveID, err := db.CreateLeaveRecord(ctx, bobID, "2024-01-16", "2024-01-16", database.LeaveTypeLeave)
 	require.NoError(t, err)
 	require.NoError(t, maintenance.HandleLeaveChange(ctx, bobLeaveID))
 
@@ -285,7 +286,7 @@ func TestReassignCovers_AdHocBetweenRunsShiftsCoversAsExpected(t *testing.T) {
 	// Bob is the original on Tue (Jan 16) and Fri (Jan 19) in this
 	// 3-person rotation. Use Tue-Fri so HandleLeaveChange has
 	// something to do for Bob on his original days.
-	bobLeaveID, err := db.CreateLeaveRecord(ctx, bobID, "2024-01-16", "2024-01-19")
+	bobLeaveID, err := db.CreateLeaveRecord(ctx, bobID, "2024-01-16", "2024-01-19", database.LeaveTypeLeave)
 	require.NoError(t, err)
 	require.NoError(t, maintenance.HandleLeaveChange(ctx, bobLeaveID))
 
@@ -297,7 +298,7 @@ func TestReassignCovers_AdHocBetweenRunsShiftsCoversAsExpected(t *testing.T) {
 	// where she IS the original. This advances the rotation by
 	// one slot (the algorithm picks a new candidate for Alice's
 	// cover on Jan 15, which shifts subsequent covers).
-	aliceLeaveID, err := db.CreateLeaveRecord(ctx, aliceID, "2024-01-15", "2024-01-15")
+	aliceLeaveID, err := db.CreateLeaveRecord(ctx, aliceID, "2024-01-15", "2024-01-15", database.LeaveTypeLeave)
 	require.NoError(t, err)
 	require.NoError(t, maintenance.HandleLeaveChange(ctx, aliceLeaveID))
 

@@ -66,6 +66,28 @@ func (m TeamMember) HasAnyRecurringWFH() bool {
 		m.RecurringWFHFriday
 }
 
+// LeaveTypeLeave and LeaveTypeConference are the closed set of values
+// leave_records.leave_type accepts. The DB enforces the same set via a
+// CHECK constraint (migration 000021); keeping the constants here lets
+// the application reject bad values before they reach the driver and
+// gives call sites a typed comparison instead of raw string equality.
+const (
+	LeaveTypeLeave      = "leave"
+	LeaveTypeConference = "conference"
+)
+
+// IsValidLeaveType reports whether v is one of the accepted leave types.
+// Callers should use this when accepting leave_type from user input so
+// the application rejects the same set the DB CHECK constraint would.
+func IsValidLeaveType(v string) bool {
+	switch v {
+	case LeaveTypeLeave, LeaveTypeConference:
+		return true
+	default:
+		return false
+	}
+}
+
 type LeaveRecord struct {
 	ID            string    `json:"id"`
 	MemberID      string    `json:"member_id"`
@@ -73,6 +95,7 @@ type LeaveRecord struct {
 	EndDate       time.Time `json:"end_date"`
 	CoverMemberID string    `json:"cover_member_id"`
 	Status        string    `json:"status"`
+	LeaveType     string    `json:"leave_type"`
 	CreatedAt     time.Time `json:"created_at"`
 }
 

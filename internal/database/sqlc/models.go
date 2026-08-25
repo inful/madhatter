@@ -56,6 +56,7 @@ type LeaveRecord struct {
 	EndDate       time.Time      `json:"end_date"`
 	CoverMemberID sql.NullString `json:"cover_member_id"`
 	Status        string         `json:"status"`
+	LeaveType     string         `json:"leave_type"`
 	CreatedAt     sql.NullTime   `json:"created_at"`
 }
 

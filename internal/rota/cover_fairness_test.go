@@ -214,7 +214,7 @@ func generateRandomLeaves(rng *rand.Rand, db leaveCreator, memberID string, year
 	}
 
 	for _, c := range chunks {
-		if _, err := db.CreateLeaveRecord(context.Background(), memberID, c.start.Format("2006-01-02"), c.end.Format("2006-01-02")); err != nil {
+		if _, err := db.CreateLeaveRecord(context.Background(), memberID, c.start.Format("2006-01-02"), c.end.Format("2006-01-02"), database.LeaveTypeLeave); err != nil {
 			return err
 		}
 	}
@@ -224,7 +224,7 @@ func generateRandomLeaves(rng *rand.Rand, db leaveCreator, memberID string, year
 // leaveCreator is the minimal subset of *database.DB that
 // generateRandomLeaves needs.
 type leaveCreator interface {
-	CreateLeaveRecord(ctx context.Context, memberID, startDate, endDate string) (string, error)
+	CreateLeaveRecord(ctx context.Context, memberID, startDate, endDate, leaveType string) (string, error)
 }
 
 // pickChunkStart tries up to 50 times to find a random business day

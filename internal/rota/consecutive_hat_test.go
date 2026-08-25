@@ -93,7 +93,7 @@ func createDailyLeaves(t *testing.T, ctx context.Context, db *database.DB, membe
 			continue
 		}
 		dateStr := d.Format("2006-01-02")
-		_, err := db.CreateLeaveRecord(ctx, memberID, dateStr, dateStr)
+		_, err := db.CreateLeaveRecord(ctx, memberID, dateStr, dateStr, database.LeaveTypeLeave)
 		require.NoError(t, err)
 	}
 }

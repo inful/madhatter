@@ -12,8 +12,8 @@ import (
 )
 
 const createLeaveRecord = `-- name: CreateLeaveRecord :execresult
-INSERT INTO leave_records (id, member_id, start_date, end_date, status)
-VALUES (?, ?, ?, ?, 'pending')
+INSERT INTO leave_records (id, member_id, start_date, end_date, status, leave_type)
+VALUES (?, ?, ?, ?, 'pending', ?)
 `
 
 type CreateLeaveRecordParams struct {
@@ -21,6 +21,7 @@ type CreateLeaveRecordParams struct {
 	MemberID  string    `json:"member_id"`
 	StartDate time.Time `json:"start_date"`
 	EndDate   time.Time `json:"end_date"`
+	LeaveType string    `json:"leave_type"`
 }
 
 func (q *Queries) CreateLeaveRecord(ctx context.Context, arg CreateLeaveRecordParams) (sql.Result, error) {
@@ -29,6 +30,7 @@ func (q *Queries) CreateLeaveRecord(ctx context.Context, arg CreateLeaveRecordPa
 		arg.MemberID,
 		arg.StartDate,
 		arg.EndDate,
+		arg.LeaveType,
 	)
 }
 
@@ -53,7 +55,7 @@ func (q *Queries) DeleteLeaveRecord(ctx context.Context, id string) error {
 }
 
 const getLeaveByDate = `-- name: GetLeaveByDate :many
-SELECT id, member_id, start_date, end_date, cover_member_id, status, created_at
+SELECT id, member_id, start_date, end_date, cover_member_id, status, leave_type, created_at
 FROM leave_records
 WHERE ? >= start_date AND ? <= end_date AND status != 'completed'
 `
@@ -79,6 +81,7 @@ func (q *Queries) GetLeaveByDate(ctx context.Context, arg GetLeaveByDateParams) 
 			&i.EndDate,
 			&i.CoverMemberID,
 			&i.Status,
+			&i.LeaveType,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -95,7 +98,7 @@ func (q *Queries) GetLeaveByDate(ctx context.Context, arg GetLeaveByDateParams) 
 }
 
 const getLeaveByID = `-- name: GetLeaveByID :one
-SELECT id, member_id, start_date, end_date, cover_member_id, status, created_at
+SELECT id, member_id, start_date, end_date, cover_member_id, status, leave_type, created_at
 FROM leave_records
 WHERE id = ?
 `
@@ -110,13 +113,14 @@ func (q *Queries) GetLeaveByID(ctx context.Context, id string) (LeaveRecord, err
 		&i.EndDate,
 		&i.CoverMemberID,
 		&i.Status,
+		&i.LeaveType,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getLeaveRecords = `-- name: GetLeaveRecords :many
-SELECT id, member_id, start_date, end_date, cover_member_id, status, created_at
+SELECT id, member_id, start_date, end_date, cover_member_id, status, leave_type, created_at
 FROM leave_records
 WHERE (status = ? OR ? = '')
 ORDER BY start_date DESC
@@ -143,6 +147,7 @@ func (q *Queries) GetLeaveRecords(ctx context.Context, arg GetLeaveRecordsParams
 			&i.EndDate,
 			&i.CoverMemberID,
 			&i.Status,
+			&i.LeaveType,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -176,7 +181,7 @@ func (q *Queries) UpdateLeaveCoverMember(ctx context.Context, arg UpdateLeaveCov
 
 const updateLeaveRecord = `-- name: UpdateLeaveRecord :exec
 UPDATE leave_records
-SET member_id = ?, start_date = ?, end_date = ?, status = ?
+SET member_id = ?, start_date = ?, end_date = ?, status = ?, leave_type = ?
 WHERE id = ?
 `
 
@@ -185,6 +190,7 @@ type UpdateLeaveRecordParams struct {
 	StartDate time.Time `json:"start_date"`
 	EndDate   time.Time `json:"end_date"`
 	Status    string    `json:"status"`
+	LeaveType string    `json:"leave_type"`
 	ID        string    `json:"id"`
 }
 
@@ -194,6 +200,7 @@ func (q *Queries) UpdateLeaveRecord(ctx context.Context, arg UpdateLeaveRecordPa
 		arg.StartDate,
 		arg.EndDate,
 		arg.Status,
+		arg.LeaveType,
 		arg.ID,
 	)
 	return err

@@ -22,6 +22,8 @@ var (
 	ErrWFHPermanentMember      = ErrWFHRecurringContractDay
 	ErrWFHNotApproved          = errors.New("WFH request is not approved")
 	ErrWFHOnHoliday            = errors.New("WFH requests cannot be made for holidays")
+	ErrWFHQuotaExhausted       = errors.New("WFH quota for this period has been reached")
+	ErrWFHDisabled             = errors.New("the WFH feature is disabled")
 )
 
 // WFHErrorInfo describes the transport-level meaning of a WFH sentinel
@@ -52,6 +54,8 @@ var wfhErrorTable = []struct {
 	{ErrWFHRecurringContractDay, WFHErrorInfo{Status: http.StatusConflict, Message: "This date falls on your contractual recurring WFH day."}},
 	{ErrWFHOnHoliday, WFHErrorInfo{Status: http.StatusUnprocessableEntity, Message: "WFH requests cannot be made for holidays."}},
 	{ErrWFHNotApproved, WFHErrorInfo{Status: http.StatusConflict, Message: "Only approved WFH requests can be withdrawn."}},
+	{ErrWFHQuotaExhausted, WFHErrorInfo{Status: http.StatusUnprocessableEntity, Message: "You have reached your WFH quota for this period. Withdraw an approved WFH to free a slot, or contact an admin."}},
+	{ErrWFHDisabled, WFHErrorInfo{Status: http.StatusServiceUnavailable, Message: "The WFH feature is disabled on this server."}},
 }
 
 // WFHErrorFor returns the transport-level info for err if it is (or wraps)

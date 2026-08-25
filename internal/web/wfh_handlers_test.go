@@ -473,3 +473,218 @@ func TestHandleWFHPurge_FlashOnAdminPage(t *testing.T) {
 	assert.Contains(t, body, "Purged 3 past WFH requests", "banner must render the deleted count")
 	assert.Contains(t, body, "2025-12-01", "banner must render the cutoff")
 }
+
+// TestHandleWFHReportToday_Approves_RedirectsWithFlashBanner is the
+// form-body coverage for the new "WFH today" entry point. A POST
+// from the dashboard button must:
+//   - create the row
+//   - settle it inline (capacity available → approved)
+//   - redirect back to the dashboard with a flash banner that
+//     surfaces the outcome as a query-string param
+func TestHandleWFHReportToday_Approves_RedirectsWithFlashBanner(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupSwapTestDB(t)
+	defer cleanup()
+
+	svc := wfh.NewService(db, wfh.Config{
+		Enabled:             true,
+		MinOnsitePercentage: 50,
+		MinOnsiteAbsolute:   1,
+		MaxDaysPerPeriod:    2,
+		PeriodDays:          7,
+		PeriodAnchor:        "2026-01-05",
+		SettlementDays:      2,
+		RequestHorizonDays:  90,
+	})
+
+	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+	h.wfhService = svc
+
+	_, err = db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/wfh/report-today", nil)
+	req = withUser(req, "alice@example.com", "Alice", false)
+	rr := httptest.NewRecorder()
+	h.handleWFHReportToday(rr, req)
+
+	require.Equal(t, http.StatusSeeOther, rr.Code, "body=%s", rr.Body.String())
+	location := rr.Header().Get("Location")
+	assert.Contains(t, location, "/?", "redirect must return to the dashboard")
+	assert.Contains(t, location, "wfh_reported=approved",
+		"flash banner must surface the approved outcome")
+
+	// The row must be persisted and approved on disk.
+	today := time.Now().UTC().Format("2006-01-02")
+	rows, err := db.GetWFHRequestsByDate(ctx, today)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.Equal(t, database.WFHStatusApproved, rows[0].Status)
+}
+
+// TestHandleWFHReportToday_Denied_AtFloor pins the policy decision:
+// when the floor is full, ReportToday still creates a row but
+// settles it to denied, and the dashboard reads it as On-site
+// (no approved row). The flash banner must surface the denied
+// outcome so the user knows they were not approved.
+func TestHandleWFHReportToday_Denied_AtFloor(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupSwapTestDB(t)
+	defer cleanup()
+
+	svc := wfh.NewService(db, wfh.Config{
+		Enabled:             true,
+		MinOnsitePercentage: 50,
+		MinOnsiteAbsolute:   1,
+		MaxDaysPerPeriod:    2,
+		PeriodDays:          7,
+		PeriodAnchor:        "2026-01-05",
+		SettlementDays:      2,
+		RequestHorizonDays:  90,
+	})
+
+	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+	h.wfhService = svc
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/wfh/report-today", nil)
+	req = withUser(req, "alice@example.com", "Alice", false)
+	rr := httptest.NewRecorder()
+	h.handleWFHReportToday(rr, req)
+
+	require.Equal(t, http.StatusSeeOther, rr.Code)
+	assert.Contains(t, rr.Header().Get("Location"), "wfh_reported=denied")
+
+	today := time.Now().UTC().Format("2006-01-02")
+	rows, err := db.GetWFHRequestsByDate(ctx, today)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.Equal(t, database.WFHStatusDenied, rows[0].Status)
+	_ = aliceID
+}
+
+// TestHandleWFHReportToday_RawHTTPRejectsEscalation is the raw-HTTP
+// safety net for the new endpoint per AGENTS.md. The handler never
+// reads member_id from the body — the member comes from the session.
+// A raw curl can't escalate to another member even with a tampered
+// body. This test pins that contract.
+func TestHandleWFHReportToday_RawHTTPRejectsEscalation(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupSwapTestDB(t)
+	defer cleanup()
+
+	svc := wfh.NewService(db, wfh.Config{
+		Enabled:             true,
+		MinOnsitePercentage: 50,
+		MinOnsiteAbsolute:   1,
+		MaxDaysPerPeriod:    2,
+		PeriodDays:          7,
+		PeriodAnchor:        "2026-01-05",
+		SettlementDays:      2,
+		RequestHorizonDays:  90,
+	})
+
+	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+	h.wfhService = svc
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	// Bob is logged in but tries to report WFH "for Alice" via a
+	// hand-rolled body that has both member_id and any other field
+	// the handler might accidentally read. The handler must ignore
+	// the form value and resolve member_id from the session, so
+	// only Bob gets a row.
+	form := url.Values{}
+	form.Set("member_id", aliceID)
+
+	body := strings.NewReader(form.Encode())
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/wfh/report-today", body)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req = withUser(req, "bob@example.com", "Bob", false)
+	rr := httptest.NewRecorder()
+	h.handleWFHReportToday(rr, req)
+
+	require.Equal(t, http.StatusSeeOther, rr.Code)
+
+	today := time.Now().UTC().Format("2006-01-02")
+	rows, err := db.GetWFHRequestsByDate(ctx, today)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.Equal(t, bobID, rows[0].MemberID,
+		"the row must belong to the session's member, not the form value")
+	// Sanity: Alice must have zero rows for today.
+	rows, err = db.GetWFHRequestsByMember(ctx, aliceID)
+	require.NoError(t, err)
+	for _, r := range rows {
+		assert.NotEqual(t, today, r.Date,
+			"no WFH row may be created for Alice when Bob is the session")
+	}
+}
+
+// TestHandleWFHReportToday_QuotaExhausted_FlashesError is the
+// quota-exhaustion branch. The user has used their full quota; the
+// handler must NOT create a row, must redirect, and must surface the
+// error via the same flash banner mechanism as the happy path.
+func TestHandleWFHReportToday_QuotaExhausted_FlashesError(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupSwapTestDB(t)
+	defer cleanup()
+
+	svc := wfh.NewService(db, wfh.Config{
+		Enabled:             true,
+		MinOnsitePercentage: 50,
+		MinOnsiteAbsolute:   1,
+		MaxDaysPerPeriod:    2,
+		PeriodDays:          7,
+		PeriodAnchor:        "2026-01-05",
+		SettlementDays:      2,
+		RequestHorizonDays:  90,
+	})
+
+	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+	h.wfhService = svc
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	// Burn the quota on two future-dated business days inside the
+	// same period as today. Today is the third.
+	today := time.Now().UTC()
+	for _, offset := range []int{1, 2} {
+		date := today.AddDate(0, 0, offset).Format("2006-01-02")
+		req, cErr := db.CreateWFHRequest(ctx, aliceID, date)
+		require.NoError(t, cErr)
+		require.NoError(t, db.UpdateWFHRequestStatus(ctx, req.ID, database.WFHStatusApproved))
+	}
+
+	post := httptest.NewRequestWithContext(ctx, http.MethodPost, "/wfh/report-today", nil)
+	post = withUser(post, "alice@example.com", "Alice", false)
+	rr := httptest.NewRecorder()
+	h.handleWFHReportToday(rr, post)
+
+	require.Equal(t, http.StatusSeeOther, rr.Code)
+	loc := rr.Header().Get("Location")
+	assert.Contains(t, loc, "wfh_reported=error",
+		"quota-exhausted must surface as an error flash")
+	assert.Contains(t, loc, "reason=",
+		"the error flash must carry a human-readable reason")
+
+	// No row for today was created.
+	todayStr := today.Format("2006-01-02")
+	rows, err := db.GetWFHRequestsByDate(ctx, todayStr)
+	require.NoError(t, err)
+	assert.Empty(t, rows, "quota-exhausted must not create a wfh_requests row for today")
+}

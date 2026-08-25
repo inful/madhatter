@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/alecthomas/kong"
+	"github.com/google/uuid"
 	"github.com/inful/madhatter/internal/api"
 	"github.com/inful/madhatter/internal/calendar"
 	"github.com/inful/madhatter/internal/database"
@@ -76,6 +77,9 @@ var CLI struct {
 			Apply  bool   `help:"Actually delete. Without this, prints a dry-run summary."`
 			Before string `help:"Override the cutoff date (YYYY-MM-DD). Default: start of the previous quota period."`
 		} `cmd:"" help:"Purge WFH requests older than the previous quota period"`
+		Report struct {
+			MemberID string `name:"member-id" help:"Member ID (UUID) or email" arg:""`
+		} `cmd:"" help:"Report WFH for today (settled inline against the on-site floor)"`
 	} `cmd:"" help:"WFH management"`
 }
 
@@ -105,6 +109,7 @@ func Execute() {
 		"calendar export <email> <output>": calendarExportCommand,
 		"reassign-covers":                  reassignCoversCommand,
 		"wfh purge":                        wfhPurgeCommand,
+		"wfh report <member-id>":           wfhReportTodayCommand,
 	}
 
 	if handler, exists := handlers[command]; exists {
@@ -452,4 +457,46 @@ func runWFHPurge(ctx context.Context, db *database.DB, svc *wfh.Service, overrid
 		return override, n, err
 	}
 	return svc.PurgePastPeriodsDryRun(ctx)
+}
+
+// wfhReportTodayCommand is the CLI mirror of the dashboard "WFH
+// today" button. Resolves the member by ID or email, calls
+// Service.ReportToday (which creates + settles inline), and prints
+// the outcome. Mirrors the web/API behavior so a script running
+// while the operator is away from the browser produces the same
+// approved-or-denied answer.
+func wfhReportTodayCommand(ctx context.Context, db *database.DB) {
+	svc := wfh.NewService(db, wfh.LoadConfigFromEnv())
+	if !svc.IsEnabled() {
+		fmt.Fprintln(os.Stderr, "WFH feature is disabled (WFH_ENABLED=false). Nothing to do.")
+		os.Exit(1)
+	}
+
+	memberID := resolveWFHReportMemberID(ctx, db, CLI.WFH.Report.MemberID)
+
+	req, err := svc.ReportToday(ctx, memberID)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "WFH report-today failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	log.Printf("WFH for %s on %s: %s\n", req.MemberID, req.Date, req.Status)
+}
+
+// resolveWFHReportMemberID accepts a CLI member identifier that may
+// be a UUID or an email. The web/API flow derives the member from
+// the session; the CLI doesn't have a session, so the operator
+// passes the ID explicitly. Tries UUID first (no IO), then falls
+// back to the email lookup. Errors out with a clear message rather
+// than letting the service-side validation do the talking.
+func resolveWFHReportMemberID(ctx context.Context, db *database.DB, idOrEmail string) string {
+	if _, err := uuid.Parse(idOrEmail); err == nil {
+		return idOrEmail
+	}
+	m, err := db.GetMemberByEmail(ctx, idOrEmail)
+	if err != nil || m == nil {
+		fmt.Fprintf(os.Stderr, "Could not resolve member %q (not a UUID and no team member found)\n", idOrEmail)
+		os.Exit(1)
+	}
+	return m.ID
 }

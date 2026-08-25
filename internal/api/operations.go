@@ -319,6 +319,18 @@ func (s *Server) registerOperations(development bool) {
 	}, s.handleRequestWFH)
 
 	huma.Register(s.api, huma.Operation{
+		OperationID: "report-wfh-today",
+		Method:      http.MethodPost,
+		Path:        "/api/v1/wfh/report-today",
+		Summary:     "Report WFH for today (settled inline against the on-site floor)",
+		Tags:        []string{"WFH"},
+		Security: []map[string][]string{
+			{"sessionAuth": {}},
+			{"apiTokenAuth": {}},
+		},
+	}, s.handleReportWFHToday)
+
+	huma.Register(s.api, huma.Operation{
 		OperationID: "list-wfh",
 		Method:      http.MethodGet,
 		Path:        "/api/v1/wfh",

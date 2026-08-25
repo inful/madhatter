@@ -88,6 +88,44 @@ func (s *Server) resolveWFHMemberID(ctx context.Context) (string, error) {
 
 // -- Handlers -----------------------------------------------------------------
 
+// handleReportWFHToday is the API entry point for the same-day
+// "unforeseen WFH" path. The handler resolves the session's member,
+// calls Service.ReportToday (which creates the row + settles it
+// inline), and returns the request with its final status.
+//
+// Status codes:
+//   - 201 Created   — request was persisted and settled (status
+//     reflects the outcome: approved or denied)
+//   - 409 Conflict  — duplicate (any existing row for today)
+//   - 422 — quota exhausted / invalid date / holiday
+//   - 503 — WFH feature disabled
+//
+// The handler does NOT treat "denied by capacity floor" as an error —
+// the row is created with status=denied so the user sees the
+// outcome in the response body. They retried by choice; this is the
+// system enforcing fairness, not a client mistake.
+func (s *Server) handleReportWFHToday(ctx context.Context, _ *struct{}) (*WFHRequestOutput, error) {
+	if s.authMiddleware == nil {
+		return nil, huma.Error503ServiceUnavailable("Authentication not available")
+	}
+
+	memberID, err := s.resolveWFHMemberID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if s.wfhService == nil || !s.wfhService.IsEnabled() {
+		return nil, wfhDomainToHumaError(database.ErrWFHDisabled)
+	}
+
+	req, err := s.wfhService.ReportToday(ctx, memberID)
+	if err != nil {
+		return nil, wfhDomainToHumaError(err)
+	}
+
+	return &WFHRequestOutput{Body: req}, nil
+}
+
 // handleRequestWFH creates a new pending WFH request for the authenticated user.
 //
 //nolint:cyclop // Auth, horizon, quota and persistence checks are sequential and explicit.

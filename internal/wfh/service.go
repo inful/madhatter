@@ -155,6 +155,13 @@ func (s *Service) IsPurgeEnabled() bool {
 	return s.cfg.Enabled && s.cfg.PurgeEnabled
 }
 
+// IsEnabled reports whether the WFH feature is active. Gates the
+// dashboard "WFH today" button, the same-day report handler, and any
+// future caller that needs to surface a kill-switch.
+func (s *Service) IsEnabled() bool {
+	return s.cfg.Enabled
+}
+
 // previousPeriodStart returns the start (inclusive) of the quota period
 // immediately preceding the one containing refDate. The purge keeps rows
 // from the current and previous periods, so this is the cut-off date:
@@ -351,6 +358,107 @@ func (s *Service) SettlePendingRequests(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// ReportToday is the same-day "unforeseen WFH" entry point. It is the
+// fast-path version of the future-dated request flow: creates a
+// pending row for today and settles it inline so the caller (web /
+// API / CLI) can surface the outcome immediately without waiting for
+// the scheduler tick.
+//
+// Policy: the request is created first, then run through the same
+// settleDate logic the scheduler uses, so the capacity-floor
+// enforcement stays uniform. If today is at the floor already the
+// row is settled to "denied" — the dashboard reads it as On-site
+// (no approved row), the user sees a flash banner. There is no
+// "auto-approve anyway" escape hatch; fairness for the team wins
+// over individual convenience.
+//
+// Returns the row with its final status. Errors map to:
+//   - database.ErrWFHDisabled      — WFH_ENABLED=false
+//   - database.ErrWFHOnHoliday      — today is a holiday
+//   - database.ErrWFHDuplicateRequest — any row exists for (member, today)
+//   - database.ErrWFHQuotaExhausted — member has used the full period quota
+//
+// The duplicate guard fires for any status (approved, pending,
+// withdrawn, cancelled). A self-withdrawn recurring day is a
+// resurrectable row that the user must revive through the regular
+// request path, not by re-reporting.
+func (s *Service) ReportToday(ctx context.Context, memberID string) (database.WFHRequest, error) {
+	if !s.cfg.Enabled {
+		return database.WFHRequest{}, database.ErrWFHDisabled
+	}
+
+	today, err := s.reportTodayValidate(ctx)
+	if err != nil {
+		return database.WFHRequest{}, err
+	}
+
+	exists, err := s.db.HasWFHRequestOnDate(ctx, memberID, today)
+	if err != nil {
+		return database.WFHRequest{}, err
+	}
+	if exists {
+		return database.WFHRequest{}, database.ErrWFHDuplicateRequest
+	}
+
+	hasQuota, err := s.CheckQuota(ctx, memberID, today)
+	if err != nil {
+		return database.WFHRequest{}, err
+	}
+	if !hasQuota {
+		return database.WFHRequest{}, database.ErrWFHQuotaExhausted
+	}
+
+	pending, err := s.db.CreateWFHRequest(ctx, memberID, today)
+	if err != nil {
+		return database.WFHRequest{}, err
+	}
+
+	// Settle inline for today. settleDate already swallows per-row
+	// errors and continues, so a transient failure here leaves the row
+	// in pending state; the next scheduler tick will pick it up.
+	if sErr := s.settleDate(ctx, today, []database.WFHRequest{*pending}); sErr != nil {
+		slog.Error("WFH: inline settle failed for ReportToday", "id", pending.ID, "error", sErr)
+		return *pending, sErr
+	}
+
+	return s.reportTodayReRead(ctx, pending)
+}
+
+// reportTodayValidate returns today's date string after the feature-
+// enabled and holiday gates pass. Pulled out of ReportToday so the
+// orchestration function stays below the cyclop budget; the policy
+// sequence (feature on → valid date → not a holiday) is short enough
+// that one helper covers it.
+func (s *Service) reportTodayValidate(_ context.Context) (string, error) {
+	today := todayUTC().Format("2006-01-02")
+	wfhDate, err := time.Parse("2006-01-02", today)
+	if err != nil {
+		return "", database.ErrWFHInvalidDate
+	}
+	if s.db.IsHoliday(wfhDate) {
+		return "", database.ErrWFHOnHoliday
+	}
+	return today, nil
+}
+
+// reportTodayReRead fetches the row after settleDate commits its
+// final status. A transient read failure here is non-fatal: the row
+// was settled (the scheduler tick would have done the same thing),
+// so we return the pre-read value and let the next caller pick up
+// the post-settle state. Pulled out of ReportToday to keep its
+// cyclomatic complexity below the limit.
+func (s *Service) reportTodayReRead(ctx context.Context, pending *database.WFHRequest) (database.WFHRequest, error) {
+	settled, err := s.db.GetWFHRequestByID(ctx, pending.ID)
+	if err != nil {
+		// The settle has already persisted; a fresh read by the
+		// caller will surface the post-settle state. Returning the
+		// pre-read row avoids a 500 for what is effectively a
+		// caching miss.
+		return *pending, nil //nolint:nilerr // deliberate: pre-read row is valid; caller will see post-settle state on next refresh
+	}
+	return *settled, nil
 }
 
 // settleDate settles all pending requests for a single date.

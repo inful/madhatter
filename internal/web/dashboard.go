@@ -66,10 +66,46 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	// Load pending swap count for logged-in user.
 	h.loadPendingSwapCount(ctx, data)
 
+	// Surface the report-today flash banner (if any) and gate the
+	// "WFH today" button on business-day + WFH-feature-enabled +
+	// current-user-status. The button only renders when the user is
+	// currently On-site so the affordance matches its outcome.
+	outcome, reason := wfhReportTodayFlash(r)
+	if outcome != "" {
+		data["WFHReportTodayOutcome"] = outcome
+		if reason != "" {
+			data["WFHReportTodayReason"] = reason
+		}
+	}
+	data["CanReportWFHToday"] = h.canReportWFHToday(ctx)
+
 	// Render template.
 	if err := h.tmpl.ExecuteTemplate(w, "dashboard.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+// canReportWFHToday gates the dashboard "WFH today" button. The
+// button only renders when the WFH feature is enabled and today is
+// a business day — both checked cheaply from the handler's existing
+// dependencies (service + holiday checker). User-status gating (must
+// be currently On-site) is the template's responsibility so the
+// dashboard can render the button for the same user and let CSS
+// decide visibility based on the CurrentUserPresenceStatus context
+// already in scope.
+func (h *Handler) canReportWFHToday(ctx context.Context) bool {
+	return h.canReportWFHTodayAt(ctx, time.Now().UTC())
+}
+
+// canReportWFHTodayAt is the time-injectable variant of
+// canReportWFHToday. Tests use it to pin the gate behavior without
+// depending on the wall clock.
+func (h *Handler) canReportWFHTodayAt(_ context.Context, now time.Time) bool {
+	if h.wfhService == nil || !h.wfhService.IsEnabled() {
+		return false
+	}
+	date := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	return h.isBusinessDay(date)
 }
 
 func (h *Handler) loadPendingSwapCount(ctx context.Context, data map[string]any) {

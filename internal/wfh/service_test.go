@@ -838,3 +838,187 @@ func TestSchedulerInterval_OverrideFromEnv(t *testing.T) {
 		})
 	}
 }
+
+// TestReportToday_HappyPath_Approves is the regression test for the
+// "WFH today" feature: when there's room at the on-site floor, the
+// request is created AND synchronously settled to approved in the
+// same call. Returning the settled row means the caller (web/API/CLI)
+// can surface the outcome immediately without a separate query.
+func TestReportToday_HappyPath_Approves(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	cfg := testConfig()
+	svc := NewService(db, cfg)
+
+	today := testutil.NextBusinessDay(time.Now().UTC())
+	todayStr := today.Format("2006-01-02")
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	got, err := svc.ReportToday(ctx, aliceID)
+	require.NoError(t, err)
+	assert.Equal(t, database.WFHStatusApproved, got.Status,
+		"with capacity available, ReportToday must settle the row to approved inline")
+	assert.Equal(t, todayStr, got.Date)
+	assert.Equal(t, aliceID, got.MemberID)
+	assert.NotEmpty(t, got.ID)
+}
+
+// TestReportToday_AtFloor_Denies pins the policy decision: same-day
+// WFH reports respect the capacity floor. If the at-work count has
+// reached the floor already, the request is created but settled to
+// denied — the dashboard reads it as On-site (no approved row) and
+// the user sees a flash banner.
+func TestReportToday_AtFloor_Denies(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	cfg := testConfig()
+	cfg.MinOnsiteAbsolute = 1 // tiny team → any extra WFH tips the floor
+	cfg.MinOnsitePercentage = 50
+	svc := NewService(db, cfg)
+
+	today := testutil.NextBusinessDay(time.Now().UTC())
+	todayStr := today.Format("2006-01-02")
+
+	// 1-member team: floor is 1, so any approved WFH today means
+	// the floor is at capacity.
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	got, err := svc.ReportToday(ctx, aliceID)
+	require.NoError(t, err, "ReportToday must always return a row, even when denied")
+	assert.Equal(t, database.WFHStatusDenied, got.Status,
+		"with the entire team at the floor, the request must be denied rather than auto-approved")
+	assert.Equal(t, todayStr, got.Date)
+}
+
+// TestReportToday_DuplicateRefuses pins the duplicate guard: if the
+// user already has any row for today (pending, approved, withdrawn),
+// ReportToday must not insert a second row. A withdrawn row from a
+// quick change-of-mind counts the same as any other state — the
+// user should resurrect via the regular request path instead.
+func TestReportToday_DuplicateRefuses(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	svc := NewService(db, testConfig())
+
+	today := testutil.NextBusinessDay(time.Now().UTC())
+	todayStr := today.Format("2006-01-02")
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	// Seed a recurring (approved) row for today — same UNIQUE(member, date)
+	// invariant a self-report would have to satisfy.
+	require.NoError(t, db.CreateApprovedRecurringWFHRequest(ctx, aliceID, todayStr, time.Now().UTC()))
+
+	got, err := svc.ReportToday(ctx, aliceID)
+	require.ErrorIs(t, err, database.ErrWFHDuplicateRequest,
+		"ReportToday must refuse when any row exists for the (member, today) pair")
+	assert.Empty(t, got.ID, "no row should be returned on duplicate")
+
+	// Count rows on disk to make sure nothing extra was inserted.
+	all, err := db.GetWFHRequestsByDate(ctx, todayStr)
+	require.NoError(t, err)
+	count := 0
+	for _, r := range all {
+		if r.MemberID == aliceID {
+			count++
+		}
+	}
+	assert.Equal(t, 1, count, "ReportToday must not insert a duplicate row")
+}
+
+// TestReportToday_QuotaExhausted pins the quota branch: a member who
+// has used MaxDaysPerPeriod must not be able to add another same-day
+// WFH even if the floor has room. The error is a new sentinel so the
+// web/API/CLI can map it to a user-friendly flash banner without
+// string-matching the message.
+func TestReportToday_QuotaExhausted(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	cfg := testConfig()
+	cfg.MaxDaysPerPeriod = 2
+	svc := NewService(db, cfg)
+
+	// Burn the quota on two dates that are NOT today but ARE in
+	// today's period. Today is the third (date3) which ReportToday
+	// will see as its target — both dates must land in the period
+	// containing date3 for the quota check to count them.
+	today := testutil.NextBusinessDay(time.Now().UTC())
+	date1 := today.AddDate(0, 0, 1).Format("2006-01-02")
+	date2 := today.AddDate(0, 0, 2).Format("2006-01-02")
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	for _, d := range []string{date1, date2} {
+		req, cErr := db.CreateWFHRequest(ctx, aliceID, d)
+		require.NoError(t, cErr)
+		require.NoError(t, db.UpdateWFHRequestStatus(ctx, req.ID, database.WFHStatusApproved))
+	}
+
+	got, err := svc.ReportToday(ctx, aliceID)
+	require.ErrorIs(t, err, database.ErrWFHQuotaExhausted,
+		"ReportToday must refuse when the member has used their full quota")
+	assert.Empty(t, got.ID)
+}
+
+// TestReportToday_FeatureDisabled pins the kill-switch path: when
+// WFH_ENABLED=false, ReportToday is a no-op error rather than a
+// 500. This matches how the existing wfh request handlers already
+// gate on the service being present.
+func TestReportToday_FeatureDisabled(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	cfg := testConfig()
+	cfg.Enabled = false
+	svc := NewService(db, cfg)
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	got, err := svc.ReportToday(ctx, aliceID)
+	require.ErrorIs(t, err, database.ErrWFHDisabled,
+		"ReportToday must refuse when the WFH feature is disabled")
+	assert.Empty(t, got.ID)
+}
+
+// TestReportToday_HolidayFails ensures the holiday guard fires for
+// the same-day path too — a holiday is a non-working day and has no
+// on-site capacity to consume.
+func TestReportToday_HolidayFails(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	today := testutil.NextBusinessDay(time.Now().UTC())
+	db.SetHolidayChecker(func(d time.Time) bool {
+		return d.Equal(today)
+	})
+
+	svc := NewService(db, testConfig())
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	got, err := svc.ReportToday(ctx, aliceID)
+	require.ErrorIs(t, err, database.ErrWFHOnHoliday,
+		"ReportToday must refuse when today is a holiday")
+	assert.Empty(t, got.ID)
+}

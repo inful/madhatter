@@ -264,6 +264,9 @@ func buildRequestBuilders(
 		"request-wfh": func() requestSpec {
 			return requestSpec{Method: http.MethodPost, Path: "/api/v1/wfh", Body: map[string]any{"date": "2099-01-15"}}
 		},
+		"report-wfh-today": func() requestSpec {
+			return requestSpec{Method: http.MethodPost, Path: "/api/v1/wfh/report-today"}
+		},
 		"list-wfh": func() requestSpec {
 			return requestSpec{Method: http.MethodGet, Path: "/api/v1/wfh"}
 		},

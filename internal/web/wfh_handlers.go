@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -201,6 +202,76 @@ func (h *Handler) handleWFHCancel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, "/wfh", http.StatusSeeOther)
+}
+
+// wfhReportTodayFlashKey is the query-string key the report-today
+// handler uses to carry the post-action outcome back to the dashboard.
+// Mirrors the wfh_purged pattern used by handleWFHPurge: stateless,
+// shows exactly once after the action that produced it, and keeps the
+// handler from depending on cookies or session storage.
+const wfhReportTodayFlashKey = "wfh_reported"
+
+// handleWFHReportToday is the same-day "unforeseen WFH" entry point.
+// The dashboard's "WFH today" button POSTs here; the handler resolves
+// the session's member, calls Service.ReportToday (which creates +
+// settles inline), and redirects back to the dashboard with a flash
+// banner that reports the outcome.
+//
+// The handler never reads a member_id from the body. Authorisation is
+// implicit: the route lives under safeRequireAuth, the member comes
+// from the session. A non-admin cannot report WFH for another member
+// because there's no field to tamper with.
+func (h *Handler) handleWFHReportToday(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	user := mustGetUser(ctx)
+	memberID := h.resolveMemberID(ctx, user.Email)
+	if memberID == "" {
+		http.Error(w, errNotTeamMember, http.StatusForbidden)
+		return
+	}
+
+	if h.wfhService == nil {
+		http.Error(w, "WFH service is not enabled", http.StatusServiceUnavailable)
+		return
+	}
+
+	req, err := h.wfhService.ReportToday(ctx, memberID)
+	if err != nil {
+		// Caller-visible sentinels map to a flash banner via the
+		// shared WFHErrorFor table — keeps the message text in one
+		// place. Anything else is a 500.
+		if info, ok := database.WFHErrorFor(err); ok {
+			http.Redirect(w, r, "/?"+wfhReportTodayFlashKey+"=error&reason="+url.QueryEscape(info.Message), http.StatusSeeOther)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Flash banner key is the final status so the dashboard can show
+	// approved / denied distinctly.
+	outcome := req.Status
+	http.Redirect(w, r, "/?"+wfhReportTodayFlashKey+"="+outcome, http.StatusSeeOther)
+}
+
+// wfhReportTodayFlash surfaces the report-today outcome on the
+// dashboard. Called from handleDashboard so the Today card renders
+// the banner once after a report; subsequent loads ignore it.
+func wfhReportTodayFlash(r *http.Request) (outcome, message string) {
+	raw := r.URL.Query().Get(wfhReportTodayFlashKey)
+	if raw == "" {
+		return "", ""
+	}
+	switch raw {
+	case database.WFHStatusApproved, database.WFHStatusDenied:
+		return raw, ""
+	case "error":
+		// Failure path: report-today sent a reason= via query string.
+		return "error", r.URL.Query().Get("reason")
+	default:
+		return "", ""
+	}
 }
 
 // handleWFHSelfWithdraw lets the current user withdraw their own approved WFH

@@ -60,6 +60,8 @@ func TestWFHDomainToHumaError_KnownSentinels(t *testing.T) {
 		{"RecurringContractDay", database.ErrWFHRecurringContractDay, 409, "This date falls on your contractual recurring WFH day."},
 		{"OnHoliday", database.ErrWFHOnHoliday, 422, "WFH requests cannot be made for holidays."},
 		{"NotApproved", database.ErrWFHNotApproved, 409, "Only approved WFH requests can be withdrawn."},
+		{"QuotaExhausted", database.ErrWFHQuotaExhausted, 422, "You have reached your WFH quota for this period. Withdraw an approved WFH to free a slot, or contact an admin."},
+		{"Disabled", database.ErrWFHDisabled, 503, "The WFH feature is disabled on this server."},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

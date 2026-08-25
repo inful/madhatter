@@ -8,6 +8,7 @@ import (
 	"github.com/inful/madhatter/internal/auth"
 	"github.com/inful/madhatter/internal/database"
 	"github.com/inful/madhatter/internal/rota"
+	"github.com/inful/madhatter/internal/wfh"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -153,4 +154,99 @@ func setupDashboardTestDB(t *testing.T) (*database.DB, *Handler, func()) {
 		maintenance: rota.NewScheduleMaintenance(db),
 	}
 	return db, h, func() { _ = db.Close() }
+}
+
+// TestCanReportWFHToday_GatesOnServiceAndBusinessDay pins the
+// conditions under which the dashboard's "WFH today" button
+// renders. The handler must:
+//   - return true when WFH is enabled and today is a business day
+//   - return false when the service is missing or disabled
+//   - return false when today is a weekend or holiday
+func TestCanReportWFHToday_GatesOnServiceAndBusinessDay(t *testing.T) {
+	ctx := context.Background()
+	db, _, cleanup := setupDashboardTestDB(t)
+	defer cleanup()
+
+	enabled := wfh.NewService(db, wfh.Config{
+		Enabled:             true,
+		MinOnsitePercentage: 50,
+		MinOnsiteAbsolute:   1,
+		MaxDaysPerPeriod:    2,
+		PeriodDays:          7,
+		PeriodAnchor:        "2026-01-05",
+		SettlementDays:      2,
+		RequestHorizonDays:  90,
+	})
+	disabled := wfh.NewService(db, wfh.Config{Enabled: false})
+
+	monday := time.Date(2026, time.January, 5, 0, 0, 0, 0, time.UTC) // known Monday
+	holiday := func(time.Time) bool { return false }
+	holidayToday := func(t time.Time) bool { return t.Equal(monday) }
+
+	type tc struct {
+		name    string
+		svc     *wfh.Service
+		today   time.Time
+		holiday func(time.Time) bool
+		want    bool
+	}
+	cases := []tc{
+		{
+			name:    "enabled on a business day",
+			svc:     enabled,
+			today:   monday,
+			holiday: holiday,
+			want:    true,
+		},
+		{
+			name:    "disabled regardless of date",
+			svc:     disabled,
+			today:   monday,
+			holiday: holiday,
+			want:    false,
+		},
+		{
+			name:    "missing service",
+			svc:     nil,
+			today:   monday,
+			holiday: holiday,
+			want:    false,
+		},
+		{
+			name:    "today is a holiday",
+			svc:     enabled,
+			today:   monday,
+			holiday: holidayToday,
+			want:    false,
+		},
+		{
+			name:    "today is a Saturday",
+			svc:     enabled,
+			today:   time.Date(2026, time.January, 3, 0, 0, 0, 0, time.UTC),
+			holiday: holiday,
+			want:    false,
+		},
+		{
+			name:    "today is a Sunday",
+			svc:     enabled,
+			today:   time.Date(2026, time.January, 4, 0, 0, 0, 0, time.UTC),
+			holiday: holiday,
+			want:    false,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			tmpl, err := parseTemplates()
+			require.NoError(t, err)
+			h := &Handler{
+				db:             db,
+				tmpl:           tmpl,
+				wfhService:     c.svc,
+				holidayChecker: c.holiday,
+			}
+			got2 := h.canReportWFHTodayAt(ctx, c.today)
+			assert.Equal(t, c.want, got2)
+		})
+	}
 }

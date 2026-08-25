@@ -587,3 +587,110 @@ func TestHUMAAPIIntegration(t *testing.T) {
 		assert.Equal(t, "Team member deleted successfully", deleteBody["message"])
 	})
 }
+
+// TestReportWFHTodayEndpoint_Approves pins the API contract for the
+// "report WFH today" path. A session-authed POST to the new endpoint
+// must:
+//   - persist a row
+//   - settle it inline (capacity available → approved)
+//   - return the row with status=approved
+//
+// The endpoint does NOT accept a member_id — the member is resolved
+// from the session (test@example.com via createTestContext).
+func TestReportWFHTodayEndpoint_Approves(t *testing.T) {
+	server, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	ctx := createTestContext(t, server)
+	testID, err := server.db.AddTeamMember(ctx, "Test User", "test@example.com")
+	require.NoError(t, err)
+	_, err = server.db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	resp, err := server.handleReportWFHToday(ctx, nil)
+	require.NoError(t, err)
+	assert.Equal(t, testID, resp.Body.MemberID,
+		"the response row must be for the session member")
+	assert.Equal(t, database.WFHStatusApproved, resp.Body.Status,
+		"with capacity available, ReportToday must settle the row to approved")
+
+	today := time.Now().UTC().Format("2006-01-02")
+	assert.Equal(t, today, resp.Body.Date)
+
+	// Row is persisted.
+	rows, err := server.db.GetWFHRequestsByDate(ctx, today)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.Equal(t, database.WFHStatusApproved, rows[0].Status)
+}
+
+// TestReportWFHTodayEndpoint_DeniedAtFloor pins the policy decision
+// at the API layer: capacity-floor denial returns the row with
+// status=denied (not a 4xx). The user opted in, the system enforced
+// the floor — the response surfaces that distinction.
+func TestReportWFHTodayEndpoint_DeniedAtFloor(t *testing.T) {
+	server, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	ctx := createTestContext(t, server)
+	_, err := server.db.AddTeamMember(ctx, "Test User", "test@example.com")
+	require.NoError(t, err)
+
+	resp, err := server.handleReportWFHToday(ctx, nil)
+	require.NoError(t, err,
+		"denied-by-capacity must not surface as a 4xx — the row was persisted")
+	assert.Equal(t, database.WFHStatusDenied, resp.Body.Status)
+}
+
+// TestReportWFHTodayEndpoint_DuplicateReturns409 pins the
+// duplicate-handling contract: a second call when a row already
+// exists for today must return 409 (mapped from ErrWFHDuplicateRequest
+// via the shared WFHErrorFor table).
+func TestReportWFHTodayEndpoint_DuplicateReturns409(t *testing.T) {
+	server, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	ctx := createTestContext(t, server)
+	_, err := server.db.AddTeamMember(ctx, "Test User", "test@example.com")
+	require.NoError(t, err)
+	_, err = server.db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	_, err = server.handleReportWFHToday(ctx, nil)
+	require.NoError(t, err)
+
+	_, err = server.handleReportWFHToday(ctx, nil)
+	require.Error(t, err)
+	assert.Equal(t, http.StatusConflict, statusOf(t, err),
+		"a duplicate report-today must surface as 409 Conflict")
+}
+
+// TestReportWFHTodayEndpoint_QuotaExhaustedReturns422 pins the
+// quota-exhaustion contract: the request is rejected with 422
+// (mapped from the new ErrWFHQuotaExhausted sentinel). No row is
+// created when the quota gate fires.
+func TestReportWFHTodayEndpoint_QuotaExhaustedReturns422(t *testing.T) {
+	server, cleanup := setupTestServer(t)
+	defer cleanup()
+
+	ctx := createTestContext(t, server)
+	testID, err := server.db.AddTeamMember(ctx, "Test User", "test@example.com")
+	require.NoError(t, err)
+	_, err = server.db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	// Burn the quota on two future-dated days inside the period
+	// containing today. Same pattern as the web-layer test.
+	today := time.Now().UTC()
+	for _, offset := range []int{1, 2} {
+		date := today.AddDate(0, 0, offset).Format("2006-01-02")
+		req, cErr := server.db.CreateWFHRequest(ctx, testID, date)
+		require.NoError(t, cErr)
+		require.NoError(t, server.db.UpdateWFHRequestStatus(ctx, req.ID, database.WFHStatusApproved))
+	}
+
+	_, err = server.handleReportWFHToday(ctx, nil)
+	require.Error(t, err)
+	assert.Equal(t, http.StatusUnprocessableEntity, statusOf(t, err),
+		"quota-exhausted must surface as 422")
+}

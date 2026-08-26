@@ -67,6 +67,7 @@ func (h *Handler) registerRoutes() {
 		r.Use(h.safeRequireAuth)
 
 		r.HandleFunc("/leave/report", h.handleLeaveReport)
+		r.HandleFunc("/leave/report-sick", h.handleLeaveReportSick)
 		r.HandleFunc("/leave/manage", h.handleLeaveManagement)
 		r.Post("/leave/{id}/edit", h.handleLeaveEdit)
 		r.Post("/leave/{id}/delete", h.handleLeaveDelete)

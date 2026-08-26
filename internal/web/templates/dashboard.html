@@ -82,6 +82,18 @@
             </form>
         </div>
         {{end}}
+
+        {{/* Same-day sick-leave-for-someone-else affordance. Pairs with the
+             "WFH today" button above and is visible to every authenticated
+             user — non-admin too. Links into /leave/report-sick where the
+             handler enforces start_date == end_date == today server-side. */}}
+        <div class="mt-2">
+            <a href="/leave/report-sick" class="button is-warning is-light is-small"
+               title="Register a same-day leave on behalf of another team member. Date is pinned to today; admins use the same form for backdated or future-dated leave.">
+                <span class="icon"><i class="fas fa-thermometer-half"></i></span>
+                <span>Someone called in sick</span>
+            </a>
+        </div>
     </div>
 </div>
 {{end}}

@@ -389,3 +389,248 @@ func canMutateLeave(sessionMemberID string, ownerMemberID string, isAdmin bool) 
 	}
 	return sessionMemberID != "" && sessionMemberID == ownerMemberID
 }
+
+// handleLeaveReportSick serves the same-day "someone called in sick"
+// form. Visible to every authenticated user: a non-admin user can
+// register a leave row for a *different* team member pinned to
+// today's date, while admins continue to use the unrestricted
+// /leave/report flow for arbitrary dates. The date lock is what
+// scopes the relaxation — start_date == end_date == today is
+// enforced on POST regardless of the form's hidden inputs, so a
+// tampered request cannot file a leave for a future or past day.
+//
+// This is a *create* path that intentionally widens who can act on
+// whose behalf relative to /leave/report, so it carries the same
+// per-user-data mutation safeguards as the rest of the leave code:
+// 401 on a missing session, ownership-checked re-rendering on bad
+// input, and a duplicate guard so a non-admin doesn't accidentally
+// stack rows.
+func (h *Handler) handleLeaveReportSick(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	data := map[string]any{
+		"Template": "leave_report_sick",
+	}
+
+	if user, ok := auth.GetUserFromContext(ctx); ok {
+		data["User"] = user
+		data["IsAdmin"] = auth.IsAdminSession(user)
+	}
+
+	today := time.Now().Format("2006-01-02")
+
+	if r.Method == http.MethodPost {
+		h.handleLeaveReportSickPost(w, r, data, today)
+		return
+	}
+
+	h.renderLeaveReportSickForm(w, r, data, sickLeaveFormValues{Today: today})
+}
+
+// handleLeaveReportSickPost writes the sick-leave-for-someone-else
+// row. Extracted from handleLeaveReportSick so the page handler
+// stays under the cyclop 10 budget. On success it runs the same
+// maintenance path as /leave/report so cover assignment runs.
+func (h *Handler) handleLeaveReportSickPost(w http.ResponseWriter, r *http.Request, data map[string]any, today string) {
+	ctx := r.Context()
+
+	// Per AGENTS.md, a missing session is a hard 401 — the safeRequireAuth
+	// middleware guarantees a user in production; this is defense in depth
+	// against middleware bypass or future refactors.
+	user, ok := auth.GetUserFromContext(ctx)
+	if !ok || user == nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	memberID, leaveType, ok := parseSickLeaveForm(w, r)
+	if !ok {
+		return
+	}
+
+	if memberID == "" {
+		h.renderLeaveReportSickForm(w, r, data, sickLeaveFormValues{
+			ErrMsg:    "team member is required",
+			MemberID:  memberID,
+			Today:     today,
+			LeaveType: leaveType,
+		})
+		return
+	}
+
+	if !h.ensureSickLeaveWritable(w, r, data, memberID, today, leaveType) {
+		return
+	}
+
+	leaveID, err := h.db.CreateLeaveRecord(ctx, memberID, today, today, leaveType)
+	if err != nil {
+		h.renderLeaveReportSickForm(w, r, data, sickLeaveFormValues{
+			ErrMsg:    err.Error(),
+			MemberID:  memberID,
+			Today:     today,
+			LeaveType: leaveType,
+		})
+		return
+	}
+
+	if err := h.maintenance.HandleLeaveChange(ctx, leaveID); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+// ensureSickLeaveWritable validates a sick-leave POST body end-to-end
+// (date lock → member lookup → duplicate guard) and renders the form
+// with the relevant error message on any failure. Returns true when
+// the request is safe to write.
+//
+// Extracted from handleLeaveReportSickPost so the parent stays
+// under cyclop.
+func (h *Handler) ensureSickLeaveWritable(w http.ResponseWriter, r *http.Request, data map[string]any, memberID, today, leaveType string) bool {
+	ctx := r.Context()
+
+	// Date lock: the form's hidden inputs may be tampered with, so we
+	// re-validate against the server-computed today before touching the DB.
+	if err := validateSickLeaveDates(r.PostForm.Get("start_date"), r.PostForm.Get("end_date"), today); err != nil {
+		h.renderLeaveReportSickForm(w, r, data, sickLeaveFormValues{
+			ErrMsg: err.Error(), MemberID: memberID, Today: today, LeaveType: leaveType,
+		})
+		return false
+	}
+
+	member, err := h.db.GetMemberByID(ctx, memberID)
+	if err != nil || member == nil {
+		h.renderLeaveReportSickForm(w, r, data, sickLeaveFormValues{
+			ErrMsg: "selected team member was not found", MemberID: memberID, Today: today, LeaveType: leaveType,
+		})
+		return false
+	}
+
+	// Duplicate guard: refuse to stack a second leave row for the
+	// same (member, today). Without this, hitting submit twice would
+	// create two parallel rows — confusing for the cover-assignment
+	// engine and unhelpful for the user who isn't going to manage the
+	// page to clean them up.
+	dup, err := h.hasSickLeaveDuplicate(ctx, memberID, today)
+	if err != nil {
+		h.renderLeaveReportSickForm(w, r, data, sickLeaveFormValues{
+			ErrMsg: err.Error(), MemberID: memberID, Today: today, LeaveType: leaveType,
+		})
+		return false
+	}
+	if dup {
+		h.renderLeaveReportSickForm(w, r, data, sickLeaveFormValues{
+			ErrMsg: member.Name + " already has a leave record for today", MemberID: memberID, Today: today, LeaveType: leaveType,
+		})
+		return false
+	}
+
+	return true
+}
+
+// sickLeaveFormValues is the bundle renderLeaveReportSickForm needs
+// to repopulate the form on a validation failure. Pulled out as a
+// struct so the call sites don't drown in positional arguments and
+// so adding a new field is a single-site change.
+type sickLeaveFormValues struct {
+	ErrMsg    string
+	MemberID  string
+	Today     string
+	LeaveType string
+}
+
+// parseSickLeaveForm parses the sick-leave form body, captures the
+// member_id and leave_type values, and returns ok=false on a form
+// parse error (after writing a 400). Validation of those values
+// happens in the caller so the form can be re-rendered with the
+// user's selection preserved. leaveType is normalised here so the
+// IsValidLeaveType check doesn't add another branch to the parent
+// handler (which sits at the cyclop 10 limit).
+//
+// Extracted from handleLeaveReportSickPost so the parent stays
+// under cyclop.
+func parseSickLeaveForm(w http.ResponseWriter, r *http.Request) (memberID, leaveType string, ok bool) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxLeaveFormBytes)
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return "", "", false
+	}
+	memberID = strings.TrimSpace(r.PostForm.Get("member_id"))
+	leaveType = strings.TrimSpace(r.PostForm.Get("leave_type"))
+	if !database.IsValidLeaveType(leaveType) {
+		leaveType = database.LeaveTypeLeave
+	}
+	return memberID, leaveType, true
+}
+
+// validateSickLeaveDates accepts only start_date == end_date == today.
+// The route's whole point is the same-day lock — any other shape is
+// a bug or an attack.
+func validateSickLeaveDates(startDate, endDate, today string) error {
+	const dateLayout = "2006-01-02"
+
+	if _, err := time.Parse(dateLayout, startDate); err != nil {
+		return errors.New("start_date must be today")
+	}
+	if _, err := time.Parse(dateLayout, endDate); err != nil {
+		return errors.New("end_date must be today")
+	}
+	if startDate != today {
+		return errors.New("start_date must be today")
+	}
+	if endDate != today {
+		return errors.New("end_date must be today")
+	}
+	return nil
+}
+
+// hasSickLeaveDuplicate reports whether a leave row already exists
+// for (memberID, today). Used to refuse a second submission; the
+// error from the DB lookup is propagated so genuine DB failures
+// surface to the user rather than being silently treated as
+// "no duplicate".
+func (h *Handler) hasSickLeaveDuplicate(ctx context.Context, memberID, today string) (bool, error) {
+	rows, err := h.db.GetLeaveByDate(ctx, today)
+	if err != nil {
+		return false, err
+	}
+	for i := range rows {
+		if rows[i].MemberID == memberID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// renderLeaveReportSickForm renders the form, optionally with an
+// error message and the user's prior selection preserved.
+func (h *Handler) renderLeaveReportSickForm(w http.ResponseWriter, r *http.Request, data map[string]any, vals sickLeaveFormValues) {
+	ctx := r.Context()
+
+	members, err := h.db.GetActiveTeamMembers(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	data["Members"] = members
+
+	if vals.ErrMsg != "" {
+		data["Error"] = vals.ErrMsg
+		data["SelectedMemberID"] = vals.MemberID
+	}
+	data["Today"] = vals.Today
+	data["StartDate"] = vals.Today
+	data["EndDate"] = vals.Today
+
+	leaveType := vals.LeaveType
+	if leaveType == "" {
+		leaveType = database.LeaveTypeLeave
+	}
+	data["SelectedLeaveType"] = leaveType
+
+	if err := h.tmpl.ExecuteTemplate(w, "leave_report_sick.html", data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}

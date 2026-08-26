@@ -4,8 +4,10 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/inful/madhatter/internal/auth"
@@ -538,4 +540,425 @@ func TestHandleLeaveEdit_NonAdminEditsOwnLeave(t *testing.T) {
 		"start_date must reflect the new value")
 	assert.Equal(t, "2026-10-07", post.EndDate.Format("2006-01-02"),
 		"end_date must reflect the new value")
+}
+
+// postSickLeaveForm drives handleLeaveReportSickPost with a real
+// httptest.NewRequest form body. Mirrors how production code calls
+// the handler: it computes today once and passes it in, simulates
+// the auth context, and passes through a fully-formed data map so
+// the re-render path can produce a valid form body. Keeping this
+// helper local to the file means the tests stay readable without
+// each one rebuilding the call shape.
+func postSickLeaveForm(t *testing.T, h *Handler, form url.Values, userEmail string, isAdmin bool) *httptest.ResponseRecorder {
+	t.Helper()
+	today := time.Now().Format("2006-01-02")
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost,
+		"/leave/report-sick", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req = withUser(req, userEmail, "Test User", isAdmin)
+	rr := httptest.NewRecorder()
+	data := map[string]any{
+		"Template": "leave_report_sick",
+		"IsAdmin":  isAdmin,
+	}
+	h.handleLeaveReportSickPost(rr, req, data, today)
+	return rr
+}
+
+// TestHandleLeaveReportSick_NonAdminRegistersForOther is the happy
+// path: a non-admin user registers a leave row for a *different*
+// team member, pinned to today's date. This is the user-visible
+// feature the route was added for; without it the relax-the-create-
+// path change is unproven.
+func TestHandleLeaveReportSick_NonAdminRegistersForOther(t *testing.T) {
+	ctx := context.Background()
+	db, h, cleanup := setupLeaveTestDB(t)
+	defer cleanup()
+
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	today := time.Now().Format("2006-01-02")
+	form := url.Values{}
+	form.Set("member_id", bobID)
+	form.Set("start_date", today)
+	form.Set("end_date", today)
+	form.Set("leave_type", database.LeaveTypeLeave)
+
+	rr := postSickLeaveForm(t, h, form, "alice@example.com", false)
+
+	require.Equal(t, http.StatusSeeOther, rr.Code,
+		"non-admin must be able to register a same-day leave for another member, body=%s", rr.Body.String())
+
+	rows, err := db.GetLeaveByDate(ctx, today)
+	require.NoError(t, err)
+	require.Len(t, rows, 1, "exactly one leave row should land for today")
+	assert.Equal(t, bobID, rows[0].MemberID,
+		"the row must be filed under Bob, not Alice (the session member)")
+	assert.Equal(t, today, rows[0].StartDate.Format("2006-01-02"))
+	assert.Equal(t, today, rows[0].EndDate.Format("2006-01-02"),
+		"start_date and end_date must both equal today")
+}
+
+// TestHandleLeaveReportSick_AdminCanAlsoUse is the positive
+// counterpart confirming admins can use the same route. There is no
+// admin-only check on the path, so this is a smoke test that the
+// GET form (visible to all) is reachable for an admin and the POST
+// path creates a row under the picked member.
+func TestHandleLeaveReportSick_AdminCanAlsoUse(t *testing.T) {
+	ctx := context.Background()
+	db, h, cleanup := setupLeaveTestDB(t)
+	defer cleanup()
+
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	today := time.Now().Format("2006-01-02")
+	form := url.Values{}
+	form.Set("member_id", bobID)
+	form.Set("start_date", today)
+	form.Set("end_date", today)
+	form.Set("leave_type", database.LeaveTypeLeave)
+
+	rr := postSickLeaveForm(t, h, form, "admin@example.com", true)
+
+	require.Equal(t, http.StatusSeeOther, rr.Code,
+		"admin POST must redirect with 303, body=%s", rr.Body.String())
+	rows, err := db.GetLeaveByDate(ctx, today)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.Equal(t, bobID, rows[0].MemberID,
+		"admin's POST must create a row under the picked member")
+}
+
+// TestHandleLeaveReportSick_FutureDateRejected pins the date lock:
+// the whole point of this route is that a non-admin can only file a
+// leave for *today*. A tampered form value for tomorrow must be
+// refused and the DB must remain untouched.
+func TestHandleLeaveReportSick_FutureDateRejected(t *testing.T) {
+	ctx := context.Background()
+	db, h, cleanup := setupLeaveTestDB(t)
+	defer cleanup()
+
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	tomorrow := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
+	today := time.Now().Format("2006-01-02")
+	form := url.Values{}
+	form.Set("member_id", bobID)
+	form.Set("start_date", tomorrow)
+	form.Set("end_date", tomorrow)
+	form.Set("leave_type", database.LeaveTypeLeave)
+
+	rr := postSickLeaveForm(t, h, form, "alice@example.com", false)
+
+	// The handler re-renders the form on validation failure, so the
+	// response is 200 with the form body — not a raw 4xx.
+	assert.Equal(t, http.StatusOK, rr.Code,
+		"future-date POST must re-render the form, body=%s", rr.Body.String())
+	assert.Contains(t, rr.Body.String(), "must be today",
+		"re-rendered form must surface the date-lock error")
+	assert.NotContains(t, rr.Body.String(), "successfully",
+		"re-rendered form must not signal success")
+
+	// Defense in depth: nothing landed in the DB.
+	rows, err := db.GetLeaveByDate(ctx, today)
+	require.NoError(t, err)
+	assert.Empty(t, rows, "rejected future-date POST must not create a leave row")
+	rows, err = db.GetLeaveByDate(ctx, tomorrow)
+	require.NoError(t, err)
+	assert.Empty(t, rows, "rejected future-date POST must not create a leave row")
+}
+
+// TestHandleLeaveReportSick_PastDateRejected is the same lock test
+// for the past: the form pre-populates today's date, so a non-admin
+// who tampers with the hidden inputs to yesterday must also be
+// refused.
+func TestHandleLeaveReportSick_PastDateRejected(t *testing.T) {
+	ctx := context.Background()
+	db, h, cleanup := setupLeaveTestDB(t)
+	defer cleanup()
+
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
+	today := time.Now().Format("2006-01-02")
+	form := url.Values{}
+	form.Set("member_id", bobID)
+	form.Set("start_date", yesterday)
+	form.Set("end_date", yesterday)
+	form.Set("leave_type", database.LeaveTypeLeave)
+
+	rr := postSickLeaveForm(t, h, form, "alice@example.com", false)
+
+	assert.Equal(t, http.StatusOK, rr.Code,
+		"past-date POST must re-render the form, body=%s", rr.Body.String())
+	rows, err := db.GetLeaveByDate(ctx, today)
+	require.NoError(t, err)
+	assert.Empty(t, rows, "rejected past-date POST must not create a leave row")
+	rows, err = db.GetLeaveByDate(ctx, yesterday)
+	require.NoError(t, err)
+	assert.Empty(t, rows, "rejected past-date POST must not create a leave row")
+}
+
+// TestHandleLeaveReportSick_RangeRejected enforces the single-day
+// constraint: a non-admin cannot file a multi-day leave row through
+// this path. Admin backend (/leave/report) accepts ranges; this
+// endpoint does not.
+func TestHandleLeaveReportSick_RangeRejected(t *testing.T) {
+	ctx := context.Background()
+	db, h, cleanup := setupLeaveTestDB(t)
+	defer cleanup()
+
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	today := time.Now().Format("2006-01-02")
+	form := url.Values{}
+	form.Set("member_id", bobID)
+	// start_date == end_date == today, but a tampered "end_date"
+	// outside today would slip past the duplicate guard. The lock
+	// test below uses start_date == today, end_date == today+1.
+	form.Set("start_date", today)
+	form.Set("end_date", time.Now().AddDate(0, 0, 2).Format("2006-01-02"))
+	form.Set("leave_type", database.LeaveTypeLeave)
+
+	rr := postSickLeaveForm(t, h, form, "alice@example.com", false)
+
+	assert.Equal(t, http.StatusOK, rr.Code,
+		"range POST must re-render the form, body=%s", rr.Body.String())
+	assert.Contains(t, rr.Body.String(), "must be today",
+		"re-rendered form must surface the date-lock error")
+	rows, err := db.GetLeaveByDate(ctx, today)
+	require.NoError(t, err)
+	assert.Empty(t, rows, "rejected range POST must not create a leave row")
+}
+
+// TestHandleLeaveReportSick_DuplicateRejected ensures the
+// duplicate-row guard: a second submission for (member, today) is
+// refused so a non-admin can't accidentally stack leave rows by
+// hitting submit twice.
+func TestHandleLeaveReportSick_DuplicateRejected(t *testing.T) {
+	ctx := context.Background()
+	db, h, cleanup := setupLeaveTestDB(t)
+	defer cleanup()
+
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	today := time.Now().Format("2006-01-02")
+	// Pre-seed a leave row for Bob/today.
+	_, err = db.CreateLeaveRecord(ctx, bobID, today, today, database.LeaveTypeLeave)
+	require.NoError(t, err)
+
+	form := url.Values{}
+	form.Set("member_id", bobID)
+	form.Set("start_date", today)
+	form.Set("end_date", today)
+	form.Set("leave_type", database.LeaveTypeLeave)
+
+	rr := postSickLeaveForm(t, h, form, "alice@example.com", false)
+
+	assert.Equal(t, http.StatusOK, rr.Code,
+		"duplicate POST must re-render the form, body=%s", rr.Body.String())
+	assert.Contains(t, rr.Body.String(), "already has a leave record",
+		"re-rendered form must surface the duplicate-leave error")
+
+	rows, err := db.GetLeaveByDate(ctx, today)
+	require.NoError(t, err)
+	require.Len(t, rows, 1,
+		"duplicate POST must not stack a second leave row")
+	assert.Equal(t, bobID, rows[0].MemberID)
+}
+
+// TestHandleLeaveReportSick_EmptyMemberRejected asserts the bare
+// input-validation path: an empty member_id is rejected, no row is
+// created. Without the guard, the downstream GetMemberByID would
+// fail with a confusing message and leave orphan error handling
+// elsewhere.
+func TestHandleLeaveReportSick_EmptyMemberRejected(t *testing.T) {
+	ctx := context.Background()
+	db, h, cleanup := setupLeaveTestDB(t)
+	defer cleanup()
+
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	today := time.Now().Format("2006-01-02")
+	form := url.Values{}
+	form.Set("member_id", "")
+	form.Set("start_date", today)
+	form.Set("end_date", today)
+
+	rr := postSickLeaveForm(t, h, form, "alice@example.com", false)
+
+	assert.Equal(t, http.StatusOK, rr.Code,
+		"empty-member POST must re-render the form, body=%s", rr.Body.String())
+	assert.Contains(t, rr.Body.String(), "team member is required",
+		"re-rendered form must surface the missing-member error")
+	rows, err := db.GetLeaveByDate(ctx, today)
+	require.NoError(t, err)
+	assert.Empty(t, rows, "empty-member POST must not create a leave row")
+}
+
+// TestHandleLeaveReportSick_UnknownMemberRejected asserts the
+// member-exists guard: a member_id that doesn't match a real
+// team-member row is rejected with a friendly form error and the
+// DB must not be touched.
+func TestHandleLeaveReportSick_UnknownMemberRejected(t *testing.T) {
+	ctx := context.Background()
+	db, h, cleanup := setupLeaveTestDB(t)
+	defer cleanup()
+
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	today := time.Now().Format("2006-01-02")
+	form := url.Values{}
+	form.Set("member_id", "not-a-real-member-id")
+	form.Set("start_date", today)
+	form.Set("end_date", today)
+
+	rr := postSickLeaveForm(t, h, form, "alice@example.com", false)
+
+	assert.Equal(t, http.StatusOK, rr.Code,
+		"unknown-member POST must re-render the form, body=%s", rr.Body.String())
+	assert.Contains(t, rr.Body.String(), "not found",
+		"re-rendered form must surface the unknown-member error")
+	rows, err := db.GetLeaveByDate(ctx, today)
+	require.NoError(t, err)
+	assert.Empty(t, rows, "unknown-member POST must not create a leave row")
+}
+
+// TestHandleLeaveReportSick_RawHTTPRejectsMissingSession is the
+// defense-in-depth safety net for the route's create-on-behalf-of
+// path. Per AGENTS.md, a missing session is a hard 401 — never let
+// the form path run without one. Even though the safeRequireAuth
+// middleware guarantees this in production, a future refactor
+// could move the route out of that group; this test pins the
+// handler-level check.
+func TestHandleLeaveReportSick_RawHTTPRejectsMissingSession(t *testing.T) {
+	ctx := context.Background()
+	db, h, cleanup := setupLeaveTestDB(t)
+	defer cleanup()
+
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	today := time.Now().Format("2006-01-02")
+	form := url.Values{}
+	form.Set("member_id", bobID)
+	form.Set("start_date", today)
+	form.Set("end_date", today)
+
+	// Build the raw HTTP request WITHOUT calling withUser — the
+	// session context is intentionally empty, simulating a request
+	// that bypassed the middleware (e.g. a misconfigured route
+	// move, a future test fixture, or a defense-bypassing curl).
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost,
+		"/leave/report-sick", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	rr := httptest.NewRecorder()
+	h.handleLeaveReportSickPost(rr, req, map[string]any{"Template": "leave_report_sick"}, today)
+
+	require.Equal(t, http.StatusUnauthorized, rr.Code,
+		"raw HTTP without a session must be rejected with 401, body=%s", rr.Body.String())
+
+	// Defense in depth: no row was created on disk.
+	rows, err := db.GetLeaveByDate(ctx, today)
+	require.NoError(t, err)
+	assert.Empty(t, rows, "401 path must not create a leave row")
+}
+
+// TestHandleLeaveReportSick_RawHTTPLeavesNoRowOnBadDate is the
+// twin of TestHandleLeaveReportSick_RawHTTPRejectsMissingSession:
+// even when the session is present, the date lock is a real
+// guarantee — a tampered future-date form value must not create a
+// row on disk. The test constructs the raw HTTP request the way an
+// attacker would (curl-equivalent) and verifies both the response
+// shape and the DB-after state.
+func TestHandleLeaveReportSick_RawHTTPLeavesNoRowOnBadDate(t *testing.T) {
+	ctx := context.Background()
+	db, h, cleanup := setupLeaveTestDB(t)
+	defer cleanup()
+
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	tomorrow := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
+	today := time.Now().Format("2006-01-02")
+	body := "member_id=" + bobID +
+		"&start_date=" + tomorrow +
+		"&end_date=" + tomorrow +
+		"&leave_type=leave"
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost,
+		"/leave/report-sick", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req = withUser(req, "alice@example.com", "Alice", false)
+
+	rr := httptest.NewRecorder()
+	h.handleLeaveReportSickPost(rr, req, map[string]any{"Template": "leave_report_sick"}, today)
+
+	// Form re-render for validation failures, not a 4xx.
+	require.Equal(t, http.StatusOK, rr.Code)
+	assert.Contains(t, rr.Body.String(), "must be today",
+		"re-rendered form must show the date-lock error")
+
+	// No row should exist for today OR for tomorrow — the lock
+	// must block the write on either side of the date boundary.
+	rows, err := db.GetLeaveByDate(ctx, today)
+	require.NoError(t, err)
+	assert.Empty(t, rows, "date-lock must leave today empty")
+	rows, err = db.GetLeaveByDate(ctx, tomorrow)
+	require.NoError(t, err)
+	assert.Empty(t, rows, "date-lock must leave tomorrow empty")
+}
+
+// TestHandleLeaveReportSick_GetFormIsAuthenticatedOnly is the
+// route-mounting safety net. The route sits inside the protected
+// auth-only middleware group in routes.go — this test asserts the
+// form renders an empty page via the GET dispatcher when there is
+// a user in the context, and that today's date is pre-populated
+// server-side (not left for the user to pick).
+func TestHandleLeaveReportSick_GetFormRendersWithTodayLocked(t *testing.T) {
+	ctx := context.Background()
+	db, h, cleanup := setupLeaveTestDB(t)
+	defer cleanup()
+
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	rec := httptest.NewRequestWithContext(ctx, http.MethodGet, "/leave/report-sick", nil)
+	rec = withUser(rec, "alice@example.com", "Alice", false)
+	rr := httptest.NewRecorder()
+	h.handleLeaveReportSick(rr, rec)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	body := rr.Body.String()
+	today := time.Now().Format("2006-01-02")
+	assert.Contains(t, body, today,
+		"GET form must render today's date so the user can see the lock")
+	assert.Contains(t, body, `name="member_id"`,
+		"GET form must include the member picker for non-admins")
 }

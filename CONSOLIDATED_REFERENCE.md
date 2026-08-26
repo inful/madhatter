@@ -230,7 +230,8 @@ The cutoff defaults to the start of the previous quota period (computed from `WF
 ### Pages
 - **Dashboard** (`/`) - Current schedule and quick actions
 - **Team Management** (`/team`) - Add/list team members
-- **Leave Report** (`/leave/report`) - Report leave with auto-cover
+- **Leave Report** (`/leave/report`) - Report your own leave (or any member's, admin only) — arbitrary date range
+- **Someone Called In Sick** (`/leave/report-sick`) - Same-day leave on behalf of another team member (any authenticated user). Pinned to today; date inputs are server-validated; duplicates refused. The non-admin relax of the regular leave-report path so a colleague's call-in can be registered without admin intervention.
 - **Schedule View** (`/schedule/current`) - Current week schedule
 - **Calendar** (`/calendar`) - Calendar subscription management
 - **WFH Manage** (`/admin/wfh`) - Approve, deny, and withdraw WFH requests (admin only)

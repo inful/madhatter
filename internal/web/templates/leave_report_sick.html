@@ -1,0 +1,101 @@
+{{define "leave_report_sick.html"}}
+{{template "base" .}}
+{{end}}
+
+{{define "leave_report_sick_title"}}Someone Called In Sick{{end}}
+
+{{define "leave_report_sick_content"}}
+{{template "user_card" .}}
+{{template "page_header" (dict "Title" "Register Today's Leave" "Icon" "fas fa-bell" "BackHref" "/" "BackLabel" "Dashboard")}}
+
+<div class="card">
+    <header class="card-header">
+        <p class="card-header-title">
+            <i class="fas fa-thermometer-half mr-2"></i> Same-day Leave
+        </p>
+    </header>
+    <div class="card-content">
+        {{if .Error}}
+        <div class="notification is-danger is-light mb-4">
+            <i class="fas fa-exclamation-triangle mr-2"></i> {{.Error}}
+        </div>
+        {{end}}
+
+        <form method="POST" action="/leave/report-sick">
+            <div class="field">
+                <label class="label">Team Member</label>
+                <div class="control has-icons-left">
+                    {{/*
+                        Member picker is visible to every authenticated user
+                        on this form — that is the whole point of the route.
+                        Admins already had it on /leave/report; the difference
+                        is that here dates are pinned to today so non-admins
+                        can act on someone else's behalf without escalating
+                        to a backdated or future-dated leave.
+                    */}}
+                    <div class="select is-fullwidth">
+                        <select name="member_id" required>
+                            <option value="">Select Team Member</option>
+                            {{range .Members}}
+                                <option value="{{.ID}}" {{if eq .ID $.SelectedMemberID}}selected{{end}}>{{.Name}} - {{.Email}}</option>
+                            {{end}}
+                        </select>
+                    </div>
+                    <span class="icon is-small is-left">
+                        <i class="fas fa-user"></i>
+                    </span>
+                </div>
+            </div>
+
+            <div class="field">
+                <label class="label">Date</label>
+                <div class="control">
+                    {{/*
+                        Dates are pre-populated from the server's idea of
+                        today and re-validated server-side, so a tampered
+                        form value cannot file a leave for any other day.
+                    */}}
+                    <span class="has-text-weight-semibold">{{.Today}}</span>
+                    <input type="hidden" name="start_date" value="{{.Today}}">
+                    <input type="hidden" name="end_date" value="{{.Today}}">
+                </div>
+                <p class="help">Same-day registrations only — if the absence is expected to last longer, ask an admin to extend the row from the Manage Leave page.</p>
+            </div>
+
+            <div class="field">
+                <label class="label">Leave Type</label>
+                <div class="control has-icons-left">
+                    <div class="select is-fullwidth">
+                        <select name="leave_type">
+                            <option value="leave" {{if or (not .SelectedLeaveType) (eq .SelectedLeaveType "leave")}}selected{{end}}>Leave</option>
+                            <option value="conference" {{if eq .SelectedLeaveType "conference"}}selected{{end}}>Conference</option>
+                        </select>
+                    </div>
+                    <span class="icon is-small is-left">
+                        <i class="fas fa-tag"></i>
+                    </span>
+                </div>
+            </div>
+
+            <div class="field">
+                <div class="control">
+                    <button type="submit" class="button is-warning is-fullwidth submit-btn">
+                        <i class="fas fa-paper-plane mr-2"></i> Register Leave for Today
+                    </button>
+                </div>
+            </div>
+
+            <div class="notification is-info is-light mt-4">
+                <i class="fas fa-info-circle mr-2"></i>
+                <strong>How it works:</strong> pick the colleague who's out, and the system creates a leave row for today and triggers cover assignment — same machinery as the regular leave-report flow, with the date clamped to today.
+            </div>
+        </form>
+    </div>
+</div>
+{{end}}
+
+{{define "leave_report_sick_styles"}}
+{{end}}
+
+{{define "leave_report_sick_scripts"}}
+{{end}}

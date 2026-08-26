@@ -585,7 +585,6 @@ func TestHandleLeaveReportSick_NonAdminRegistersForOther(t *testing.T) {
 	form.Set("member_id", bobID)
 	form.Set("start_date", today)
 	form.Set("end_date", today)
-	form.Set("leave_type", database.LeaveTypeLeave)
 
 	rr := postSickLeaveForm(t, h, form, "alice@example.com", false)
 
@@ -600,6 +599,8 @@ func TestHandleLeaveReportSick_NonAdminRegistersForOther(t *testing.T) {
 	assert.Equal(t, today, rows[0].StartDate.Format("2006-01-02"))
 	assert.Equal(t, today, rows[0].EndDate.Format("2006-01-02"),
 		"start_date and end_date must both equal today")
+	assert.Equal(t, database.LeaveTypeLeave, rows[0].LeaveType,
+		"sick-leave rows must always be plain leave, not conference")
 }
 
 // TestHandleLeaveReportSick_AdminCanAlsoUse is the positive
@@ -769,7 +770,6 @@ func TestHandleLeaveReportSick_DuplicateRejected(t *testing.T) {
 	form.Set("member_id", bobID)
 	form.Set("start_date", today)
 	form.Set("end_date", today)
-	form.Set("leave_type", database.LeaveTypeLeave)
 
 	rr := postSickLeaveForm(t, h, form, "alice@example.com", false)
 
@@ -908,8 +908,7 @@ func TestHandleLeaveReportSick_RawHTTPLeavesNoRowOnBadDate(t *testing.T) {
 	today := time.Now().Format("2006-01-02")
 	body := "member_id=" + bobID +
 		"&start_date=" + tomorrow +
-		"&end_date=" + tomorrow +
-		"&leave_type=leave"
+		"&end_date=" + tomorrow
 	req := httptest.NewRequestWithContext(ctx, http.MethodPost,
 		"/leave/report-sick", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -937,8 +936,12 @@ func TestHandleLeaveReportSick_RawHTTPLeavesNoRowOnBadDate(t *testing.T) {
 // route-mounting safety net. The route sits inside the protected
 // auth-only middleware group in routes.go — this test asserts the
 // form renders an empty page via the GET dispatcher when there is
-// a user in the context, and that today's date is pre-populated
-// server-side (not left for the user to pick).
+// a user in the context, that today's date is pre-populated
+// server-side (not left for the user to pick), and that the form
+// does NOT expose a leave_type selector: this path always files
+// plain leave so a future drift that re-adds the dropdown — or
+// re-introduces display of the member's email in the picker —
+// fails loudly here.
 func TestHandleLeaveReportSick_GetFormRendersWithTodayLocked(t *testing.T) {
 	ctx := context.Background()
 	db, h, cleanup := setupLeaveTestDB(t)
@@ -961,4 +964,44 @@ func TestHandleLeaveReportSick_GetFormRendersWithTodayLocked(t *testing.T) {
 		"GET form must render today's date so the user can see the lock")
 	assert.Contains(t, body, `name="member_id"`,
 		"GET form must include the member picker for non-admins")
+	assert.NotContains(t, body, `name="leave_type"`,
+		"GET form must not expose a leave_type selector — this path always files plain leave")
+	assert.Contains(t, body, ">Bob<",
+		"member options must render the display name")
+	assert.NotContains(t, body, "bob@example.com",
+		"member options must not include the email address on this form")
+}
+
+// TestHandleLeaveReportSick_ConferenceOverride is the safety net
+// for the "always plain leave" rule. Even if a tampered client
+// POSTs leave_type=conference (or =anything), the row must land as
+// plain leave — this route files absences for colleagues, not
+// conference attendance.
+func TestHandleLeaveReportSick_ConferenceOverride(t *testing.T) {
+	ctx := context.Background()
+	db, h, cleanup := setupLeaveTestDB(t)
+	defer cleanup()
+
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	today := time.Now().Format("2006-01-02")
+	form := url.Values{}
+	form.Set("member_id", bobID)
+	form.Set("start_date", today)
+	form.Set("end_date", today)
+	form.Set("leave_type", database.LeaveTypeConference)
+
+	rr := postSickLeaveForm(t, h, form, "alice@example.com", false)
+
+	require.Equal(t, http.StatusSeeOther, rr.Code,
+		"the row should land (form is otherwise valid); the row's leave_type is the override test, not the response code")
+	rows, err := db.GetLeaveByDate(ctx, today)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.Equal(t, bobID, rows[0].MemberID)
+	assert.Equal(t, database.LeaveTypeLeave, rows[0].LeaveType,
+		"this route must always record plain leave, even when the POSTed leave_type is conference")
 }

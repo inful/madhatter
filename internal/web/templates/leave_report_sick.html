@@ -37,7 +37,7 @@
                         <select name="member_id" required>
                             <option value="">Select Team Member</option>
                             {{range .Members}}
-                                <option value="{{.ID}}" {{if eq .ID $.SelectedMemberID}}selected{{end}}>{{.Name}} - {{.Email}}</option>
+                                <option value="{{.ID}}" {{if eq .ID $.SelectedMemberID}}selected{{end}}>{{.Name}}</option>
                             {{end}}
                         </select>
                     </div>
@@ -60,21 +60,6 @@
                     <input type="hidden" name="end_date" value="{{.Today}}">
                 </div>
                 <p class="help">Same-day registrations only — if the absence is expected to last longer, ask an admin to extend the row from the Manage Leave page.</p>
-            </div>
-
-            <div class="field">
-                <label class="label">Leave Type</label>
-                <div class="control has-icons-left">
-                    <div class="select is-fullwidth">
-                        <select name="leave_type">
-                            <option value="leave" {{if or (not .SelectedLeaveType) (eq .SelectedLeaveType "leave")}}selected{{end}}>Leave</option>
-                            <option value="conference" {{if eq .SelectedLeaveType "conference"}}selected{{end}}>Conference</option>
-                        </select>
-                    </div>
-                    <span class="icon is-small is-left">
-                        <i class="fas fa-tag"></i>
-                    </span>
-                </div>
             </div>
 
             <div class="field">

@@ -430,6 +430,12 @@ func (h *Handler) handleLeaveReportSick(w http.ResponseWriter, r *http.Request) 
 // row. Extracted from handleLeaveReportSick so the page handler
 // stays under the cyclop 10 budget. On success it runs the same
 // maintenance path as /leave/report so cover assignment runs.
+//
+// The leave_type is hardcoded to LeaveTypeLeave — the same-day sick
+// path doesn't take a type selector, and any leave_type POSTed by a
+// tamper-prone client is silently overridden. The /leave/report flow
+// keeps the type selector; the relax-only-for-sick use case doesn't
+// need it.
 func (h *Handler) handleLeaveReportSickPost(w http.ResponseWriter, r *http.Request, data map[string]any, today string) {
 	ctx := r.Context()
 
@@ -442,32 +448,30 @@ func (h *Handler) handleLeaveReportSickPost(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	memberID, leaveType, ok := parseSickLeaveForm(w, r)
+	memberID, ok := parseSickLeaveForm(w, r)
 	if !ok {
 		return
 	}
 
 	if memberID == "" {
 		h.renderLeaveReportSickForm(w, r, data, sickLeaveFormValues{
-			ErrMsg:    "team member is required",
-			MemberID:  memberID,
-			Today:     today,
-			LeaveType: leaveType,
+			ErrMsg:   "team member is required",
+			MemberID: memberID,
+			Today:    today,
 		})
 		return
 	}
 
-	if !h.ensureSickLeaveWritable(w, r, data, memberID, today, leaveType) {
+	if !h.ensureSickLeaveWritable(w, r, data, memberID, today) {
 		return
 	}
 
-	leaveID, err := h.db.CreateLeaveRecord(ctx, memberID, today, today, leaveType)
+	leaveID, err := h.db.CreateLeaveRecord(ctx, memberID, today, today, database.LeaveTypeLeave)
 	if err != nil {
 		h.renderLeaveReportSickForm(w, r, data, sickLeaveFormValues{
-			ErrMsg:    err.Error(),
-			MemberID:  memberID,
-			Today:     today,
-			LeaveType: leaveType,
+			ErrMsg:   err.Error(),
+			MemberID: memberID,
+			Today:    today,
 		})
 		return
 	}
@@ -487,14 +491,14 @@ func (h *Handler) handleLeaveReportSickPost(w http.ResponseWriter, r *http.Reque
 //
 // Extracted from handleLeaveReportSickPost so the parent stays
 // under cyclop.
-func (h *Handler) ensureSickLeaveWritable(w http.ResponseWriter, r *http.Request, data map[string]any, memberID, today, leaveType string) bool {
+func (h *Handler) ensureSickLeaveWritable(w http.ResponseWriter, r *http.Request, data map[string]any, memberID, today string) bool {
 	ctx := r.Context()
 
 	// Date lock: the form's hidden inputs may be tampered with, so we
 	// re-validate against the server-computed today before touching the DB.
 	if err := validateSickLeaveDates(r.PostForm.Get("start_date"), r.PostForm.Get("end_date"), today); err != nil {
 		h.renderLeaveReportSickForm(w, r, data, sickLeaveFormValues{
-			ErrMsg: err.Error(), MemberID: memberID, Today: today, LeaveType: leaveType,
+			ErrMsg: err.Error(), MemberID: memberID, Today: today,
 		})
 		return false
 	}
@@ -502,7 +506,7 @@ func (h *Handler) ensureSickLeaveWritable(w http.ResponseWriter, r *http.Request
 	member, err := h.db.GetMemberByID(ctx, memberID)
 	if err != nil || member == nil {
 		h.renderLeaveReportSickForm(w, r, data, sickLeaveFormValues{
-			ErrMsg: "selected team member was not found", MemberID: memberID, Today: today, LeaveType: leaveType,
+			ErrMsg: "selected team member was not found", MemberID: memberID, Today: today,
 		})
 		return false
 	}
@@ -515,13 +519,13 @@ func (h *Handler) ensureSickLeaveWritable(w http.ResponseWriter, r *http.Request
 	dup, err := h.hasSickLeaveDuplicate(ctx, memberID, today)
 	if err != nil {
 		h.renderLeaveReportSickForm(w, r, data, sickLeaveFormValues{
-			ErrMsg: err.Error(), MemberID: memberID, Today: today, LeaveType: leaveType,
+			ErrMsg: err.Error(), MemberID: memberID, Today: today,
 		})
 		return false
 	}
 	if dup {
 		h.renderLeaveReportSickForm(w, r, data, sickLeaveFormValues{
-			ErrMsg: member.Name + " already has a leave record for today", MemberID: memberID, Today: today, LeaveType: leaveType,
+			ErrMsg: member.Name + " already has a leave record for today", MemberID: memberID, Today: today,
 		})
 		return false
 	}
@@ -534,34 +538,26 @@ func (h *Handler) ensureSickLeaveWritable(w http.ResponseWriter, r *http.Request
 // struct so the call sites don't drown in positional arguments and
 // so adding a new field is a single-site change.
 type sickLeaveFormValues struct {
-	ErrMsg    string
-	MemberID  string
-	Today     string
-	LeaveType string
+	ErrMsg   string
+	MemberID string
+	Today    string
 }
 
-// parseSickLeaveForm parses the sick-leave form body, captures the
-// member_id and leave_type values, and returns ok=false on a form
-// parse error (after writing a 400). Validation of those values
-// happens in the caller so the form can be re-rendered with the
-// user's selection preserved. leaveType is normalised here so the
-// IsValidLeaveType check doesn't add another branch to the parent
-// handler (which sits at the cyclop 10 limit).
+// parseSickLeaveForm parses the sick-leave form body and captures
+// the member_id value; returns ok=false on a form parse error
+// (after writing a 400). Validation of member_id happens in the
+// caller so the form can be re-rendered with the user's selection
+// preserved.
 //
 // Extracted from handleLeaveReportSickPost so the parent stays
 // under cyclop.
-func parseSickLeaveForm(w http.ResponseWriter, r *http.Request) (memberID, leaveType string, ok bool) {
+func parseSickLeaveForm(w http.ResponseWriter, r *http.Request) (memberID string, ok bool) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxLeaveFormBytes)
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
-		return "", "", false
+		return "", false
 	}
-	memberID = strings.TrimSpace(r.PostForm.Get("member_id"))
-	leaveType = strings.TrimSpace(r.PostForm.Get("leave_type"))
-	if !database.IsValidLeaveType(leaveType) {
-		leaveType = database.LeaveTypeLeave
-	}
-	return memberID, leaveType, true
+	return strings.TrimSpace(r.PostForm.Get("member_id")), true
 }
 
 // validateSickLeaveDates accepts only start_date == end_date == today.
@@ -604,7 +600,9 @@ func (h *Handler) hasSickLeaveDuplicate(ctx context.Context, memberID, today str
 }
 
 // renderLeaveReportSickForm renders the form, optionally with an
-// error message and the user's prior selection preserved.
+// error message and the user's prior member selection preserved.
+// The picker shows the member's display name only — emails are not
+// surfaced on this page.
 func (h *Handler) renderLeaveReportSickForm(w http.ResponseWriter, r *http.Request, data map[string]any, vals sickLeaveFormValues) {
 	ctx := r.Context()
 
@@ -623,12 +621,6 @@ func (h *Handler) renderLeaveReportSickForm(w http.ResponseWriter, r *http.Reque
 	data["Today"] = vals.Today
 	data["StartDate"] = vals.Today
 	data["EndDate"] = vals.Today
-
-	leaveType := vals.LeaveType
-	if leaveType == "" {
-		leaveType = database.LeaveTypeLeave
-	}
-	data["SelectedLeaveType"] = leaveType
 
 	if err := h.tmpl.ExecuteTemplate(w, "leave_report_sick.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

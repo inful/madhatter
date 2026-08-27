@@ -63,25 +63,6 @@
                 <span class="tag is-warning is-light"><i class="fas fa-plane-departure mr-1"></i> Next leave: {{.CurrentUserNextLeaveDay}}</span>
             {{end}}
         </div>
-
-        {{/* Same-day "WFH today" affordance. The button only renders when
-             the user is currently On-site (the only state where
-             reporting makes sense) AND the feature is enabled AND
-             today is a business day. Submitted by POST to /wfh/report-today;
-             the handler resolves the session member and reuses the
-             existing settleDate flow so capacity-floor enforcement is
-             identical to the future-dated path. */}}
-        {{if and .CanReportWFHToday (eq .CurrentUserPresenceStatus "On-site")}}
-        <div class="mt-3">
-            <form method="post" action="/wfh/report-today" style="display:inline">
-                <button type="submit" class="button is-info is-light is-small"
-                        title="Report WFH for today. Settled inline against the on-site floor; capacity-floor enforcement matches the regular flow request path.">
-                    <span class="icon"><i class="fas fa-home"></i></span>
-                    <span>WFH today</span>
-                </button>
-            </form>
-        </div>
-        {{end}}
     </div>
 </div>
 {{end}}

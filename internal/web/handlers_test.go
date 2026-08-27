@@ -520,6 +520,151 @@ func TestUserCard_QuickActionsIsPrimaryNav(t *testing.T) {
 		"Help must render before Logout (utility grouping)")
 }
 
+// renderQuickActionsMenu is the fixture for the "WFH today" menu entry
+// tests. It spins up a Handler with a stub DB and renders dashboard.html
+// against a data map — the same approach the QuickActionsInUserCard test
+// uses. The dashboard template pulls in base.html, which renders the
+// global user menu (including the WFH today entry when its gate fires).
+func renderQuickActionsMenu(t *testing.T, data map[string]any) string {
+	t.Helper()
+	mockDB := &database.DB{}
+	handler, err := NewHandler(mockDB, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+	if data["Template"] == nil {
+		data["Template"] = "dashboard"
+	}
+	if data["User"] == nil {
+		data["User"] = map[string]any{"Email": "alice@example.com", "Name": "Alice"}
+	}
+	if _, ok := data["IsAdmin"]; !ok {
+		data["IsAdmin"] = false
+	}
+	w := httptest.NewRecorder()
+	require.NoError(t, handler.tmpl.ExecuteTemplate(w, "dashboard.html", data))
+	return w.Body.String()
+}
+
+// TestQuickActions_WFHTodayEntry_RendersWhenEligible pins the new
+// "WFH today" menu entry: when the WFH feature is enabled, today is a
+// business day, and the user is currently On-site, the Quick Actions
+// menu must surface a POST form that fires /wfh/report-today. The
+// dashboard used to carry this affordance as a standalone button; the
+// move to the menu keeps the click semantics identical (state-changing
+// POST, not a GET link).
+func TestQuickActions_WFHTodayEntry_RendersWhenEligible(t *testing.T) {
+	body := renderQuickActionsMenu(t, map[string]any{
+		"CanReportWFHToday":         true,
+		"CurrentUserPresenceStatus": "On-site",
+	})
+
+	// Form-as-dropdown-item: the entry is a <form method="post"> styled
+	// to look like a sibling .dropdown-item. Asserting on the form's
+	// action and method pins the click semantics; the WFH today label
+	// pins the human-readable entry.
+	assert.Contains(t, body, `action="/wfh/report-today"`,
+		"menu entry must POST to /wfh/report-today (same endpoint the dashboard button used)")
+	assert.Contains(t, body, `class="dropdown-item quick-action-form"`,
+		"menu entry must be a form styled as a dropdown item")
+	assert.Contains(t, body, "WFH today",
+		"menu entry must show the WFH today label")
+
+	// Method check: grep for `method="post"` adjacent to the
+	// /wfh/report-today form so we know the form method is POST and
+	// not, say, a hidden GET that wouldn't actually fire the report.
+	wfhFormIdx := strings.Index(body, `action="/wfh/report-today"`)
+	require.NotEqual(t, -1, wfhFormIdx)
+	formStart := strings.LastIndex(body[:wfhFormIdx], "<form")
+	require.NotEqual(t, -1, formStart)
+	formTag := body[formStart:wfhFormIdx]
+	assert.Contains(t, formTag, `method="post"`,
+		"WFH today form must submit via POST (state-changing action)")
+}
+
+// TestQuickActions_WFHTodayEntry_HiddenWhenNotEligible pins the gate:
+// the entry must NOT render when the user is not currently On-site, when
+// the feature is disabled, or when the gating data is absent (e.g. on
+// pages that don't compute presence status). Each case asserts the menu
+// still renders the regular WFH link so the test failure mode is
+// specific to the WFH today entry, not a broader menu render break.
+func TestQuickActions_WFHTodayEntry_HiddenWhenNotEligible(t *testing.T) {
+	cases := []struct {
+		name string
+		data map[string]any
+	}{
+		{
+			name: "user is currently WFH",
+			data: map[string]any{
+				"CanReportWFHToday":         true,
+				"CurrentUserPresenceStatus": "WFH",
+			},
+		},
+		{
+			name: "user is on leave",
+			data: map[string]any{
+				"CanReportWFHToday":         true,
+				"CurrentUserPresenceStatus": "On leave",
+			},
+		},
+		{
+			name: "WFH feature disabled (today not a business day)",
+			data: map[string]any{
+				"CanReportWFHToday":         false,
+				"CurrentUserPresenceStatus": "On-site",
+			},
+		},
+		{
+			name: "gating data absent (non-dashboard page)",
+			data: map[string]any{},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body := renderQuickActionsMenu(t, tc.data)
+
+			assert.NotContains(t, body, `action="/wfh/report-today"`,
+				"WFH today form must not render when the gate conditions are not met (%s)", tc.name)
+			assert.NotContains(t, body, `class="dropdown-item quick-action-form"`,
+				"WFH today menu entry must not render when not eligible (%s)", tc.name)
+
+			// The regular WFH link is the adjacent item in the same
+			// menu and must remain present — its absence would mean
+			// the test broke the broader menu render, not the gate.
+			assert.Contains(t, body, `href="/wfh"`,
+				"the regular WFH menu entry must remain regardless of the WFH today gate (%s)", tc.name)
+		})
+	}
+}
+
+// TestDashboard_RemovedStandaloneWFHTodayButton asserts the dashboard
+// no longer renders its own "WFH today" button — the affordance was
+// moved into the Quick Actions menu (see
+// TestQuickActions_WFHTodayEntry_RendersWhenEligible). A regression that
+// re-adds the standalone button would duplicate the entry and split the
+// click affordance across two UI surfaces; this test pins that the
+// dashboard no longer carries the button form.
+func TestDashboard_RemovedStandaloneWFHTodayButton(t *testing.T) {
+	body := renderQuickActionsMenu(t, map[string]any{
+		"CanReportWFHToday":         true,
+		"CurrentUserPresenceStatus": "On-site",
+	})
+
+	// The dashboard's old button wrapped its form in
+	// `<form method="post" action="/wfh/report-today" style="display:inline">`.
+	// The display:inline style was specific to the dashboard button so
+	// the form sat next to the user-card content; the menu entry uses
+	// `class="dropdown-item quick-action-form"` instead. Asserting on
+	// the inline-style substring pins the *removal* specifically; the
+	// post-render count of WFH-today forms should be exactly one (the
+	// menu entry, not the old button plus the menu entry).
+	assert.NotContains(t, body, `action="/wfh/report-today" style="display:inline"`,
+		"dashboard must not carry the standalone WFH today button — it lives in the Quick Actions menu now")
+
+	count := strings.Count(body, `action="/wfh/report-today"`)
+	assert.Equal(t, 1, count,
+		"WFH today form must appear exactly once in the rendered output (the menu entry); got %d", count)
+}
+
 // TestHandler_SecurityHeadersAppliedGlobally asserts that the
 // security headers reach the response on every route the web
 // handler exposes, not just on the synthetic httptest cases used

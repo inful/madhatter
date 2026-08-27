@@ -6,7 +6,7 @@ A comprehensive support duty management system with automatic scheduling, leave 
 
 ### Core Functionality
 - **Round-robin scheduling**: Automatic assignment of support duties with fair distribution
-- **Leave management**: Unified system for sick leave, vacation, and other absences. Each record carries a `leave_type` tag (Leave or Conference) for differentiated UI on the dashboard and management page. Non-admin users can register same-day leave on behalf of a colleague via the "Someone Called In Sick" form (`GET|POST /leave/report-sick`) — the date is pinned to today, a duplicate row for the same person and day is refused, and the form lives in the menu and the dashboard quick-action bar for one-click access when someone calls in.
+- **Leave management**: Unified system for sick leave, vacation, and other absences. Each record carries a `leave_type` tag (Leave or Conference) for differentiated UI on the dashboard and management page. Non-admin users can register same-day leave on behalf of a colleague via the "Someone Called In Sick" form (`GET|POST /leave/report-sick`) — the date is pinned to today, a duplicate row for the same person and day is refused, and the form lives in the user menu under Leave.
 - **Automatic cover assignment**: System automatically assigns covers when team members are on leave
 - **Calendar subscriptions**: Personal ICS calendar URLs for any calendar app
 - **Holiday support**: Automatic exclusion of holidays from scheduling (via iCal feeds)

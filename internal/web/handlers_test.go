@@ -665,6 +665,52 @@ func TestDashboard_RemovedStandaloneWFHTodayButton(t *testing.T) {
 		"WFH today form must appear exactly once in the rendered output (the menu entry); got %d", count)
 }
 
+// TestQuickActions_WFHTodayEntry_CSSDoesNotOverrideDropdownItemPadding
+// pins the CSS rule that keeps the WFH today menu entry visually
+// aligned with its sibling dropdown items. The entry is rendered as a
+// <form class="dropdown-item quick-action-form"> wrapping a <button>;
+// Bulma's .dropdown-item class supplies the indent (padding: 0.375rem
+// 1rem), hover background, and cursor. If a future change adds
+// `padding: 0` to .quick-action-form — easy to do when "resetting"
+// default browser styles — the entry sinks flush against the dropdown
+// edge and the icon/label no longer line up with the other items.
+//
+// We pin the rule by reading the base.html source instead of
+// rendering a page and inspecting computed styles: there is no
+// headless browser in the test suite, and the rule itself is the
+// surface that misbehaved. A regression that re-adds `padding: 0` to
+// the form fails this test before any visual diff is filed.
+func TestQuickActions_WFHTodayEntry_CSSDoesNotOverrideDropdownItemPadding(t *testing.T) {
+	const baseHTML = "templates/base.html"
+	contents, err := os.ReadFile(baseHTML)
+	require.NoError(t, err, "reading %s", baseHTML)
+
+	body := string(contents)
+
+	// Locate the .quick-action-form rule. We don't want to rely on
+	// line numbers (they drift), so extract the rule body by
+	// scanning from the selector to the closing brace of the rule.
+	selectorIdx := strings.Index(body, ".quick-action-form {")
+	require.NotEqual(t, -1, selectorIdx,
+		".quick-action-form CSS rule must exist in base.html (the WFH today entry wrapper)")
+
+	// Find the closing brace of the same rule. The first standalone
+	// "}" after the selector is the rule closer; nested braces are
+	// not possible in a selector-only rule like this one.
+	ruleStart := selectorIdx + len(".quick-action-form {")
+	ruleEnd := strings.Index(body[ruleStart:], "}")
+	require.NotEqual(t, -1, ruleEnd, "could not find closing brace of .quick-action-form rule")
+	ruleBody := body[ruleStart : ruleStart+ruleEnd]
+
+	assert.NotContains(t, ruleBody, "padding:",
+		".quick-action-form must not declare padding: it lets Bulma's .dropdown-item padding (0.375rem 1rem) indent the icon and label so they line up with the sibling menu items. Declaring `padding: 0` flushes the entry against the dropdown edge.")
+
+	// The margin reset is the only thing the rule is allowed to set;
+	// sanity-check that we are reading the rule we think we are.
+	assert.Contains(t, ruleBody, "margin: 0",
+		".quick-action-form must keep margin: 0 so the <form> doesn't add default browser margins that misalign it with the surrounding <a> dropdown items")
+}
+
 // TestHandler_SecurityHeadersAppliedGlobally asserts that the
 // security headers reach the response on every route the web
 // handler exposes, not just on the synthetic httptest cases used

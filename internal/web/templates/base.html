@@ -73,11 +73,14 @@
         /* Form-as-dropdown-item so the WFH today entry inside the
            Quick Actions menu POSTs to /wfh/report-today instead of
            being a dead link. Bulma's .dropdown-item styling applies
-           to the wrapper; the inner button is reset so it inherits
-           colour/font and doesn't look like a default browser button. */
+           to the wrapper form (the indent, hover background, font,
+           and cursor); the inner button is reset so it inherits
+           colour/font and doesn't look like a default browser button.
+           We zero the form's margin only — Bulma owns the padding,
+           which is what keeps the icon and label aligned with the
+           other dropdown items. */
         .quick-action-form {
             margin: 0;
-            padding: 0;
         }
         .quick-action-form-btn {
             display: block;

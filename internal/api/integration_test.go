@@ -670,6 +670,14 @@ func TestReportWFHTodayEndpoint_DuplicateReturns409(t *testing.T) {
 // (mapped from the new ErrWFHQuotaExhausted sentinel). No row is
 // created when the quota gate fires.
 func TestReportWFHTodayEndpoint_QuotaExhaustedReturns422(t *testing.T) {
+	// Quota-exhaustion must be reachable from any weekday today. The
+	// production default (2 days/period) couples the test to the
+	// period's remaining weekday count, which is fragile (e.g. on a
+	// Thursday only one future weekday fits before the period rolls
+	// over). Tighten to 1 day/period for this test so a single burn
+	// is enough to exhaust the quota deterministically.
+	t.Setenv("WFH_MAX_DAYS_PER_PERIOD", "1")
+
 	server, cleanup := setupTestServer(t)
 	defer cleanup()
 
@@ -679,15 +687,28 @@ func TestReportWFHTodayEndpoint_QuotaExhaustedReturns422(t *testing.T) {
 	_, err = server.db.AddTeamMember(ctx, "Bob", "bob@example.com")
 	require.NoError(t, err)
 
-	// Burn the quota on two future-dated days inside the period
-	// containing today. Same pattern as the web-layer test.
+	// Burn one weekday strictly after today, inside today's quota
+	// period. The "strictly after today" rules out the
+	// duplicate-date branch so the ReportToday call below hits the
+	// quota-exhausted branch.
 	today := time.Now().UTC()
-	for _, offset := range []int{1, 2} {
-		date := today.AddDate(0, 0, offset).Format("2006-01-02")
-		req, cErr := server.db.CreateWFHRequest(ctx, testID, date)
+	periodStart, periodEnd, pErr := server.wfhService.ComputePeriodBounds(today)
+	require.NoError(t, pErr)
+
+	var burned bool
+	for d := today.AddDate(0, 0, 1); !d.After(periodEnd); d = d.AddDate(0, 0, 1) {
+		if d.Weekday() == time.Saturday || d.Weekday() == time.Sunday {
+			continue
+		}
+		req, cErr := server.db.CreateWFHRequest(ctx, testID, d.Format("2006-01-02"))
 		require.NoError(t, cErr)
 		require.NoError(t, server.db.UpdateWFHRequestStatus(ctx, req.ID, database.WFHStatusApproved))
+		burned = true
+		break
 	}
+	require.True(t, burned,
+		"test setup needs at least one future weekday in today's period; today=%s period=[%s..%s]",
+		today.Format("2006-01-02"), periodStart.Format("2006-01-02"), periodEnd.Format("2006-01-02"))
 
 	_, err = server.handleReportWFHToday(ctx, nil)
 	require.Error(t, err)

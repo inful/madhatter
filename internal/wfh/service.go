@@ -773,6 +773,272 @@ func (s *Service) settleDate(ctx context.Context, date string, pending []databas
 	return nil
 }
 
+// AssignWFHForDate runs the seat-cap picker for one date. If the
+// on-site count for date would exceed cfg.SeatCap, members are
+// picked (in order of fewest voluntary WFHs in the period, then
+// alphabetical — the co-presence tiebreaker lands in step 10)
+// and inserted as origin='assigned', status='approved' rows
+// so the cap is met.
+//
+// Past-date guard: dates strictly before today are a no-op.
+// Past attendance is immutable; the picker must not insert
+// new WFH rows for days that have already been lived. The
+// guard is the first statement of the function so any future
+// caller — the scheduler (step 8), the presenceBuilder
+// on-demand trigger (step 9), or a future admin CLI — is
+// safe by default.
+//
+// Cap short-fall warning: when excess > len(candidates), the
+// picker picks every candidate it can and emits a structured
+// slog.Warn. The operator sees the gap in the scheduler log
+// and can intervene manually (admin reassign, exempt toggles,
+// or grow the team). The picker does not retry and does not
+// surface per-member notifications for the gap — those would
+// multiply the cost of a transient DB blip into something
+// that affects users. The structured log is the v1 signal.
+//
+// Idempotency: two layers.
+//   1. The candidate filter `NOT EXISTS (wfh_requests WHERE
+//      member_id = id AND date = ?)` skips anyone who
+//      already has any WFH row for the date (pending,
+//      approved, recurring, assigned, or swap). So a re-run
+//      for the same date sees zero candidates that already
+//      have rows.
+//   2. The UNIQUE(member_id, date) constraint backstops (1):
+//      if two pickers race and both pick the same member, the
+//      loser sees a duplicate-key error which
+//      CreateApprovedAssignedWFHRequest translates to
+//      ErrWFHDuplicateRequest — the picker treats that as
+//      benign success.
+//
+// Re-run correctness: approvedWFHSet in the on-site math
+// includes all origins, so a previously-assigned row
+// correctly subtracts that member from onSite. On a re-run
+// for the same date, approvedWFHSet already contains the
+// assigned member, so excess reflects the post-assignment
+// count. If the cap is already met, `IF onSite <= cap: RETURN`
+// exits. If the cap is still exceeded (more members need to
+// be assigned), only the additional members are picked —
+// the originally-assigned ones are filtered out by NOT EXISTS.
+//
+// Step 7 of plans/assigned-wfh-plan.md.
+func (s *Service) AssignWFHForDate(ctx context.Context, date string) error {
+	// No-op when the feature is off, when assignment is off, or
+	// when no seat cap is configured. These three guards exist
+	// so the scheduler and the on-demand trigger can call this
+	// unconditionally without checking config first.
+	if !s.cfg.Enabled {
+		return nil
+	}
+	if !s.cfg.AssignmentEnabled {
+		return nil
+	}
+	if s.cfg.SeatCap <= 0 {
+		return nil
+	}
+
+	// Past-date guard.
+	wfhDate, err := time.Parse("2006-01-02", date)
+	if err != nil {
+		return database.ErrWFHInvalidDate
+	}
+	nowUTC := time.Now().UTC()
+	today := time.Date(nowUTC.Year(), nowUTC.Month(), nowUTC.Day(), 0, 0, 0, 0, time.UTC)
+	if wfhDate.UTC().Before(today) {
+		return nil
+	}
+
+	// Holiday/Weekend short-circuit: the cap is meaningless when
+	// nobody is scheduled to be on-site. The picker is a no-op
+	// and the cap is irrelevant.
+	if s.db.IsHoliday(wfhDate) {
+		return nil
+	}
+	if wfhDate.Weekday() == time.Saturday || wfhDate.Weekday() == time.Sunday {
+		return nil
+	}
+
+	// Read the active members and the leave/WFH sets that
+	// subtract from the on-site count.
+	members, err := s.db.GetActiveTeamMembers(ctx)
+	if err != nil {
+		return err
+	}
+	if len(members) == 0 {
+		return nil
+	}
+	onLeaveIDs, err := s.leaveMemberIDsForDate(ctx, date)
+	if err != nil {
+		return err
+	}
+
+	// Every approved WFH row for this date, regardless of
+	// origin. Includes previously-assigned rows so the cap is
+	// correctly reduced on re-runs (the picker's
+	// re-run-correctness property).
+	approvedWFH, err := s.db.GetWFHRequestsByDateAndStatus(ctx, date, database.WFHStatusApproved)
+	if err != nil {
+		return err
+	}
+	permanentWFHIDs := permanentWFHMemberIDs(members)
+	approvedIDs := memberIDsFromWFHRequests(approvedWFH)
+	onSite := len(members) - countUniqueMembers(onLeaveIDs, permanentWFHIDs, approvedIDs)
+
+	cap := s.cfg.SeatCap
+	if onSite <= cap {
+		return nil
+	}
+	excess := onSite - cap
+
+	// Build the candidate pool.
+	candidates := s.assignCandidates(members, onLeaveIDs, permanentWFHIDs, approvedIDs, date)
+	if len(candidates) == 0 {
+		// Cap cannot be met with the current candidate pool. Log
+		// the gap and pick nothing — admin sees the warning and
+		// can intervene manually.
+		slog.Warn("WFH picker: cap short-fall, no candidates",
+			"date", date,
+			"excess", excess,
+			"candidates", 0,
+			"short_by", excess)
+		return nil
+	}
+	if excess > len(candidates) {
+		slog.Warn("WFH picker: cap short-fall, candidates insufficient",
+			"date", date,
+			"excess", excess,
+			"candidates", len(candidates),
+			"short_by", excess-len(candidates))
+		excess = len(candidates)
+	}
+
+	// Order candidates: fewest voluntary WFHs in the period first,
+	// then alphabetical. The co-presence tiebreaker (step 10)
+	// slots in here — for now score=0 for all so the picker
+	// degenerates to (periodWFHCount, alphabetical).
+	ordered, err := s.orderByPickerPriority(ctx, candidates, date)
+	if err != nil {
+		return err
+	}
+
+	picks := ordered[:excess]
+	settledAt := time.Now().UTC()
+	for _, p := range picks {
+		err := s.db.CreateApprovedAssignedWFHRequest(ctx, p.ID, date, settledAt)
+		if err != nil {
+			if errors.Is(err, database.ErrWFHDuplicateRequest) {
+				// Race: a concurrent picker (or a manual admin
+				// mark) already inserted this row. Benign — the
+				// cap math reflects the row either way.
+				continue
+			}
+			slog.Error("WFH picker: insert failed",
+				"member_id", p.ID,
+				"date", date,
+				"error", err)
+			continue
+		}
+		// Fire the notifier so the assigned member is told. Old
+		// status is empty (no row existed); new status is
+		// approved. Actor is "system" so the email can
+		// distinguish picker-assigned rows from admin marks.
+		req := database.WFHRequest{
+			ID:       "assigned-" + date + "-" + p.ID,
+			MemberID: p.ID,
+			Date:     date,
+			Status:   database.WFHStatusApproved,
+			Origin:   "assigned",
+		}
+		s.fireWFHStateChanged(ctx, req, "", database.WFHStatusApproved, "system")
+	}
+	return nil
+}
+
+// assignCandidates returns the set of active members who can be
+// assigned: not permanent WFH, not exempt from assignment, not on
+// leave, not already WFH (any origin) for the date, and have no
+// existing wfh_requests row for the date. The latter catches the
+// edge case where a member has a pending request in
+// settlement-pending state — the picker must not double-book them.
+func (s *Service) assignCandidates(members []database.TeamMember, onLeaveIDs, permanentWFHIDs, approvedIDs map[string]struct{}, date string) []database.TeamMember {
+	out := make([]database.TeamMember, 0, len(members))
+	for i := range members {
+		m := &members[i]
+		if !m.IsActive {
+			continue
+		}
+		if m.IsPermanentWFH {
+			continue
+		}
+		if m.IsExemptFromAssignment {
+			continue
+		}
+		if _, onLeave := onLeaveIDs[m.ID]; onLeave {
+			continue
+		}
+		if _, alreadyWFH := approvedIDs[m.ID]; alreadyWFH {
+			continue
+		}
+		out = append(out, *m)
+	}
+	return out
+}
+
+// orderByPickerPriority sorts the candidate pool by (fewest
+// voluntary WFHs in the period, then alphabetical). The
+// co-presence tiebreaker (step 10) slots a third key in here.
+// For now score=0 for all candidates so the order reduces to
+// (periodWFHCount, alphabetical).
+func (s *Service) orderByPickerPriority(ctx context.Context, candidates []database.TeamMember, date string) ([]database.TeamMember, error) {
+	nowUTC := time.Now().UTC()
+	start, end, err := s.ComputePeriodBounds(nowUTC)
+	if err != nil {
+		return nil, err
+	}
+	startStr := start.Format("2006-01-02")
+	endStr := end.Format("2006-01-02")
+
+	type scored struct {
+		m              database.TeamMember
+		periodWFHCount int
+	}
+	scoredCandidates := make([]scored, len(candidates))
+	for i := range candidates {
+		used, err := s.db.GetWFHRequestsVoluntaryInPeriod(ctx, candidates[i].ID, startStr, endStr)
+		if err != nil {
+			return nil, err
+		}
+		scoredCandidates[i] = scored{m: candidates[i], periodWFHCount: len(used)}
+	}
+
+	sort.SliceStable(scoredCandidates, func(i, j int) bool {
+		if scoredCandidates[i].periodWFHCount != scoredCandidates[j].periodWFHCount {
+			return scoredCandidates[i].periodWFHCount < scoredCandidates[j].periodWFHCount
+		}
+		return scoredCandidates[i].m.Name < scoredCandidates[j].m.Name
+	})
+
+	out := make([]database.TeamMember, len(scoredCandidates))
+	for i := range scoredCandidates {
+		out[i] = scoredCandidates[i].m
+	}
+	return out, nil
+}
+
+// permanentWFHMemberIDs extracts the set of permanent-WFH member
+// IDs from a slice of TeamMember. Permanent-WFH members never come
+// on-site, so they're subtracted from the on-site count but also
+// excluded from the picker candidate pool (assignCandidates).
+func permanentWFHMemberIDs(members []database.TeamMember) map[string]struct{} {
+	ids := make(map[string]struct{}, len(members))
+	for i := range members {
+		if members[i].IsPermanentWFH {
+			ids[members[i].ID] = struct{}{}
+		}
+	}
+	return ids
+}
+
 // denialReason returns a human-readable explanation for a request
 // being denied at settlement. The wording is generic enough to be
 // useful regardless of the specific floor value, and the user can

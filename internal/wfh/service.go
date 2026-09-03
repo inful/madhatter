@@ -518,6 +518,9 @@ func (s *Service) SettlePendingRequests(ctx context.Context) error {
 		}
 	}
 	s.settleAssignmentPass(ctx, today, cutoff)
+	if err := s.AutoCancelExpiredSwaps(ctx); err != nil {
+		slog.Error("WFH swap auto-cancel failed", "error", err)
+	}
 	if err := s.BackfillCoPresence(ctx); err != nil {
 		slog.Error("WFH co-presence backfill failed", "error", err)
 	}
@@ -664,6 +667,23 @@ func (s *Service) writeCoPresencePairs(ctx context.Context, dateStr string, onSi
 // (SettlePendingRequests) after each settlement tick.
 //
 // Eventual consistency: the daily backfill re-reads current
+// AutoCancelExpiredSwaps flips every pending swap whose
+// swap_date is strictly before today to status='cancelled'.
+// Step 15 of plans/assigned-wfh-plan.md: SettlePendingRequests
+// calls this after the existing settleDate / settleAssignment
+// passes. The cutoff is today (UTC midnight). Past swaps are
+// stale — the WFH day they referenced has already happened,
+// so the assigned row's "you can swap this out" offer is no
+// longer meaningful. The requester is left with their
+// assigned WFH and the conflict guard releases, so a future
+// "request a swap" submission can succeed without
+// contending against the stale pending swap.
+func (s *Service) AutoCancelExpiredSwaps(ctx context.Context) error {
+	nowUTC := time.Now().UTC()
+	today := time.Date(nowUTC.Year(), nowUTC.Month(), nowUTC.Day(), 0, 0, 0, 0, time.UTC)
+	return s.db.CancelExpiredWFHSwaps(ctx, today)
+}
+
 // state for each day and writes pair rows via INSERT OR
 // IGNORE. Original (possibly incomplete) writes survive
 // because INSERT OR IGNORE skips rows that already exist.

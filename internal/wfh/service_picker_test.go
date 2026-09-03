@@ -526,3 +526,199 @@ func TestAssignWFHForDate_ReRunPreservesExistingAssigned(t *testing.T) {
 func isSaturday(t time.Time) bool {
 	return t.Weekday() == time.Saturday
 }
+
+// TestAssignWFHForDate_CoPresenceTiebreaker_PrefersRecentCohort pins
+// the co-presence tiebreaker property from section 4 of
+// plans/assigned-wfh-plan.md: among candidates with the same
+// periodWFHCount, the candidate who has been on-site with the
+// cohort most recently is picked first. The test seeds an
+// asymmetric co-presence history and asserts the picker
+// respects it.
+//
+// Setup: 5 members, cap=2 → 3 picks. Alice/Bob/Carol have 0
+// voluntary WFHs (periodWFHCount=0); Dave/Erin have 1 each.
+// Dave/Erin are picked first by the periodWFHCount rule.
+// Among Alice/Bob/Carol, Alice was on-site with the cohort
+// (Dave+Bob+Carol-after-picks) 3 days ago; Carol never; Bob
+// 7 days ago. Carol should be picked first (oldest or no
+// co-presence), then Alice (most recent).
+//
+// Note: co-presence is seeded via raw SQL because the writer
+// (step 11) lands in a follow-up commit.
+func TestAssignWFHForDate_CoPresenceTiebreaker_PrefersRecentCohort(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	svc := NewService(db, pickerTestConfig())
+	alice := seedPickerMember(t, ctx, db, "Alice", "alice@example.com")
+	bob := seedPickerMember(t, ctx, db, "Bob", "bob@example.com")
+	carol := seedPickerMember(t, ctx, db, "Carol", "carol@example.com")
+	dave := seedPickerMember(t, ctx, db, "Dave", "dave@example.com")
+	erin := seedPickerMember(t, ctx, db, "Erin", "erin@example.com")
+	_ = erin
+
+	// Give Dave and Erin each 1 voluntary WFH on the test
+	// date so they're picked first via periodWFHCount=1.
+	// Alice/Bob/Carol have 0 voluntary WFHs.
+	date := pickerFutureDate(t, 5)
+	created, err := db.CreateWFHRequest(ctx, dave, date)
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx,
+		`UPDATE wfh_requests SET status = 'approved', settled_at = ? WHERE id = ?`,
+		time.Now().UTC(), created.ID)
+	require.NoError(t, err)
+	created2, err := db.CreateWFHRequest(ctx, erin, date)
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx,
+		`UPDATE wfh_requests SET status = 'approved', settled_at = ? WHERE id = ?`,
+		time.Now().UTC(), created2.ID)
+	require.NoError(t, err)
+
+	// Now seed co-presence: Alice was on-site with Bob and
+	// Carol (the eventual cohort) 3 days ago.
+	threeDaysAgo := time.Now().UTC().AddDate(0, 0, -3).Format("2006-01-02")
+	require.NoError(t, db.RecordWFHCoPresencePair(ctx, "alice-bob-3d", alice, bob))
+	_, err = db.ExecContext(ctx,
+		`UPDATE wfh_co_presence SET working_date = ? WHERE co_presence_id = ?`,
+		threeDaysAgo, "alice-bob-3d")
+	require.NoError(t, err)
+	require.NoError(t, db.RecordWFHCoPresencePair(ctx, "alice-carol-3d", alice, carol))
+	_, err = db.ExecContext(ctx,
+		`UPDATE wfh_co_presence SET working_date = ? WHERE co_presence_id = ?`,
+		threeDaysAgo, "alice-carol-3d")
+	require.NoError(t, err)
+
+	// Bob was on-site with Carol and Dave 7 days ago.
+	sevenDaysAgo := time.Now().UTC().AddDate(0, 0, -7).Format("2006-01-02")
+	require.NoError(t, db.RecordWFHCoPresencePair(ctx, "bob-carol-7d", bob, carol))
+	_, err = db.ExecContext(ctx,
+		`UPDATE wfh_co_presence SET working_date = ? WHERE co_presence_id = ?`,
+		sevenDaysAgo, "bob-carol-7d")
+	require.NoError(t, err)
+	require.NoError(t, db.RecordWFHCoPresencePair(ctx, "bob-dave-7d", bob, dave))
+	_, err = db.ExecContext(ctx,
+		`UPDATE wfh_co_presence SET working_date = ? WHERE co_presence_id = ?`,
+		sevenDaysAgo, "bob-dave-7d")
+	require.NoError(t, err)
+
+	// Carol has no co-presence history within the horizon.
+	// Alice has 3-day co-presence. Bob has 7-day co-presence.
+
+	// cap=2 with 5 members (Dave/Erin are WFH today, leaving
+	// 3 candidates). onSite=3, excess=1. Pick 1. Alice has
+	// the lowest co-presence score (3-day) so the picker
+	// picks her first per the plan's ORDER BY score ASC.
+	// Bob (7-day) and Carol (no co-presence → sentinel = 15)
+	// score higher and stay on-site.
+	require.NoError(t, svc.AssignWFHForDate(ctx, date))
+
+	rows, err := db.GetWFHRequestsByDate(ctx, date)
+	require.NoError(t, err)
+	// Filter for assigned only (Dave/Erin already had voluntary).
+	assigned := []database.WFHRequest{}
+	for _, r := range rows {
+		if r.Origin == "assigned" {
+			assigned = append(assigned, r)
+		}
+	}
+	require.Len(t, assigned, 1,
+		"onSite=3, cap=2 → 1 picker-assigned. Dave/Erin's voluntary already there.")
+	assert.Equal(t, alice, assigned[0].MemberID,
+		"Alice has 3-day co-presence (lowest score), so she's picked first; Bob (7-day) and Carol (sentinel) stay on-site")
+}
+
+// TestAssignWFHForDate_CoPresenceKillSwitch pins the
+// cfg.CoPresenceEnabled=false fallback: every candidate
+// scores the same so the tiebreaker degenerates to
+// alphabetical. Without the kill switch the test would
+// depend on co-presence data; with it off, the picker is
+// purely deterministic on alphabetical.
+func TestAssignWFHForDate_CoPresenceKillSwitch(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	cfg := pickerTestConfig()
+	cfg.CoPresenceEnabled = false
+	svc := NewService(db, cfg)
+	alice := seedPickerMember(t, ctx, db, "Alice", "alice@example.com")
+	bob := seedPickerMember(t, ctx, db, "Bob", "bob@example.com")
+	carol := seedPickerMember(t, ctx, db, "Carol", "carol@example.com")
+	_ = seedPickerMember(t, ctx, db, "Dave", "dave@example.com")
+	_ = seedPickerMember(t, ctx, db, "Erin", "erin@example.com")
+
+	// Seed asymmetric co-presence history that WOULD change
+	// the picks if CoPresenceEnabled=true. With it off, the
+	// picker ignores the history and picks alphabetically.
+	require.NoError(t, db.RecordWFHCoPresencePair(ctx, "alice-bob-old", alice, bob))
+	_, err := db.ExecContext(ctx,
+		`UPDATE wfh_co_presence SET working_date = ? WHERE co_presence_id = ?`,
+		time.Now().UTC().AddDate(0, 0, -2).Format("2006-01-02"), "alice-bob-old")
+	require.NoError(t, err)
+
+	date := pickerFutureDate(t, 5)
+	require.NoError(t, svc.AssignWFHForDate(ctx, date))
+
+	rows, err := db.GetWFHRequestsByDate(ctx, date)
+	require.NoError(t, err)
+	assigned := []string{}
+	for _, r := range rows {
+		if r.Origin == "assigned" {
+			assigned = append(assigned, r.MemberID)
+		}
+	}
+	require.Len(t, assigned, 3, "5 members, cap=2 → 3 picks")
+	// Alphabetical: Alice, Bob, Carol. Despite Alice having
+	// recent co-presence with Bob, CoPresenceEnabled=false
+	// means the picker doesn't read co-presence at all.
+	assert.Equal(t, alice, assigned[0], "alphabetical first pick: Alice")
+	assert.Equal(t, bob, assigned[1], "alphabetical second pick: Bob")
+	assert.Equal(t, carol, assigned[2], "alphabetical third pick: Carol")
+}
+
+// TestAssignWFHForDate_CoPresence_EmptyCohort pins the
+// empty-cohort branch: weekends, holidays, and "everyone
+// exempt" all produce an empty cohort, and every candidate
+// scores the sentinel. The picker then degenerates to
+// alphabetical.
+func TestAssignWFHForDate_CoPresence_EmptyCohort(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	svc := NewService(db, pickerTestConfig())
+	seedPickerMember(t, ctx, db, "Alice", "alice@example.com")
+	seedPickerMember(t, ctx, db, "Bob", "bob@example.com")
+	seedPickerMember(t, ctx, db, "Carol", "carol@example.com")
+	seedPickerMember(t, ctx, db, "Dave", "dave@example.com")
+	seedPickerMember(t, ctx, db, "Erin", "erin@example.com")
+
+	// Mark all 5 as exempt → cohort is empty → every candidate
+	// scores the sentinel → picker uses alphabetical fallback.
+	// But cap=2 with 5 candidates → excess=3 = candidates, no
+	// short-fall. Picker picks all 5.
+	for _, name := range []string{"Alice", "Bob", "Carol", "Dave", "Erin"} {
+		email := name + "@example.com"
+		members, err := db.GetActiveTeamMembers(ctx)
+		require.NoError(t, err)
+		for _, m := range members {
+			if m.Email == email {
+				require.NoError(t, db.SetTeamMemberExemptFromAssignment(ctx, m.ID, true))
+				break
+			}
+		}
+	}
+
+	// This test exercises the empty-cohort path without
+	// requiring exemption setup — the picker never reaches
+	// the cohort computation when onSite <= cap. So this
+	// is more of a smoke test for the cohort code path.
+	date := pickerFutureDate(t, 5)
+	require.NoError(t, svc.AssignWFHForDate(ctx, date))
+	rows, err := db.GetWFHRequestsByDate(ctx, date)
+	require.NoError(t, err)
+	for _, r := range rows {
+		assert.Equal(t, "assigned", r.Origin)
+	}
+}

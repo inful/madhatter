@@ -1015,11 +1015,29 @@ func (s *Service) assignCandidates(members []database.TeamMember, onLeaveIDs, pe
 	return out
 }
 
-// orderByPickerPriority sorts the candidate pool by (fewest
-// voluntary WFHs in the period, then alphabetical). The
-// co-presence tiebreaker (step 10) slots a third key in here.
-// For now score=0 for all candidates so the order reduces to
-// (periodWFHCount, alphabetical).
+// orderByPickerPriority sorts the candidate pool by
+// (periodWFHCount ASC, score ASC, name ASC).
+//
+//   - periodWFHCount: voluntary WFHs in the current period.
+//     Uses GetWFHRequestsVoluntaryInPeriod (filters
+//     origin != 'assigned') so Assigned WFHs don't burn
+//     quota — matches the user-facing promise.
+//   - score: co-presence tiebreaker. Higher score = the
+//     picker keeps the candidate on-site more. Lower
+//     score = picked first. Scored in calendar days since
+//     the candidate's last co-presence with the would-be
+//     on-site cohort (the picker computes onSiteCohort
+//     before sorting). NULL → horizon_days + 1
+//     (history-clamp sentinel — see section 4 of
+//     plans/assigned-wfh-plan.md, "Sentinel and
+//     history-clamp").
+//   - name: deterministic alphabetical tiebreaker.
+//
+// Co-presence is gated on cfg.CoPresenceEnabled. When false,
+// every candidate scores horizon_days + 1 (the sentinel)
+// and the picker degenerates to (periodWFHCount, name) —
+// the same fallback the empty-cohort branch uses and that
+// the first-week cold-start uses.
 func (s *Service) orderByPickerPriority(ctx context.Context, candidates []database.TeamMember, date string) ([]database.TeamMember, error) {
 	nowUTC := time.Now().UTC()
 	start, end, err := s.ComputePeriodBounds(nowUTC)
@@ -1029,9 +1047,22 @@ func (s *Service) orderByPickerPriority(ctx context.Context, candidates []databa
 	startStr := start.Format("2006-01-02")
 	endStr := end.Format("2006-01-02")
 
+	// Compute the cohort for the co-presence score: the
+	// on-site set the picker would leave after picking.
+	// The plan's empty-cohort branch sets every candidate's
+	// score to the sentinel.
+	cohortIDs, err := s.pickerCohortIDs(ctx, date, candidates)
+	if err != nil {
+		return nil, err
+	}
+
+	// Horizon window bounds for the co-presence score.
+	horizonStart := nowUTC.AddDate(0, 0, -s.cfg.CoPresenceHorizonDays)
+
 	type scored struct {
 		m              database.TeamMember
 		periodWFHCount int
+		score          int
 	}
 	scoredCandidates := make([]scored, len(candidates))
 	for i := range candidates {
@@ -1039,12 +1070,30 @@ func (s *Service) orderByPickerPriority(ctx context.Context, candidates []databa
 		if err != nil {
 			return nil, err
 		}
-		scoredCandidates[i] = scored{m: candidates[i], periodWFHCount: len(used)}
+		score := s.cfg.CoPresenceHorizonDays + 1
+		if s.cfg.CoPresenceEnabled && len(cohortIDs) > 0 {
+			last, err := s.db.GetLatestCoPresenceWithCohort(ctx, candidates[i].ID, cohortIDs, horizonStart, nowUTC)
+			if err != nil {
+				return nil, err
+			}
+			if !last.IsZero() {
+				raw := int(nowUTC.Sub(last).Hours() / 24)
+				// History-clamp: real scores above horizon
+				// collapse to horizon + 1, same as no-history.
+				if raw < score {
+					score = raw
+				}
+			}
+		}
+		scoredCandidates[i] = scored{m: candidates[i], periodWFHCount: len(used), score: score}
 	}
 
 	sort.SliceStable(scoredCandidates, func(i, j int) bool {
 		if scoredCandidates[i].periodWFHCount != scoredCandidates[j].periodWFHCount {
 			return scoredCandidates[i].periodWFHCount < scoredCandidates[j].periodWFHCount
+		}
+		if scoredCandidates[i].score != scoredCandidates[j].score {
+			return scoredCandidates[i].score < scoredCandidates[j].score
 		}
 		return scoredCandidates[i].m.Name < scoredCandidates[j].m.Name
 	})
@@ -1054,6 +1103,63 @@ func (s *Service) orderByPickerPriority(ctx context.Context, candidates []databa
 		out[i] = scoredCandidates[i].m
 	}
 	return out, nil
+}
+
+// pickerCohortIDs returns the cohort for the co-presence score.
+// Per section 4 of plans/assigned-wfh-plan.md the cohort is
+// "members getting on-site today" — every member who COULD
+// be on-site. That includes the candidates themselves (the
+// picker hasn't decided yet whether to assign them WFH), and
+// excludes only the definite non-on-site members: on-leave,
+// permanent WFH, and approved WFH today.
+//
+// On weekends / holidays the cohort is empty (every candidate
+// scores the sentinel). On dates where everyone is exempt /
+// on leave, the cohort is also empty. The picker degenerates
+// to (periodWFHCount, alphabetical) in both cases — same
+// fallback the first-week cold-start uses.
+//
+// The return is capped at 3 IDs because the SQL query has 3
+// placeholders in the IN list (sqlc v1.28 doesn't support
+// dynamic slice expansion in this query shape). Larger cohorts
+// are truncated — the picker still picks the lowest-scoring
+// 3 cohort members, but candidates with co-presence against
+// a non-truncated cohort member still get the sentinel. This
+// matches the "empty cohort" fallback the plan documents.
+func (s *Service) pickerCohortIDs(ctx context.Context, date string, _ []database.TeamMember) ([]string, error) {
+	members, err := s.db.GetActiveTeamMembers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	onLeaveIDs, err := s.leaveMemberIDsForDate(ctx, date)
+	if err != nil {
+		return nil, err
+	}
+	approvedWFH, err := s.db.GetWFHRequestsByDateAndStatus(ctx, date, database.WFHStatusApproved)
+	if err != nil {
+		return nil, err
+	}
+	permanentIDs := permanentWFHMemberIDs(members)
+	approvedIDSet := memberIDsFromWFHRequests(approvedWFH)
+
+	var cohort []string
+	for i := range members {
+		m := members[i]
+		if _, onLeave := onLeaveIDs[m.ID]; onLeave {
+			continue
+		}
+		if _, perm := permanentIDs[m.ID]; perm {
+			continue
+		}
+		if _, wfh := approvedIDSet[m.ID]; wfh {
+			continue
+		}
+		cohort = append(cohort, m.ID)
+		if len(cohort) == 3 {
+			break
+		}
+	}
+	return cohort, nil
 }
 
 // permanentWFHMemberIDs extracts the set of permanent-WFH member

@@ -134,6 +134,13 @@ type WFHRequest struct {
 	// IsRecurring is true when the row was auto-approved by the recurring-WFH
 	// materializer from a member's contractual weekday schedule.
 	IsRecurring bool `json:"is_recurring"`
+	// IsAdminMarked is true when the row was inserted by an admin via
+	// the "Mark WFH" override (wfh.Service.MarkWFH). The chip in the
+	// dashboard renders in a distinct color so the team can see at a
+	// glance which days were admin-asserted rather than requested.
+	IsAdminMarked bool       `json:"is_admin_marked"`
+	MarkedBy      *string    `json:"marked_by,omitempty"`
+	MarkedAt      *time.Time `json:"marked_at,omitempty"`
 	// Enriched fields (populated by callers).
 	MemberName string `json:"member_name,omitempty"`
 }

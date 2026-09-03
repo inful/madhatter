@@ -48,6 +48,15 @@
                 </div>
             </div>
         </div>
+        {{if gt .Quota.OverQuotaBy 0}}
+        <div class="notification is-link is-light mt-3">
+            <i class="fas fa-user-shield mr-2"></i> An admin has marked you as WFH
+            <strong>{{.Quota.OverQuotaBy}}</strong> time{{if ne .Quota.OverQuotaBy 1}}s{{end}}
+            past your quota. The mark was applied as a correction (the system said on-site, reality was WFH) and is counted
+            toward your period total so the dashboard reflects the actual state. The quota slot will free up at the end of the
+            period.
+        </div>
+        {{end}}
         {{if gt .Quota.Remaining 0}}
         <div class="has-text-centered mt-3">
             <a href="/wfh/request" class="button is-primary">
@@ -95,12 +104,23 @@
                 <tbody>
                     {{range .Requests}}
                     <tr>
-                        <th scope="row"><strong>{{.Date}}</strong></th>
+                        <th scope="row">
+                            <strong>{{.Date}}</strong>
+                            {{if .IsAdminMarked}}
+                            <span class="tag is-link is-light is-small ml-2" title="An admin marked you as WFH — you did not request this day.">
+                                <i class="fas fa-user-shield mr-1"></i> marked by admin
+                            </span>
+                            {{end}}
+                        </th>
                         <td>
                             {{if eq .Status "pending"}}
                             <span class="tag is-warning is-light"><i class="fas fa-clock mr-1"></i> Pending</span>
                             {{else if eq .Status "approved"}}
+                            {{if .IsAdminMarked}}
+                            <span class="tag is-link is-light" title="Marked by admin as WFH"><i class="fas fa-check mr-1"></i> Approved</span>
+                            {{else}}
                             <span class="tag is-success is-light"><i class="fas fa-check mr-1"></i> Approved</span>
+                            {{end}}
                             {{else if eq .Status "denied"}}
                             <span class="tag is-danger is-light"><i class="fas fa-times mr-1"></i> Denied</span>
                             {{else if eq .Status "cancelled"}}
@@ -111,7 +131,13 @@
                             <span class="tag is-light">{{.Status}}</span>
                             {{end}}
                         </td>
-                        <td>{{.CreatedAt.Format "2006-01-02 15:04"}}</td>
+                        <td>
+                            {{if .MarkedAt}}
+                            <span title="Marked by admin at {{.MarkedAt.Format "2006-01-02 15:04"}}">admin override</span>
+                            {{else}}
+                            {{.CreatedAt.Format "2006-01-02 15:04"}}
+                            {{end}}
+                        </td>
                         <td>
                             {{if eq .Status "pending"}}
                             <form method="post" action="/wfh/{{.ID}}/cancel" style="display:inline"

@@ -145,6 +145,10 @@ type Querier interface {
 	GetWFHRequestsByDateAndStatus(ctx context.Context, arg GetWFHRequestsByDateAndStatusParams) ([]GetWFHRequestsByDateAndStatusRow, error)
 	GetWFHRequestsByMember(ctx context.Context, memberID string) ([]GetWFHRequestsByMemberRow, error)
 	GetWFHRequestsByMemberAndPeriod(ctx context.Context, arg GetWFHRequestsByMemberAndPeriodParams) ([]GetWFHRequestsByMemberAndPeriodRow, error)
+	// Returns 1 if an admin-marked row exists for (member_id, date),
+	// 0 otherwise. Cheap point-lookup behind the
+	// idx_wfh_requests_admin_marked index.
+	IsAdminMarkedWFH(ctx context.Context, arg IsAdminMarkedWFHParams) (int64, error)
 	// Returns 1 when the member has not disabled email, 0 when they
 	// have. Returns 1 by default (no row) so callers don't have to
 	// special-case "no preference set yet". The query is a single
@@ -157,6 +161,15 @@ type Querier interface {
 	// Users awaiting admin approval. Excludes admin-deactivated
 	// users (those have deactivated_at set).
 	ListPendingUsers(ctx context.Context) ([]User, error)
+	// Insert an admin-marked WFH row in one shot. is_admin_marked=1 and
+	// status='approved' so the row participates in every existing
+	// query (quota, floor, ICS, dashboard presence) without the
+	// rendering layer needing a special case for admin marks. The
+	// UNIQUE(member_id, date) constraint guarantees idempotency: a
+	// second mark for the same (member, date) returns SQLITE_CONSTRAINT
+	// to the caller, which the service layer translates into
+	// "already marked".
+	MarkAdminWFH(ctx context.Context, arg MarkAdminWFHParams) (sql.Result, error)
 	MarkAssignmentSwapped(ctx context.Context, id string) error
 	MarkOutboxDead(ctx context.Context, arg MarkOutboxDeadParams) (sql.Result, error)
 	MarkOutboxFailed(ctx context.Context, arg MarkOutboxFailedParams) (sql.Result, error)

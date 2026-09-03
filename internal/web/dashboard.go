@@ -200,6 +200,12 @@ func (h *Handler) loadCurrentUserPresenceStatus(ctx context.Context, data map[st
 	// DB lookup was the bug: a self-withdrawn recurring WFH would
 	// silently surface as "WFH" on the dashboard until the next
 	// materialiser tick noticed the withdrawal.
+	//
+	// Admin-marked rows (is_admin_marked=1) participate in the same
+	// query — they're just another approved row. We additionally
+	// record the IsAdminMarkedWFH flag so the template can render
+	// the chip in the admin-marked color, but the presence status
+	// itself is identical to a user-approved WFH.
 	allWFHRequests, wfhErr := h.db.GetWFHRequestsByDate(ctx, today)
 	if wfhErr == nil {
 		for i := range allWFHRequests {
@@ -208,6 +214,7 @@ func (h *Handler) loadCurrentUserPresenceStatus(ctx context.Context, data map[st
 			}
 			if allWFHRequests[i].Status == database.WFHStatusApproved {
 				data["CurrentUserPresenceStatus"] = currentUserStatusWFH
+				data["IsAdminMarkedWFH"] = allWFHRequests[i].IsAdminMarked
 				return
 			}
 			// Explicit non-approved row (withdrawn, denied, cancelled,
@@ -572,6 +579,11 @@ func buildScheduleMatrix(presence []presenceDay, floor int) scheduleMatrix {
 			case isWFHMember(day, member.ID):
 				cell.Status = "wfh"
 				cell.Label = "WFH"
+				// Flag admin-marked WFH so the template renders the
+				// chip in the distinct purple-blue color. The flag
+				// travels with the cell; the presenceDay owns the
+				// authoritative set.
+				_, cell.IsAdminMarkedWFH = day.AdminMarkedMemberIDs[member.ID]
 			case isPresentMember(day, member.ID):
 				cell.Status = "onsite"
 				cell.Label = "On-site"
@@ -808,6 +820,11 @@ func (h *Handler) getUpcomingPresenceFrom(ctx context.Context, start time.Time) 
 		away := make([]presenceLeave, 0, len(leaveRecords))
 		onLeave := make(map[string]struct{})
 		wfhMemberIDs := make(map[string]struct{}, len(wfhRequests))
+		// AdminMarkedMemberIDs is the subset of WFH members whose
+		// row was inserted by an admin via /admin/wfh/mark. The
+		// matrix renders those members' WFH cells in the distinct
+		// purple-blue color, separate from the user-requested blue.
+		adminMarkedMemberIDs := make(map[string]struct{})
 		// explicitNonWFHSet tracks members whose wfh_requests row for
 		// this date is in a non-approved status (withdrawn, denied,
 		// cancelled, or pending). The IsRecurringWFHOn fallback below
@@ -837,6 +854,9 @@ func (h *Handler) getUpcomingPresenceFrom(ctx context.Context, start time.Time) 
 		for i := range wfhRequests {
 			if wfhRequests[i].Status == database.WFHStatusApproved {
 				wfhMemberIDs[wfhRequests[i].MemberID] = struct{}{}
+				if wfhRequests[i].IsAdminMarked {
+					adminMarkedMemberIDs[wfhRequests[i].MemberID] = struct{}{}
+				}
 			} else {
 				explicitNonWFHSet[wfhRequests[i].MemberID] = struct{}{}
 			}
@@ -876,15 +896,16 @@ func (h *Handler) getUpcomingPresenceFrom(ctx context.Context, start time.Time) 
 		isToday := current.Year() == now.Year() && current.YearDay() == now.YearDay()
 
 		presence = append(presence, presenceDay{
-			DateISO:          dateStr,
-			DateDisplay:      current.Format("Mon, Jan 2"),
-			IsToday:          isToday,
-			Assigned:         assigned,
-			AssignedSwapped:  assignedSwapped,
-			AssignedSwapInfo: assignedSwapInfo,
-			Present:          onsite,
-			WFH:              wfh,
-			Away:             away,
+			DateISO:              dateStr,
+			DateDisplay:          current.Format("Mon, Jan 2"),
+			IsToday:              isToday,
+			Assigned:             assigned,
+			AssignedSwapped:      assignedSwapped,
+			AssignedSwapInfo:     assignedSwapInfo,
+			Present:              onsite,
+			WFH:                  wfh,
+			Away:                 away,
+			AdminMarkedMemberIDs: adminMarkedMemberIDs,
 		})
 
 		current = current.AddDate(0, 0, 1)

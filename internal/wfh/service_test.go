@@ -2,6 +2,7 @@ package wfh
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"path/filepath"
 	"runtime"
@@ -16,6 +17,19 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// seedAdminUser inserts a user row that the admin-marked WFH
+// rows can reference via the marked_by foreign key. The seed
+// inserts directly via SQL to set is_active=1 (CreateUser is the
+// pending path that always sets is_active=0) and the user id is
+// whatever the caller asks for. Returns the user id.
+func seedAdminUser(t *testing.T, ctx context.Context, db *database.DB, id, name, email string) string {
+	t.Helper()
+	_, err := db.ExecContext(ctx, `INSERT INTO users (id, email, name, provider, provider_id, is_admin, is_active) VALUES (?, ?, ?, ?, ?, 1, 1)`,
+		id, email, name, "test", id)
+	require.NoError(t, err)
+	return id
+}
 
 func setupWFHTestDB(t *testing.T) (*database.DB, func()) {
 	t.Helper()
@@ -1021,4 +1035,319 @@ func TestReportToday_HolidayFails(t *testing.T) {
 	require.ErrorIs(t, err, database.ErrWFHOnHoliday,
 		"ReportToday must refuse when today is a holiday")
 	assert.Empty(t, got.ID)
+}
+
+// TestMarkWFH_CreatesAdminMarkedRow is the happy path: an admin marks
+// a member as WFH for today, the row is created with is_admin_marked=1
+// and the audit columns (marked_by, marked_at) populated. The mark
+// is approved so every downstream query (quota, floor, ICS, dashboard
+// presence) picks it up unchanged.
+func TestMarkWFH_CreatesAdminMarkedRow(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	svc := NewService(db, testConfig())
+	notifier := &recordingNotifier{}
+	svc.SetNotifier(notifier)
+
+	today := testutil.NextBusinessDay(time.Now().UTC())
+	todayStr := today.Format("2006-01-02")
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	const adminID = "admin-1"
+	const adminName = "Admin"
+	seedAdminUser(t, ctx, db, adminID, adminName, adminName+"@example.com")
+
+	got, err := svc.MarkWFH(ctx, aliceID, todayStr, adminID, adminName)
+	require.NoError(t, err)
+	assert.Equal(t, database.WFHStatusApproved, got.Status)
+	assert.True(t, got.IsAdminMarked, "MarkWFH must set IsAdminMarked=true")
+	require.NotNil(t, got.MarkedBy, "MarkedBy must be set so the audit trail is complete")
+	assert.Equal(t, adminID, *got.MarkedBy)
+	require.NotNil(t, got.MarkedAt, "MarkedAt must be set so the audit trail is complete")
+
+	// The row is readable by id and the provenance travels with it.
+	reread, err := db.GetWFHRequestByID(ctx, got.ID)
+	require.NoError(t, err)
+	assert.True(t, reread.IsAdminMarked)
+	require.NotNil(t, reread.MarkedBy)
+	assert.Equal(t, adminID, *reread.MarkedBy)
+	assert.Equal(t, aliceID, reread.MemberID)
+	assert.Equal(t, todayStr, reread.Date)
+
+	// The notification fires with the admin's name as the actor.
+	require.Len(t, notifier.events, 1)
+	assert.Equal(t, aliceID, notifier.events[0].MemberID)
+	assert.Equal(t, todayStr, notifier.events[0].Date)
+	assert.Equal(t, adminName, notifier.events[0].ActorName)
+	assert.Equal(t, database.WFHStatusApproved, notifier.events[0].NewStatus)
+}
+
+// TestMarkWFH_AllowedWhenQuotaExhausted pins the override: the mark
+// must succeed even when the member is at the WFH_MAX_DAYS_PER_PERIOD
+// quota. The admin is taking responsibility; the safety rail does
+// not block. The mark is still counted in the quota (so the
+// dashboard shows the actual state), and the quota display surfaces
+// the overage via the new OverQuotaBy field.
+func TestMarkWFH_AllowedWhenQuotaExhausted(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	cfg := testConfig()
+	cfg.MaxDaysPerPeriod = 2
+	svc := NewService(db, cfg)
+
+	today := testutil.NextBusinessDay(time.Now().UTC())
+	todayStr := today.Format("2006-01-02")
+	// Two future business days in the current period (so the
+	// rows count toward GetQuotaStatus's current-period lookup).
+	// Inserted directly via SQL because CreateWFHRequest's
+	// past-date guard refuses past dates even inside the
+	// current period — the test cares about quota math, not
+	// the date validator.
+	day1 := testutil.NextBusinessDay(today)
+	day2 := testutil.NextBusinessDay(day1.AddDate(0, 0, 1))
+	nowUTC := time.Now().UTC()
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	// Fill the quota with two already-approved WFH rows in the same period.
+	for i, day := range []time.Time{day1, day2} {
+		_, insertErr := db.ExecContext(ctx,
+			`INSERT INTO wfh_requests (id, member_id, date, status, is_recurring, settled_at) VALUES (?, ?, ?, 'approved', 0, ?)`,
+			fmt.Sprintf("quota-exhaust-%d", i), aliceID, day.Format("2006-01-02"), nowUTC)
+		require.NoError(t, insertErr)
+		_ = i
+	}
+
+	// Sanity: Alice is at 2/2 before the mark.
+	pre, err := svc.GetQuotaStatus(ctx, aliceID)
+	require.NoError(t, err)
+	assert.Equal(t, 2, pre.Used)
+	assert.Equal(t, 0, pre.OverQuotaBy)
+
+	// Mark Alice for today. This would normally fail with
+	// ErrWFHQuotaExhausted; the override path must succeed.
+	adminID := seedAdminUser(t, ctx, db, "admin-1", "Admin", "admin@example.com")
+	got, err := svc.MarkWFH(ctx, aliceID, todayStr, adminID, "Admin")
+	require.NoError(t, err, "MarkWFH must succeed even when the quota is exhausted — it is an admin override")
+	assert.True(t, got.IsAdminMarked)
+
+	// The quota display shows the overage.
+	post, err := svc.GetQuotaStatus(ctx, aliceID)
+	require.NoError(t, err)
+	assert.Equal(t, 3, post.Used, "the mark counts toward the quota")
+	assert.Equal(t, 1, post.OverQuotaBy, "the dashboard surfaces the overage")
+}
+
+// TestMarkWFH_AllowedWhenFloorWouldBeViolated pins the second
+// override: marking every active member as WFH today drops the
+// on-site count to 0, below the floor. The mark must still succeed.
+// This is the over-the-floor override: a normal ReportToday would
+// be denied at settlement time, but the admin's mark bypasses the
+// check entirely.
+func TestMarkWFH_AllowedWhenFloorWouldBeViolated(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	cfg := testConfig()
+	cfg.MinOnsitePercentage = 50
+	cfg.MinOnsiteAbsolute = 1
+	svc := NewService(db, cfg)
+
+	today := testutil.NextBusinessDay(time.Now().UTC())
+	todayStr := today.Format("2006-01-02")
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+	carolID, err := db.AddTeamMember(ctx, "Carol", "carol@example.com")
+	require.NoError(t, err)
+
+	adminID := seedAdminUser(t, ctx, db, "admin-1", "Admin", "admin@example.com")
+
+	// Mark every active member. Three WFH rows, zero on-site,
+	// which is below the floor of max(50% of 3 = 2, 1) = 2.
+	for _, id := range []string{aliceID, bobID, carolID} {
+		got, markErr := svc.MarkWFH(ctx, id, todayStr, adminID, "Admin")
+		require.NoError(t, markErr, "MarkWFH must succeed even when the floor would be violated")
+		assert.True(t, got.IsAdminMarked)
+	}
+
+	// The dashboard sees all three as WFH today (the mark counts
+	// in the math), so the on-site count is 0 and the floor
+	// would be violated — but the override is already recorded.
+	approved, err := db.GetWFHRequestsByDateAndStatus(ctx, todayStr, database.WFHStatusApproved)
+	require.NoError(t, err)
+	assert.Len(t, approved, 3)
+}
+
+// TestMarkWFH_DuplicateReturnsExisting pins idempotency: a second
+// mark for the same (member, date) does not create a second row.
+// The service translates the UNIQUE-constraint error into
+// ErrWFHDuplicateRequest so the handler can render an "already
+// marked" flash instead of a 500.
+func TestMarkWFH_DuplicateReturnsExisting(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	svc := NewService(db, testConfig())
+	today := testutil.NextBusinessDay(time.Now().UTC())
+	todayStr := today.Format("2006-01-02")
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	adminID := seedAdminUser(t, ctx, db, "admin-1", "Admin", "admin@example.com")
+	seedAdminUser(t, ctx, db, "admin-2", "Other Admin", "admin2@example.com")
+
+	first, err := svc.MarkWFH(ctx, aliceID, todayStr, adminID, "Admin")
+	require.NoError(t, err)
+
+	_, err = svc.MarkWFH(ctx, aliceID, todayStr, "admin-2", "Other Admin")
+	require.ErrorIs(t, err, database.ErrWFHDuplicateRequest,
+		"second mark for the same (member, date) must surface as a duplicate")
+
+	// No second row was created.
+	rows, err := db.GetWFHRequestsByDate(ctx, todayStr)
+	require.NoError(t, err)
+	var count int
+	for _, r := range rows {
+		if r.MemberID == aliceID {
+			count++
+		}
+	}
+	assert.Equal(t, 1, count, "exactly one row should exist for (alice, today)")
+	_ = first
+}
+
+// TestMarkWFH_RejectsNonTodayDate pins the today-only scope: a
+// crafted body asking for a future or past date is rejected at the
+// service layer. The form hides the date input but the service is
+// the authoritative gate.
+func TestMarkWFH_RejectsNonTodayDate(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	svc := NewService(db, testConfig())
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	tomorrow := time.Now().UTC().AddDate(0, 0, 1).Format("2006-01-02")
+	_, err = svc.MarkWFH(ctx, aliceID, tomorrow, "admin-1", "Admin")
+	require.ErrorIs(t, err, database.ErrWFHInvalidDate,
+		"MarkWFH must refuse a non-today date")
+}
+
+// TestMarkWFH_RejectsHoliday ensures the holiday gate fires for
+// the mark path too — a holiday is a non-working day and the
+// override should not plant a phantom WFH row on it.
+func TestMarkWFH_RejectsHoliday(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	today := testutil.NextBusinessDay(time.Now().UTC())
+	todayStr := today.Format("2006-01-02")
+	db.SetHolidayChecker(func(d time.Time) bool { return d.Equal(today) })
+
+	svc := NewService(db, testConfig())
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	_, err = svc.MarkWFH(ctx, aliceID, todayStr, "admin-1", "Admin")
+	require.ErrorIs(t, err, database.ErrWFHOnHoliday,
+		"MarkWFH must refuse today when today is a holiday")
+}
+
+// TestWithdrawAdminMark_RefundsQuota verifies the unmark path:
+// deleting the admin-marked row frees the quota slot, so a
+// subsequent quota check returns the pre-mark count.
+func TestWithdrawAdminMark_RefundsQuota(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	svc := NewService(db, testConfig())
+	today := testutil.NextBusinessDay(time.Now().UTC())
+	todayStr := today.Format("2006-01-02")
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	adminID := seedAdminUser(t, ctx, db, "admin-1", "Admin", "admin@example.com")
+
+	// Mark Alice.
+	mark, err := svc.MarkWFH(ctx, aliceID, todayStr, adminID, "Admin")
+	require.NoError(t, err)
+
+	// Quota is 1/2 after the mark.
+	post, err := svc.GetQuotaStatus(ctx, aliceID)
+	require.NoError(t, err)
+	assert.Equal(t, 1, post.Used)
+	assert.Equal(t, 0, post.OverQuotaBy)
+
+	// Unmark via the standard withdraw path. This is the same
+	// storage path admin-withdraw uses, so the audit trail
+	// (withdrawn_by, withdrawn_at) is preserved and the row
+	// disappears — freeing the quota slot.
+	require.NoError(t, db.WithdrawWFHRequest(ctx, mark.ID, adminID))
+
+	final, err := svc.GetQuotaStatus(ctx, aliceID)
+	require.NoError(t, err)
+	assert.Equal(t, 0, final.Used, "withdrawing the mark must free the quota slot")
+	assert.Equal(t, 0, final.OverQuotaBy)
+}
+
+// TestQuotaStatus_ReportsOverQuotaBy pins the new OverQuotaBy
+// field: when used <= MaxDaysPerPeriod, it's 0; when used >
+// MaxDaysPerPeriod, it surfaces the overage.
+func TestQuotaStatus_ReportsOverQuotaBy(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	cfg := testConfig()
+	cfg.MaxDaysPerPeriod = 1
+	svc := NewService(db, cfg)
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	// Under quota: OverQuotaBy is 0.
+	pre, err := svc.GetQuotaStatus(ctx, aliceID)
+	require.NoError(t, err)
+	assert.Equal(t, 0, pre.Used)
+	assert.Equal(t, 0, pre.OverQuotaBy)
+
+	// Two WFH rows in the current period (so the quota counter
+	// sees them). Inserted directly via SQL because
+	// CreateWFHRequest's date guard refuses past dates even
+	// inside the current period — the test cares about quota
+	// math, not the date validator.
+	nowUTC := time.Now().UTC()
+	today := time.Date(nowUTC.Year(), nowUTC.Month(), nowUTC.Day(), 0, 0, 0, 0, time.UTC)
+	day1 := testutil.NextBusinessDay(today)
+	day2 := testutil.NextBusinessDay(day1.AddDate(0, 0, 1))
+	for i, day := range []time.Time{day1, day2} {
+		_, insertErr := db.ExecContext(ctx,
+			`INSERT INTO wfh_requests (id, member_id, date, status, is_recurring, settled_at) VALUES (?, ?, ?, 'approved', 0, ?)`,
+			fmt.Sprintf("quota-seed-%d", i), aliceID, day.Format("2006-01-02"), nowUTC)
+		require.NoError(t, insertErr)
+		_ = i
+	}
+
+	post, err := svc.GetQuotaStatus(ctx, aliceID)
+	require.NoError(t, err)
+	assert.Equal(t, 2, post.Used)
+	assert.Equal(t, 1, post.OverQuotaBy, "the dashboard surfaces the overage")
 }

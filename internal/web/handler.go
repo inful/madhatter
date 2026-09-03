@@ -85,6 +85,12 @@ type presenceDay struct {
 	Present          []database.TeamMember
 	WFH              []database.TeamMember
 	Away             []presenceLeave
+	// AdminMarkedMemberIDs is the set of member IDs whose WFH today
+	// was recorded by an admin via /admin/wfh/mark (the override
+	// path), as opposed to a self-requested WFH. The schedule matrix
+	// uses this to render admin-marked cells in the purple-blue
+	// chip color, distinct from the user-requested WFH color.
+	AdminMarkedMemberIDs map[string]struct{}
 }
 
 type presenceLeave struct {
@@ -132,6 +138,11 @@ type scheduleMatrixCell struct {
 	// uses it to pick the per-cell icon and tag color so conference
 	// leaves are visually distinct from plain leave.
 	LeaveType string
+	// IsAdminMarkedWFH is true when the cell is WFH and the row's
+	// WFH for this date was recorded by an admin via /admin/wfh/mark.
+	// The template uses it to swap the chip's Bulma class from
+	// is-info (blue) to is-link (purple-blue).
+	IsAdminMarkedWFH bool
 }
 
 func NewHandler(db *database.DB, authManager *auth.AuthManager, authMiddleware *auth.Middleware, development bool, holidayChecker func(time.Time) bool) (*Handler, error) {

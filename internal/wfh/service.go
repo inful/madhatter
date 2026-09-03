@@ -2,12 +2,14 @@ package wfh
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"log/slog"
 	"math"
 	"sort"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/inful/madhatter/internal/database"
 	"github.com/inful/madhatter/internal/envutil"
 	"github.com/inful/madhatter/internal/notify"
@@ -125,6 +127,12 @@ type QuotaStatus struct {
 	PeriodEnd   string
 	Used        int
 	Remaining   int
+	// OverQuotaBy is the number of days the member is over
+	// WFH_MAX_DAYS_PER_PERIOD. Zero in the normal case. Set when
+	// an admin has marked the member as WFH past their quota
+	// (the mark is a full override; the quota counter is still
+	// incremented so the dashboard reflects the actual state).
+	OverQuotaBy int
 }
 
 // ComputePeriodBounds computes the start and end of the quota period containing the given date.
@@ -241,12 +249,14 @@ func (s *Service) GetQuotaStatus(ctx context.Context, memberID string) (QuotaSta
 	// recurring-day accounting is needed at this layer.
 	used := len(requests)
 	remaining := max(s.cfg.MaxDaysPerPeriod-used, 0)
+	overQuotaBy := max(used-s.cfg.MaxDaysPerPeriod, 0)
 
 	return QuotaStatus{
 		PeriodStart: start.Format("2006-01-02"),
 		PeriodEnd:   end.Format("2006-01-02"),
 		Used:        used,
 		Remaining:   remaining,
+		OverQuotaBy: overQuotaBy,
 	}, nil
 }
 
@@ -424,6 +434,123 @@ func (s *Service) ReportToday(ctx context.Context, memberID string) (database.WF
 	}
 
 	return s.reportTodayReRead(ctx, pending)
+}
+
+// MarkWFH is the admin override path: an admin records that a member
+// worked from home today even though the member did not request it.
+// The mark is a "correction" — the system said on-site, reality is WFH,
+// the admin is recording reality. Two consequences of the override:
+//
+//   - The mark BYPASSES the per-member quota (WFH_MAX_DAYS_PER_PERIOD)
+//     and the daily capacity floor (MinOnsiteCount). The admin is
+//     taking responsibility for the action; the safety rails do not
+//     block the override.
+//
+//   - The mark IS still counted in the quota and the floor once
+//     recorded. The row is approved, every downstream query (quota
+//     counter, on-site count, ICS feed) sees it. This keeps the
+//     dashboard math honest — if the mark is excluded from the math,
+//     the dashboard still shows the wrong state.
+//
+// The mark is today-only (matching the existing ReportToday and
+// leave/report-sick patterns). The UNIQUE(member_id, date) constraint
+// on wfh_requests guarantees idempotency: a second mark for the same
+// (member, date) returns ErrWFHDuplicateRequest. The caller is
+// expected to translate that into a "already marked" flash message.
+func (s *Service) MarkWFH(ctx context.Context, memberID, date, actorUserID, actorName string) (database.WFHRequest, error) {
+	if !s.cfg.Enabled {
+		return database.WFHRequest{}, database.ErrWFHDisabled
+	}
+	dateTime, err := s.markWFHValidateDate(date)
+	if err != nil {
+		return database.WFHRequest{}, err
+	}
+	if s.db.IsHoliday(dateTime) {
+		return database.WFHRequest{}, database.ErrWFHOnHoliday
+	}
+	if err := s.markWFHValidateMember(ctx, memberID); err != nil {
+		return database.WFHRequest{}, err
+	}
+
+	id := uuid.NewString()
+	if err := s.db.MarkAdminWFH(ctx, id, memberID, dateTime.Format("2006-01-02"), actorUserID); err != nil {
+		return database.WFHRequest{}, err
+	}
+
+	req := s.markWFHBuildRequest(id, memberID, dateTime, actorUserID)
+	s.markWFHNotify(ctx, req, actorName)
+	return req, nil
+}
+
+// markWFHValidateDate enforces the today-only contract for the mark
+// path. Pulled out of MarkWFH so the orchestrator function stays
+// below the cyclop limit. Accepts an empty string as "use today"
+// so the handler doesn't have to pre-fill the field.
+func (s *Service) markWFHValidateDate(date string) (time.Time, error) {
+	if date == "" {
+		date = todayUTC().Format("2006-01-02")
+	}
+	if date != todayUTC().Format("2006-01-02") {
+		return time.Time{}, database.ErrWFHInvalidDate
+	}
+	dateTime, err := time.Parse("2006-01-02", date)
+	if err != nil {
+		return time.Time{}, database.ErrWFHInvalidDate
+	}
+	return dateTime, nil
+}
+
+// markWFHValidateMember ensures the target member exists before we
+// insert the row. A non-existent memberID is the most common admin
+// form misconfiguration (a deleted user still in the dropdown), so
+// we surface ErrWFHMemberNotFound distinctly from a generic DB
+// error so the handler can render a clear flash.
+func (s *Service) markWFHValidateMember(ctx context.Context, memberID string) error {
+	if _, err := s.db.GetMemberByID(ctx, memberID); err != nil {
+		if errors.Is(err, database.ErrWFHMemberNotFound) || errors.Is(err, sql.ErrNoRows) {
+			return database.ErrWFHMemberNotFound
+		}
+		return err
+	}
+	return nil
+}
+
+// markWFHBuildRequest constructs the in-memory representation of
+// the new row, including the audit fields. The marked_at timestamp
+// is captured at this layer (not at insert time) so the value the
+// caller sees matches the value written to disk.
+func (s *Service) markWFHBuildRequest(id, memberID string, dateTime time.Time, actorUserID string) database.WFHRequest {
+	req := database.WFHRequest{
+		ID:            id,
+		MemberID:      memberID,
+		Date:          dateTime.Format("2006-01-02"),
+		Status:        database.WFHStatusApproved,
+		IsAdminMarked: true,
+	}
+	if actorUserID != "" {
+		s := actorUserID
+		req.MarkedBy = &s
+	}
+	now := time.Now().UTC()
+	req.MarkedAt = &now
+	return req
+}
+
+// markWFHNotify fires the WFHEvent so the member is told who marked
+// them. nil notifier is a no-op (tests can omit the dependency).
+func (s *Service) markWFHNotify(ctx context.Context, req database.WFHRequest, actorName string) {
+	if s.notifier == nil {
+		return
+	}
+	s.notifier.WFHStateChanged(ctx, notify.WFHEvent{
+		RequestID:  req.ID,
+		MemberID:   req.MemberID,
+		MemberName: s.resolveMemberName(ctx, req.MemberID),
+		Date:       req.Date,
+		OldStatus:  "",
+		NewStatus:  database.WFHStatusApproved,
+		ActorName:  actorName,
+	})
 }
 
 // reportTodayValidate returns today's date string after the feature-

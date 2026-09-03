@@ -1,0 +1,70 @@
+{{define "wfh_mark.html"}}
+{{template "base" .}}
+{{end}}
+
+{{define "wfh_mark_styles"}}
+{{end}}
+
+{{define "wfh_mark_scripts"}}
+{{end}}
+
+{{define "wfh_mark_title"}}Mark Member as WFH{{end}}
+
+{{define "wfh_mark_content"}}
+{{template "user_card" .}}
+{{template "page_header" (dict "Title" "Mark Member as WFH" "Icon" "fas fa-user-shield" "BackHref" "/admin/wfh" "BackLabel" "Manage WFH")}}
+
+{{if eq .MarkFlashOutcome "error"}}
+<div class="notification is-danger is-light mb-4">
+    <i class="fas fa-exclamation-triangle mr-2"></i> {{.MarkFlashReason}}
+</div>
+{{end}}
+
+<div class="notification is-info is-light mb-4">
+    <i class="fas fa-info-circle mr-2"></i>
+    Use this form when a member worked from home today but never submitted a
+    WFH request — the dashboard should reflect reality. The mark is an admin
+    override: it bypasses the per-member quota and the daily on-site capacity
+    floor, but the row is still counted toward the quota and the floor so the
+    totals remain honest. The chip on the dashboard and the schedule matrix
+    renders in a distinct purple-blue color so the team can see at a glance
+    which days were admin-asserted rather than self-requested.
+</div>
+
+<form method="post" action="/admin/wfh/mark" data-confirm="Mark this member as WFH for today? The dashboard will show a purple-blue WFH chip and the row is recorded as an admin override.">
+    <div class="field">
+        <label class="label" for="member_id">Member</label>
+        <div class="control">
+            <div class="select is-fullwidth">
+                <select id="member_id" name="member_id" required>
+                    <option value="" disabled selected>Select a team member…</option>
+                    {{range .Members}}
+                    <option value="{{.ID}}">{{.Name}}</option>
+                    {{end}}
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <div class="field">
+        <label class="label">Date</label>
+        <div class="control">
+            <input class="input" type="text" value="{{.Today}}" disabled>
+        </div>
+        <p class="help">The mark is today-only; the form locks the date to keep the override on the day it happened.</p>
+        <input type="hidden" name="date" value="{{.Today}}">
+    </div>
+
+    <div class="field is-grouped is-grouped-right mt-5">
+        <p class="control">
+            <a href="/admin/wfh" class="button is-light">Cancel</a>
+        </p>
+        <p class="control">
+            <button type="submit" class="button is-link">
+                <span class="icon"><i class="fas fa-user-shield"></i></span>
+                <span>Mark as WFH</span>
+            </button>
+        </p>
+    </div>
+</form>
+{{end}}

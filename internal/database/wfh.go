@@ -74,25 +74,29 @@ func WFHErrorFor(err error) (WFHErrorInfo, bool) {
 // sqlc v1.31 emits a per-query *Row type, so adapters in this file copy the
 // fields into a wfhFields value before delegating to wfhFromSQLCFields.
 type wfhFields struct {
-	ID          string
-	MemberID    string
-	Date        time.Time
-	Status      string
-	CreatedAt   sql.NullTime
-	SettledAt   sql.NullTime
-	WithdrawnBy sql.NullString
-	WithdrawnAt sql.NullTime
-	IsRecurring int64
+	ID            string
+	MemberID      string
+	Date          time.Time
+	Status        string
+	CreatedAt     sql.NullTime
+	SettledAt     sql.NullTime
+	WithdrawnBy   sql.NullString
+	WithdrawnAt   sql.NullTime
+	IsRecurring   int64
+	IsAdminMarked int64
+	MarkedBy      sql.NullString
+	MarkedAt      sql.NullTime
 }
 
 // wfhFromSQLCFields converts the canonical column set to the domain WFHRequest.
 func wfhFromSQLCFields(f wfhFields) WFHRequest {
 	req := WFHRequest{
-		ID:          f.ID,
-		MemberID:    f.MemberID,
-		Date:        f.Date.Format("2006-01-02"),
-		Status:      f.Status,
-		IsRecurring: f.IsRecurring == 1,
+		ID:            f.ID,
+		MemberID:      f.MemberID,
+		Date:          f.Date.Format("2006-01-02"),
+		Status:        f.Status,
+		IsRecurring:   f.IsRecurring == 1,
+		IsAdminMarked: f.IsAdminMarked == 1,
 	}
 	if f.CreatedAt.Valid {
 		req.CreatedAt = f.CreatedAt.Time
@@ -108,6 +112,14 @@ func wfhFromSQLCFields(f wfhFields) WFHRequest {
 	if f.WithdrawnAt.Valid {
 		t := f.WithdrawnAt.Time
 		req.WithdrawnAt = &t
+	}
+	if f.MarkedBy.Valid {
+		s := f.MarkedBy.String
+		req.MarkedBy = &s
+	}
+	if f.MarkedAt.Valid {
+		t := f.MarkedAt.Time
+		req.MarkedAt = &t
 	}
 	return req
 }

@@ -147,13 +147,16 @@ type User struct {
 }
 
 type WfhRequest struct {
-	ID          string         `json:"id"`
-	MemberID    string         `json:"member_id"`
-	Date        time.Time      `json:"date"`
-	Status      string         `json:"status"`
-	IsRecurring int64          `json:"is_recurring"`
-	CreatedAt   sql.NullTime   `json:"created_at"`
-	SettledAt   sql.NullTime   `json:"settled_at"`
-	WithdrawnBy sql.NullString `json:"withdrawn_by"`
-	WithdrawnAt sql.NullTime   `json:"withdrawn_at"`
+	ID            string         `json:"id"`
+	MemberID      string         `json:"member_id"`
+	Date          time.Time      `json:"date"`
+	Status        string         `json:"status"`
+	IsRecurring   int64          `json:"is_recurring"`
+	IsAdminMarked int64          `json:"is_admin_marked"`
+	CreatedAt     sql.NullTime   `json:"created_at"`
+	SettledAt     sql.NullTime   `json:"settled_at"`
+	WithdrawnBy   sql.NullString `json:"withdrawn_by"`
+	WithdrawnAt   sql.NullTime   `json:"withdrawn_at"`
+	MarkedBy      sql.NullString `json:"marked_by"`
+	MarkedAt      sql.NullTime   `json:"marked_at"`
 }

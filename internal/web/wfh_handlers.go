@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -323,6 +324,7 @@ func (h *Handler) handleWFHAdminPage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	data := h.wfhBaseData(r, "wfh_manage")
 	applyPurgeFlash(data, r)
+	applyMarkFlash(data, r)
 	data["Requests"] = h.loadAdminActionableWFH(ctx)
 
 	if h.wfhService != nil {
@@ -462,6 +464,164 @@ func (h *Handler) handleWFHAdminSettle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, "/admin/wfh", http.StatusSeeOther)
+}
+
+// wfhMarkFlashKey is the query-string key the mark/unmark handlers
+// use to carry the post-action outcome back to the admin WFH page.
+// Same stateless pattern as the report-today and purge flash keys:
+// the message is rendered once, immediately after the action that
+// produced it.
+const wfhMarkFlashKey = "wfh_marked"
+
+// handleAdminMarkWFHPage renders the GET form for the "Mark member
+// as WFH" admin action. Lists active team members (excluding the
+// current admin — admins don't typically mark themselves) and locks
+// the date to today. Both fields are required on submit; the date
+// is hidden because the override is today-only.
+func (h *Handler) handleAdminMarkWFHPage(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	data := h.wfhBaseData(r, "wfh_mark")
+	applyMarkFlash(data, r)
+
+	currentUser := mustGetUser(ctx)
+	currentMemberID := h.resolveMemberID(ctx, currentUser.Email)
+
+	members, err := h.db.GetActiveTeamMembers(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	type memberOption struct {
+		ID   string
+		Name string
+	}
+	options := make([]memberOption, 0, len(members))
+	for _, m := range members {
+		if m.ID == currentMemberID {
+			continue
+		}
+		options = append(options, memberOption{ID: m.ID, Name: m.Name})
+	}
+	data["Members"] = options
+	data["Today"] = time.Now().UTC().Format("2006-01-02")
+
+	if err := h.tmpl.ExecuteTemplate(w, "wfh_mark.html", data); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// applyMarkFlash copies the post-mark outcome from the query
+// string into the template data so the form can render a one-time
+// confirmation banner. The query string carries two fields:
+//   - wfh_marked=ok|error|already
+//   - member=<name>  (on success, the member the admin just marked)
+func applyMarkFlash(data map[string]any, r *http.Request) {
+	raw := r.URL.Query().Get(wfhMarkFlashKey)
+	if raw == "" {
+		return
+	}
+	data["MarkFlashOutcome"] = raw
+	data["MarkFlashMember"] = r.URL.Query().Get("member")
+	data["MarkFlashReason"] = r.URL.Query().Get("reason")
+}
+
+// handleAdminMarkWFH handles the POST that creates the admin-marked
+// WFH row. The form supplies the member_id and a hidden date (today).
+// Both are required. The handler calls Service.MarkWFH, which
+// enforces: feature enabled, valid date, member exists. The service
+// does NOT enforce quota or capacity floor — the mark is an
+// override.
+//
+// Security: the route lives under safeRequireAdmin so admin status
+// is implicit. The handler still validates that the date is today
+// (defense in depth — a crafted body can't mark a member for a
+// future date; the service will reject it as ErrWFHInvalidDate).
+// A crafted body cannot mark the admin themselves: the form does
+// not include the admin in the member dropdown.
+func (h *Handler) handleAdminMarkWFH(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	if h.wfhService == nil {
+		http.Error(w, "WFH service is not enabled", http.StatusServiceUnavailable)
+		return
+	}
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form", http.StatusBadRequest)
+		return
+	}
+
+	memberID := r.FormValue("member_id")
+	date := r.FormValue("date")
+	if memberID == "" {
+		http.Redirect(w, r, "/admin/wfh/mark?"+wfhMarkFlashKey+"=error&reason="+url.QueryEscape("Please select a member."), http.StatusSeeOther)
+		return
+	}
+
+	user := mustGetUser(ctx)
+
+	req, err := h.wfhService.MarkWFH(ctx, memberID, date, user.UserID, user.Name)
+	if err != nil {
+		if info, ok := database.WFHErrorFor(err); ok {
+			// "Already marked" surfaces a distinct flash so the
+			// admin form does not look broken.
+			if errors.Is(err, database.ErrWFHDuplicateRequest) {
+				http.Redirect(w, r, "/admin/wfh?"+wfhMarkFlashKey+"=already&member="+url.QueryEscape(req.MemberID), http.StatusSeeOther)
+				return
+			}
+			http.Redirect(w, r, "/admin/wfh/mark?"+wfhMarkFlashKey+"=error&reason="+url.QueryEscape(info.Message), http.StatusSeeOther)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	memberName := h.memberName(ctx, req.MemberID)
+	http.Redirect(w, r, "/admin/wfh?"+wfhMarkFlashKey+"=ok&member="+url.QueryEscape(memberName), http.StatusSeeOther)
+}
+
+// handleAdminMarkWFHUnmark handles the POST that withdraws an
+// admin-marked WFH row. The row is deleted via the existing
+// WithdrawWFHRequest path, which preserves the audit trail
+// (withdrawn_by, withdrawn_at) and frees the quota slot. The
+// "unmark" verb is just a flash wording on top of the existing
+// withdraw action; the storage layer is the same.
+func (h *Handler) handleAdminMarkWFHUnmark(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id := chi.URLParam(r, "id")
+
+	user := mustGetUser(ctx)
+
+	req, err := h.db.GetWFHRequestByID(ctx, id)
+	if err != nil {
+		http.Error(w, wfhWebErrorMessage(err), http.StatusBadRequest)
+		return
+	}
+	if !req.IsAdminMarked {
+		// Defense in depth: the button is only rendered for
+		// admin-marked rows, but a tampered form should not be
+		// able to use this endpoint to withdraw a user-requested
+		// row (that goes through /admin/wfh/{id}/withdraw).
+		http.Error(w, "this row is not an admin mark", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.db.WithdrawWFHRequest(ctx, id, user.UserID); err != nil {
+		http.Error(w, wfhWebErrorMessage(err), http.StatusBadRequest)
+		return
+	}
+
+	h.notifierOrNil().WFHStateChanged(ctx, notify.WFHEvent{
+		RequestID:  req.ID,
+		MemberID:   req.MemberID,
+		MemberName: h.memberName(ctx, req.MemberID),
+		Date:       req.Date,
+		OldStatus:  database.WFHStatusApproved,
+		NewStatus:  database.WFHStatusWithdrawn,
+		ActorName:  user.Name,
+	})
+
+	http.Redirect(w, r, "/admin/wfh?"+wfhMarkFlashKey+"=unmarked&member="+url.QueryEscape(h.memberName(ctx, req.MemberID)), http.StatusSeeOther)
 }
 
 // wfhPurgeFlashKey is the query-string key used to carry the post-purge

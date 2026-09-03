@@ -1381,3 +1381,100 @@ func TestTemplatesHaveNoInlineEventHandlers(t *testing.T) {
 		}
 	}
 }
+
+// TestDashboard_AdminMarkedWFHChip_RendersIsLinkClass pins the
+// admin-marked WFH chip color in the Today card. When the user's
+// WFH today was inserted by an admin via /admin/wfh/mark
+// (IsAdminMarkedWFH=true), the chip renders in the distinct
+// is-link purple-blue color. A regular user-requested WFH renders
+// in the existing is-info blue. The two states are visually
+// distinct so the team can see at a glance which days were
+// admin-asserted rather than self-requested.
+func TestDashboard_AdminMarkedWFHChip_RendersIsLinkClass(t *testing.T) {
+	mockDB := &database.DB{}
+	handler, err := NewHandler(mockDB, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	t.Run("admin-marked renders is-link", func(t *testing.T) {
+		data := map[string]any{
+			"User":                      map[string]any{"Email": "alice@example.com", "Name": "Alice"},
+			"IsAdmin":                   false,
+			"Template":                  "dashboard",
+			"CurrentUserPresenceStatus": "WFH",
+			"IsAdminMarkedWFH":          true,
+		}
+
+		w := httptest.NewRecorder()
+		require.NoError(t, handler.tmpl.ExecuteTemplate(w, "dashboard.html", data))
+
+		body := w.Body.String()
+		assert.Contains(t, body,
+			`<span class="tag is-link is-light" title="Marked by admin as WFH"><i class="fas fa-home mr-1"></i> WFH</span>`,
+			"admin-marked WFH chip must render with is-link class and the hover tooltip")
+		assert.NotContains(t, body,
+			`<span class="tag is-info is-light"><i class="fas fa-home mr-1"></i> WFH</span>`,
+			"the regular is-info span form must not render when the chip is admin-marked")
+	})
+
+	t.Run("user-requested renders is-info", func(t *testing.T) {
+		data := map[string]any{
+			"User":                      map[string]any{"Email": "alice@example.com", "Name": "Alice"},
+			"IsAdmin":                   false,
+			"Template":                  "dashboard",
+			"CurrentUserPresenceStatus": "WFH",
+			"IsAdminMarkedWFH":          false,
+		}
+
+		w := httptest.NewRecorder()
+		require.NoError(t, handler.tmpl.ExecuteTemplate(w, "dashboard.html", data))
+
+		body := w.Body.String()
+		assert.Contains(t, body,
+			`<span class="tag is-info is-light"><i class="fas fa-home mr-1"></i> WFH</span>`,
+			"user-requested WFH chip must render with is-info class (the original behavior)")
+		assert.NotContains(t, body,
+			`is-link is-light" title="Marked by admin as WFH"`,
+			"the admin-marked is-link variant must not render when IsAdminMarkedWFH is false")
+	})
+}
+
+// TestScheduleMatrix_AdminMarkedCell_HasStatusWfhAdminClass pins
+// the schedule matrix cell's CSS class for admin-marked WFH. The
+// matrix cell uses .status-wfh .status-chip for user WFH and
+// .status-wfh-admin .status-chip for admin-marked WFH. The
+// .status-wfh-admin rule is what paints the chip in the distinct
+// purple-blue color, so a regression that drops the class would
+// also drop the color.
+func TestScheduleMatrix_AdminMarkedCell_HasStatusWfhAdminClass(t *testing.T) {
+	mockDB := &database.DB{}
+	handler, err := NewHandler(mockDB, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	data := map[string]any{
+		"User":     map[string]any{"Email": "alice@example.com", "Name": "Alice"},
+		"IsAdmin":  false,
+		"Template": "dashboard",
+		"ScheduleMatrix": scheduleMatrix{
+			Days: []scheduleMatrixDay{{DateISO: "2026-09-04", DateDisplay: "Fri, Sep 4"}},
+			Rows: []scheduleMatrixRow{{
+				Member: database.TeamMember{ID: "alice", Name: "Alice"},
+				Cells: []scheduleMatrixCell{{
+					Status:           "wfh",
+					Label:            "WFH",
+					IsAdminMarkedWFH: true,
+					DateISO:          "2026-09-04",
+					DateLabel:        "Fri, Sep 4",
+				}},
+			}},
+		},
+	}
+
+	w := httptest.NewRecorder()
+	require.NoError(t, handler.tmpl.ExecuteTemplate(w, "dashboard.html", data))
+
+	body := w.Body.String()
+	assert.Contains(t, body, `status-cell status-wfh status-wfh-admin`,
+		"admin-marked WFH cell must carry the .status-wfh-admin class in addition to .status-wfh")
+	assert.Contains(t, body, `title="Marked by admin as WFH"`,
+		"admin-marked WFH cell must include the hover tooltip")
+}

@@ -2,40 +2,60 @@
 INSERT INTO wfh_requests (id, member_id, date, status)
 VALUES (?, ?, ?, 'pending');
 
+-- name: MarkAdminWFH :execresult
+-- Insert an admin-marked WFH row in one shot. is_admin_marked=1 and
+-- status='approved' so the row participates in every existing
+-- query (quota, floor, ICS, dashboard presence) without the
+-- rendering layer needing a special case for admin marks. The
+-- UNIQUE(member_id, date) constraint guarantees idempotency: a
+-- second mark for the same (member, date) returns SQLITE_CONSTRAINT
+-- to the caller, which the service layer translates into
+-- "already marked".
+INSERT INTO wfh_requests (id, member_id, date, status, is_admin_marked, marked_by, marked_at)
+VALUES (?, ?, ?, 'approved', 1, ?, ?);
+
+-- name: IsAdminMarkedWFH :one
+-- Returns 1 if an admin-marked row exists for (member_id, date),
+-- 0 otherwise. Cheap point-lookup behind the
+-- idx_wfh_requests_admin_marked index.
+SELECT is_admin_marked
+FROM wfh_requests
+WHERE member_id = ? AND date = ?;
+
 -- name: CreateApprovedRecurringWFHRequest :execresult
 INSERT INTO wfh_requests (id, member_id, date, status, is_recurring, settled_at)
 VALUES (?, ?, ?, 'approved', 1, ?);
 
 -- name: GetWFHRequestByID :one
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at
 FROM wfh_requests
 WHERE id = ?;
 
 -- name: GetWFHRequestByMemberAndDate :one
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at
 FROM wfh_requests
 WHERE member_id = ? AND date = ?;
 
 -- name: GetWFHRequestsByDate :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at
 FROM wfh_requests
 WHERE date = ?
 ORDER BY created_at ASC;
 
 -- name: GetWFHRequestsByDateAndStatus :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at
 FROM wfh_requests
 WHERE date = ? AND status = ?
 ORDER BY created_at ASC;
 
 -- name: GetWFHRequestsByMember :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at
 FROM wfh_requests
 WHERE member_id = ?
 ORDER BY date DESC;
 
 -- name: GetWFHRequestsByMemberAndPeriod :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at
 FROM wfh_requests
 WHERE member_id = ?
   AND date >= ?
@@ -44,7 +64,7 @@ WHERE member_id = ?
 ORDER BY date ASC;
 
 -- name: GetPendingWFHRequestsForSettlement :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at
 FROM wfh_requests
 WHERE status = 'pending'
   AND is_recurring = 0
@@ -52,7 +72,7 @@ WHERE status = 'pending'
 ORDER BY date ASC, created_at ASC;
 
 -- name: GetAllWFHRequests :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at
 FROM wfh_requests
 ORDER BY date DESC, created_at DESC;
 

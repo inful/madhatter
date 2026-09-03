@@ -180,15 +180,18 @@ func (db *DB) GetWFHRequestByID(ctx context.Context, id string) (*WFHRequest, er
 		return nil, err
 	}
 	result := wfhFromSQLCFields(wfhFields{
-		ID:          row.ID,
-		MemberID:    row.MemberID,
-		Date:        row.Date,
-		Status:      row.Status,
-		CreatedAt:   row.CreatedAt,
-		SettledAt:   row.SettledAt,
-		WithdrawnBy: row.WithdrawnBy,
-		WithdrawnAt: row.WithdrawnAt,
-		IsRecurring: row.IsRecurring,
+		ID:            row.ID,
+		MemberID:      row.MemberID,
+		Date:          row.Date,
+		Status:        row.Status,
+		CreatedAt:     row.CreatedAt,
+		SettledAt:     row.SettledAt,
+		WithdrawnBy:   row.WithdrawnBy,
+		WithdrawnAt:   row.WithdrawnAt,
+		IsRecurring:   row.IsRecurring,
+		IsAdminMarked: row.IsAdminMarked,
+		MarkedBy:      row.MarkedBy,
+		MarkedAt:      row.MarkedAt,
 	})
 	return &result, nil
 }
@@ -206,15 +209,18 @@ func (db *DB) GetWFHRequestsByDate(ctx context.Context, date string) ([]WFHReque
 	result := make([]WFHRequest, len(rows))
 	for i := range rows {
 		result[i] = wfhFromSQLCFields(wfhFields{
-			ID:          rows[i].ID,
-			MemberID:    rows[i].MemberID,
-			Date:        rows[i].Date,
-			Status:      rows[i].Status,
-			CreatedAt:   rows[i].CreatedAt,
-			SettledAt:   rows[i].SettledAt,
-			WithdrawnBy: rows[i].WithdrawnBy,
-			WithdrawnAt: rows[i].WithdrawnAt,
-			IsRecurring: rows[i].IsRecurring,
+			ID:            rows[i].ID,
+			MemberID:      rows[i].MemberID,
+			Date:          rows[i].Date,
+			Status:        rows[i].Status,
+			CreatedAt:     rows[i].CreatedAt,
+			SettledAt:     rows[i].SettledAt,
+			WithdrawnBy:   rows[i].WithdrawnBy,
+			WithdrawnAt:   rows[i].WithdrawnAt,
+			IsRecurring:   rows[i].IsRecurring,
+			IsAdminMarked: rows[i].IsAdminMarked,
+			MarkedBy:      rows[i].MarkedBy,
+			MarkedAt:      rows[i].MarkedAt,
 		})
 	}
 	return result, nil
@@ -236,15 +242,18 @@ func (db *DB) GetWFHRequestsByDateAndStatus(ctx context.Context, date, status st
 	result := make([]WFHRequest, len(rows))
 	for i := range rows {
 		result[i] = wfhFromSQLCFields(wfhFields{
-			ID:          rows[i].ID,
-			MemberID:    rows[i].MemberID,
-			Date:        rows[i].Date,
-			Status:      rows[i].Status,
-			CreatedAt:   rows[i].CreatedAt,
-			SettledAt:   rows[i].SettledAt,
-			WithdrawnBy: rows[i].WithdrawnBy,
-			WithdrawnAt: rows[i].WithdrawnAt,
-			IsRecurring: rows[i].IsRecurring,
+			ID:            rows[i].ID,
+			MemberID:      rows[i].MemberID,
+			Date:          rows[i].Date,
+			Status:        rows[i].Status,
+			CreatedAt:     rows[i].CreatedAt,
+			SettledAt:     rows[i].SettledAt,
+			WithdrawnBy:   rows[i].WithdrawnBy,
+			WithdrawnAt:   rows[i].WithdrawnAt,
+			IsRecurring:   rows[i].IsRecurring,
+			IsAdminMarked: rows[i].IsAdminMarked,
+			MarkedBy:      rows[i].MarkedBy,
+			MarkedAt:      rows[i].MarkedAt,
 		})
 	}
 	return result, nil
@@ -259,15 +268,18 @@ func (db *DB) GetWFHRequestsByMember(ctx context.Context, memberID string) ([]WF
 	result := make([]WFHRequest, len(rows))
 	for i := range rows {
 		result[i] = wfhFromSQLCFields(wfhFields{
-			ID:          rows[i].ID,
-			MemberID:    rows[i].MemberID,
-			Date:        rows[i].Date,
-			Status:      rows[i].Status,
-			CreatedAt:   rows[i].CreatedAt,
-			SettledAt:   rows[i].SettledAt,
-			WithdrawnBy: rows[i].WithdrawnBy,
-			WithdrawnAt: rows[i].WithdrawnAt,
-			IsRecurring: rows[i].IsRecurring,
+			ID:            rows[i].ID,
+			MemberID:      rows[i].MemberID,
+			Date:          rows[i].Date,
+			Status:        rows[i].Status,
+			CreatedAt:     rows[i].CreatedAt,
+			SettledAt:     rows[i].SettledAt,
+			WithdrawnBy:   rows[i].WithdrawnBy,
+			WithdrawnAt:   rows[i].WithdrawnAt,
+			IsRecurring:   rows[i].IsRecurring,
+			IsAdminMarked: rows[i].IsAdminMarked,
+			MarkedBy:      rows[i].MarkedBy,
+			MarkedAt:      rows[i].MarkedAt,
 		})
 	}
 	return result, nil
@@ -294,15 +306,18 @@ func (db *DB) GetWFHRequestsUsedInPeriod(ctx context.Context, memberID, periodSt
 	result := make([]WFHRequest, len(rows))
 	for i := range rows {
 		result[i] = wfhFromSQLCFields(wfhFields{
-			ID:          rows[i].ID,
-			MemberID:    rows[i].MemberID,
-			Date:        rows[i].Date,
-			Status:      rows[i].Status,
-			CreatedAt:   rows[i].CreatedAt,
-			SettledAt:   rows[i].SettledAt,
-			WithdrawnBy: rows[i].WithdrawnBy,
-			WithdrawnAt: rows[i].WithdrawnAt,
-			IsRecurring: rows[i].IsRecurring,
+			ID:            rows[i].ID,
+			MemberID:      rows[i].MemberID,
+			Date:          rows[i].Date,
+			Status:        rows[i].Status,
+			CreatedAt:     rows[i].CreatedAt,
+			SettledAt:     rows[i].SettledAt,
+			WithdrawnBy:   rows[i].WithdrawnBy,
+			WithdrawnAt:   rows[i].WithdrawnAt,
+			IsRecurring:   rows[i].IsRecurring,
+			IsAdminMarked: rows[i].IsAdminMarked,
+			MarkedBy:      rows[i].MarkedBy,
+			MarkedAt:      rows[i].MarkedAt,
 		})
 	}
 	return result, nil
@@ -343,15 +358,18 @@ func (db *DB) GetPendingForSettlement(ctx context.Context, cutoffDate string) ([
 	result := make([]WFHRequest, len(rows))
 	for i := range rows {
 		result[i] = wfhFromSQLCFields(wfhFields{
-			ID:          rows[i].ID,
-			MemberID:    rows[i].MemberID,
-			Date:        rows[i].Date,
-			Status:      rows[i].Status,
-			CreatedAt:   rows[i].CreatedAt,
-			SettledAt:   rows[i].SettledAt,
-			WithdrawnBy: rows[i].WithdrawnBy,
-			WithdrawnAt: rows[i].WithdrawnAt,
-			IsRecurring: rows[i].IsRecurring,
+			ID:            rows[i].ID,
+			MemberID:      rows[i].MemberID,
+			Date:          rows[i].Date,
+			Status:        rows[i].Status,
+			CreatedAt:     rows[i].CreatedAt,
+			SettledAt:     rows[i].SettledAt,
+			WithdrawnBy:   rows[i].WithdrawnBy,
+			WithdrawnAt:   rows[i].WithdrawnAt,
+			IsRecurring:   rows[i].IsRecurring,
+			IsAdminMarked: rows[i].IsAdminMarked,
+			MarkedBy:      rows[i].MarkedBy,
+			MarkedAt:      rows[i].MarkedAt,
 		})
 	}
 	return result, nil
@@ -366,15 +384,18 @@ func (db *DB) GetAllWFHRequests(ctx context.Context) ([]WFHRequest, error) {
 	result := make([]WFHRequest, len(rows))
 	for i := range rows {
 		result[i] = wfhFromSQLCFields(wfhFields{
-			ID:          rows[i].ID,
-			MemberID:    rows[i].MemberID,
-			Date:        rows[i].Date,
-			Status:      rows[i].Status,
-			CreatedAt:   rows[i].CreatedAt,
-			SettledAt:   rows[i].SettledAt,
-			WithdrawnBy: rows[i].WithdrawnBy,
-			WithdrawnAt: rows[i].WithdrawnAt,
-			IsRecurring: rows[i].IsRecurring,
+			ID:            rows[i].ID,
+			MemberID:      rows[i].MemberID,
+			Date:          rows[i].Date,
+			Status:        rows[i].Status,
+			CreatedAt:     rows[i].CreatedAt,
+			SettledAt:     rows[i].SettledAt,
+			WithdrawnBy:   rows[i].WithdrawnBy,
+			WithdrawnAt:   rows[i].WithdrawnAt,
+			IsRecurring:   rows[i].IsRecurring,
+			IsAdminMarked: rows[i].IsAdminMarked,
+			MarkedBy:      rows[i].MarkedBy,
+			MarkedAt:      rows[i].MarkedAt,
 		})
 	}
 	return result, nil
@@ -412,6 +433,56 @@ func (db *DB) CancelWFHRequest(ctx context.Context, id, memberID string) error {
 // the only gate.
 func (db *DB) WithdrawWFHRequest(ctx context.Context, id, adminUserID string) error {
 	return db.withdrawWFH(ctx, id, "", adminUserID)
+}
+
+// MarkAdminWFH inserts an admin-asserted WFH row in one shot. The
+// row is created with status='approved' and is_admin_marked=1 so
+// every downstream query (quota, floor, ICS, dashboard presence)
+// picks it up unchanged. The UNIQUE(member_id, date) constraint
+// guarantees idempotency: a second mark for the same (member, date)
+// returns the UNIQUE-constraint error which the service layer
+// translates into ErrWFHDuplicateRequest. We do NOT pre-check for
+// the existing row here — the INSERT-and-catch-UNIQUE pattern is
+// the race-safe way to handle concurrent admin marks against the
+// same member on the same day.
+func (db *DB) MarkAdminWFH(ctx context.Context, id, memberID, date, adminUserID string) error {
+	dateTime, err := time.Parse("2006-01-02", date)
+	if err != nil {
+		return ErrWFHInvalidDate
+	}
+	markedAt := time.Now().UTC()
+	_, err = db.queries.MarkAdminWFH(ctx, sqlc.MarkAdminWFHParams{
+		ID:       id,
+		MemberID: memberID,
+		Date:     dateTime,
+		MarkedBy: sql.NullString{String: adminUserID, Valid: adminUserID != ""},
+		MarkedAt: sql.NullTime{Time: markedAt, Valid: true},
+	})
+	if isUniqueConstraintError(err) {
+		return ErrWFHDuplicateRequest
+	}
+	return err
+}
+
+// IsAdminMarkedWFH returns true if a row with is_admin_marked=1
+// exists for the given (member_id, date). Used by the dashboard
+// presence builder to pick the right chip color.
+func (db *DB) IsAdminMarkedWFH(ctx context.Context, memberID, date string) (bool, error) {
+	dateTime, err := time.Parse("2006-01-02", date)
+	if err != nil {
+		return false, ErrWFHInvalidDate
+	}
+	flag, err := db.queries.IsAdminMarkedWFH(ctx, sqlc.IsAdminMarkedWFHParams{
+		MemberID: memberID,
+		Date:     dateTime,
+	})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	return flag == 1, nil
 }
 
 // WithdrawOwnWFHRequest withdraws an approved WFH request on behalf of the owning

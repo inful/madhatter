@@ -110,6 +110,13 @@ func (h *Handler) registerRoutes() {
 		r.Post("/admin/wfh/settle", h.handleWFHAdminSettle)
 		r.Get("/admin/wfh/purge", h.handleWFHPurge)
 		r.Post("/admin/wfh/purge", h.handleWFHPurge)
+		// Admin override: mark a member as WFH today even though
+		// they didn't request it. The "unmark" action reuses the
+		// existing withdraw path but is guarded so it can only act
+		// on rows with is_admin_marked=1.
+		r.Get("/admin/wfh/mark", h.handleAdminMarkWFHPage)
+		r.Post("/admin/wfh/mark", h.handleAdminMarkWFH)
+		r.Post("/admin/wfh/{id}/unmark", h.handleAdminMarkWFHUnmark)
 	})
 }
 

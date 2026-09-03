@@ -88,21 +88,24 @@ func (q *Queries) DeleteWFHRequest(ctx context.Context, id string) error {
 }
 
 const getAllWFHRequests = `-- name: GetAllWFHRequests :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at
 FROM wfh_requests
 ORDER BY date DESC, created_at DESC
 `
 
 type GetAllWFHRequestsRow struct {
-	ID          string         `json:"id"`
-	MemberID    string         `json:"member_id"`
-	Date        time.Time      `json:"date"`
-	Status      string         `json:"status"`
-	CreatedAt   sql.NullTime   `json:"created_at"`
-	SettledAt   sql.NullTime   `json:"settled_at"`
-	WithdrawnBy sql.NullString `json:"withdrawn_by"`
-	WithdrawnAt sql.NullTime   `json:"withdrawn_at"`
-	IsRecurring int64          `json:"is_recurring"`
+	ID            string         `json:"id"`
+	MemberID      string         `json:"member_id"`
+	Date          time.Time      `json:"date"`
+	Status        string         `json:"status"`
+	CreatedAt     sql.NullTime   `json:"created_at"`
+	SettledAt     sql.NullTime   `json:"settled_at"`
+	WithdrawnBy   sql.NullString `json:"withdrawn_by"`
+	WithdrawnAt   sql.NullTime   `json:"withdrawn_at"`
+	IsRecurring   int64          `json:"is_recurring"`
+	IsAdminMarked int64          `json:"is_admin_marked"`
+	MarkedBy      sql.NullString `json:"marked_by"`
+	MarkedAt      sql.NullTime   `json:"marked_at"`
 }
 
 func (q *Queries) GetAllWFHRequests(ctx context.Context) ([]GetAllWFHRequestsRow, error) {
@@ -124,6 +127,9 @@ func (q *Queries) GetAllWFHRequests(ctx context.Context) ([]GetAllWFHRequestsRow
 			&i.WithdrawnBy,
 			&i.WithdrawnAt,
 			&i.IsRecurring,
+			&i.IsAdminMarked,
+			&i.MarkedBy,
+			&i.MarkedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -139,7 +145,7 @@ func (q *Queries) GetAllWFHRequests(ctx context.Context) ([]GetAllWFHRequestsRow
 }
 
 const getPendingWFHRequestsForSettlement = `-- name: GetPendingWFHRequestsForSettlement :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at
 FROM wfh_requests
 WHERE status = 'pending'
   AND is_recurring = 0
@@ -148,15 +154,18 @@ ORDER BY date ASC, created_at ASC
 `
 
 type GetPendingWFHRequestsForSettlementRow struct {
-	ID          string         `json:"id"`
-	MemberID    string         `json:"member_id"`
-	Date        time.Time      `json:"date"`
-	Status      string         `json:"status"`
-	CreatedAt   sql.NullTime   `json:"created_at"`
-	SettledAt   sql.NullTime   `json:"settled_at"`
-	WithdrawnBy sql.NullString `json:"withdrawn_by"`
-	WithdrawnAt sql.NullTime   `json:"withdrawn_at"`
-	IsRecurring int64          `json:"is_recurring"`
+	ID            string         `json:"id"`
+	MemberID      string         `json:"member_id"`
+	Date          time.Time      `json:"date"`
+	Status        string         `json:"status"`
+	CreatedAt     sql.NullTime   `json:"created_at"`
+	SettledAt     sql.NullTime   `json:"settled_at"`
+	WithdrawnBy   sql.NullString `json:"withdrawn_by"`
+	WithdrawnAt   sql.NullTime   `json:"withdrawn_at"`
+	IsRecurring   int64          `json:"is_recurring"`
+	IsAdminMarked int64          `json:"is_admin_marked"`
+	MarkedBy      sql.NullString `json:"marked_by"`
+	MarkedAt      sql.NullTime   `json:"marked_at"`
 }
 
 func (q *Queries) GetPendingWFHRequestsForSettlement(ctx context.Context, date time.Time) ([]GetPendingWFHRequestsForSettlementRow, error) {
@@ -178,6 +187,9 @@ func (q *Queries) GetPendingWFHRequestsForSettlement(ctx context.Context, date t
 			&i.WithdrawnBy,
 			&i.WithdrawnAt,
 			&i.IsRecurring,
+			&i.IsAdminMarked,
+			&i.MarkedBy,
+			&i.MarkedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -193,21 +205,24 @@ func (q *Queries) GetPendingWFHRequestsForSettlement(ctx context.Context, date t
 }
 
 const getWFHRequestByID = `-- name: GetWFHRequestByID :one
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at
 FROM wfh_requests
 WHERE id = ?
 `
 
 type GetWFHRequestByIDRow struct {
-	ID          string         `json:"id"`
-	MemberID    string         `json:"member_id"`
-	Date        time.Time      `json:"date"`
-	Status      string         `json:"status"`
-	CreatedAt   sql.NullTime   `json:"created_at"`
-	SettledAt   sql.NullTime   `json:"settled_at"`
-	WithdrawnBy sql.NullString `json:"withdrawn_by"`
-	WithdrawnAt sql.NullTime   `json:"withdrawn_at"`
-	IsRecurring int64          `json:"is_recurring"`
+	ID            string         `json:"id"`
+	MemberID      string         `json:"member_id"`
+	Date          time.Time      `json:"date"`
+	Status        string         `json:"status"`
+	CreatedAt     sql.NullTime   `json:"created_at"`
+	SettledAt     sql.NullTime   `json:"settled_at"`
+	WithdrawnBy   sql.NullString `json:"withdrawn_by"`
+	WithdrawnAt   sql.NullTime   `json:"withdrawn_at"`
+	IsRecurring   int64          `json:"is_recurring"`
+	IsAdminMarked int64          `json:"is_admin_marked"`
+	MarkedBy      sql.NullString `json:"marked_by"`
+	MarkedAt      sql.NullTime   `json:"marked_at"`
 }
 
 func (q *Queries) GetWFHRequestByID(ctx context.Context, id string) (GetWFHRequestByIDRow, error) {
@@ -223,12 +238,15 @@ func (q *Queries) GetWFHRequestByID(ctx context.Context, id string) (GetWFHReque
 		&i.WithdrawnBy,
 		&i.WithdrawnAt,
 		&i.IsRecurring,
+		&i.IsAdminMarked,
+		&i.MarkedBy,
+		&i.MarkedAt,
 	)
 	return i, err
 }
 
 const getWFHRequestByMemberAndDate = `-- name: GetWFHRequestByMemberAndDate :one
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at
 FROM wfh_requests
 WHERE member_id = ? AND date = ?
 `
@@ -239,15 +257,18 @@ type GetWFHRequestByMemberAndDateParams struct {
 }
 
 type GetWFHRequestByMemberAndDateRow struct {
-	ID          string         `json:"id"`
-	MemberID    string         `json:"member_id"`
-	Date        time.Time      `json:"date"`
-	Status      string         `json:"status"`
-	CreatedAt   sql.NullTime   `json:"created_at"`
-	SettledAt   sql.NullTime   `json:"settled_at"`
-	WithdrawnBy sql.NullString `json:"withdrawn_by"`
-	WithdrawnAt sql.NullTime   `json:"withdrawn_at"`
-	IsRecurring int64          `json:"is_recurring"`
+	ID            string         `json:"id"`
+	MemberID      string         `json:"member_id"`
+	Date          time.Time      `json:"date"`
+	Status        string         `json:"status"`
+	CreatedAt     sql.NullTime   `json:"created_at"`
+	SettledAt     sql.NullTime   `json:"settled_at"`
+	WithdrawnBy   sql.NullString `json:"withdrawn_by"`
+	WithdrawnAt   sql.NullTime   `json:"withdrawn_at"`
+	IsRecurring   int64          `json:"is_recurring"`
+	IsAdminMarked int64          `json:"is_admin_marked"`
+	MarkedBy      sql.NullString `json:"marked_by"`
+	MarkedAt      sql.NullTime   `json:"marked_at"`
 }
 
 func (q *Queries) GetWFHRequestByMemberAndDate(ctx context.Context, arg GetWFHRequestByMemberAndDateParams) (GetWFHRequestByMemberAndDateRow, error) {
@@ -263,27 +284,33 @@ func (q *Queries) GetWFHRequestByMemberAndDate(ctx context.Context, arg GetWFHRe
 		&i.WithdrawnBy,
 		&i.WithdrawnAt,
 		&i.IsRecurring,
+		&i.IsAdminMarked,
+		&i.MarkedBy,
+		&i.MarkedAt,
 	)
 	return i, err
 }
 
 const getWFHRequestsByDate = `-- name: GetWFHRequestsByDate :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at
 FROM wfh_requests
 WHERE date = ?
 ORDER BY created_at ASC
 `
 
 type GetWFHRequestsByDateRow struct {
-	ID          string         `json:"id"`
-	MemberID    string         `json:"member_id"`
-	Date        time.Time      `json:"date"`
-	Status      string         `json:"status"`
-	CreatedAt   sql.NullTime   `json:"created_at"`
-	SettledAt   sql.NullTime   `json:"settled_at"`
-	WithdrawnBy sql.NullString `json:"withdrawn_by"`
-	WithdrawnAt sql.NullTime   `json:"withdrawn_at"`
-	IsRecurring int64          `json:"is_recurring"`
+	ID            string         `json:"id"`
+	MemberID      string         `json:"member_id"`
+	Date          time.Time      `json:"date"`
+	Status        string         `json:"status"`
+	CreatedAt     sql.NullTime   `json:"created_at"`
+	SettledAt     sql.NullTime   `json:"settled_at"`
+	WithdrawnBy   sql.NullString `json:"withdrawn_by"`
+	WithdrawnAt   sql.NullTime   `json:"withdrawn_at"`
+	IsRecurring   int64          `json:"is_recurring"`
+	IsAdminMarked int64          `json:"is_admin_marked"`
+	MarkedBy      sql.NullString `json:"marked_by"`
+	MarkedAt      sql.NullTime   `json:"marked_at"`
 }
 
 func (q *Queries) GetWFHRequestsByDate(ctx context.Context, date time.Time) ([]GetWFHRequestsByDateRow, error) {
@@ -305,6 +332,9 @@ func (q *Queries) GetWFHRequestsByDate(ctx context.Context, date time.Time) ([]G
 			&i.WithdrawnBy,
 			&i.WithdrawnAt,
 			&i.IsRecurring,
+			&i.IsAdminMarked,
+			&i.MarkedBy,
+			&i.MarkedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -320,7 +350,7 @@ func (q *Queries) GetWFHRequestsByDate(ctx context.Context, date time.Time) ([]G
 }
 
 const getWFHRequestsByDateAndStatus = `-- name: GetWFHRequestsByDateAndStatus :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at
 FROM wfh_requests
 WHERE date = ? AND status = ?
 ORDER BY created_at ASC
@@ -332,15 +362,18 @@ type GetWFHRequestsByDateAndStatusParams struct {
 }
 
 type GetWFHRequestsByDateAndStatusRow struct {
-	ID          string         `json:"id"`
-	MemberID    string         `json:"member_id"`
-	Date        time.Time      `json:"date"`
-	Status      string         `json:"status"`
-	CreatedAt   sql.NullTime   `json:"created_at"`
-	SettledAt   sql.NullTime   `json:"settled_at"`
-	WithdrawnBy sql.NullString `json:"withdrawn_by"`
-	WithdrawnAt sql.NullTime   `json:"withdrawn_at"`
-	IsRecurring int64          `json:"is_recurring"`
+	ID            string         `json:"id"`
+	MemberID      string         `json:"member_id"`
+	Date          time.Time      `json:"date"`
+	Status        string         `json:"status"`
+	CreatedAt     sql.NullTime   `json:"created_at"`
+	SettledAt     sql.NullTime   `json:"settled_at"`
+	WithdrawnBy   sql.NullString `json:"withdrawn_by"`
+	WithdrawnAt   sql.NullTime   `json:"withdrawn_at"`
+	IsRecurring   int64          `json:"is_recurring"`
+	IsAdminMarked int64          `json:"is_admin_marked"`
+	MarkedBy      sql.NullString `json:"marked_by"`
+	MarkedAt      sql.NullTime   `json:"marked_at"`
 }
 
 func (q *Queries) GetWFHRequestsByDateAndStatus(ctx context.Context, arg GetWFHRequestsByDateAndStatusParams) ([]GetWFHRequestsByDateAndStatusRow, error) {
@@ -362,6 +395,9 @@ func (q *Queries) GetWFHRequestsByDateAndStatus(ctx context.Context, arg GetWFHR
 			&i.WithdrawnBy,
 			&i.WithdrawnAt,
 			&i.IsRecurring,
+			&i.IsAdminMarked,
+			&i.MarkedBy,
+			&i.MarkedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -377,22 +413,25 @@ func (q *Queries) GetWFHRequestsByDateAndStatus(ctx context.Context, arg GetWFHR
 }
 
 const getWFHRequestsByMember = `-- name: GetWFHRequestsByMember :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at
 FROM wfh_requests
 WHERE member_id = ?
 ORDER BY date DESC
 `
 
 type GetWFHRequestsByMemberRow struct {
-	ID          string         `json:"id"`
-	MemberID    string         `json:"member_id"`
-	Date        time.Time      `json:"date"`
-	Status      string         `json:"status"`
-	CreatedAt   sql.NullTime   `json:"created_at"`
-	SettledAt   sql.NullTime   `json:"settled_at"`
-	WithdrawnBy sql.NullString `json:"withdrawn_by"`
-	WithdrawnAt sql.NullTime   `json:"withdrawn_at"`
-	IsRecurring int64          `json:"is_recurring"`
+	ID            string         `json:"id"`
+	MemberID      string         `json:"member_id"`
+	Date          time.Time      `json:"date"`
+	Status        string         `json:"status"`
+	CreatedAt     sql.NullTime   `json:"created_at"`
+	SettledAt     sql.NullTime   `json:"settled_at"`
+	WithdrawnBy   sql.NullString `json:"withdrawn_by"`
+	WithdrawnAt   sql.NullTime   `json:"withdrawn_at"`
+	IsRecurring   int64          `json:"is_recurring"`
+	IsAdminMarked int64          `json:"is_admin_marked"`
+	MarkedBy      sql.NullString `json:"marked_by"`
+	MarkedAt      sql.NullTime   `json:"marked_at"`
 }
 
 func (q *Queries) GetWFHRequestsByMember(ctx context.Context, memberID string) ([]GetWFHRequestsByMemberRow, error) {
@@ -414,6 +453,9 @@ func (q *Queries) GetWFHRequestsByMember(ctx context.Context, memberID string) (
 			&i.WithdrawnBy,
 			&i.WithdrawnAt,
 			&i.IsRecurring,
+			&i.IsAdminMarked,
+			&i.MarkedBy,
+			&i.MarkedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -429,7 +471,7 @@ func (q *Queries) GetWFHRequestsByMember(ctx context.Context, memberID string) (
 }
 
 const getWFHRequestsByMemberAndPeriod = `-- name: GetWFHRequestsByMemberAndPeriod :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at
 FROM wfh_requests
 WHERE member_id = ?
   AND date >= ?
@@ -445,15 +487,18 @@ type GetWFHRequestsByMemberAndPeriodParams struct {
 }
 
 type GetWFHRequestsByMemberAndPeriodRow struct {
-	ID          string         `json:"id"`
-	MemberID    string         `json:"member_id"`
-	Date        time.Time      `json:"date"`
-	Status      string         `json:"status"`
-	CreatedAt   sql.NullTime   `json:"created_at"`
-	SettledAt   sql.NullTime   `json:"settled_at"`
-	WithdrawnBy sql.NullString `json:"withdrawn_by"`
-	WithdrawnAt sql.NullTime   `json:"withdrawn_at"`
-	IsRecurring int64          `json:"is_recurring"`
+	ID            string         `json:"id"`
+	MemberID      string         `json:"member_id"`
+	Date          time.Time      `json:"date"`
+	Status        string         `json:"status"`
+	CreatedAt     sql.NullTime   `json:"created_at"`
+	SettledAt     sql.NullTime   `json:"settled_at"`
+	WithdrawnBy   sql.NullString `json:"withdrawn_by"`
+	WithdrawnAt   sql.NullTime   `json:"withdrawn_at"`
+	IsRecurring   int64          `json:"is_recurring"`
+	IsAdminMarked int64          `json:"is_admin_marked"`
+	MarkedBy      sql.NullString `json:"marked_by"`
+	MarkedAt      sql.NullTime   `json:"marked_at"`
 }
 
 func (q *Queries) GetWFHRequestsByMemberAndPeriod(ctx context.Context, arg GetWFHRequestsByMemberAndPeriodParams) ([]GetWFHRequestsByMemberAndPeriodRow, error) {
@@ -475,6 +520,9 @@ func (q *Queries) GetWFHRequestsByMemberAndPeriod(ctx context.Context, arg GetWF
 			&i.WithdrawnBy,
 			&i.WithdrawnAt,
 			&i.IsRecurring,
+			&i.IsAdminMarked,
+			&i.MarkedBy,
+			&i.MarkedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -487,6 +535,58 @@ func (q *Queries) GetWFHRequestsByMemberAndPeriod(ctx context.Context, arg GetWF
 		return nil, err
 	}
 	return items, nil
+}
+
+const isAdminMarkedWFH = `-- name: IsAdminMarkedWFH :one
+SELECT is_admin_marked
+FROM wfh_requests
+WHERE member_id = ? AND date = ?
+`
+
+type IsAdminMarkedWFHParams struct {
+	MemberID string    `json:"member_id"`
+	Date     time.Time `json:"date"`
+}
+
+// Returns 1 if an admin-marked row exists for (member_id, date),
+// 0 otherwise. Cheap point-lookup behind the
+// idx_wfh_requests_admin_marked index.
+func (q *Queries) IsAdminMarkedWFH(ctx context.Context, arg IsAdminMarkedWFHParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, isAdminMarkedWFH, arg.MemberID, arg.Date)
+	var is_admin_marked int64
+	err := row.Scan(&is_admin_marked)
+	return is_admin_marked, err
+}
+
+const markAdminWFH = `-- name: MarkAdminWFH :execresult
+INSERT INTO wfh_requests (id, member_id, date, status, is_admin_marked, marked_by, marked_at)
+VALUES (?, ?, ?, 'approved', 1, ?, ?)
+`
+
+type MarkAdminWFHParams struct {
+	ID       string         `json:"id"`
+	MemberID string         `json:"member_id"`
+	Date     time.Time      `json:"date"`
+	MarkedBy sql.NullString `json:"marked_by"`
+	MarkedAt sql.NullTime   `json:"marked_at"`
+}
+
+// Insert an admin-marked WFH row in one shot. is_admin_marked=1 and
+// status='approved' so the row participates in every existing
+// query (quota, floor, ICS, dashboard presence) without the
+// rendering layer needing a special case for admin marks. The
+// UNIQUE(member_id, date) constraint guarantees idempotency: a
+// second mark for the same (member, date) returns SQLITE_CONSTRAINT
+// to the caller, which the service layer translates into
+// "already marked".
+func (q *Queries) MarkAdminWFH(ctx context.Context, arg MarkAdminWFHParams) (sql.Result, error) {
+	return q.db.ExecContext(ctx, markAdminWFH,
+		arg.ID,
+		arg.MemberID,
+		arg.Date,
+		arg.MarkedBy,
+		arg.MarkedAt,
+	)
 }
 
 const purgeWFHRequestsBefore = `-- name: PurgeWFHRequestsBefore :execresult

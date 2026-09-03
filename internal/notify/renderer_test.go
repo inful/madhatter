@@ -171,6 +171,57 @@ func TestRenderer_UnsubscribeURL_NilFnLeavesFooterBlank(t *testing.T) {
 	assert.NotContains(t, body, "To stop receiving these emails:")
 }
 
+// TestRenderer_SwapTemplatesAreKindNeutral pins Step 20's
+// documentation: the swap email bodies must NOT call out "HAT
+// day" specifically. A WFH swap uses the same four event kinds
+// (SwapRequested / Accepted / Rejected / Cancelled) as the
+// HAT-day swap path, so the rendered prose must describe "a
+// day" generically. A future drift that reintroduces "HAT" in
+// the templates would fail this test rather than silently
+// mis-label a WFH-swap email.
+//
+// Pinned substrings:
+//   - subject MUST NOT contain "HAT"
+//   - body MUST NOT contain "HAT"
+func TestRenderer_SwapTemplatesAreKindNeutral(t *testing.T) {
+	t.Parallel()
+	r, err := newRenderer("https://rota.example.com", nil)
+	require.NoError(t, err)
+
+	cases := []struct {
+		name  string
+		kind  string
+		event SwapEvent
+	}{
+		{"swap.requested", EventSwapRequested, SwapEvent{
+			RequesterName: "Alice", TargetName: "Bob",
+			RequesterDate: "2026-07-01", TargetDate: "2026-07-15",
+		}},
+		{"swap.accepted", EventSwapAccepted, SwapEvent{
+			RequesterName: "Alice", TargetName: "Bob",
+			RequesterDate: "2026-07-01", TargetDate: "2026-07-15",
+		}},
+		{"swap.rejected", EventSwapRejected, SwapEvent{
+			RequesterName: "Alice", TargetName: "Bob",
+			RequesterDate: "2026-07-01", TargetDate: "2026-07-15",
+		}},
+		{"swap.cancelled", EventSwapCancelled, SwapEvent{
+			RequesterName: "Alice", TargetName: "Bob",
+			RequesterDate: "2026-07-01", TargetDate: "2026-07-15",
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			subject, body, err := r.render(c.kind, c.event, "alice-id")
+			require.NoError(t, err)
+			assert.NotContains(t, subject, "HAT",
+				"%s subject must not surface 'HAT'", c.name)
+			assert.NotContains(t, body, "HAT",
+				"%s body must not surface 'HAT'", c.name)
+		})
+	}
+}
+
 func TestRenderer_EnvKeyFor(t *testing.T) {
 	cases := map[string]string{
 		EventSwapRequested:       "NOTIFY_SWAP_REQUESTED_TXT_PATH",

@@ -1,12 +1,12 @@
 Hi {{.RequesterName}},
 
-{{.TargetName}} has rejected your HAT-day swap request.
+{{.TargetName}} has rejected your swap request.
 
-  Your HAT day:      {{.RequesterDate}}
-  Their HAT day:     {{.TargetDate}}
+  Your day:      {{.RequesterDate}}
+  Their day:     {{.TargetDate}}
 {{- if .Reason}}
 
-  Reason:            {{.Reason}}
+  Reason:        {{.Reason}}
 {{- end}}
 
   {{.BaseURL}}/swaps

@@ -178,11 +178,30 @@ func (h *Handler) handleWFHSwapCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := h.db.CreateWFHAssignmentSwap(ctx, id, targetID, wfh.Date); err != nil {
+	swapID, err := h.db.CreateWFHAssignmentSwap(ctx, id, targetID, wfh.Date)
+	if err != nil {
 		slog.ErrorContext(ctx, "create swap failed", "error", err)
 		http.Error(w, "Failed to create swap", http.StatusInternalServerError)
 		return
 	}
+
+	// Step 20 of plans/assigned-wfh-plan.md: fire SwapRequested
+	// so the target gets a "swap pending" email. Without this
+	// wiring, the WFH-swap path was silent (HAT swap wiring
+	// mirrors this). The producer-side failure mode is loud —
+	// the dispatch is non-blocking, but a misconfigured
+	// notification channel trips an error log so an operator
+	// notices.
+	h.notifierOrNil().SwapRequested(ctx, notify.SwapEvent{
+		SwapID:            swapID,
+		RequesterMemberID: wfh.MemberID,
+		RequesterName:     h.memberName(ctx, wfh.MemberID),
+		TargetMemberID:    targetID,
+		TargetName:        h.memberName(ctx, targetID),
+		RequesterDate:     wfh.Date,
+		TargetDate:        wfh.Date,
+		ActorName:         user.Name,
+	})
 
 	http.Redirect(w, r, "/wfh?flash=swap_requested", http.StatusSeeOther)
 }
@@ -354,6 +373,33 @@ func (h *Handler) handleWFHSwapCancel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Step 20: notify the target that the swap is cancelled.
+	// Resolve the requester member via the underlying WFH row
+	// so the email body has both names and dates (the
+	// generic templates use {{.RequesterName}} /
+	// {{.TargetName}}, not member IDs).
+	requesterID := ""
+	requesterDate := swap.SwapDate
+	if requesterWFH, fetchErr := h.db.GetWFHRequestByID(ctx, swap.RequesterWFHRequestID); fetchErr == nil && requesterWFH != nil {
+		requesterID = requesterWFH.MemberID
+		// SwapDate and the underlying WFH row's date are
+		// normally identical — domain.WFHRequest.Date is a
+		// string already in 2006-01-02 form. Trust the WFH row
+		// for the template so the email matches reality if the
+		// schedule ever drifts.
+		requesterDate = requesterWFH.Date
+	}
+	h.notifierOrNil().SwapCancelled(ctx, notify.SwapEvent{
+		SwapID:            swapID,
+		RequesterMemberID: requesterID,
+		RequesterName:     h.memberName(ctx, requesterID),
+		TargetMemberID:    swap.TargetMemberID,
+		TargetName:        h.memberName(ctx, swap.TargetMemberID),
+		RequesterDate:     requesterDate,
+		TargetDate:        swap.SwapDate,
+		ActorName:         user.Name,
+	})
+
 	http.Redirect(w, r, "/wfh?flash=swap_cancelled", http.StatusSeeOther)
 }
 
@@ -361,7 +407,10 @@ func (h *Handler) handleWFHSwapCancel(w http.ResponseWriter, r *http.Request) {
 // Both routes are POST /wfh/swap/{swapId}/{verb} and the
 // body is empty; the verb is encoded in the route. The
 // shared guard is: target must equal the current user; status
-// must be pending.
+// must be pending. Step 20 of plans/assigned-wfh-plan.md
+// fires SwapAccepted or SwapRejected after the status
+// transition lands so the requester learns the outcome by
+// email.
 func (h *Handler) transitionWFHSwap(w http.ResponseWriter, r *http.Request, newStatus database.WFHSwapStatus, redirectOnSuccess string) {
 	ctx := r.Context()
 	swapID := chi.URLParam(r, "swapId")
@@ -393,7 +442,54 @@ func (h *Handler) transitionWFHSwap(w http.ResponseWriter, r *http.Request, newS
 		return
 	}
 
+	fireSwapTransitionEvent(ctx, h, swap, newStatus, user.Name)
+
 	http.Redirect(w, r, redirectOnSuccess, http.StatusSeeOther)
+}
+
+// fireSwapTransitionEvent resolves the requester member and
+// date via the underlying WFH row, then dispatches the
+// accepted/rejected notification. Extracted from
+// transitionWFHSwap so the orchestrator function stays under
+// the cyclop budget.
+//
+// The newStatus parameter is stringified so the switch only
+// covers the two values this handler can produce — the typed
+// WFHSwapStatus constants cover four values but only
+// accepted/rejected can be reached via this code path.
+func fireSwapTransitionEvent(ctx context.Context, h *Handler, swap *database.WFHAssignmentSwap, newStatus database.WFHSwapStatus, actorName string) {
+	requesterID := ""
+	requesterDate := swap.SwapDate
+	if requesterWFH, fetchErr := h.db.GetWFHRequestByID(ctx, swap.RequesterWFHRequestID); fetchErr == nil && requesterWFH != nil {
+		requesterID = requesterWFH.MemberID
+		// Trust the WFH row's date over the swap row's so the
+		// notification reflects the actual schedule if they
+		// ever drift. domain.WFHRequest.Date is a string in
+		// 2006-01-02 form (swapFromSQLC converts).
+		requesterDate = requesterWFH.Date
+	}
+
+	event := notify.SwapEvent{
+		SwapID:            swap.ID,
+		RequesterMemberID: requesterID,
+		RequesterName:     h.memberName(ctx, requesterID),
+		TargetMemberID:    swap.TargetMemberID,
+		TargetName:        h.memberName(ctx, swap.TargetMemberID),
+		RequesterDate:     requesterDate,
+		TargetDate:        swap.SwapDate,
+		ActorName:         actorName,
+	}
+	switch string(newStatus) {
+	case string(database.WFHSwapStatusAccepted):
+		h.notifierOrNil().SwapAccepted(ctx, event)
+	case string(database.WFHSwapStatusRejected):
+		h.notifierOrNil().SwapRejected(ctx, event)
+	default:
+		// pending / cancelled are routed through different
+		// handlers (handleWFHSwapCreate / handleWFHSwapCancel)
+		// — if either reaches here it's an internal bug.
+		slog.ErrorContext(ctx, "unexpected newStatus in transitionWFHSwap", "status", string(newStatus))
+	}
 }
 
 // enrichWFHSwaps attaches the requester name (looked up from

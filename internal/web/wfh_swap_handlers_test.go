@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/inful/madhatter/internal/database"
 	"github.com/inful/madhatter/internal/wfh"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -298,4 +299,211 @@ func TestHandleWFHSwapInbox_RendersPending(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rr.Code)
 	assert.Contains(t, rr.Body.String(), "Pending Swap Requests",
 		"inbox must render the pending swaps section")
+}
+
+// ---------------------------------------------------------------------------
+// Step 20 (plans/assigned-wfh-plan.md) — WFH swap notification wiring.
+//
+// The four swap event kinds (SwapRequested / SwapAccepted /
+// SwapRejected / SwapCancelled) were already wired to the
+// HAT-swap path. Phase 4 wires them to the WFH-swap path too.
+// A future regression test must fail if any of these
+// dispatches silently disappears — the target would otherwise
+// never learn a swap is pending on their day.
+// ---------------------------------------------------------------------------
+
+// setupWFHSwapWithPendingSwap seeds an assigned WFH row for
+// alice and a pending swap from alice to bob. Returns swapID
+// for further mutations.
+func setupWFHSwapWithPendingSwap(t *testing.T, ctx context.Context, db *database.DB) (swapID, aliceID, bobID string) {
+	t.Helper()
+	aliceID, err := db.AddTeamMember(ctx, "alice@example.com", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err = db.AddTeamMember(ctx, "bob@example.com", "bob@example.com")
+	require.NoError(t, err)
+
+	date := time.Now().UTC().AddDate(0, 0, 5).Format("2006-01-02")
+	assignedID := "assigned-" + t.Name()
+	_, err = db.ExecContext(ctx,
+		`INSERT INTO wfh_requests (id, member_id, date, status, origin)
+		 VALUES (?, ?, ?, 'approved', 'assigned')`,
+		assignedID, aliceID, date)
+	require.NoError(t, err)
+
+	swapID, err = db.CreateWFHAssignmentSwap(ctx, assignedID, bobID, date)
+	require.NoError(t, err)
+	return swapID, aliceID, bobID
+}
+
+// TestHandleWFHSwapCreate_FiresSwapRequested is the Step 20
+// wiring regression for the WFH-swap create path. A valid submit
+// must dispatch exactly one SwapRequested with the right
+// requester / target / dates so the target learns the swap is
+// pending.
+func TestHandleWFHSwapCreate_FiresSwapRequested(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupSwapTestDB(t)
+	defer cleanup()
+
+	aliceID, _ := db.AddTeamMember(ctx, "alice@example.com", "alice@example.com")
+	bobID, err := db.AddTeamMember(ctx, "bob@example.com", "bob@example.com")
+	require.NoError(t, err)
+
+	date := time.Now().UTC().AddDate(0, 0, 5).Format("2006-01-02")
+	assignedID := "assigned-create-notify"
+	_, err = db.ExecContext(ctx,
+		`INSERT INTO wfh_requests (id, member_id, date, status, origin)
+		 VALUES (?, ?, ?, 'approved', 'assigned')`,
+		assignedID, aliceID, date)
+	require.NoError(t, err)
+
+	h := newSwapHandler(t, db)
+	h.wfhService = wfh.NewService(db, wfh.Config{Enabled: true, SeatCap: 2, AssignmentEnabled: true})
+	notifier := &fakeNotifier{}
+	h.notifier = notifier
+
+	form := url.Values{}
+	form.Set("target_member_id", bobID)
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost,
+		"/wfh/"+assignedID+"/swap", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req = withUser(req, "alice@example.com", "Alice", false)
+	req = withChiParam(req, assignedID)
+	rr := httptest.NewRecorder()
+	h.handleWFHSwapCreate(rr, req)
+
+	require.Equal(t, http.StatusSeeOther, rr.Code,
+		"valid submit must redirect with the success flash")
+	assert.Equal(t, 1, notifier.swapRequested,
+		"valid submit must dispatch exactly one SwapRequested")
+	assert.Equal(t, 0, notifier.swapAccepted,
+		"no accept event should fire from the create path")
+	assert.Equal(t, aliceID, notifier.lastSwapEvent.RequesterMemberID,
+		"SwapEvent.requester must be the assigned member (alice), not the target")
+	assert.Equal(t, bobID, notifier.lastSwapEvent.TargetMemberID,
+		"SwapEvent.target must be the picked teammate (bob)")
+	assert.Equal(t, date, notifier.lastSwapEvent.RequesterDate,
+		"SwapEvent.requesterDate must surface the WFH row's date")
+	assert.Equal(t, date, notifier.lastSwapEvent.TargetDate,
+		"SwapEvent.targetDate should mirror the swap date")
+}
+
+// TestHandleWFHSwapAccept_FiresSwapAccepted pins the accept
+// path: the requester gets a "your swap was accepted" email.
+func TestHandleWFHSwapAccept_FiresSwapAccepted(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupSwapTestDB(t)
+	defer cleanup()
+
+	swapID, aliceID, bobID := setupWFHSwapWithPendingSwap(t, ctx, db)
+
+	h := newSwapHandler(t, db)
+	h.wfhService = wfh.NewService(db, wfh.Config{Enabled: true})
+	notifier := &fakeNotifier{}
+	h.notifier = notifier
+
+	// setSwapIDParam mirrors the local helpers in the
+	// pre-existing tests above — duplicated here because Go
+	// doesn't share a closure across test functions in this
+	// file. Sets the chi URL parameter "swapId" so the
+	// handler can locate the swap row.
+	setSwapIDParam := func(r *http.Request, value string) *http.Request {
+		rctx := chi.NewRouteContext()
+		rctx.URLParams.Add("swapId", value)
+		return r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+	}
+
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost,
+		"/wfh/swap/"+swapID+"/accept", nil)
+	req = setSwapIDParam(req, swapID)
+	req = withUser(req, "bob@example.com", "Bob", false)
+	rr := httptest.NewRecorder()
+	h.transitionWFHSwap(rr, req, "accepted", "/wfh/swap/inbox?flash=swap_accepted")
+
+	require.Equal(t, http.StatusSeeOther, rr.Code)
+	assert.Equal(t, 1, notifier.swapAccepted,
+		"accept must dispatch exactly one SwapAccepted")
+	assert.Equal(t, 0, notifier.swapRejected,
+		"accept must not dispatch SwapRejected")
+	assert.Equal(t, 0, notifier.swapCancelled,
+		"accept must not dispatch SwapCancelled")
+	assert.Equal(t, aliceID, notifier.lastSwapEvent.RequesterMemberID,
+		"SwapAccepted must surface the requester (alice)")
+	assert.Equal(t, bobID, notifier.lastSwapEvent.TargetMemberID,
+		"SwapAccepted must surface the target (bob)")
+}
+
+// TestHandleWFHSwapReject_FiresSwapRejected pins the reject
+// path: the requester gets a "your swap was rejected" email.
+func TestHandleWFHSwapReject_FiresSwapRejected(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupSwapTestDB(t)
+	defer cleanup()
+
+	swapID, aliceID, bobID := setupWFHSwapWithPendingSwap(t, ctx, db)
+
+	h := newSwapHandler(t, db)
+	h.wfhService = wfh.NewService(db, wfh.Config{Enabled: true})
+	notifier := &fakeNotifier{}
+	h.notifier = notifier
+
+	setSwapIDParam := func(r *http.Request, value string) *http.Request {
+		rctx := chi.NewRouteContext()
+		rctx.URLParams.Add("swapId", value)
+		return r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+	}
+
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost,
+		"/wfh/swap/"+swapID+"/reject", nil)
+	req = setSwapIDParam(req, swapID)
+	req = withUser(req, "bob@example.com", "Bob", false)
+	rr := httptest.NewRecorder()
+	h.transitionWFHSwap(rr, req, "rejected", "/wfh/swap/inbox?flash=swap_rejected")
+
+	require.Equal(t, http.StatusSeeOther, rr.Code)
+	assert.Equal(t, 1, notifier.swapRejected,
+		"reject must dispatch exactly one SwapRejected")
+	assert.Equal(t, 0, notifier.swapAccepted,
+		"reject must not dispatch SwapAccepted")
+	assert.Equal(t, aliceID, notifier.lastSwapEvent.RequesterMemberID)
+	assert.Equal(t, bobID, notifier.lastSwapEvent.TargetMemberID)
+}
+
+// TestHandleWFHSwapCancel_FiresSwapCancelled pins the cancel
+// path: the target gets a "swap cancelled, no action needed"
+// email when the requester voluntarily cancels.
+func TestHandleWFHSwapCancel_FiresSwapCancelled(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupSwapTestDB(t)
+	defer cleanup()
+
+	swapID, aliceID, bobID := setupWFHSwapWithPendingSwap(t, ctx, db)
+
+	h := newSwapHandler(t, db)
+	h.wfhService = wfh.NewService(db, wfh.Config{Enabled: true})
+	notifier := &fakeNotifier{}
+	h.notifier = notifier
+
+	setSwapIDParam := func(r *http.Request, value string) *http.Request {
+		rctx := chi.NewRouteContext()
+		rctx.URLParams.Add("swapId", value)
+		return r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+	}
+
+	// The cancel handler enforces that the requester (alice)
+	// is the caller.
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost,
+		"/wfh/swap/"+swapID+"/cancel", nil)
+	req = setSwapIDParam(req, swapID)
+	req = withUser(req, "alice@example.com", "Alice", false)
+	rr := httptest.NewRecorder()
+	h.handleWFHSwapCancel(rr, req)
+
+	require.Equal(t, http.StatusSeeOther, rr.Code)
+	assert.Equal(t, 1, notifier.swapCancelled,
+		"cancel must dispatch exactly one SwapCancelled")
+	assert.Equal(t, 0, notifier.swapRequested,
+		"cancel must not dispatch SwapRequested")
+	assert.Equal(t, aliceID, notifier.lastSwapEvent.RequesterMemberID)
+	assert.Equal(t, bobID, notifier.lastSwapEvent.TargetMemberID)
 }

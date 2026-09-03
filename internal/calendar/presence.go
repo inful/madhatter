@@ -56,6 +56,17 @@ type WFHMaterialiser interface {
 	EnsureRecurringMaterialized(ctx context.Context, start, end time.Time) (int, error)
 }
 
+// AssignWFHAssigner is the narrow interface the calendar package
+// uses to invoke the seat-cap picker (Phase 2 of
+// plans/assigned-wfh-plan.md) on a per-date basis. The web layer
+// wires a wfh.Service-backed implementation; tests can pass nil.
+// Nil is safe — RefreshFor skips the assignment hook entirely,
+// matching the pre-Phase-2 behavior where the picker didn't
+// exist.
+type AssignWFHAssigner interface {
+	AssignWFHForDate(ctx context.Context, date string) error
+}
+
 // HolidayLookup returns the holiday name for a date, or "" / false if
 // the date is not a holiday. The web layer wires a holiday.Service
 // adapter; tests can pass nil or a stub.
@@ -74,31 +85,40 @@ func (noopHolidayLookup) GetHoliday(string) (string, bool) { return "", false }
 type presenceBuilder struct {
 	db              *database.DB
 	wfhMaterialiser WFHMaterialiser
+	wfhAssigner     AssignWFHAssigner
 	holidayLookup   HolidayLookup
 	shuffleSeed     string
 }
 
-func newPresenceBuilder(db *database.DB, m WFHMaterialiser, h HolidayLookup, seed string) *presenceBuilder {
+func newPresenceBuilder(db *database.DB, m WFHMaterialiser, a AssignWFHAssigner, h HolidayLookup, seed string) *presenceBuilder {
 	if h == nil {
 		h = noopHolidayLookup{}
 	}
 	if seed == "" {
 		seed = "support-rota-presence"
 	}
-	return &presenceBuilder{db: db, wfhMaterialiser: m, holidayLookup: h, shuffleSeed: seed}
+	return &presenceBuilder{db: db, wfhMaterialiser: m, wfhAssigner: a, holidayLookup: h, shuffleSeed: seed}
 }
 
-// Build computes the snapshot for dateStr. The WFH materializer is
-// called first (idempotent) so recurring rows are visible in the
-// subsequent WFH query.
-func (b *presenceBuilder) Build(ctx context.Context, dateStr string) (*presenceSnapshot, error) {
+// SnapshotFor computes the snapshot for dateStr without touching
+// the database beyond reads. Idempotent and safe to call for
+// past, today, and future dates. Use this when the caller
+// wants a read-only view (e.g., a dashboard refresh that's
+// not part of a settlement tick).
+//
+// The pre-Phase-2 behavior of `Build` is split:
+//   - SnapshotFor: the read-only computation that was in Build.
+//   - RefreshFor: SnapshotFor + the settlement hooks
+//     (recurring materializer, picker).
+//
+// Calendar callers that want the "ensure recurring rows are
+// visible + maybe assign" behavior should call RefreshFor so
+// the on-demand assignment trigger fires. SnapshotFor is for
+// callers that just want the current state.
+func (b *presenceBuilder) SnapshotFor(ctx context.Context, dateStr string) (*presenceSnapshot, error) {
 	date, err := time.Parse("2006-01-02", dateStr)
 	if err != nil {
 		return nil, fmt.Errorf("parse date %q: %w", dateStr, err)
-	}
-
-	if mErr := b.materializeRecurring(ctx, date); mErr != nil {
-		return nil, mErr
 	}
 
 	active, leaveRecords, wfhRequests, err := b.loadActiveAndFlags(ctx, dateStr)
@@ -117,6 +137,52 @@ func (b *presenceBuilder) Build(ctx context.Context, dateStr string) (*presenceS
 	shuffledMembers := b.shuffledMembersFor(active, dateStr)
 
 	return b.assembleSnapshot(dateStr, date, active, onSite, onLeave, wfh, hatName, hatIsCover, holidayName, isHoliday, shuffledMembers), nil
+}
+
+// RefreshFor is the settlement hook surface. It composes
+// SnapshotFor plus the settlement side-effects:
+//
+//  1. Materialize recurring rows for dateStr (idempotent).
+//  2. Run AssignWFHForDate for dateStr — the seat-cap
+//     picker (Phase 2). No-op for past dates, holidays,
+//     and weekends (handled inside AssignWFHForDate).
+//  3. Re-read the snapshot AFTER step 2 so the
+//     just-assigned rows appear in the rendered events.
+//     Idempotent in all sub-steps via UNIQUE constraints.
+//
+// Step 9 of plans/assigned-wfh-plan.md. Use RefreshFor when
+// the caller's intent is "ensure fresh state for this date
+// before rendering"; use SnapshotFor when the caller wants
+// the current state without mutation.
+func (b *presenceBuilder) RefreshFor(ctx context.Context, dateStr string) (*presenceSnapshot, error) {
+	date, err := time.Parse("2006-01-02", dateStr)
+	if err != nil {
+		return nil, fmt.Errorf("parse date %q: %w", dateStr, err)
+	}
+
+	if mErr := b.materializeRecurring(ctx, date); mErr != nil {
+		return nil, mErr
+	}
+
+	// Run the picker for today and future dates only. Past
+	// dates are immutable per the past-date guard in
+	// AssignWFHForDate. The picker is a no-op for past
+	// dates anyway, but skipping the call here avoids the
+	// slog.Warn path for every calendar render that walks
+	// backwards.
+	if b.wfhAssigner != nil && !date.Before(todayUTC()) {
+		if aErr := b.wfhAssigner.AssignWFHForDate(ctx, dateStr); aErr != nil {
+			// Don't fail the refresh; the picker failure is
+			// already logged inside AssignWFHForDate's
+			// error path. Returning the snapshot without
+			// the just-assigned rows is the right
+			// fallback — the calendar still renders,
+			// just without the picker output.
+			_ = aErr
+		}
+	}
+
+	return b.SnapshotFor(ctx, dateStr)
 }
 
 // materializeRecurring makes sure recurring-WFH rows are present for the
@@ -236,6 +302,16 @@ func (b *presenceBuilder) assembleSnapshot(
 func isInSet(set map[string]struct{}, id string) bool {
 	_, ok := set[id]
 	return ok
+}
+
+// todayUTC returns midnight UTC of today. The RefreshFor past-date
+// guard compares against this so the picker is skipped for any
+// date before today's date boundary. Mirrors the helper in
+// internal/wfh/service.go but kept local so the calendar package
+// doesn't grow a wfh dependency just for one comparison.
+func todayUTC() time.Time {
+	now := time.Now().UTC()
+	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 }
 
 func sortByName(members []presenceMember) {

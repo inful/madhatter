@@ -68,6 +68,14 @@ type SupportCalendarOptions struct {
 	// present in the WFH query.
 	WFHMaterialiser WFHMaterialiser
 
+	// WFHAssigner, when non-nil, is invoked once per day before
+	// the snapshot is built. Used to run the seat-cap picker
+	// (Phase 2 of plans/assigned-wfh-plan.md) so the calendar
+	// shows freshly-assigned rows. nil is safe — RefreshFor
+	// skips the assignment hook entirely, matching the
+	// pre-Phase-2 behavior where the picker didn't exist.
+	WFHAssigner AssignWFHAssigner
+
 	// HolidayLookup, when non-nil, supplies the holiday name for a
 	// given date in the snapshot. nil is allowed (every date is
 	// non-holiday).
@@ -128,6 +136,11 @@ func (g *ICalGenerator) WithShuffleSeed(string) *ICalGenerator { return g }
 // is read from SupportCalendarOptions by the public generator
 // functions.
 func (g *ICalGenerator) WithWFHMaterialiser(WFHMaterialiser) *ICalGenerator { return g }
+
+// WithWFHAssigner is a no-op kept for API stability. The assigner
+// is read from SupportCalendarOptions by the public generator
+// functions and invoked from RefreshFor once per day.
+func (g *ICalGenerator) WithWFHAssigner(AssignWFHAssigner) *ICalGenerator { return g }
 
 // WithHolidayLookup is a no-op kept for API stability. The lookup is
 // read from SupportCalendarOptions by the public generator functions.
@@ -645,13 +658,13 @@ func GenerateICalForTokenWithOptions(ctx context.Context, db *database.DB, token
 
 	// Build a per-day snapshot once per date and reuse it across all
 	// events added for that date.
-	builder := newPresenceBuilder(db, opts.WFHMaterialiser, opts.HolidayLookup, opts.ShuffleSeed)
+	builder := newPresenceBuilder(db, opts.WFHMaterialiser, opts.WFHAssigner, opts.HolidayLookup, opts.ShuffleSeed)
 	snapshotByDate := make(map[string]*presenceSnapshot, lookaheadDays)
 	snapshotFor := func(dateStr string) (*presenceSnapshot, error) {
 		if s, ok := snapshotByDate[dateStr]; ok {
 			return s, nil
 		}
-		s, sErr := builder.Build(ctx, dateStr)
+		s, sErr := builder.RefreshFor(ctx, dateStr)
 		if sErr != nil {
 			return nil, sErr
 		}
@@ -797,7 +810,7 @@ func GenerateTeamCalendarWithOptions(ctx context.Context, db *database.DB, assig
 
 	var builder *presenceBuilder
 	if db != nil {
-		builder = newPresenceBuilder(db, opts.WFHMaterialiser, opts.HolidayLookup, opts.ShuffleSeed)
+		builder = newPresenceBuilder(db, opts.WFHMaterialiser, opts.WFHAssigner, opts.HolidayLookup, opts.ShuffleSeed)
 	}
 	snapshotByDate := make(map[string]*presenceSnapshot)
 	snapshotFor := func(dateStr string) *presenceSnapshot {
@@ -807,7 +820,7 @@ func GenerateTeamCalendarWithOptions(ctx context.Context, db *database.DB, assig
 		if s, ok := snapshotByDate[dateStr]; ok {
 			return s
 		}
-		s, err := builder.Build(ctx, dateStr)
+		s, err := builder.RefreshFor(ctx, dateStr)
 		if err != nil {
 			return &presenceSnapshot{Date: dateStr}
 		}

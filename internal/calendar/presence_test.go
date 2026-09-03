@@ -55,8 +55,8 @@ func TestComputePresenceSnapshot_EmptyDB(t *testing.T) {
 	ctx := context.Background()
 	db := newCalendarTestDB(t)
 
-	b := newPresenceBuilder(db, nil, nil, "seed")
-	snap, err := b.Build(ctx, "2026-06-10")
+	b := newPresenceBuilder(db, nil, nil, nil, "seed")
+	snap, err := b.SnapshotFor(ctx, "2026-06-10")
 	require.NoError(t, err)
 
 	assert.Equal(t, "2026-06-10", snap.Date)
@@ -90,8 +90,8 @@ func TestComputePresenceSnapshot_TwoOnLeaveThreeOnSite(t *testing.T) {
 	_, err = db.CreateLeaveRecord(ctx, bobID, "2026-06-10", "2026-06-10", database.LeaveTypeLeave)
 	require.NoError(t, err)
 
-	b := newPresenceBuilder(db, nil, nil, "seed")
-	snap, err := b.Build(ctx, "2026-06-10")
+	b := newPresenceBuilder(db, nil, nil, nil, "seed")
+	snap, err := b.SnapshotFor(ctx, "2026-06-10")
 	require.NoError(t, err)
 
 	assert.Equal(t, 5, snap.TotalActive)
@@ -113,8 +113,8 @@ func TestComputePresenceSnapshot_WFHIncluded(t *testing.T) {
 	wfhDate := time.Now().UTC().AddDate(0, 0, 7).Format("2006-01-02")
 	require.NoError(t, db.CreateApprovedRecurringWFHRequest(ctx, aliceID, wfhDate, time.Now().UTC()))
 
-	b := newPresenceBuilder(db, nil, nil, "seed")
-	snap, err := b.Build(ctx, wfhDate)
+	b := newPresenceBuilder(db, nil, nil, nil, "seed")
+	snap, err := b.SnapshotFor(ctx, wfhDate)
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, snap.TotalActive)
@@ -132,8 +132,8 @@ func TestComputePresenceSnapshot_HATNonCover(t *testing.T) {
 	_, err = db.CreateRotaAssignment(ctx, "2026-06-10", aliceID, false, nil)
 	require.NoError(t, err)
 
-	b := newPresenceBuilder(db, nil, nil, "seed")
-	snap, err := b.Build(ctx, "2026-06-10")
+	b := newPresenceBuilder(db, nil, nil, nil, "seed")
+	snap, err := b.SnapshotFor(ctx, "2026-06-10")
 	require.NoError(t, err)
 	assert.Equal(t, "Alice", snap.HATName)
 	assert.False(t, snap.HATIsCover)
@@ -149,8 +149,8 @@ func TestComputePresenceSnapshot_HATCoverOnly(t *testing.T) {
 	_, err = db.CreateRotaAssignment(ctx, "2026-06-10", aliceID, true, nil)
 	require.NoError(t, err)
 
-	b := newPresenceBuilder(db, nil, nil, "seed")
-	snap, err := b.Build(ctx, "2026-06-10")
+	b := newPresenceBuilder(db, nil, nil, nil, "seed")
+	snap, err := b.SnapshotFor(ctx, "2026-06-10")
 	require.NoError(t, err)
 	assert.Equal(t, "Alice", snap.HATName)
 	assert.True(t, snap.HATIsCover)
@@ -164,11 +164,11 @@ func TestComputePresenceSnapshot_StableOrderSameSeed(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	b1 := newPresenceBuilder(db, nil, nil, "salt")
-	s1, err := b1.Build(ctx, "2026-06-10")
+	b1 := newPresenceBuilder(db, nil, nil, nil, "salt")
+	s1, err := b1.SnapshotFor(ctx, "2026-06-10")
 	require.NoError(t, err)
-	b2 := newPresenceBuilder(db, nil, nil, "salt")
-	s2, err := b2.Build(ctx, "2026-06-10")
+	b2 := newPresenceBuilder(db, nil, nil, nil, "salt")
+	s2, err := b2.SnapshotFor(ctx, "2026-06-10")
 	require.NoError(t, err)
 
 	require.Len(t, s1.ShuffledOrder, 4)
@@ -186,11 +186,11 @@ func TestComputePresenceSnapshot_DifferentSeedDifferentOrder(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	b1 := newPresenceBuilder(db, nil, nil, "salt-1")
-	s1, err := b1.Build(ctx, "2026-06-10")
+	b1 := newPresenceBuilder(db, nil, nil, nil, "salt-1")
+	s1, err := b1.SnapshotFor(ctx, "2026-06-10")
 	require.NoError(t, err)
-	b2 := newPresenceBuilder(db, nil, nil, "salt-2")
-	s2, err := b2.Build(ctx, "2026-06-10")
+	b2 := newPresenceBuilder(db, nil, nil, nil, "salt-2")
+	s2, err := b2.SnapshotFor(ctx, "2026-06-10")
 	require.NoError(t, err)
 
 	// With six members and two distinct salts, the chance of identical
@@ -211,9 +211,9 @@ func TestComputePresenceSnapshot_MaterialiserCalled(t *testing.T) {
 	db := newCalendarTestDB(t)
 	mat := &stubMaterialiser{}
 
-	b := newPresenceBuilder(db, mat, nil, "seed")
+	b := newPresenceBuilder(db, mat, nil, nil, "seed")
 	date := time.Date(2026, 6, 10, 0, 0, 0, 0, time.UTC)
-	_, err := b.Build(ctx, date.Format("2006-01-02"))
+	_, err := b.RefreshFor(ctx, date.Format("2006-01-02"))
 	require.NoError(t, err)
 
 	require.Len(t, mat.calls, 1)
@@ -221,11 +221,71 @@ func TestComputePresenceSnapshot_MaterialiserCalled(t *testing.T) {
 	assert.True(t, mat.calls[0].end.Equal(date))
 }
 
+// TestSnapshotFor_DoesNotMaterialiseOrAssign pins the new read-only
+// contract for SnapshotFor. Step 9 of
+// plans/assigned-wfh-plan.md splits Build into SnapshotFor (read
+// only) and RefreshFor (settlement hooks). A caller using
+// SnapshotFor should NOT trigger the recurring-WFH materializer
+// or the seat-cap picker.
+func TestSnapshotFor_DoesNotMaterialiseOrAssign(t *testing.T) {
+	ctx := context.Background()
+	db := newCalendarTestDB(t)
+	mat := &stubMaterialiser{}
+	asn := &stubAssigner{}
+
+	b := newPresenceBuilder(db, mat, asn, nil, "seed")
+	date := time.Date(2026, 6, 10, 0, 0, 0, 0, time.UTC)
+	_, err := b.SnapshotFor(ctx, date.Format("2006-01-02"))
+	require.NoError(t, err)
+
+	assert.Empty(t, mat.calls, "SnapshotFor must not call the materializer")
+	assert.Empty(t, asn.calls, "SnapshotFor must not call the assigner")
+}
+
+// TestRefreshFor_CallsAssigner pins the new RefreshFor contract:
+// it calls the assigner for today and future dates (the past-date
+// guard matches AssignWFHForDate's). Past dates skip the
+// assigner entirely.
+func TestRefreshFor_CallsAssigner(t *testing.T) {
+	ctx := context.Background()
+	db := newCalendarTestDB(t)
+	mat := &stubMaterialiser{}
+	asn := &stubAssigner{}
+
+	b := newPresenceBuilder(db, mat, asn, nil, "seed")
+
+	// Today: assigner called.
+	date := time.Now().UTC().Format("2006-01-02")
+	_, err := b.RefreshFor(ctx, date)
+	require.NoError(t, err)
+	require.Len(t, asn.calls, 1, "today must trigger the assigner")
+	assert.Equal(t, date, asn.calls[0])
+
+	// Past: assigner NOT called (RefreshFor's own past-date
+	// guard, independent of AssignWFHForDate's).
+	past := time.Now().UTC().AddDate(0, 0, -7).Format("2006-01-02")
+	asn.calls = nil
+	_, err = b.RefreshFor(ctx, past)
+	require.NoError(t, err)
+	assert.Empty(t, asn.calls, "past dates must skip the assigner")
+}
+
+// stubAssigner records every AssignWFHForDate call so tests can
+// assert that RefreshFor wires the call correctly.
+type stubAssigner struct {
+	calls []string
+}
+
+func (s *stubAssigner) AssignWFHForDate(_ context.Context, date string) error {
+	s.calls = append(s.calls, date)
+	return nil
+}
+
 func TestComputePresenceSnapshot_NilMaterialiserOK(t *testing.T) {
 	ctx := context.Background()
 	db := newCalendarTestDB(t)
-	b := newPresenceBuilder(db, nil, nil, "seed")
-	_, err := b.Build(ctx, "2026-06-10")
+	b := newPresenceBuilder(db, nil, nil, nil, "seed")
+	_, err := b.SnapshotFor(ctx, "2026-06-10")
 	require.NoError(t, err)
 }
 
@@ -234,8 +294,8 @@ func TestComputePresenceSnapshot_HolidayLookup(t *testing.T) {
 	db := newCalendarTestDB(t)
 	hl := &stubHolidayLookup{holidays: map[string]string{"2026-06-10": "Test Holiday"}}
 
-	b := newPresenceBuilder(db, nil, hl, "seed")
-	snap, err := b.Build(ctx, "2026-06-10")
+	b := newPresenceBuilder(db, nil, nil, hl, "seed")
+	snap, err := b.SnapshotFor(ctx, "2026-06-10")
 	require.NoError(t, err)
 	assert.True(t, snap.IsHoliday)
 	assert.Equal(t, "Test Holiday", snap.HolidayName)
@@ -244,9 +304,9 @@ func TestComputePresenceSnapshot_HolidayLookup(t *testing.T) {
 func TestComputePresenceSnapshot_WeekendFlag(t *testing.T) {
 	ctx := context.Background()
 	db := newCalendarTestDB(t)
-	b := newPresenceBuilder(db, nil, nil, "seed")
+	b := newPresenceBuilder(db, nil, nil, nil, "seed")
 	// 2026-06-13 is a Saturday.
-	snap, err := b.Build(ctx, "2026-06-13")
+	snap, err := b.SnapshotFor(ctx, "2026-06-13")
 	require.NoError(t, err)
 	assert.True(t, snap.IsWeekend)
 }

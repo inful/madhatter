@@ -616,6 +616,13 @@ func (db *DB) WithdrawOwnWFHRequest(ctx context.Context, id, memberID string) er
 // withdrawWFH is the shared implementation for admin and self-withdrawal. The
 // memberID, when non-empty, is enforced as the owning member. The actorUserID
 // is recorded as withdrawn_by.
+//
+// Gate: origin IN ('assigned', 'swap'). An Assigned WFH (system-allocated by
+// the seat-cap picker) and a Swap WFH (target of an accepted swap) cannot be
+// withdrawn — they must be swapped to a willing on-site teammate instead. The
+// withdraw button in the WFH list page is hidden when origin='assigned'; this
+// gate is defense-in-depth in case a request slips through. The cap stays met
+// because the swap is one-out, one-in.
 func (db *DB) withdrawWFH(ctx context.Context, id, memberID, actorUserID string) error {
 	req, err := db.GetWFHRequestByID(ctx, id)
 	if err != nil {
@@ -623,6 +630,9 @@ func (db *DB) withdrawWFH(ctx context.Context, id, memberID, actorUserID string)
 	}
 	if req.Status != WFHStatusApproved {
 		return ErrWFHNotApproved
+	}
+	if req.Origin == "assigned" || req.Origin == "swap" {
+		return ErrWFHAssigned
 	}
 	if memberID != "" && req.MemberID != memberID {
 		return ErrWFHNotOwner

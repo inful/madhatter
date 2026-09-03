@@ -176,3 +176,113 @@ func TestGetWFHRequestsVoluntaryInPeriod_ExcludesAssigned(t *testing.T) {
 	assert.True(t, foundInAll, "origin='assigned' row must appear in GetWFHRequestsUsedInPeriod")
 	assert.False(t, foundInVoluntary, "origin='assigned' row must NOT appear in GetWFHRequestsVoluntaryInPeriod")
 }
+
+// TestWithdrawAssignedWFH_ReturnsErrWFHAssigned pins the
+// withdraw-gate from step 5 of plans/assigned-wfh-plan.md.
+// origin IN ('assigned', 'swap') must surface as
+// ErrWFHAssigned — the WFH list page's withdraw button is
+// already hidden in this case, but the gate is defense in
+// depth so a tampered POST or direct DB write doesn't
+// silently mutate a system-allocated WFH day. The cap is
+// preserved by the swap path (one out, one in); plain
+// withdrawal would drop the on-site count below the
+// seat-cap math.
+func TestWithdrawAssignedWFH_ReturnsErrWFHAssigned(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	future := time.Now().UTC().AddDate(0, 0, 5).Format("2006-01-02")
+
+	// Insert an assigned row directly via ExecContext. The
+	// public API (Service.MarkWFH / picker) is what writes
+	// these in production; for the test we exercise the
+	// storage layer directly so the gate is the only
+	// thing under test.
+	assignedID := "test-assigned-withdraw"
+	_, err = db.ExecContext(ctx,
+		`INSERT INTO wfh_requests (id, member_id, date, status, origin)
+		 VALUES (?, ?, ?, 'approved', 'assigned')`,
+		assignedID, memberID, future)
+	require.NoError(t, err)
+
+	// Self-withdraw must fail with the dedicated sentinel.
+	err = db.WithdrawOwnWFHRequest(ctx, assignedID, memberID)
+	require.ErrorIs(t, err, ErrWFHAssigned)
+
+	// Admin-withdraw (WithdrawWFHRequest) must also fail.
+	err = db.WithdrawWFHRequest(ctx, assignedID, "admin-1")
+	require.ErrorIs(t, err, ErrWFHAssigned)
+
+	// Sanity: the row is still approved.
+	row, err := db.GetWFHRequestByID(ctx, assignedID)
+	require.NoError(t, err)
+	require.Equal(t, WFHStatusApproved, row.Status,
+		"failed withdraw must not mutate the row's status")
+}
+
+// TestWithdrawSwapWFH_ReturnsErrWFHAssigned pins the second
+// half of the gate: a swap target's WFH (origin='swap') also
+// cannot be withdrawn directly. The swap itself can be
+// cancelled (different mechanism) but a direct withdraw
+// would break the cap invariant the swap is designed to
+// preserve.
+func TestWithdrawSwapWFH_ReturnsErrWFHAssigned(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	future := time.Now().UTC().AddDate(0, 0, 5).Format("2006-01-02")
+	swapID := "test-swap-withdraw"
+	_, err = db.ExecContext(ctx,
+		`INSERT INTO wfh_requests (id, member_id, date, status, origin)
+		 VALUES (?, ?, ?, 'approved', 'swap')`,
+		swapID, memberID, future)
+	require.NoError(t, err)
+
+	err = db.WithdrawOwnWFHRequest(ctx, swapID, memberID)
+	require.ErrorIs(t, err, ErrWFHAssigned)
+}
+
+// TestWithdrawVoluntaryWFH_Succeeds ensures the gate is
+// scoped correctly: only origin IN ('assigned', 'swap') is
+// blocked. origin IN ('ad_hoc', 'recurring') still allows
+// normal withdrawal. This test would have failed before the
+// gate landed (origin field absent) — the migration's
+// DEFAULT 'ad_hoc' plus the backfill to 'recurring' for
+// is_recurring=1 keep both paths through.
+func TestWithdrawVoluntaryWFH_Succeeds(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	future := time.Now().UTC().AddDate(0, 0, 5).Format("2006-01-02")
+	created, err := db.CreateWFHRequest(ctx, memberID, future)
+	require.NoError(t, err)
+
+	// CreateWFHRequest returns a pending row. Approve via raw
+	// SQL so the gate sees an approved row in the gate test.
+	_, err = db.ExecContext(ctx,
+		`UPDATE wfh_requests SET status = 'approved', settled_at = ? WHERE id = ?`,
+		time.Now().UTC(), created.ID)
+	require.NoError(t, err)
+
+	rows, err := db.GetWFHRequestsByMember(ctx, memberID)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Equal(t, "ad_hoc", rows[0].Origin)
+
+	require.NoError(t, db.WithdrawOwnWFHRequest(ctx, rows[0].ID, memberID))
+	row, err := db.GetWFHRequestByID(ctx, rows[0].ID)
+	require.NoError(t, err)
+	require.Equal(t, WFHStatusWithdrawn, row.Status)
+}

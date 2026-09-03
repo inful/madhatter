@@ -39,6 +39,31 @@ const (
 	defaultSettlementInterval = 15 * time.Minute
 	// defaultPeriodAnchor is a known Monday used as the period epoch.
 	defaultPeriodAnchor = "2026-01-05"
+	// defaultCoPresenceEnabled is the kill switch for the
+	// co-presence tiebreaker (step 10 of
+	// plans/assigned-wfh-plan.md). Default true so the picker
+	// rotates burden across the team by default; ops that don't
+	// want the metric (privacy concerns, early-rollout testing)
+	// can disable it without disabling the picker itself.
+	defaultCoPresenceEnabled = true
+	// defaultCoPresenceHorizonDays = 14 calendar days. 14
+	// calendar days spans two work weeks for the picker to
+	// consider "recent co-presence." The score itself is in
+	// calendar days (see plans/assigned-wfh-plan.md section 4).
+	defaultCoPresenceHorizonDays = 14
+	// defaultCoPresenceRetentionDays = 30 calendar days.
+	// Must be >= CoPresenceHorizonDays or the env loader
+	// fails fast at boot. 30 keeps about a month of history,
+	// which is enough for the picker to detect a "haven't been
+	// on-site with the cohort recently" signal even when the
+	// team takes a 2-week holiday mid-cycle.
+	defaultCoPresenceRetentionDays = 30
+	// defaultAssignmentEnabled is the kill switch for the
+	// picker itself. Default true so the seat-cap math runs
+	// automatically once WFH_SEAT_CAP is set; ops can disable
+	// the picker without disabling the rest of the feature
+	// (settlement, admin mark, withdrawal).
+	defaultAssignmentEnabled = true
 )
 
 // Config holds the configuration for the WFH feature.
@@ -71,9 +96,45 @@ type Config struct {
 	// the WFH feature itself (Enabled) gates the purge as well — when
 	// Enabled is false the purge is skipped everywhere.
 	PurgeEnabled bool
+	// SeatCap is the maximum on-site headcount. When > 0, the
+	// picker (step 7 of plans/assigned-wfh-plan.md) assigns WFH to
+	// members whose voluntary + admin-marked + swap WFHs would
+	// otherwise leave the on-site count over this number. When
+	// 0 (the default), the picker is a no-op — the existing
+	// behavior. Distinct from MinOnsiteAbsolute, which is the
+	// *floor* (settlement denies WFH if approving would drop
+	// on-site below that number). Same numerical sense,
+	// opposite enforcement direction.
+	SeatCap int
+	// AssignmentEnabled is the kill switch for the picker. When
+	// false, the picker is a no-op regardless of SeatCap.
+	// Default true so the seat-cap math runs automatically
+	// once SeatCap is set.
+	AssignmentEnabled bool
+	// CoPresenceEnabled is the kill switch for the
+	// co-presence tiebreaker. When false, every candidate's
+	// score is 0 and the picker degenerates to
+	// (periodWFHCount, alphabetical). The picker itself
+	// still runs — only the tiebreaker is suppressed.
+	CoPresenceEnabled bool
+	// CoPresenceHorizonDays is the calendar days back the
+	// picker scans for prior co-presence. 14 (≈ two work
+	// weeks) is the conservative default. Score itself is
+	// in calendar days.
+	CoPresenceHorizonDays int
+	// CoPresenceRetentionDays is how many calendar days the
+	// wfh_co_presence rows are kept. Must be >=
+	// CoPresenceHorizonDays or the env loader fails fast
+	// at boot. 30 keeps roughly a month of history.
+	CoPresenceRetentionDays int
 }
 
 // LoadConfigFromEnv loads WFH configuration from environment variables.
+// The five new knobs are added by the seat-cap picker (step 6 of
+// plans/assigned-wfh-plan.md). The env var names mirror the
+// doc-triggers table in the README and help.html — if you add or
+// rename any of them, update those two files in the same commit
+// per the project's documentation discipline.
 func LoadConfigFromEnv() Config {
 	return Config{
 		Enabled:             envutil.Bool("WFH_ENABLED", true),
@@ -86,6 +147,15 @@ func LoadConfigFromEnv() Config {
 		SettlementInterval:  defaultSettlementIntervalFromEnv(),
 		RequestHorizonDays:  envutil.Int("WFH_REQUEST_HORIZON_DAYS", defaultRequestHorizonDays),
 		PurgeEnabled:        envutil.Bool("WFH_PURGE_ENABLED", defaultPurgeEnabled),
+		// Seat-cap picker (Phase 2). The five knobs are independent
+		// of the existing floor / quota knobs; SeatCap can be 0
+		// (the picker is a no-op) without disturbing MinOnsiteAbsolute
+		// or MaxDaysPerPeriod.
+		SeatCap:                 envutil.Int("WFH_SEAT_CAP", 0),
+		AssignmentEnabled:       envutil.Bool("WFH_ASSIGNMENT_ENABLED", defaultAssignmentEnabled),
+		CoPresenceEnabled:       envutil.Bool("WFH_COPRESENCE_ENABLED", defaultCoPresenceEnabled),
+		CoPresenceHorizonDays:   envutil.Int("WFH_COPRESENCE_HORIZON_DAYS", defaultCoPresenceHorizonDays),
+		CoPresenceRetentionDays: envutil.Int("WFH_COPRESENCE_RETENTION_DAYS", defaultCoPresenceRetentionDays),
 	}
 }
 
@@ -96,6 +166,28 @@ func LoadConfigFromEnv() Config {
 // default can stay in lockstep without duplicating the parse logic.
 func defaultSettlementIntervalFromEnv() time.Duration {
 	return envutil.Duration("WFH_SETTLEMENT_INTERVAL", defaultSettlementInterval)
+}
+
+// Validate checks the Config for invariant violations and returns
+// an error suitable for logging + aborting process startup. The
+// env loader calls this after LoadConfigFromEnv so misconfiguration
+// fails fast rather than silently degrading to a half-working
+// picker. The current invariants:
+//
+//   - CoPresenceRetentionDays >= CoPresenceHorizonDays.
+//
+// Without the invariant, the picker would scan rows that have
+// already been pruned, returning a higher-than-expected score for
+// every candidate. The horizon is the "what counts as recent"
+// window and the retention is "how far back we keep history"; the
+// retention must dominate the horizon so every horizon-day has
+// data to read.
+func (c Config) Validate() error {
+	if c.CoPresenceRetentionDays < c.CoPresenceHorizonDays {
+		return fmt.Errorf("wfh config: CoPresenceRetentionDays (%d) must be >= CoPresenceHorizonDays (%d) — the picker scans the horizon window and would see pruned rows otherwise",
+			c.CoPresenceRetentionDays, c.CoPresenceHorizonDays)
+	}
+	return nil
 }
 
 // Service orchestrates WFH request settlement and quota management.

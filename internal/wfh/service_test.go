@@ -75,6 +75,15 @@ func TestLoadConfigFromEnv_DefaultsAndOverrides(t *testing.T) {
 	assert.Equal(t, defaultSettlementDays, cfg.SettlementDays)
 	assert.Equal(t, defaultRequestHorizonDays, cfg.RequestHorizonDays)
 	assert.Equal(t, defaultPurgeEnabled, cfg.PurgeEnabled)
+	// Seat-cap picker knobs (Phase 2 of
+	// plans/assigned-wfh-plan.md) default to "picker is a
+	// no-op" so existing deployments see no behavior change
+	// until an operator explicitly opts in.
+	assert.Equal(t, 0, cfg.SeatCap)
+	assert.True(t, cfg.AssignmentEnabled)
+	assert.True(t, cfg.CoPresenceEnabled)
+	assert.Equal(t, defaultCoPresenceHorizonDays, cfg.CoPresenceHorizonDays)
+	assert.Equal(t, defaultCoPresenceRetentionDays, cfg.CoPresenceRetentionDays)
 
 	t.Setenv("WFH_ENABLED", "false")
 	t.Setenv("WFH_MIN_ONSITE_PERCENTAGE", "60.5")
@@ -85,6 +94,11 @@ func TestLoadConfigFromEnv_DefaultsAndOverrides(t *testing.T) {
 	t.Setenv("WFH_SETTLEMENT_DAYS", "5")
 	t.Setenv("WFH_REQUEST_HORIZON_DAYS", "180")
 	t.Setenv("WFH_PURGE_ENABLED", "false")
+	t.Setenv("WFH_SEAT_CAP", "5")
+	t.Setenv("WFH_ASSIGNMENT_ENABLED", "false")
+	t.Setenv("WFH_COPRESENCE_ENABLED", "false")
+	t.Setenv("WFH_COPRESENCE_HORIZON_DAYS", "21")
+	t.Setenv("WFH_COPRESENCE_RETENTION_DAYS", "60")
 
 	cfg = LoadConfigFromEnv()
 	assert.False(t, cfg.Enabled)
@@ -96,18 +110,59 @@ func TestLoadConfigFromEnv_DefaultsAndOverrides(t *testing.T) {
 	assert.Equal(t, 5, cfg.SettlementDays)
 	assert.Equal(t, 180, cfg.RequestHorizonDays)
 	assert.False(t, cfg.PurgeEnabled)
+	assert.Equal(t, 5, cfg.SeatCap)
+	assert.False(t, cfg.AssignmentEnabled)
+	assert.False(t, cfg.CoPresenceEnabled)
+	assert.Equal(t, 21, cfg.CoPresenceHorizonDays)
+	assert.Equal(t, 60, cfg.CoPresenceRetentionDays)
 
 	t.Setenv("WFH_ENABLED", "not-a-bool")
 	t.Setenv("WFH_MIN_ONSITE_PERCENTAGE", "bad")
 	t.Setenv("WFH_MIN_ONSITE_ABSOLUTE", "bad")
 	t.Setenv("WFH_REQUEST_HORIZON_DAYS", "bad")
 	t.Setenv("WFH_PURGE_ENABLED", "not-a-bool")
+	t.Setenv("WFH_SEAT_CAP", "bad")
+	t.Setenv("WFH_ASSIGNMENT_ENABLED", "not-a-bool")
+	t.Setenv("WFH_COPRESENCE_ENABLED", "not-a-bool")
+	t.Setenv("WFH_COPRESENCE_HORIZON_DAYS", "bad")
+	t.Setenv("WFH_COPRESENCE_RETENTION_DAYS", "bad")
 	cfg = LoadConfigFromEnv()
 	assert.True(t, cfg.Enabled)
 	assert.LessOrEqual(t, math.Abs(cfg.MinOnsitePercentage-defaultMinOnsitePercentage), 0.0001)
 	assert.Equal(t, defaultMinOnsiteAbsolute, cfg.MinOnsiteAbsolute)
 	assert.Equal(t, defaultRequestHorizonDays, cfg.RequestHorizonDays)
 	assert.True(t, cfg.PurgeEnabled, "unparseable bool must fall back to the default")
+	assert.Equal(t, 0, cfg.SeatCap, "unparseable SeatCap must fall back to default (0)")
+	assert.True(t, cfg.AssignmentEnabled)
+	assert.True(t, cfg.CoPresenceEnabled)
+	assert.Equal(t, defaultCoPresenceHorizonDays, cfg.CoPresenceHorizonDays)
+	assert.Equal(t, defaultCoPresenceRetentionDays, cfg.CoPresenceRetentionDays)
+}
+
+// TestConfigValidate_RetentionMustBeAtLeastHorizon pins the
+// boot-time fail-fast in Config.Validate. The picker (Phase 2 of
+// plans/assigned-wfh-plan.md) reads rows up to horizon days
+// back; if retention is shorter, those rows have been pruned
+// and every candidate scores the history-clamp sentinel. The
+// operator sees a picker that "works" but always picks the
+// same members — silently broken. Validate catches this at
+// boot.
+func TestConfigValidate_RetentionMustBeAtLeastHorizon(t *testing.T) {
+	t.Run("valid: retention > horizon", func(t *testing.T) {
+		cfg := Config{CoPresenceHorizonDays: 14, CoPresenceRetentionDays: 30}
+		require.NoError(t, cfg.Validate())
+	})
+	t.Run("valid: retention == horizon (edge)", func(t *testing.T) {
+		cfg := Config{CoPresenceHorizonDays: 14, CoPresenceRetentionDays: 14}
+		require.NoError(t, cfg.Validate())
+	})
+	t.Run("invalid: retention < horizon", func(t *testing.T) {
+		cfg := Config{CoPresenceHorizonDays: 14, CoPresenceRetentionDays: 7}
+		err := cfg.Validate()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "CoPresenceRetentionDays")
+		assert.Contains(t, err.Error(), "CoPresenceHorizonDays")
+	})
 }
 
 func TestComputePeriodBounds_AcrossAnchorBoundaries(t *testing.T) {

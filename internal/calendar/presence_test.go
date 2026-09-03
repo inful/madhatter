@@ -55,7 +55,7 @@ func TestComputePresenceSnapshot_EmptyDB(t *testing.T) {
 	ctx := context.Background()
 	db := newCalendarTestDB(t)
 
-	b := newPresenceBuilder(db, nil, nil, nil, "seed")
+	b := newPresenceBuilder(db, nil, nil, nil, nil, "seed")
 	snap, err := b.SnapshotFor(ctx, "2026-06-10")
 	require.NoError(t, err)
 
@@ -90,7 +90,7 @@ func TestComputePresenceSnapshot_TwoOnLeaveThreeOnSite(t *testing.T) {
 	_, err = db.CreateLeaveRecord(ctx, bobID, "2026-06-10", "2026-06-10", database.LeaveTypeLeave)
 	require.NoError(t, err)
 
-	b := newPresenceBuilder(db, nil, nil, nil, "seed")
+	b := newPresenceBuilder(db, nil, nil, nil, nil, "seed")
 	snap, err := b.SnapshotFor(ctx, "2026-06-10")
 	require.NoError(t, err)
 
@@ -113,7 +113,7 @@ func TestComputePresenceSnapshot_WFHIncluded(t *testing.T) {
 	wfhDate := time.Now().UTC().AddDate(0, 0, 7).Format("2006-01-02")
 	require.NoError(t, db.CreateApprovedRecurringWFHRequest(ctx, aliceID, wfhDate, time.Now().UTC()))
 
-	b := newPresenceBuilder(db, nil, nil, nil, "seed")
+	b := newPresenceBuilder(db, nil, nil, nil, nil, "seed")
 	snap, err := b.SnapshotFor(ctx, wfhDate)
 	require.NoError(t, err)
 
@@ -132,7 +132,7 @@ func TestComputePresenceSnapshot_HATNonCover(t *testing.T) {
 	_, err = db.CreateRotaAssignment(ctx, "2026-06-10", aliceID, false, nil)
 	require.NoError(t, err)
 
-	b := newPresenceBuilder(db, nil, nil, nil, "seed")
+	b := newPresenceBuilder(db, nil, nil, nil, nil, "seed")
 	snap, err := b.SnapshotFor(ctx, "2026-06-10")
 	require.NoError(t, err)
 	assert.Equal(t, "Alice", snap.HATName)
@@ -149,7 +149,7 @@ func TestComputePresenceSnapshot_HATCoverOnly(t *testing.T) {
 	_, err = db.CreateRotaAssignment(ctx, "2026-06-10", aliceID, true, nil)
 	require.NoError(t, err)
 
-	b := newPresenceBuilder(db, nil, nil, nil, "seed")
+	b := newPresenceBuilder(db, nil, nil, nil, nil, "seed")
 	snap, err := b.SnapshotFor(ctx, "2026-06-10")
 	require.NoError(t, err)
 	assert.Equal(t, "Alice", snap.HATName)
@@ -164,10 +164,10 @@ func TestComputePresenceSnapshot_StableOrderSameSeed(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	b1 := newPresenceBuilder(db, nil, nil, nil, "salt")
+	b1 := newPresenceBuilder(db, nil, nil, nil, nil, "salt")
 	s1, err := b1.SnapshotFor(ctx, "2026-06-10")
 	require.NoError(t, err)
-	b2 := newPresenceBuilder(db, nil, nil, nil, "salt")
+	b2 := newPresenceBuilder(db, nil, nil, nil, nil, "salt")
 	s2, err := b2.SnapshotFor(ctx, "2026-06-10")
 	require.NoError(t, err)
 
@@ -186,10 +186,10 @@ func TestComputePresenceSnapshot_DifferentSeedDifferentOrder(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	b1 := newPresenceBuilder(db, nil, nil, nil, "salt-1")
+	b1 := newPresenceBuilder(db, nil, nil, nil, nil, "salt-1")
 	s1, err := b1.SnapshotFor(ctx, "2026-06-10")
 	require.NoError(t, err)
-	b2 := newPresenceBuilder(db, nil, nil, nil, "salt-2")
+	b2 := newPresenceBuilder(db, nil, nil, nil, nil, "salt-2")
 	s2, err := b2.SnapshotFor(ctx, "2026-06-10")
 	require.NoError(t, err)
 
@@ -211,7 +211,7 @@ func TestComputePresenceSnapshot_MaterialiserCalled(t *testing.T) {
 	db := newCalendarTestDB(t)
 	mat := &stubMaterialiser{}
 
-	b := newPresenceBuilder(db, mat, nil, nil, "seed")
+	b := newPresenceBuilder(db, mat, nil, nil, nil, "seed")
 	date := time.Date(2026, 6, 10, 0, 0, 0, 0, time.UTC)
 	_, err := b.RefreshFor(ctx, date.Format("2006-01-02"))
 	require.NoError(t, err)
@@ -233,7 +233,7 @@ func TestSnapshotFor_DoesNotMaterialiseOrAssign(t *testing.T) {
 	mat := &stubMaterialiser{}
 	asn := &stubAssigner{}
 
-	b := newPresenceBuilder(db, mat, asn, nil, "seed")
+	b := newPresenceBuilder(db, mat, asn, nil, nil, "seed")
 	date := time.Date(2026, 6, 10, 0, 0, 0, 0, time.UTC)
 	_, err := b.SnapshotFor(ctx, date.Format("2006-01-02"))
 	require.NoError(t, err)
@@ -252,7 +252,7 @@ func TestRefreshFor_CallsAssigner(t *testing.T) {
 	mat := &stubMaterialiser{}
 	asn := &stubAssigner{}
 
-	b := newPresenceBuilder(db, mat, asn, nil, "seed")
+	b := newPresenceBuilder(db, mat, asn, nil, nil, "seed")
 
 	// Today: assigner called.
 	date := time.Now().UTC().Format("2006-01-02")
@@ -284,7 +284,7 @@ func (s *stubAssigner) AssignWFHForDate(_ context.Context, date string) error {
 func TestComputePresenceSnapshot_NilMaterialiserOK(t *testing.T) {
 	ctx := context.Background()
 	db := newCalendarTestDB(t)
-	b := newPresenceBuilder(db, nil, nil, nil, "seed")
+	b := newPresenceBuilder(db, nil, nil, nil, nil, "seed")
 	_, err := b.SnapshotFor(ctx, "2026-06-10")
 	require.NoError(t, err)
 }
@@ -294,7 +294,7 @@ func TestComputePresenceSnapshot_HolidayLookup(t *testing.T) {
 	db := newCalendarTestDB(t)
 	hl := &stubHolidayLookup{holidays: map[string]string{"2026-06-10": "Test Holiday"}}
 
-	b := newPresenceBuilder(db, nil, nil, hl, "seed")
+	b := newPresenceBuilder(db, nil, nil, nil, hl, "seed")
 	snap, err := b.SnapshotFor(ctx, "2026-06-10")
 	require.NoError(t, err)
 	assert.True(t, snap.IsHoliday)
@@ -304,7 +304,7 @@ func TestComputePresenceSnapshot_HolidayLookup(t *testing.T) {
 func TestComputePresenceSnapshot_WeekendFlag(t *testing.T) {
 	ctx := context.Background()
 	db := newCalendarTestDB(t)
-	b := newPresenceBuilder(db, nil, nil, nil, "seed")
+	b := newPresenceBuilder(db, nil, nil, nil, nil, "seed")
 	// 2026-06-13 is a Saturday.
 	snap, err := b.SnapshotFor(ctx, "2026-06-13")
 	require.NoError(t, err)

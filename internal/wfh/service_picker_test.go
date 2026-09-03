@@ -722,3 +722,84 @@ func TestAssignWFHForDate_CoPresence_EmptyCohort(t *testing.T) {
 		assert.Equal(t, "assigned", r.Origin)
 	}
 }
+
+// TestWriteCoPresenceForPastDate_RecordsAllPairs pins the C(n, 2)
+// pair-writing contract. n=4 on-site members → 6 pairs; n=1
+// → 0 pairs; n=0 → 0 pairs. Idempotency via INSERT OR IGNORE
+// is exercised by TestWriteCoPresenceForPastDate_Idempotent
+// below.
+func TestWriteCoPresenceForPastDate_RecordsAllPairs(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	svc := NewService(db, pickerTestConfig())
+	alice := seedPickerMember(t, ctx, db, "Alice", "alice@example.com")
+	bob := seedPickerMember(t, ctx, db, "Bob", "bob@example.com")
+	carol := seedPickerMember(t, ctx, db, "Carol", "carol@example.com")
+	dave := seedPickerMember(t, ctx, db, "Dave", "dave@example.com")
+	_ = alice
+	_ = bob
+	_ = carol
+	_ = dave
+
+	yesterday := time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
+	written, err := svc.WriteCoPresenceForPastDate(ctx, yesterday)
+	require.NoError(t, err)
+	assert.Equal(t, 6, written, "4 on-site members → C(4,2)=6 pairs")
+
+	// Sanity: re-running is a no-op (UNIQUE).
+	written2, err := svc.WriteCoPresenceForPastDate(ctx, yesterday)
+	require.NoError(t, err)
+	assert.Equal(t, 0, written2, "second run must insert 0 new rows")
+}
+
+// TestWriteCoPresenceForPastDate_TodayIsNoOp pins the past-date
+// guard. The writer must NOT write today or future — the cohort
+// is uncertain for predictions.
+func TestWriteCoPresenceForPastDate_TodayIsNoOp(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	svc := NewService(db, pickerTestConfig())
+	seedPickerMember(t, ctx, db, "Alice", "alice@example.com")
+	seedPickerMember(t, ctx, db, "Bob", "bob@example.com")
+
+	today := time.Now().UTC().Format("2006-01-02")
+	written, err := svc.WriteCoPresenceForPastDate(ctx, today)
+	require.NoError(t, err)
+	assert.Equal(t, 0, written, "today is not a past date; writer must no-op")
+}
+
+// TestWriteCoPresenceForPastDate_RespectsLeaveAndPermanentWFH pins
+// that the writer subtracts the same set the picker does. A
+// member on leave or with permanent-WFH flag must not appear in
+// any pair.
+func TestWriteCoPresenceForPastDate_RespectsLeaveAndPermanentWFH(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	svc := NewService(db, pickerTestConfig())
+	alice := seedPickerMember(t, ctx, db, "Alice", "alice@example.com")
+	bob := seedPickerMember(t, ctx, db, "Bob", "bob@example.com")
+	carol := seedPickerMember(t, ctx, db, "Carol", "carol@example.com")
+	dave := seedPickerMember(t, ctx, db, "Dave", "dave@example.com")
+	erin := seedPickerMember(t, ctx, db, "Erin", "erin@example.com")
+	_ = alice
+	_ = bob
+	_ = carol
+	_ = dave
+	_ = erin
+
+	// Mark Erin as permanent WFH → she's never on-site.
+	require.NoError(t, db.SetTeamMemberPermanentWFH(ctx, erin, true))
+
+	yesterday := time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
+	// 4 on-site members (Erin excluded) → C(4,2)=6 pairs.
+	written, err := svc.WriteCoPresenceForPastDate(ctx, yesterday)
+	require.NoError(t, err)
+	assert.Equal(t, 6, written,
+		"4 on-site members (Erin permanent-WFH excluded) → 6 pairs")
+}

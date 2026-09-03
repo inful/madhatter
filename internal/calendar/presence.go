@@ -58,13 +58,24 @@ type WFHMaterialiser interface {
 
 // AssignWFHAssigner is the narrow interface the calendar package
 // uses to invoke the seat-cap picker (Phase 2 of
-// plans/assigned-wfh-plan.md) on a per-date basis. The web layer
-// wires a wfh.Service-backed implementation; tests can pass nil.
+// plans/assigned-wfh-plan.md) on a per-date basis. The web
+// layer wires a wfh.Service-backed implementation; tests can pass nil.
 // Nil is safe — RefreshFor skips the assignment hook entirely,
 // matching the pre-Phase-2 behavior where the picker didn't
 // exist.
 type AssignWFHAssigner interface {
 	AssignWFHForDate(ctx context.Context, date string) error
+}
+
+// CoPresenceWriter is the narrow interface the calendar
+// package uses to record co-presence pairs for a past date.
+// Step 11 of plans/assigned-wfh-plan.md: the writer is
+// called from RefreshFor for date < today, and from the
+// scheduler's backfill pass for the last 7 working days.
+// Nil is safe — RefreshFor skips the write, matching the
+// pre-Phase-2 behavior.
+type CoPresenceWriter interface {
+	WriteCoPresenceForPastDate(ctx context.Context, date string) (int, error)
 }
 
 // HolidayLookup returns the holiday name for a date, or "" / false if
@@ -83,21 +94,22 @@ func (noopHolidayLookup) GetHoliday(string) (string, bool) { return "", false }
 // presenceBuilder builds a snapshot for a single date. It is reused
 // across event adders on the same day inside the day loop.
 type presenceBuilder struct {
-	db              *database.DB
-	wfhMaterialiser WFHMaterialiser
-	wfhAssigner     AssignWFHAssigner
-	holidayLookup   HolidayLookup
-	shuffleSeed     string
+	db               *database.DB
+	wfhMaterialiser  WFHMaterialiser
+	wfhAssigner      AssignWFHAssigner
+	coPresenceWriter CoPresenceWriter
+	holidayLookup    HolidayLookup
+	shuffleSeed      string
 }
 
-func newPresenceBuilder(db *database.DB, m WFHMaterialiser, a AssignWFHAssigner, h HolidayLookup, seed string) *presenceBuilder {
+func newPresenceBuilder(db *database.DB, m WFHMaterialiser, a AssignWFHAssigner, c CoPresenceWriter, h HolidayLookup, seed string) *presenceBuilder {
 	if h == nil {
 		h = noopHolidayLookup{}
 	}
 	if seed == "" {
 		seed = "support-rota-presence"
 	}
-	return &presenceBuilder{db: db, wfhMaterialiser: m, wfhAssigner: a, holidayLookup: h, shuffleSeed: seed}
+	return &presenceBuilder{db: db, wfhMaterialiser: m, wfhAssigner: a, coPresenceWriter: c, holidayLookup: h, shuffleSeed: seed}
 }
 
 // SnapshotFor computes the snapshot for dateStr without touching
@@ -146,14 +158,20 @@ func (b *presenceBuilder) SnapshotFor(ctx context.Context, dateStr string) (*pre
 //  2. Run AssignWFHForDate for dateStr — the seat-cap
 //     picker (Phase 2). No-op for past dates, holidays,
 //     and weekends (handled inside AssignWFHForDate).
-//  3. Re-read the snapshot AFTER step 2 so the
-//     just-assigned rows appear in the rendered events.
-//     Idempotent in all sub-steps via UNIQUE constraints.
+//  3. Write co-presence pairs for dateStr — strictly
+//     past dates only (the prediction is not yet
+//     committed for today/future, so the cohort is
+//     uncertain). Step 11 of
+//     plans/assigned-wfh-plan.md.
+//  4. Re-read the snapshot AFTER steps 2-3 so the
+//     just-written rows are visible in the rendered
+//     events. Idempotent in all sub-steps via UNIQUE
+//     constraints.
 //
-// Step 9 of plans/assigned-wfh-plan.md. Use RefreshFor when
-// the caller's intent is "ensure fresh state for this date
-// before rendering"; use SnapshotFor when the caller wants
-// the current state without mutation.
+// Use RefreshFor when the caller's intent is "ensure
+// fresh state for this date before rendering"; use
+// SnapshotFor when the caller wants the current state
+// without mutation.
 func (b *presenceBuilder) RefreshFor(ctx context.Context, dateStr string) (*presenceSnapshot, error) {
 	date, err := time.Parse("2006-01-02", dateStr)
 	if err != nil {
@@ -179,6 +197,22 @@ func (b *presenceBuilder) RefreshFor(ctx context.Context, dateStr string) (*pres
 			// fallback — the calendar still renders,
 			// just without the picker output.
 			_ = aErr
+		}
+	}
+
+	// Write co-presence pairs for past dates only. The
+	// scheduler's backfill pass is the authoritative
+	// eventually-consistent source; this is the
+	// opportunistic path that catches the cohort while
+	// it's still fresh (a calendar render of last
+	// Tuesday's snapshot also records Tuesday's
+	// co-presence). Idempotent via UNIQUE.
+	if b.coPresenceWriter != nil && date.Before(todayUTC()) {
+		if _, wErr := b.coPresenceWriter.WriteCoPresenceForPastDate(ctx, dateStr); wErr != nil {
+			// Don't fail the refresh; the backfill pass
+			// will retry tomorrow if today's write
+			// failed.
+			_ = wErr
 		}
 	}
 

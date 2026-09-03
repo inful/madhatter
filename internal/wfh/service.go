@@ -497,6 +497,9 @@ func (s *Service) SettlePendingRequests(ctx context.Context) error {
 		}
 	}
 	s.settleAssignmentPass(ctx, today, cutoff)
+	if err := s.BackfillCoPresence(ctx); err != nil {
+		slog.Error("WFH co-presence backfill failed", "error", err)
+	}
 	return nil
 }
 
@@ -520,6 +523,131 @@ func (s *Service) settleAssignmentPass(ctx context.Context, today, cutoff time.T
 			slog.Error("WFH picker failed", "date", date, "error", err)
 		}
 	}
+}
+
+// WriteCoPresenceForPastDate records co-presence pairs for the
+// given date. Step 11 of plans/assigned-wfh-plan.md. Called from
+// RefreshFor (opportunistic — a calendar render that walks past
+// dates catches the cohort while it's fresh) and from the
+// scheduler's BackfillCoPresence pass (the authoritative
+// eventually-consistent source).
+//
+// Implementation: read the on-site set for date (active -
+// leave - permanent WFH - approved WFH), generate all C(n, 2)
+// unordered pairs, write each via RecordWFHCoPresencePair
+// (INSERT OR IGNORE — idempotent). The UNIQUE constraint
+// guarantees correctness across concurrent writers; the
+// CHECK constraint enforces canonical (a < b) ordering at
+// the storage layer.
+//
+// Returns the number of pairs actually written (i.e., not
+// skipped as duplicates). The pair count for an empty
+// cohort is 0; for a single-member cohort, 0; for n>=2,
+// C(n,2) = n*(n-1)/2.
+func (s *Service) WriteCoPresenceForPastDate(ctx context.Context, dateStr string) (int, error) {
+	date, err := time.Parse("2006-01-02", dateStr)
+	if err != nil {
+		return 0, database.ErrWFHInvalidDate
+	}
+
+	// Past-date guard: writing co-presence for today or future
+	// is meaningless because the cohort is uncertain. The
+	// scheduler's backfill pass operates on past dates
+	// only; RefreshFor's opportunistic call is also past-only.
+	nowUTC := time.Now().UTC()
+	today := time.Date(nowUTC.Year(), nowUTC.Month(), nowUTC.Day(), 0, 0, 0, 0, time.UTC)
+	if !date.UTC().Before(today) {
+		return 0, nil
+	}
+
+	members, err := s.db.GetActiveTeamMembers(ctx)
+	if err != nil {
+		return 0, err
+	}
+	onLeaveIDs, err := s.leaveMemberIDsForDate(ctx, dateStr)
+	if err != nil {
+		return 0, err
+	}
+	approvedWFH, err := s.db.GetWFHRequestsByDateAndStatus(ctx, dateStr, database.WFHStatusApproved)
+	if err != nil {
+		return 0, err
+	}
+	permanentIDs := permanentWFHMemberIDs(members)
+	approvedIDSet := memberIDsFromWFHRequests(approvedWFH)
+
+	var onSite []string
+	for i := range members {
+		m := members[i]
+		if _, onLeave := onLeaveIDs[m.ID]; onLeave {
+			continue
+		}
+		if _, perm := permanentIDs[m.ID]; perm {
+			continue
+		}
+		if _, wfh := approvedIDSet[m.ID]; wfh {
+			continue
+		}
+		onSite = append(onSite, m.ID)
+	}
+
+	// C(n, 2) pairs. n < 2 → no pairs.
+	if len(onSite) < 2 {
+		return 0, nil
+	}
+	written := 0
+	for i := 0; i < len(onSite); i++ {
+		for j := i + 1; j < len(onSite); j++ {
+			inserted, err := s.db.InsertWFHCoPresencePair(ctx, dateStr, onSite[i], onSite[j])
+			if err != nil {
+				return written, err
+			}
+			if inserted {
+				written++
+			}
+		}
+	}
+	return written, nil
+}
+
+// BackfillCoPresence runs WriteCoPresenceForPastDate for the
+// last N working days, where N is WFH_COPRESENCE_RETENTION_DAYS
+// bounded by 7 (the plan's recommendation; the full retention
+// window would be 30 days by default but the daily tick only
+// needs to catch the last week). Step 11 of
+// plans/assigned-wfh-plan.md. Called from the scheduler
+// (SettlePendingRequests) after each settlement tick.
+//
+// Eventual consistency: the daily backfill re-reads current
+// state for each day and writes pair rows via INSERT OR
+// IGNORE. Original (possibly incomplete) writes survive
+// because INSERT OR IGNORE skips rows that already exist.
+// Late-arriving leave approvals or WFH withdrawals on day
+// N-2 are reflected in subsequent picker scores but not in
+// the original co-presence rows — that's the
+// eventually-consistent semantic the plan documents.
+func (s *Service) BackfillCoPresence(ctx context.Context) error {
+	if !s.cfg.CoPresenceEnabled {
+		return nil
+	}
+	nowUTC := time.Now().UTC()
+	today := time.Date(nowUTC.Year(), nowUTC.Month(), nowUTC.Day(), 0, 0, 0, 0, time.UTC)
+	// 7 working days back, capped at retention.
+	daysBack := 7
+	if s.cfg.CoPresenceRetentionDays < daysBack {
+		daysBack = s.cfg.CoPresenceRetentionDays
+	}
+	for d := today.AddDate(0, 0, -1); daysBack > 0 && !d.Before(today.AddDate(0, 0, -daysBack*2)); d = d.AddDate(0, 0, -1) {
+		if d.Weekday() == time.Saturday || d.Weekday() == time.Sunday {
+			continue
+		}
+		date := d.Format("2006-01-02")
+		if _, err := s.WriteCoPresenceForPastDate(ctx, date); err != nil {
+			slog.Error("WFH co-presence backfill failed", "date", date, "error", err)
+			continue
+		}
+		daysBack--
+	}
+	return nil
 }
 
 // ReportToday is the same-day "unforeseen WFH" entry point. It is the

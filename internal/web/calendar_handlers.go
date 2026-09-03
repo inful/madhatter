@@ -248,6 +248,7 @@ func (h *Handler) buildSupportCalendarOptions() calendar.SupportCalendarOptions 
 		ShuffleSeed:                       os.Getenv("SUPPORT_DAY_SHUFFLE_SEED"),
 		WFHMaterialiser:                   NewWFHMaterialiser(h.wfhService),
 		WFHAssigner:                       NewWFHAssigner(h.wfhService),
+		WFHCopresenceWriter:               NewWFHCopresenceWriter(h.wfhService),
 		HolidayLookup:                     h.holidayLookup,
 		SupportAssignmentTemplateTextPath: os.Getenv("SUPPORT_ASSIGNMENT_TEMPLATE_TEXT_PATH"),
 		SupportAssignmentTemplateHTMLPath: os.Getenv("SUPPORT_ASSIGNMENT_TEMPLATE_HTML_PATH"),

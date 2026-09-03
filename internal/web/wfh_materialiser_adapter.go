@@ -58,3 +58,29 @@ func NewWFHAssigner(svc *wfh.Service) calendar.AssignWFHAssigner {
 	}
 	return wfhAssignerAdapter{svc: svc}
 }
+
+// wfhCopresenceWriterAdapter implements calendar.CoPresenceWriter
+// against the wfh.Service. Step 11 of
+// plans/assigned-wfh-plan.md: the calendar's RefreshFor calls
+// this for past dates so the co-presence cohort stays fresh
+// between scheduler backfill ticks. nil-safe.
+type wfhCopresenceWriterAdapter struct {
+	svc *wfh.Service
+}
+
+func (a wfhCopresenceWriterAdapter) WriteCoPresenceForPastDate(ctx context.Context, date string) (int, error) {
+	if a.svc == nil {
+		return 0, nil
+	}
+	return a.svc.WriteCoPresenceForPastDate(ctx, date)
+}
+
+// NewWFHCopresenceWriter returns a calendar.CoPresenceWriter
+// backed by svc. Returns nil when svc is nil so the web layer
+// can pass it through unconditionally.
+func NewWFHCopresenceWriter(svc *wfh.Service) calendar.CoPresenceWriter {
+	if svc == nil {
+		return nil
+	}
+	return wfhCopresenceWriterAdapter{svc: svc}
+}

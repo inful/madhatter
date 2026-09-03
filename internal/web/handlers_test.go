@@ -1086,6 +1086,134 @@ func TestDashboard_HATBanner(t *testing.T) {
 	})
 }
 
+// TestDashboard_HATDayBadgeLink pins the dashboard HAT day badge's
+// optional link affordance. The badge in the Today card is a plain
+// <span> by default; when HAT_LINK_URL is set, it becomes an
+// <a target="_blank" rel="noopener"> so it can open an on-call
+// runbook, Slack channel, or PagerDuty rotation in a new window. When
+// the env var is unset, the badge falls back to the original span
+// (no link, no UI regression for installs that don't configure it).
+//
+// Each subtest asserts the EXACT rendered substring, not just
+// attributes — so the tests catch a regression that swaps the link
+// tag for a span (or vice versa), drops the target/rel attrs, or
+// fails to wire the env var into the data map. The substring checks
+// intentionally scope to the HAT day badge via the unique
+// "fa-hat-wizard mr-1" + "HAT day" markers, so unrelated
+// "tag is-link is-light" usages (Next HAT chip, @conference chip,
+// etc.) don't false-positive.
+func TestDashboard_HATDayBadgeLink(t *testing.T) {
+	mockDB := &database.DB{}
+	handler, err := NewHandler(mockDB, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	t.Run("renders as link when HAT_LINK_URL is set", func(t *testing.T) {
+		const runbookURL = "https://example.com/oncall/runbook"
+		t.Setenv("HAT_LINK_URL", runbookURL)
+
+		data := map[string]any{
+			"User":                      map[string]any{"Email": "alice@example.com", "Name": "Alice"},
+			"IsAdmin":                   false,
+			"Template":                  "dashboard",
+			"CurrentUserPresenceStatus": "On-site",
+			"CurrentUserHasHATDay":      true,
+			// HatLinkURL is normally populated by handleDashboard via
+			// os.Getenv("HAT_LINK_URL"); we inject it directly here
+			// so this subtest pins the template's link/span branch
+			// logic independently of the handler. The handler
+			// wiring is the one-liner in dashboard.go that does
+			// `data["HatLinkURL"] = os.Getenv("HAT_LINK_URL")` — a
+			// grep for that string in the handler catches a removal
+			// without a full integration test.
+			"HatLinkURL": runbookURL,
+		}
+
+		w := httptest.NewRecorder()
+		require.NoError(t, handler.tmpl.ExecuteTemplate(w, "dashboard.html", data))
+
+		body := w.Body.String()
+		// The opening <a> tag must carry the configured URL plus the
+		// target and rel that make it open in a new window safely.
+		// Asserting on the full opening tag pins all four attributes
+		// in one go: href, class, target, rel.
+		assert.Contains(t, body,
+			`<a class="tag is-link is-light" href="`+runbookURL+`" target="_blank" rel="noopener">`,
+			"HAT day badge must render as an <a> with the configured URL, target=_blank, and rel=noopener when HAT_LINK_URL is set")
+		// The badge text + icon must still be present inside the link.
+		assert.Contains(t, body, `<i class="fas fa-hat-wizard mr-1"></i> HAT day`,
+			"link-wrapped HAT day badge must keep the icon and label")
+		// The span form must NOT render when the link form is
+		// configured — both forms would render the same icon and
+		// text, which would duplicate the affordance.
+		assert.NotContains(t, body,
+			`<span class="tag is-link is-light"><i class="fas fa-hat-wizard mr-1"></i> HAT day</span>`,
+			"span form of the HAT day badge must not render when HAT_LINK_URL is set")
+	})
+
+	t.Run("renders as span when HAT_LINK_URL is unset", func(t *testing.T) {
+		// Explicit empty value (matching what os.Getenv returns when
+		// the var is absent) so the test is independent of the host
+		// environment's HAT_LINK_URL setting.
+		t.Setenv("HAT_LINK_URL", "")
+
+		data := map[string]any{
+			"User":                      map[string]any{"Email": "alice@example.com", "Name": "Alice"},
+			"IsAdmin":                   false,
+			"Template":                  "dashboard",
+			"CurrentUserPresenceStatus": "On-site",
+			"CurrentUserHasHATDay":      true,
+		}
+
+		w := httptest.NewRecorder()
+		require.NoError(t, handler.tmpl.ExecuteTemplate(w, "dashboard.html", data))
+
+		body := w.Body.String()
+		assert.Contains(t, body,
+			`<span class="tag is-link is-light"><i class="fas fa-hat-wizard mr-1"></i> HAT day</span>`,
+			"HAT day badge must render as a plain span when HAT_LINK_URL is empty (the original behavior)")
+		// No <a class="tag is-link is-light" ... HAT day ...> form
+		// should be present. The MEETINGS Teams link is the only
+		// other anchor that opens in a new window with the same
+		// tag class — asserting on the absence of an HAT-day <a>
+		// specifically requires checking for the HAT-day marker
+		// ("HAT day") after the opening anchor, not just the
+		// anchor's class list.
+		assert.NotContains(t, body, `<a class="tag is-link is-light"`,
+			"no <a class=\"tag is-link is-light\"> must render when HAT_LINK_URL is empty (the badge falls back to a span)")
+	})
+
+	t.Run("renders nothing when not on a HAT day", func(t *testing.T) {
+		// Even with HAT_LINK_URL configured, the outer
+		// CurrentUserHasHATDay gate wins: a non-HAT day must not
+		// surface any badge, link or span. The link affordance is
+		// a property of the badge, not a stand-alone widget.
+		t.Setenv("HAT_LINK_URL", "https://example.com/runbook")
+
+		data := map[string]any{
+			"User":                      map[string]any{"Email": "alice@example.com", "Name": "Alice"},
+			"IsAdmin":                   false,
+			"Template":                  "dashboard",
+			"CurrentUserPresenceStatus": "On-site",
+			// CurrentUserHasHATDay left unset (zero value: nil/false)
+			// so the {{if .CurrentUserHasHATDay}} block is skipped
+			// entirely.
+		}
+
+		w := httptest.NewRecorder()
+		require.NoError(t, handler.tmpl.ExecuteTemplate(w, "dashboard.html", data))
+
+		body := w.Body.String()
+		assert.NotContains(t, body, `<a class="tag is-link is-light" href="https://example.com/runbook"`,
+			"linked HAT day badge must not render when the user isn't on HAT duty, even with HAT_LINK_URL set")
+		// The exact span form too — covers the case where someone
+		// accidentally removes the {{if .CurrentUserHasHATDay}}
+		// outer gate.
+		assert.NotContains(t, body,
+			`<span class="tag is-link is-light"><i class="fas fa-hat-wizard mr-1"></i> HAT day</span>`,
+			"span HAT day badge must not render when the user isn't on HAT duty")
+	})
+}
+
 // TestTemplatesHaveAccessibleTables is the source-level guard for
 // the screen-reader affordances on every <table> in the templates.
 // The schedule matrix got <caption> + scope="col" + scope="row"

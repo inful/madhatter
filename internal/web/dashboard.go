@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -78,6 +79,16 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	data["CanReportWFHToday"] = h.canReportWFHToday(ctx)
+
+	// Optional URL the HAT day badge in the Today card links to.
+	// Mirrors the MEETINGS_TEAMS_URL pattern in
+	// calendar_meetings_day.html: when set, the badge renders as an
+	// <a target="_blank" rel="noopener"> that opens the URL in a new
+	// window (useful for an on-call runbook or PagerDuty rotation).
+	// When unset, the badge stays a plain <span> - the original
+	// behavior. Admin-only knob; html/template auto-escapes the href
+	// so a `javascript:` value is neutralized at render time.
+	data["HatLinkURL"] = os.Getenv("HAT_LINK_URL")
 
 	// Render template.
 	if err := h.tmpl.ExecuteTemplate(w, "dashboard.html", data); err != nil {

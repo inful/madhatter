@@ -193,6 +193,12 @@ At least one provider must be configured for production authentication.
 | `WFH_PURGE_ENABLED` | `true` | When `true`, the daily scheduler hard-deletes `wfh_requests` rows whose date is strictly before the start of the previous quota period. The current and previous periods are always preserved. Opt out with `WFH_PURGE_ENABLED=false`. The same cutoff is exposed via `wfh purge [--apply]` and `/admin/wfh/purge`; both default to dry-run. |
 | `WFH_SETTLEMENT_INTERVAL` | `15m` | Period between settlement scheduler ticks (Go duration format, e.g. `5m`, `1h`, `30s`). Lower values reduce the perceived latency between a request submission and the approve/deny decision; higher values save on CPU. |
 
+#### Dashboard
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `HAT_LINK_URL` | none | URL the HAT day badge in the dashboard Today card links to (opens in a new window via `target="_blank" rel="noopener"`). When unset, the badge renders as a plain `<span>` (the original behavior). Useful for an on-call runbook, a Slack channel, or a PagerDuty rotation page. |
+
 #### Calendar and meetings
 
 | Variable | Default | Notes |

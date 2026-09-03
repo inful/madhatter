@@ -7,6 +7,11 @@ import (
 	"github.com/inful/madhatter/internal/database/sqlc"
 )
 
+// coPresenceCohortPad is the index of the third cohort slot
+// in the GetLatestCoPresenceWithCohort IN list. Matches the
+// coPresenceCohortCap constant in the wfh service.
+const coPresenceCohortPad = 2
+
 // RecordWFHCoPresencePair inserts a single co-presence pair for
 // (working_date, member_id_a, member_id_b). Idempotent: the
 // UNIQUE(working_date, a, b) constraint plus INSERT OR IGNORE
@@ -137,11 +142,11 @@ func (db *DB) PruneWFHCoPresenceOlderThan(ctx context.Context, cutoff time.Time)
 // Used by the seat-cap picker tiebreaker (step 10 of
 // plans/assigned-wfh-plan.md).
 func (db *DB) GetLatestCoPresenceWithCohort(ctx context.Context, candidateID string, cohortIDs []string, start, end time.Time) (time.Time, error) {
-	// Pad cohort to exactly 3 IDs with empty sentinels that
-	// never match any real member. Empty string in the IN
-	// list means "no row can have member_id_b = ''" so the
-	// OR branch never fires for the padded slots. This
-	// keeps the SQL placeholder count fixed at 3.
+	// Pad cohort to exactly coPresenceCohortCap IDs with empty
+	// sentinels that never match any real member. Empty string
+	// in the IN list means "no row can have member_id_b = ''"
+	// so the OR branch never fires for the padded slots. This
+	// keeps the SQL placeholder count fixed at the cap.
 	a, b, c := "", "", ""
 	if len(cohortIDs) > 0 {
 		a = cohortIDs[0]
@@ -149,28 +154,28 @@ func (db *DB) GetLatestCoPresenceWithCohort(ctx context.Context, candidateID str
 	if len(cohortIDs) > 1 {
 		b = cohortIDs[1]
 	}
-	if len(cohortIDs) > 2 {
-		c = cohortIDs[2]
+	if len(cohortIDs) > coPresenceCohortPad {
+		c = cohortIDs[coPresenceCohortPad]
 	}
 
 	rowsA, err := db.queries.GetLatestCoPresenceWithCohortA(ctx, sqlc.GetLatestCoPresenceWithCohortAParams{
-		WorkingDate: start,
+		WorkingDate:   start,
 		WorkingDate_2: end,
-		MemberIDA:   candidateID,
-		MemberIDB:   a,
-		MemberIDB_2: b,
-		MemberIDB_3: c,
+		MemberIDA:     candidateID,
+		MemberIDB:     a,
+		MemberIDB_2:   b,
+		MemberIDB_3:   c,
 	})
 	if err != nil {
 		return time.Time{}, err
 	}
 	rowsB, err := db.queries.GetLatestCoPresenceWithCohortB(ctx, sqlc.GetLatestCoPresenceWithCohortBParams{
-		WorkingDate: start,
+		WorkingDate:   start,
 		WorkingDate_2: end,
-		MemberIDB:   candidateID,
-		MemberIDA:   a,
-		MemberIDA_2: b,
-		MemberIDA_3: c,
+		MemberIDB:     candidateID,
+		MemberIDA:     a,
+		MemberIDA_2:   b,
+		MemberIDA_3:   c,
 	})
 	if err != nil {
 		return time.Time{}, err

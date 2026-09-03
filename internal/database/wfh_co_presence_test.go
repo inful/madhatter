@@ -11,11 +11,12 @@ import (
 
 // TestRecordWFHCoPresencePair_Roundtrip pins the migration 000027
 // schema and the canonical-ordering normalization. Three checks:
-//   1. Self-pair is a silent no-op (caller doesn't have to filter
-//      identical IDs out of the on-site set).
-//   2. Inverted pair (a > b) is normalized before insert so the
-//      table's CHECK constraint is never tripped.
-//   3. UNIQUE(working_date, a, b) means a second call is a no-op.
+//  1. Self-pair is a silent no-op (caller doesn't have to filter
+//     identical IDs out of the on-site set).
+//  2. Inverted pair (a > b) is normalized before insert so the
+//     table's CHECK constraint is never tripped.
+//  3. UNIQUE(working_date, a, b) means a second call is a no-op.
+//
 // The phase-1 migration lands the table and one writer method;
 // the picker (step 9 / step 10) wires the writer into the
 // presenceBuilder path. Step 9's tiebreaker reads via

@@ -30,8 +30,8 @@ type TeamMember struct {
 	// Separate concept from IsPermanentWFH (a permanent on-site
 	// exception; the picker also excludes permanent-WFH members
 	// from its candidate pool).
-	IsExemptFromAssignment bool       `json:"is_exempt_from_assignment"`
-	CreatedAt              time.Time  `json:"created_at"`
+	IsExemptFromAssignment bool      `json:"is_exempt_from_assignment"`
+	CreatedAt              time.Time `json:"created_at"`
 }
 
 // IsRecurringWFHOn reports whether the member has a contractual recurring WFH day on date.

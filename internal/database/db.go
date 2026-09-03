@@ -130,17 +130,17 @@ func (db *DB) AddTeamMember(ctx context.Context, name, email string) (string, er
 
 func teamMemberFromSQLC(m sqlc.TeamMember) TeamMember {
 	tm := TeamMember{
-		ID:                    m.ID,
-		Name:                  m.Name,
-		Email:                 m.Email,
-		IsActive:              m.IsActive.Valid && m.IsActive.Int64 == 1,
-		RecurringWFHMonday:    m.RecurringWfhMonday == 1,
-		RecurringWFHTuesday:   m.RecurringWfhTuesday == 1,
-		RecurringWFHWednesday: m.RecurringWfhWednesday == 1,
-		RecurringWFHThursday:  m.RecurringWfhThursday == 1,
-		RecurringWFHFriday:    m.RecurringWfhFriday == 1,
+		ID:                     m.ID,
+		Name:                   m.Name,
+		Email:                  m.Email,
+		IsActive:               m.IsActive.Valid && m.IsActive.Int64 == 1,
+		RecurringWFHMonday:     m.RecurringWfhMonday == 1,
+		RecurringWFHTuesday:    m.RecurringWfhTuesday == 1,
+		RecurringWFHWednesday:  m.RecurringWfhWednesday == 1,
+		RecurringWFHThursday:   m.RecurringWfhThursday == 1,
+		RecurringWFHFriday:     m.RecurringWfhFriday == 1,
 		IsExemptFromAssignment: m.IsExemptFromAssignment == 1,
-		CreatedAt:             m.CreatedAt.Time,
+		CreatedAt:              m.CreatedAt.Time,
 	}
 	tm.IsPermanentWFH = tm.HasPermanentRecurringWFH()
 	return tm
@@ -217,7 +217,7 @@ func (db *DB) SetTeamMemberExemptFromAssignment(ctx context.Context, id string, 
 	}
 	return db.queries.SetTeamMemberExemptFromAssignment(ctx, sqlc.SetTeamMemberExemptFromAssignmentParams{
 		IsExemptFromAssignment: boolToInt(exempt),
-		ID:                    id,
+		ID:                     id,
 	})
 }
 

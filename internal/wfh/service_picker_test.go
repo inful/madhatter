@@ -16,20 +16,20 @@ import (
 // MaxDaysPerPeriod=2 keeps the voluntary quota math independent.
 func pickerTestConfig() Config {
 	return Config{
-		Enabled:                  true,
-		MinOnsitePercentage:      50,
-		MinOnsiteAbsolute:        1,
-		MaxDaysPerPeriod:         2,
-		PeriodDays:               7,
-		PeriodAnchor:             "2026-01-05",
-		SettlementDays:           7,
-		RequestHorizonDays:       90,
-		PurgeEnabled:             false,
-		SeatCap:                  2,
-		AssignmentEnabled:        true,
-		CoPresenceEnabled:        true,
-		CoPresenceHorizonDays:    14,
-		CoPresenceRetentionDays:  30,
+		Enabled:                 true,
+		MinOnsitePercentage:     50,
+		MinOnsiteAbsolute:       1,
+		MaxDaysPerPeriod:        2,
+		PeriodDays:              7,
+		PeriodAnchor:            "2026-01-05",
+		SettlementDays:          7,
+		RequestHorizonDays:      90,
+		PurgeEnabled:            false,
+		SeatCap:                 2,
+		AssignmentEnabled:       true,
+		CoPresenceEnabled:       true,
+		CoPresenceHorizonDays:   14,
+		CoPresenceRetentionDays: 30,
 	}
 }
 
@@ -122,10 +122,7 @@ func TestAssignWFHForDate_PastDateIsNoOp(t *testing.T) {
 	seedPickerMember(t, ctx, db, "Bob", "bob@example.com")
 	seedPickerMember(t, ctx, db, "Carol", "carol@example.com")
 
-	yesterday := pickerFutureDate(t, -1)
-	// The helper skips weekends but for the past-date guard we
-	// need any past date, even a weekend — set it explicitly.
-	yesterday = time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
+	yesterday := time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
 	require.NoError(t, svc.AssignWFHForDate(ctx, yesterday))
 	rows, err := db.GetWFHRequestsByDate(ctx, yesterday)
 	require.NoError(t, err)
@@ -185,11 +182,11 @@ func TestAssignWFHForDate_PicksExcessMembers(t *testing.T) {
 
 	svc := NewService(db, pickerTestConfig())
 	ids := map[string]string{
-		"Alice":   seedPickerMember(t, ctx, db, "Alice", "alice@example.com"),
-		"Bob":     seedPickerMember(t, ctx, db, "Bob", "bob@example.com"),
-		"Carol":   seedPickerMember(t, ctx, db, "Carol", "carol@example.com"),
-		"Dave":    seedPickerMember(t, ctx, db, "Dave", "dave@example.com"),
-		"Erin":    seedPickerMember(t, ctx, db, "Erin", "erin@example.com"),
+		"Alice": seedPickerMember(t, ctx, db, "Alice", "alice@example.com"),
+		"Bob":   seedPickerMember(t, ctx, db, "Bob", "bob@example.com"),
+		"Carol": seedPickerMember(t, ctx, db, "Carol", "carol@example.com"),
+		"Dave":  seedPickerMember(t, ctx, db, "Dave", "dave@example.com"),
+		"Erin":  seedPickerMember(t, ctx, db, "Erin", "erin@example.com"),
 	}
 	date := pickerFutureDate(t, 1)
 
@@ -749,9 +746,9 @@ func TestWriteCoPresenceForPastDate_RecordsAllPairs(t *testing.T) {
 	assert.Equal(t, 6, written, "4 on-site members → C(4,2)=6 pairs")
 
 	// Sanity: re-running is a no-op (UNIQUE).
-	written2, err := svc.WriteCoPresenceForPastDate(ctx, yesterday)
+	written, err = svc.WriteCoPresenceForPastDate(ctx, yesterday)
 	require.NoError(t, err)
-	assert.Equal(t, 0, written2, "second run must insert 0 new rows")
+	assert.Equal(t, 0, written, "second run must insert 0 new rows")
 }
 
 // TestWriteCoPresenceForPastDate_TodayIsNoOp pins the past-date

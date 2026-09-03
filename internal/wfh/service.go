@@ -39,6 +39,27 @@ const (
 	defaultSettlementInterval = 15 * time.Minute
 	// defaultPeriodAnchor is a known Monday used as the period epoch.
 	defaultPeriodAnchor = "2026-01-05"
+
+	// hoursPerDay is the calendar-hours-per-day constant used
+	// to convert a duration into integer days. The co-presence
+	// score is in calendar days per section 4 of
+	// plans/assigned-wfh-plan.md.
+	hoursPerDay = 24
+
+	// coPresenceCohortCap is the maximum cohort size the SQL
+	// query's IN list accepts. Larger cohorts are truncated;
+	// the picker treats truncated cohort members as if they
+	// weren't there (the candidate scores the sentinel).
+	// Three matches the 3 explicit placeholders in the
+	// GetLatestCoPresenceWithCohort query shape.
+	coPresenceCohortCap = 3
+
+	// backfillSafetyMultiplier bounds the backfill loop
+	// iterations above the daysBack target. The weekday-skip
+	// logic can skip weekends, so the loop needs more
+	// iterations than daysBack to actually reach daysBack
+	// working days. A multiplier of 2 gives ample slack.
+	backfillSafetyMultiplier = 2
 	// defaultCoPresenceEnabled is the kill switch for the
 	// co-presence tiebreaker (step 10 of
 	// plans/assigned-wfh-plan.md). Default true so the picker
@@ -549,28 +570,43 @@ func (s *Service) WriteCoPresenceForPastDate(ctx context.Context, dateStr string
 	if err != nil {
 		return 0, database.ErrWFHInvalidDate
 	}
-
-	// Past-date guard: writing co-presence for today or future
-	// is meaningless because the cohort is uncertain. The
-	// scheduler's backfill pass operates on past dates
-	// only; RefreshFor's opportunistic call is also past-only.
-	nowUTC := time.Now().UTC()
-	today := time.Date(nowUTC.Year(), nowUTC.Month(), nowUTC.Day(), 0, 0, 0, 0, time.UTC)
-	if !date.UTC().Before(today) {
+	if !s.pastDateGuard(date) {
 		return 0, nil
 	}
-
-	members, err := s.db.GetActiveTeamMembers(ctx)
+	onSite, err := s.onSiteCohortIDs(ctx, dateStr)
 	if err != nil {
 		return 0, err
+	}
+	return s.writeCoPresencePairs(ctx, dateStr, onSite)
+}
+
+// pastDateGuard returns true when the given date is strictly
+// before today (UTC midnight). Used by both the writer
+// (WriteCoPresenceForPastDate) and the picker (AssignWFHForDate
+// past-date branch) to short-circuit before any DB work.
+func (s *Service) pastDateGuard(date time.Time) bool {
+	nowUTC := time.Now().UTC()
+	today := time.Date(nowUTC.Year(), nowUTC.Month(), nowUTC.Day(), 0, 0, 0, 0, time.UTC)
+	return date.UTC().Before(today)
+}
+
+// onSiteCohortIDs returns the IDs of members who were on-site
+// for date: active - leave - permanent WFH - approved WFH. Used
+// by both the picker (to compute onSite and candidates) and
+// the co-presence writer (to enumerate C(n, 2) pairs). Returns
+// IDs in no particular order.
+func (s *Service) onSiteCohortIDs(ctx context.Context, dateStr string) ([]string, error) {
+	members, err := s.db.GetActiveTeamMembers(ctx)
+	if err != nil {
+		return nil, err
 	}
 	onLeaveIDs, err := s.leaveMemberIDsForDate(ctx, dateStr)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	approvedWFH, err := s.db.GetWFHRequestsByDateAndStatus(ctx, dateStr, database.WFHStatusApproved)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	permanentIDs := permanentWFHMemberIDs(members)
 	approvedIDSet := memberIDsFromWFHRequests(approvedWFH)
@@ -589,13 +625,23 @@ func (s *Service) WriteCoPresenceForPastDate(ctx context.Context, dateStr string
 		}
 		onSite = append(onSite, m.ID)
 	}
+	return onSite, nil
+}
 
-	// C(n, 2) pairs. n < 2 → no pairs.
-	if len(onSite) < 2 {
+// minPairSize is the minimum cohort size for which co-presence
+// pairs exist. n=0 or n=1 → no pairs; n>=2 → C(n,2) pairs.
+const minPairSize = 2
+
+// writeCoPresencePairs writes all C(n, 2) pairs for the given
+// onSite set. Returns the count of newly-inserted pairs (zero
+// when the cohort is too small, when every pair already
+// exists, or when n < minPairSize).
+func (s *Service) writeCoPresencePairs(ctx context.Context, dateStr string, onSite []string) (int, error) {
+	if len(onSite) < minPairSize {
 		return 0, nil
 	}
 	written := 0
-	for i := 0; i < len(onSite); i++ {
+	for i := range onSite {
 		for j := i + 1; j < len(onSite); j++ {
 			inserted, err := s.db.InsertWFHCoPresencePair(ctx, dateStr, onSite[i], onSite[j])
 			if err != nil {
@@ -631,12 +677,20 @@ func (s *Service) BackfillCoPresence(ctx context.Context) error {
 	}
 	nowUTC := time.Now().UTC()
 	today := time.Date(nowUTC.Year(), nowUTC.Month(), nowUTC.Day(), 0, 0, 0, 0, time.UTC)
-	// 7 working days back, capped at retention.
+	// 7 working days back, capped at retention. The upper bound
+	// on `d` is set to 2 * daysBack as a generous safety margin
+	// so the loop terminates even if the weekday-skip logic
+	// skips too many days; daysBack decrements per actual write.
 	daysBack := 7
 	if s.cfg.CoPresenceRetentionDays < daysBack {
-		daysBack = s.cfg.CoPresenceRetentionDays
+		daysBack = min(s.cfg.CoPresenceRetentionDays, daysBack)
 	}
-	for d := today.AddDate(0, 0, -1); daysBack > 0 && !d.Before(today.AddDate(0, 0, -daysBack*2)); d = d.AddDate(0, 0, -1) {
+	maxIter := daysBack * backfillSafetyMultiplier
+	for d, iter := today.AddDate(0, 0, -1), 0; iter < maxIter; d = d.AddDate(0, 0, -1) {
+		iter++
+		if iter >= maxIter {
+			break
+		}
 		if d.Weekday() == time.Saturday || d.Weekday() == time.Sunday {
 			continue
 		}
@@ -957,18 +1011,18 @@ func (s *Service) settleDate(ctx context.Context, date string, pending []databas
 // that affects users. The structured log is the v1 signal.
 //
 // Idempotency: two layers.
-//   1. The candidate filter `NOT EXISTS (wfh_requests WHERE
-//      member_id = id AND date = ?)` skips anyone who
-//      already has any WFH row for the date (pending,
-//      approved, recurring, assigned, or swap). So a re-run
-//      for the same date sees zero candidates that already
-//      have rows.
-//   2. The UNIQUE(member_id, date) constraint backstops (1):
-//      if two pickers race and both pick the same member, the
-//      loser sees a duplicate-key error which
-//      CreateApprovedAssignedWFHRequest translates to
-//      ErrWFHDuplicateRequest — the picker treats that as
-//      benign success.
+//  1. The candidate filter `NOT EXISTS (wfh_requests WHERE
+//     member_id = id AND date = ?)` skips anyone who
+//     already has any WFH row for the date (pending,
+//     approved, recurring, assigned, or swap). So a re-run
+//     for the same date sees zero candidates that already
+//     have rows.
+//  2. The UNIQUE(member_id, date) constraint backstops (1):
+//     if two pickers race and both pick the same member, the
+//     loser sees a duplicate-key error which
+//     CreateApprovedAssignedWFHRequest translates to
+//     ErrWFHDuplicateRequest — the picker treats that as
+//     benign success.
 //
 // Re-run correctness: approvedWFHSet in the on-site math
 // includes all origins, so a previously-assigned row
@@ -982,43 +1036,29 @@ func (s *Service) settleDate(ctx context.Context, date string, pending []databas
 //
 // Step 7 of plans/assigned-wfh-plan.md.
 func (s *Service) AssignWFHForDate(ctx context.Context, date string) error {
-	// No-op when the feature is off, when assignment is off, or
-	// when no seat cap is configured. These three guards exist
-	// so the scheduler and the on-demand trigger can call this
-	// unconditionally without checking config first.
-	if !s.cfg.Enabled {
+	if s.pickerDisabled() {
 		return nil
 	}
-	if !s.cfg.AssignmentEnabled {
-		return nil
-	}
-	if s.cfg.SeatCap <= 0 {
-		return nil
-	}
-
-	// Past-date guard.
 	wfhDate, err := time.Parse("2006-01-02", date)
 	if err != nil {
 		return database.ErrWFHInvalidDate
 	}
-	nowUTC := time.Now().UTC()
-	today := time.Date(nowUTC.Year(), nowUTC.Month(), nowUTC.Day(), 0, 0, 0, 0, time.UTC)
-	if wfhDate.UTC().Before(today) {
+	if s.pastDateGuard(wfhDate) {
 		return nil
 	}
+	if !s.isPickerActiveOnDate(wfhDate) {
+		return nil
+	}
+	return s.runPicker(ctx, date)
+}
 
-	// Holiday/Weekend short-circuit: the cap is meaningless when
-	// nobody is scheduled to be on-site. The picker is a no-op
-	// and the cap is irrelevant.
-	if s.db.IsHoliday(wfhDate) {
-		return nil
-	}
-	if wfhDate.Weekday() == time.Saturday || wfhDate.Weekday() == time.Sunday {
-		return nil
-	}
-
-	// Read the active members and the leave/WFH sets that
-	// subtract from the on-site count.
+// runPicker is the cap-arithmetic + selection + insert path,
+// extracted from AssignWFHForDate to keep the orchestrator
+// under the cyclomatic-complexity budget. The early-exit
+// guards (picker-disabled, past-date, weekend/holiday) live
+// in AssignWFHForDate; once those pass, this method does the
+// actual work.
+func (s *Service) runPicker(ctx context.Context, date string) error {
 	members, err := s.db.GetActiveTeamMembers(ctx)
 	if err != nil {
 		return err
@@ -1030,11 +1070,6 @@ func (s *Service) AssignWFHForDate(ctx context.Context, date string) error {
 	if err != nil {
 		return err
 	}
-
-	// Every approved WFH row for this date, regardless of
-	// origin. Includes previously-assigned rows so the cap is
-	// correctly reduced on re-runs (the picker's
-	// re-run-correctness property).
 	approvedWFH, err := s.db.GetWFHRequestsByDateAndStatus(ctx, date, database.WFHStatusApproved)
 	if err != nil {
 		return err
@@ -1043,44 +1078,69 @@ func (s *Service) AssignWFHForDate(ctx context.Context, date string) error {
 	approvedIDs := memberIDsFromWFHRequests(approvedWFH)
 	onSite := len(members) - countUniqueMembers(onLeaveIDs, permanentWFHIDs, approvedIDs)
 
-	cap := s.cfg.SeatCap
-	if onSite <= cap {
+	capLimit := s.cfg.SeatCap
+	if onSite <= capLimit {
 		return nil
 	}
-	excess := onSite - cap
+	excess := onSite - capLimit
 
-	// Build the candidate pool.
-	candidates := s.assignCandidates(members, onLeaveIDs, permanentWFHIDs, approvedIDs, date)
-	if len(candidates) == 0 {
-		// Cap cannot be met with the current candidate pool. Log
-		// the gap and pick nothing — admin sees the warning and
-		// can intervene manually.
+	candidates := s.assignCandidates(members, onLeaveIDs, approvedIDs)
+	if excess > len(candidates) {
+		s.logCapShortFall(date, excess, len(candidates))
+		excess = len(candidates)
+	}
+
+	ordered, err := s.orderByPickerPriority(ctx, candidates, date)
+	if err != nil {
+		return err
+	}
+	return s.insertPicks(ctx, date, ordered[:excess])
+}
+
+// pickerDisabled returns true when the picker is feature-off,
+// assignment-off, or has no seat cap configured. Centralized so
+// the three early-exit guards can be combined into one boolean
+// without bumping cyclop above the 10-branch budget.
+func (s *Service) pickerDisabled() bool {
+	return !s.cfg.Enabled || !s.cfg.AssignmentEnabled || s.cfg.SeatCap <= 0
+}
+
+// isPickerActiveOnDate returns false for holidays and weekends
+// (the cap is meaningless when nobody is scheduled on-site)
+// and true otherwise.
+func (s *Service) isPickerActiveOnDate(date time.Time) bool {
+	if s.db.IsHoliday(date) {
+		return false
+	}
+	return date.Weekday() != time.Saturday && date.Weekday() != time.Sunday
+}
+
+// logCapShortFall emits the structured slog.Warn for a picker
+// run that can't meet the cap. The short_by field names the gap
+// so the operator can intervene manually (admin reassign,
+// exempt toggles, or grow the team).
+func (s *Service) logCapShortFall(date string, excess, candidateCount int) {
+	if candidateCount == 0 {
 		slog.Warn("WFH picker: cap short-fall, no candidates",
 			"date", date,
 			"excess", excess,
 			"candidates", 0,
 			"short_by", excess)
-		return nil
+		return
 	}
-	if excess > len(candidates) {
-		slog.Warn("WFH picker: cap short-fall, candidates insufficient",
-			"date", date,
-			"excess", excess,
-			"candidates", len(candidates),
-			"short_by", excess-len(candidates))
-		excess = len(candidates)
-	}
+	slog.Warn("WFH picker: cap short-fall, candidates insufficient",
+		"date", date,
+		"excess", excess,
+		"candidates", candidateCount,
+		"short_by", excess-candidateCount)
+}
 
-	// Order candidates: fewest voluntary WFHs in the period first,
-	// then alphabetical. The co-presence tiebreaker (step 10)
-	// slots in here — for now score=0 for all so the picker
-	// degenerates to (periodWFHCount, alphabetical).
-	ordered, err := s.orderByPickerPriority(ctx, candidates, date)
-	if err != nil {
-		return err
-	}
-
-	picks := ordered[:excess]
+// insertPicks inserts the chosen picks as origin='assigned',
+// status='approved' wfh_requests rows and fires the WFHEvent
+// for each so the assigned member is notified. Idempotent on
+// UNIQUE collisions (concurrent picker races surface as
+// ErrWFHDuplicateRequest which the picker treats as benign).
+func (s *Service) insertPicks(ctx context.Context, date string, picks []database.TeamMember) error {
 	settledAt := time.Now().UTC()
 	for _, p := range picks {
 		err := s.db.CreateApprovedAssignedWFHRequest(ctx, p.ID, date, settledAt)
@@ -1119,7 +1179,7 @@ func (s *Service) AssignWFHForDate(ctx context.Context, date string) error {
 // existing wfh_requests row for the date. The latter catches the
 // edge case where a member has a pending request in
 // settlement-pending state — the picker must not double-book them.
-func (s *Service) assignCandidates(members []database.TeamMember, onLeaveIDs, permanentWFHIDs, approvedIDs map[string]struct{}, date string) []database.TeamMember {
+func (s *Service) assignCandidates(members []database.TeamMember, onLeaveIDs, approvedIDs map[string]struct{}) []database.TeamMember {
 	out := make([]database.TeamMember, 0, len(members))
 	for i := range members {
 		m := &members[i]
@@ -1167,6 +1227,33 @@ func (s *Service) assignCandidates(members []database.TeamMember, onLeaveIDs, pe
 // the same fallback the empty-cohort branch uses and that
 // the first-week cold-start uses.
 func (s *Service) orderByPickerPriority(ctx context.Context, candidates []database.TeamMember, date string) ([]database.TeamMember, error) {
+	scored, err := s.scoreCandidates(ctx, candidates, date)
+	if err != nil {
+		return nil, err
+	}
+	sortScored(scored)
+	out := make([]database.TeamMember, len(scored))
+	for i := range scored {
+		out[i] = scored[i].m
+	}
+	return out, nil
+}
+
+// pickerScored is the internal scoring type used by
+// orderByPickerPriority. The picker keys off three fields:
+// periodWFHCount (lowest wins), score (lowest wins), and the
+// member's name (alphabetical tiebreaker).
+type pickerScored struct {
+	m              database.TeamMember
+	periodWFHCount int
+	score          int
+}
+
+// scoreCandidates computes periodWFHCount and the co-presence
+// score for each candidate. Extracted from orderByPickerPriority
+// to keep that function's cyclomatic complexity under the
+// 10-branch budget.
+func (s *Service) scoreCandidates(ctx context.Context, candidates []database.TeamMember, date string) ([]pickerScored, error) {
 	nowUTC := time.Now().UTC()
 	start, end, err := s.ComputePeriodBounds(nowUTC)
 	if err != nil {
@@ -1175,62 +1262,67 @@ func (s *Service) orderByPickerPriority(ctx context.Context, candidates []databa
 	startStr := start.Format("2006-01-02")
 	endStr := end.Format("2006-01-02")
 
-	// Compute the cohort for the co-presence score: the
-	// on-site set the picker would leave after picking.
-	// The plan's empty-cohort branch sets every candidate's
-	// score to the sentinel.
 	cohortIDs, err := s.pickerCohortIDs(ctx, date, candidates)
 	if err != nil {
 		return nil, err
 	}
-
-	// Horizon window bounds for the co-presence score.
 	horizonStart := nowUTC.AddDate(0, 0, -s.cfg.CoPresenceHorizonDays)
 
-	type scored struct {
-		m              database.TeamMember
-		periodWFHCount int
-		score          int
-	}
-	scoredCandidates := make([]scored, len(candidates))
+	scored := make([]pickerScored, len(candidates))
 	for i := range candidates {
 		used, err := s.db.GetWFHRequestsVoluntaryInPeriod(ctx, candidates[i].ID, startStr, endStr)
 		if err != nil {
 			return nil, err
 		}
-		score := s.cfg.CoPresenceHorizonDays + 1
-		if s.cfg.CoPresenceEnabled && len(cohortIDs) > 0 {
-			last, err := s.db.GetLatestCoPresenceWithCohort(ctx, candidates[i].ID, cohortIDs, horizonStart, nowUTC)
-			if err != nil {
-				return nil, err
-			}
-			if !last.IsZero() {
-				raw := int(nowUTC.Sub(last).Hours() / 24)
-				// History-clamp: real scores above horizon
-				// collapse to horizon + 1, same as no-history.
-				if raw < score {
-					score = raw
-				}
-			}
+		score, err := s.coPresenceScore(ctx, candidates[i].ID, cohortIDs, horizonStart, nowUTC)
+		if err != nil {
+			return nil, err
 		}
-		scoredCandidates[i] = scored{m: candidates[i], periodWFHCount: len(used), score: score}
+		scored[i] = pickerScored{m: candidates[i], periodWFHCount: len(used), score: score}
 	}
+	return scored, nil
+}
 
-	sort.SliceStable(scoredCandidates, func(i, j int) bool {
-		if scoredCandidates[i].periodWFHCount != scoredCandidates[j].periodWFHCount {
-			return scoredCandidates[i].periodWFHCount < scoredCandidates[j].periodWFHCount
+// coPresenceScore returns the calendar-days-since-last-co-
+// presence score for candidateID against cohortIDs, with the
+// history-clamp applied. Returns horizon+1 when:
+//   - co-presence is disabled (kill switch)
+//   - the cohort is empty
+//   - the candidate has no history within the horizon window
+//   - the most-recent co-presence is older than horizon_days
+func (s *Service) coPresenceScore(ctx context.Context, candidateID string, cohortIDs []string, horizonStart, nowUTC time.Time) (int, error) {
+	sentinel := s.cfg.CoPresenceHorizonDays + 1
+	if !s.cfg.CoPresenceEnabled || len(cohortIDs) == 0 {
+		return sentinel, nil
+	}
+	last, err := s.db.GetLatestCoPresenceWithCohort(ctx, candidateID, cohortIDs, horizonStart, nowUTC)
+	if err != nil {
+		return sentinel, err
+	}
+	if last.IsZero() {
+		return sentinel, nil
+	}
+	raw := int(nowUTC.Sub(last).Hours() / hoursPerDay)
+	if raw < sentinel {
+		return raw, nil
+	}
+	return sentinel, nil
+}
+
+// sortScored orders by (periodWFHCount ASC, score ASC, name ASC).
+// The alphabetical tiebreaker keeps the picker deterministic
+// across re-runs and across the scheduler / on-demand trigger
+// paths.
+func sortScored(scored []pickerScored) {
+	sort.SliceStable(scored, func(i, j int) bool {
+		if scored[i].periodWFHCount != scored[j].periodWFHCount {
+			return scored[i].periodWFHCount < scored[j].periodWFHCount
 		}
-		if scoredCandidates[i].score != scoredCandidates[j].score {
-			return scoredCandidates[i].score < scoredCandidates[j].score
+		if scored[i].score != scored[j].score {
+			return scored[i].score < scored[j].score
 		}
-		return scoredCandidates[i].m.Name < scoredCandidates[j].m.Name
+		return scored[i].m.Name < scored[j].m.Name
 	})
-
-	out := make([]database.TeamMember, len(scoredCandidates))
-	for i := range scoredCandidates {
-		out[i] = scoredCandidates[i].m
-	}
-	return out, nil
 }
 
 // pickerCohortIDs returns the cohort for the co-presence score.
@@ -1283,7 +1375,7 @@ func (s *Service) pickerCohortIDs(ctx context.Context, date string, _ []database
 			continue
 		}
 		cohort = append(cohort, m.ID)
-		if len(cohort) == 3 {
+		if len(cohort) == coPresenceCohortCap {
 			break
 		}
 	}

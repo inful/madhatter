@@ -120,17 +120,18 @@ type Session struct {
 }
 
 type TeamMember struct {
-	ID                    string        `json:"id"`
-	Name                  string        `json:"name"`
-	Email                 string        `json:"email"`
-	IsActive              sql.NullInt64 `json:"is_active"`
-	IsPermanentWfh        int64         `json:"is_permanent_wfh"`
-	RecurringWfhMonday    int64         `json:"recurring_wfh_monday"`
-	RecurringWfhTuesday   int64         `json:"recurring_wfh_tuesday"`
-	RecurringWfhWednesday int64         `json:"recurring_wfh_wednesday"`
-	RecurringWfhThursday  int64         `json:"recurring_wfh_thursday"`
-	RecurringWfhFriday    int64         `json:"recurring_wfh_friday"`
-	CreatedAt             sql.NullTime  `json:"created_at"`
+	ID                     string        `json:"id"`
+	Name                   string        `json:"name"`
+	Email                  string        `json:"email"`
+	IsActive               sql.NullInt64 `json:"is_active"`
+	IsPermanentWfh         int64         `json:"is_permanent_wfh"`
+	IsExemptFromAssignment int64         `json:"is_exempt_from_assignment"`
+	RecurringWfhMonday     int64         `json:"recurring_wfh_monday"`
+	RecurringWfhTuesday    int64         `json:"recurring_wfh_tuesday"`
+	RecurringWfhWednesday  int64         `json:"recurring_wfh_wednesday"`
+	RecurringWfhThursday   int64         `json:"recurring_wfh_thursday"`
+	RecurringWfhFriday     int64         `json:"recurring_wfh_friday"`
+	CreatedAt              sql.NullTime  `json:"created_at"`
 }
 
 type User struct {

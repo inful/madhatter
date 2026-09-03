@@ -1,0 +1,15 @@
+-- Allow admins to mark a member as exempt from the seat-cap picker.
+-- An exempt member is never selected as an involuntary Assigned WFH
+-- candidate, but their voluntary WFHs still count against the
+-- on-site capacity math (their approved WFHs still subtract from
+-- the on-site set in the picker) and they can still volunteer via
+-- a swap. This is a separate concept from
+-- team_members.is_permanent_wfh (which is a permanent on-site
+-- exception; the picker also excludes permanent-WFH members from
+-- its candidate pool).
+--
+-- DEFAULT 0 keeps every existing member in the "can be assigned"
+-- bucket. The picker (planned for step 6 of the implementation
+-- order) reads this flag directly via the existing GetActiveTeamMembers
+-- query which already SELECTs every team_members column.
+ALTER TABLE team_members ADD COLUMN is_exempt_from_assignment INTEGER NOT NULL DEFAULT 0;

@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS team_members (
     email TEXT UNIQUE NOT NULL,
     is_active INTEGER DEFAULT 1,
     is_permanent_wfh INTEGER NOT NULL DEFAULT 0,
+    is_exempt_from_assignment INTEGER NOT NULL DEFAULT 0,
     recurring_wfh_monday INTEGER NOT NULL DEFAULT 0,
     recurring_wfh_tuesday INTEGER NOT NULL DEFAULT 0,
     recurring_wfh_wednesday INTEGER NOT NULL DEFAULT 0,

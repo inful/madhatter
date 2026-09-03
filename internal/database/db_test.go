@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -113,6 +114,65 @@ func TestSetTeamMemberRecurringWFHDays(t *testing.T) {
 	require.True(t, member.RecurringWFHThursday)
 	require.False(t, member.RecurringWFHFriday)
 	require.False(t, member.IsPermanentWFH)
+}
+
+// TestSetTeamMemberExemptFromAssignment_Roundtrip pins the
+// seat-cap-picker exemption flag (migration 000026): default is
+// false, set true persists across reads, set false restores the
+// default. The picker (step 6 of plans/assigned-wfh-plan.md)
+// reads this flag via GetActiveTeamMembers; an exempt member is
+// never picked as an involuntary Assigned WFH candidate but their
+// voluntary WFHs still count against on-site capacity.
+func TestSetTeamMemberExemptFromAssignment_Roundtrip(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	// Default: not exempt.
+	m, err := db.GetMemberByID(ctx, memberID)
+	require.NoError(t, err)
+	require.False(t, m.IsExemptFromAssignment, "default exemption is false")
+
+	// Set true, reads back true.
+	require.NoError(t, db.SetTeamMemberExemptFromAssignment(ctx, memberID, true))
+	m, err = db.GetMemberByID(ctx, memberID)
+	require.NoError(t, err)
+	require.True(t, m.IsExemptFromAssignment)
+
+	// Set false, reads back false.
+	require.NoError(t, db.SetTeamMemberExemptFromAssignment(ctx, memberID, false))
+	m, err = db.GetMemberByID(ctx, memberID)
+	require.NoError(t, err)
+	require.False(t, m.IsExemptFromAssignment)
+}
+
+// TestSetTeamMemberExemptFromAssignment_IndependentOfPermanentWFH
+// pins the conceptual split: is_permanent_wfh is a "never on-site"
+// flag (set via SetTeamMemberPermanentWFH), is_exempt_from_assignment
+// is a "skip in picker rotation" flag. They are independent columns
+// on team_members and the setters do not touch each other.
+func TestSetTeamMemberExemptFromAssignment_IndependentOfPermanentWFH(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	require.NoError(t, db.SetTeamMemberExemptFromAssignment(ctx, memberID, true))
+	m, err := db.GetMemberByID(ctx, memberID)
+	require.NoError(t, err)
+	require.True(t, m.IsExemptFromAssignment)
+	require.False(t, m.IsPermanentWFH, "exemption must not flip the permanent-WFH flag")
+
+	require.NoError(t, db.SetTeamMemberPermanentWFH(ctx, memberID, true))
+	m, err = db.GetMemberByID(ctx, memberID)
+	require.NoError(t, err)
+	require.True(t, m.IsPermanentWFH)
+	require.True(t, m.IsExemptFromAssignment, "permanent-WFH must not flip the exemption flag")
 }
 
 func TestCreateWFHRequest_RecurringDayReturnsDuplicateAfterMaterialization(t *testing.T) {
@@ -721,7 +781,19 @@ func TestValidateRestoreCandidate_OlderBackupVersion_IsAccepted(t *testing.T) {
 	require.NoError(t, err)
 
 	if liveVersion > 0 {
-		require.NoError(t, MigrateToVersion(candidateDB, liveVersion-1))
+		// Roll the candidate DB back one version to simulate the
+		// "older backup" scenario. Use the highest migration that
+		// has a down script available, since migration version
+		// numbers can have gaps during phased rollouts (see
+		// plans/assigned-wfh-plan.md — migration 25 lands last of
+		// the four, leaving a gap between 24 and 26 in Phase 1).
+		target := liveVersion - 1
+		if !hasMigrationDown(target) {
+			target = latestMigrationWithDownBelow(liveVersion)
+		}
+		if target > 0 {
+			require.NoError(t, MigrateToVersion(candidateDB, target))
+		}
 	}
 
 	require.NoError(t, candidateDB.Close())
@@ -770,4 +842,34 @@ func TestApplyRestoreCandidate_CopyFailure_RollsBack(t *testing.T) {
 	members, err := db.GetActiveTeamMembers(ctx)
 	require.NoError(t, err)
 	require.Len(t, members, 2)
+}
+
+// hasMigrationDown reports whether a `<N>_<description>.down.sql`
+// file exists for the given migration version in the migrations
+// directory the runtime resolves (MIGRATIONS_PATH env var or the
+// conventional relative path). Used by rollback tests that need
+// to skip versions whose down migration is not yet written during
+// a phased rollout — see plans/assigned-wfh-plan.md (migration
+// 25 lands after 26/27, leaving gaps in Phase 1).
+func hasMigrationDown(version uint) bool {
+	path, err := getMigrationsPath()
+	if err != nil {
+		return false
+	}
+	matches, err := filepath.Glob(filepath.Join(path, fmt.Sprintf("%07d_*.down.sql", version)))
+	if err != nil {
+		return false
+	}
+	return len(matches) > 0
+}
+
+// latestMigrationWithDownBelow returns the highest version strictly
+// below upperLimit that has a down script. Returns 0 if none.
+func latestMigrationWithDownBelow(upperLimit uint) uint {
+	for v := upperLimit - 1; v > 0; v-- {
+		if hasMigrationDown(v) {
+			return v
+		}
+	}
+	return 0
 }

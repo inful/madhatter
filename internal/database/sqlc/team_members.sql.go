@@ -58,7 +58,7 @@ func (q *Queries) DeleteTeamMember(ctx context.Context, id string) error {
 }
 
 const getActiveTeamMembers = `-- name: GetActiveTeamMembers :many
-SELECT id, name, email, is_active, is_permanent_wfh,
+SELECT id, name, email, is_active, is_permanent_wfh, is_exempt_from_assignment,
 	   recurring_wfh_monday, recurring_wfh_tuesday, recurring_wfh_wednesday,
 	   recurring_wfh_thursday, recurring_wfh_friday, created_at
 FROM team_members
@@ -81,6 +81,7 @@ func (q *Queries) GetActiveTeamMembers(ctx context.Context) ([]TeamMember, error
 			&i.Email,
 			&i.IsActive,
 			&i.IsPermanentWfh,
+			&i.IsExemptFromAssignment,
 			&i.RecurringWfhMonday,
 			&i.RecurringWfhTuesday,
 			&i.RecurringWfhWednesday,
@@ -102,7 +103,7 @@ func (q *Queries) GetActiveTeamMembers(ctx context.Context) ([]TeamMember, error
 }
 
 const getMemberByEmail = `-- name: GetMemberByEmail :one
-SELECT id, name, email, is_active, is_permanent_wfh,
+SELECT id, name, email, is_active, is_permanent_wfh, is_exempt_from_assignment,
 	   recurring_wfh_monday, recurring_wfh_tuesday, recurring_wfh_wednesday,
 	   recurring_wfh_thursday, recurring_wfh_friday, created_at
 FROM team_members
@@ -118,6 +119,7 @@ func (q *Queries) GetMemberByEmail(ctx context.Context, email string) (TeamMembe
 		&i.Email,
 		&i.IsActive,
 		&i.IsPermanentWfh,
+		&i.IsExemptFromAssignment,
 		&i.RecurringWfhMonday,
 		&i.RecurringWfhTuesday,
 		&i.RecurringWfhWednesday,
@@ -129,7 +131,7 @@ func (q *Queries) GetMemberByEmail(ctx context.Context, email string) (TeamMembe
 }
 
 const getMemberByID = `-- name: GetMemberByID :one
-SELECT id, name, email, is_active, is_permanent_wfh,
+SELECT id, name, email, is_active, is_permanent_wfh, is_exempt_from_assignment,
 	   recurring_wfh_monday, recurring_wfh_tuesday, recurring_wfh_wednesday,
 	   recurring_wfh_thursday, recurring_wfh_friday, created_at
 FROM team_members
@@ -145,6 +147,7 @@ func (q *Queries) GetMemberByID(ctx context.Context, id string) (TeamMember, err
 		&i.Email,
 		&i.IsActive,
 		&i.IsPermanentWfh,
+		&i.IsExemptFromAssignment,
 		&i.RecurringWfhMonday,
 		&i.RecurringWfhTuesday,
 		&i.RecurringWfhWednesday,
@@ -156,7 +159,7 @@ func (q *Queries) GetMemberByID(ctx context.Context, id string) (TeamMember, err
 }
 
 const getMemberByToken = `-- name: GetMemberByToken :one
-SELECT tm.id, tm.name, tm.email, tm.is_active, tm.is_permanent_wfh,
+SELECT tm.id, tm.name, tm.email, tm.is_active, tm.is_permanent_wfh, tm.is_exempt_from_assignment,
 	   tm.recurring_wfh_monday, tm.recurring_wfh_tuesday, tm.recurring_wfh_wednesday,
 	   tm.recurring_wfh_thursday, tm.recurring_wfh_friday, tm.created_at
 FROM calendar_subscriptions cs
@@ -173,6 +176,7 @@ func (q *Queries) GetMemberByToken(ctx context.Context, token string) (TeamMembe
 		&i.Email,
 		&i.IsActive,
 		&i.IsPermanentWfh,
+		&i.IsExemptFromAssignment,
 		&i.RecurringWfhMonday,
 		&i.RecurringWfhTuesday,
 		&i.RecurringWfhWednesday,
@@ -181,6 +185,25 @@ func (q *Queries) GetMemberByToken(ctx context.Context, token string) (TeamMembe
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const setTeamMemberExemptFromAssignment = `-- name: SetTeamMemberExemptFromAssignment :exec
+UPDATE team_members
+SET is_exempt_from_assignment = ?
+WHERE id = ?
+`
+
+type SetTeamMemberExemptFromAssignmentParams struct {
+	IsExemptFromAssignment int64  `json:"is_exempt_from_assignment"`
+	ID                     string `json:"id"`
+}
+
+// Toggle the seat-cap-picker exemption. Mirrors SetTeamMemberPermanentWFH
+// (also an :exec UPDATE) so the team-member-edit admin form can call
+// both setters side-by-side. The picker reads this flag in step 6.
+func (q *Queries) SetTeamMemberExemptFromAssignment(ctx context.Context, arg SetTeamMemberExemptFromAssignmentParams) error {
+	_, err := q.db.ExecContext(ctx, setTeamMemberExemptFromAssignment, arg.IsExemptFromAssignment, arg.ID)
+	return err
 }
 
 const setTeamMemberPermanentWFH = `-- name: SetTeamMemberPermanentWFH :exec

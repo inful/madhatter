@@ -139,6 +139,7 @@ func teamMemberFromSQLC(m sqlc.TeamMember) TeamMember {
 		RecurringWFHWednesday: m.RecurringWfhWednesday == 1,
 		RecurringWFHThursday:  m.RecurringWfhThursday == 1,
 		RecurringWFHFriday:    m.RecurringWfhFriday == 1,
+		IsExemptFromAssignment: m.IsExemptFromAssignment == 1,
 		CreatedAt:             m.CreatedAt.Time,
 	}
 	tm.IsPermanentWFH = tm.HasPermanentRecurringWFH()
@@ -197,6 +198,34 @@ func (db *DB) SetTeamMemberPermanentWFH(ctx context.Context, id string, isPerman
 	}
 
 	return db.SetTeamMemberRecurringWFHDays(ctx, id, days)
+}
+
+// SetTeamMemberExemptFromAssignment toggles whether the seat-cap
+// picker considers this member as a candidate for involuntary
+// Assigned WFH. Default is false (the picker considers the
+// member). Used by the team-member-edit admin form (step 17 of
+// plans/assigned-wfh-plan.md) and read by the picker in step 6.
+//
+// Separate from is_permanent_wfh: a permanent-WFH member is also
+// excluded from the picker pool, but for a different reason (they
+// don't normally come on-site at all). An exempt member still
+// shows up on-site on most days but the admin wants to keep them
+// out of the rotation — they can still volunteer via a swap.
+func (db *DB) SetTeamMemberExemptFromAssignment(ctx context.Context, id string, exempt bool) error {
+	if id == "" {
+		return errors.New("id cannot be empty")
+	}
+	return db.queries.SetTeamMemberExemptFromAssignment(ctx, sqlc.SetTeamMemberExemptFromAssignmentParams{
+		IsExemptFromAssignment: boolToInt(exempt),
+		ID:                    id,
+	})
+}
+
+func boolToInt(v bool) int64 {
+	if v {
+		return 1
+	}
+	return 0
 }
 
 func (db *DB) SetTeamMemberRecurringWFHDays(ctx context.Context, id string, days RecurringWFHDays) error {
@@ -422,13 +451,6 @@ func getNullString(nullStr sql.NullString) *string {
 		return &nullStr.String
 	}
 	return nil
-}
-
-func boolToInt(b bool) int64 {
-	if b {
-		return 1
-	}
-	return 0
 }
 
 // CreateAPIToken creates a new API token for a user with optional expiration.

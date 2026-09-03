@@ -21,8 +21,17 @@ type TeamMember struct {
 	RecurringWFHThursday  bool   `json:"recurring_wfh_thursday"`
 	RecurringWFHFriday    bool   `json:"recurring_wfh_friday"`
 	// Deprecated semantic alias; true when all weekdays are recurring WFH.
-	IsPermanentWFH bool      `json:"is_permanent_wfh"`
-	CreatedAt      time.Time `json:"created_at"`
+	IsPermanentWFH bool `json:"is_permanent_wfh"`
+	// IsExemptFromAssignment is true when an admin has marked the
+	// member as exempt from the seat-cap picker. An exempt member
+	// is never selected as an involuntary Assigned WFH candidate,
+	// but their voluntary WFHs still count against the on-site
+	// capacity math and they can still volunteer via a swap.
+	// Separate concept from IsPermanentWFH (a permanent on-site
+	// exception; the picker also excludes permanent-WFH members
+	// from its candidate pool).
+	IsExemptFromAssignment bool       `json:"is_exempt_from_assignment"`
+	CreatedAt              time.Time  `json:"created_at"`
 }
 
 // IsRecurringWFHOn reports whether the member has a contractual recurring WFH day on date.

@@ -202,6 +202,10 @@ type Querier interface {
 	// 0 to disable. disabled_at is set/cleared by the application
 	// before calling this query.
 	SetNotificationEmailEnabled(ctx context.Context, arg SetNotificationEmailEnabledParams) error
+	// Toggle the seat-cap-picker exemption. Mirrors SetTeamMemberPermanentWFH
+	// (also an :exec UPDATE) so the team-member-edit admin form can call
+	// both setters side-by-side. The picker reads this flag in step 6.
+	SetTeamMemberExemptFromAssignment(ctx context.Context, arg SetTeamMemberExemptFromAssignmentParams) error
 	SetTeamMemberPermanentWFH(ctx context.Context, arg SetTeamMemberPermanentWFHParams) error
 	SetTeamMemberRecurringWFHDays(ctx context.Context, arg SetTeamMemberRecurringWFHDaysParams) error
 	TouchMeetingsSubscription(ctx context.Context, token string) error

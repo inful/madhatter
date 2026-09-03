@@ -3,9 +3,71 @@
 {{end}}
 
 {{define "wfh_request_styles"}}
+<style>
+/* Hide the inactive period banner. The inline script toggles this
+   class on the current-period banner based on the selected date's
+   period bounds. */
+.wfh-period-banner { display: none; }
+.wfh-period-banner.is-active { display: flex; }
+</style>
 {{end}}
 
 {{define "wfh_request_scripts"}}
+<script>
+// wfhRequestForm wires up the date input so the quota banner always
+// reflects the period the user is requesting for, not always the
+// current period. Pre-renders both period banners server-side and
+// swaps visibility client-side. Disables the submit button when the
+// selected period is exhausted or the date is a holiday.
+(function() {
+    const dateInput = document.getElementById('date');
+    const submit = document.getElementById('wfh-submit');
+    const help = document.getElementById('wfh-disabled-help');
+    if (!dateInput || !submit || !help) { return; }
+
+    const banners = Array.from(document.querySelectorAll('.wfh-period-banner'));
+    const todayPeriod = document.getElementById('wfh-period-today');
+    const nextPeriod = document.getElementById('wfh-period-next');
+
+    function bannerFor(date) {
+        if (!date) { return null; }
+        if (todayPeriod && todayPeriod.dataset.periodEnd >= date &&
+            todayPeriod.dataset.periodStart <= date) {
+            return todayPeriod;
+        }
+        if (nextPeriod && nextPeriod.dataset.periodStart <= date &&
+            nextPeriod.dataset.periodEnd > date) {
+            return nextPeriod;
+        }
+        return null;
+    }
+
+    function apply(date) {
+        banners.forEach(b => b.classList.remove('is-active'));
+        const banner = bannerFor(date);
+        if (banner) {
+            banner.classList.add('is-active');
+            const remaining = parseInt(banner.dataset.remaining, 10);
+            submit.disabled = remaining <= 0;
+            if (remaining <= 0) {
+                help.textContent = 'You have used your full quota for this period (' +
+                    banner.dataset.periodStart + ' – ' + banner.dataset.periodEnd +
+                    '). Pick a date in a later period or ask an admin to override.';
+            } else {
+                help.textContent = '';
+            }
+        }
+    }
+
+    dateInput.addEventListener('change', function() {
+        apply(this.value);
+    });
+    // Also pre-apply on initial load so a deep-link ?date=… picks
+    // the right banner; renderWFHRequestFormAt sets .SelectedDate
+    // into the input value before this script runs.
+    apply(dateInput.value);
+})();
+</script>
 {{end}}
 
 {{define "wfh_request_title"}}Request Work From Home{{end}}
@@ -20,11 +82,38 @@
 </div>
 {{end}}
 
-{{if .Quota}}
-<div class="notification is-info is-light mb-4">
+{{if .SelectedDateIsHoliday}}
+<div class="notification is-warning is-light mb-4">
+    <i class="fas fa-calendar-times mr-2"></i>
+    <strong>{{.SelectedDate}}</strong> is a public holiday — no WFH request needed.
+</div>
+{{end}}
+
+{{if .CurrentPeriodQuota}}
+<div id="wfh-period-today"
+     class="notification wfh-period-banner is-info is-light mb-4 {{if eq .Quota.PeriodStart .CurrentPeriodQuota.PeriodStart}}is-active{{end}}"
+     data-period-start="{{.CurrentPeriodQuota.PeriodStart}}"
+     data-period-end="{{.CurrentPeriodQuota.PeriodEnd}}"
+     data-remaining="{{.CurrentPeriodQuota.Remaining}}">
     <i class="fas fa-info-circle mr-2"></i>
-    WFH quota for period <strong>{{.Quota.PeriodStart}}</strong> to <strong>{{.Quota.PeriodEnd}}</strong>:
-    <strong>{{.Quota.Used}}</strong> used, <strong>{{.Quota.Remaining}}</strong> remaining.
+    WFH quota for <strong>this</strong> period
+    (<strong>{{.CurrentPeriodQuota.PeriodStart}}</strong> to <strong>{{.CurrentPeriodQuota.PeriodEnd}}</strong>):
+    <strong>{{.CurrentPeriodQuota.Used}}</strong> used,
+    <strong>{{.CurrentPeriodQuota.Remaining}}</strong> remaining.
+</div>
+{{end}}
+
+{{if .NextPeriodQuota}}
+<div id="wfh-period-next"
+     class="notification wfh-period-banner is-info is-light mb-4 {{if eq .Quota.PeriodStart .NextPeriodQuota.PeriodStart}}is-active{{end}}"
+     data-period-start="{{.NextPeriodQuota.PeriodStart}}"
+     data-period-end="{{.NextPeriodQuota.PeriodEnd}}"
+     data-remaining="{{.NextPeriodQuota.Remaining}}">
+    <i class="fas fa-info-circle mr-2"></i>
+    WFH quota for the <strong>next</strong> period
+    (<strong>{{.NextPeriodQuota.PeriodStart}}</strong> to <strong>{{.NextPeriodQuota.PeriodEnd}}</strong>):
+    <strong>{{.NextPeriodQuota.Used}}</strong> used,
+    <strong>{{.NextPeriodQuota.Remaining}}</strong> remaining.
 </div>
 {{end}}
 
@@ -40,6 +129,7 @@
                 <label class="label" for="date">Date</label>
                 <div class="control">
                     <input class="input" type="date" id="date" name="date"
+                        value="{{.SelectedDate}}"
                         min="{{.Today}}" {{if .MaxRequestDate}}max="{{.MaxRequestDate}}"{{end}} required>
                 </div>
                 {{if .MaxRequestDate}}
@@ -47,11 +137,13 @@
                 {{else}}
                 <p class="help">Select a future working day to work from home.</p>
                 {{end}}
+                <p id="wfh-disabled-help" class="help has-text-danger"></p>
             </div>
 
             <div class="field is-grouped mt-4">
                 <div class="control">
-                    <button type="submit" class="button is-primary">
+                    <button id="wfh-submit" type="submit" class="button is-primary"
+                        {{if or .QuotaExhausted .SelectedDateIsHoliday}}disabled{{end}}>
                         <span class="icon"><i class="fas fa-paper-plane"></i></span>
                         <span>Submit Request</span>
                     </button>

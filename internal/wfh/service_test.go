@@ -1468,3 +1468,108 @@ func TestSettlePendingRequests_DenialReasonCarriesFloorValue(t *testing.T) {
 		"the reason must surface the floor value (2) so the user can correlate with the dashboard")
 	_ = aliceReq
 }
+
+// -- Per-period quota + holiday helpers -------------------------------------
+
+// TestGetQuotaStatusForDate_MirrorsCheckQuotaAcrossPeriods pins the
+// per-period quota helper used by the request form to surface a
+// period-aware banner. Two key properties:
+//
+//  1. The helper returns the same answer CheckQuota would for the
+//     *same* date — they share the period-computation logic.
+//  2. A fresh member with 0 days used in the *next* period has
+//     Remaining=2 there even when the *current* period is
+//     exhausted. The form must show this so a user with "no tokens
+//     this month" can still request for next month.
+func TestGetQuotaStatusForDate_MirrorsCheckQuotaAcrossPeriods(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	svc := NewService(db, testConfig())
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	today := time.Now().UTC()
+
+	// (1) Fresh member, today: helper and CheckQuota agree.
+	status, err := svc.GetQuotaStatusForDate(ctx, memberID, today)
+	require.NoError(t, err)
+	assert.Equal(t, 0, status.Used)
+	assert.Equal(t, 2, status.Remaining)
+	hasQuota, err := svc.CheckQuota(ctx, memberID, today.Format("2006-01-02"))
+	require.NoError(t, err)
+	assert.True(t, hasQuota, "fresh member must have quota today")
+
+	// (2) Fill the current period to the max so current Remaining=0.
+	// Pick the last two days of the current period so the rows are
+	// in the future and CreateWFHRequest's date guard accepts them.
+	_, currentEnd, err := svc.ComputePeriodBounds(today)
+	require.NoError(t, err)
+	_, err = db.CreateWFHRequest(ctx, memberID,
+		currentEnd.AddDate(0, 0, -2).Format("2006-01-02"))
+	require.NoError(t, err)
+	_, err = db.CreateWFHRequest(ctx, memberID,
+		currentEnd.AddDate(0, 0, -1).Format("2006-01-02"))
+	require.NoError(t, err)
+
+	// (2a) Today: Remaining=0, CheckQuota refuses.
+	status, err = svc.GetQuotaStatusForDate(ctx, memberID, today)
+	require.NoError(t, err)
+	assert.Equal(t, 2, status.Used)
+	assert.Equal(t, 0, status.Remaining, "current period must be exhausted")
+	hasQuota, err = svc.CheckQuota(ctx, memberID, today.Format("2006-01-02"))
+	require.NoError(t, err)
+	assert.False(t, hasQuota, "CheckQuota must refuse when current period is exhausted")
+
+	// (2b) A date 14 days out (next period, PeriodDays=7): the
+	// helper must report Remaining=2 — the quota resets at the
+	// period boundary, not at the end of the horizon.
+	farFuture := today.AddDate(0, 0, 14)
+	farFutureStr := farFuture.Format("2006-01-02")
+	status, err = svc.GetQuotaStatusForDate(ctx, memberID, farFuture)
+	require.NoError(t, err)
+	assert.Equal(t, 0, status.Used,
+		"next-period quota must NOT carry over the current period's usage")
+	assert.Equal(t, 2, status.Remaining,
+		"next-period quota must be full (MaxDaysPerPeriod)")
+	hasQuota, err = svc.CheckQuota(ctx, memberID, farFutureStr)
+	require.NoError(t, err)
+	assert.True(t, hasQuota,
+		"CheckQuota must allow a request in a future period even when the current period is exhausted")
+
+	// (2c) The two helpers must agree on the period bounds for the
+	// far-future date — the form's banner data must match what
+	// CheckQuota would compute on submit.
+	futureStart, futureEnd, err := svc.ComputePeriodBounds(farFuture)
+	require.NoError(t, err)
+	assert.Equal(t, futureStart.Format("2006-01-02"), status.PeriodStart)
+	assert.Equal(t, futureEnd.Format("2006-01-02"), status.PeriodEnd)
+}
+
+// TestService_IsHoliday_DelegatesToDB pins the holiday short-circuit
+// used by the form to disable the submit button when the user picks a
+// date that's a public holiday. Mirrors the CheckQuota
+// ErrWFHOnHoliday guard at the form layer so the user doesn't have
+// to round-trip to learn the date is invalid.
+func TestService_IsHoliday_DelegatesToDB(t *testing.T) {
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	svc := NewService(db, testConfig())
+
+	holiday := time.Now().UTC().AddDate(0, 0, 3).Format("2006-01-02")
+	db.SetHolidayChecker(func(t time.Time) bool {
+		return t.Format("2006-01-02") == holiday
+	})
+	t.Cleanup(func() { db.SetHolidayChecker(nil) })
+
+	assert.True(t, svc.IsHoliday(holiday),
+		"a registered holiday must be reported as such")
+	assert.False(t, svc.IsHoliday(time.Now().UTC().Format("2006-01-02")),
+		"a non-holiday must be reported as such")
+	// Unparseable input must be a no-op rather than a panic —
+	// the form layer treats it as a separate error.
+	assert.False(t, svc.IsHoliday("not-a-date"),
+		"an unparseable date must not be reported as a holiday")
+}

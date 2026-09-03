@@ -688,3 +688,286 @@ func TestHandleWFHReportToday_QuotaExhausted_FlashesError(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, rows, "quota-exhausted must not create a wfh_requests row for today")
 }
+
+// -- Selected-date-aware quota banner --------------------------------------
+
+// newRenderFormTestHandler wires up a Handler with a deterministic WFH
+// service. Tests in this file use it to assert the rendered form's quota
+// banner state (active banner, submit-button disabled attribute).
+func newRenderFormTestHandler(t *testing.T, db *database.DB, cfg wfh.Config) *Handler {
+	t.Helper()
+	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+	if cfg.Enabled {
+		h.wfhService = wfh.NewService(db, cfg)
+	}
+	return h
+}
+
+// TestRenderWFHRequestForm_CurrentPeriodBannerIsActiveByDefault pins the
+// default state: GET /wfh/request with no ?date= must render BOTH period
+// banners (current + next) with the current-period banner marked
+// is-active, and the submit button must be enabled when the user has
+// unused quota in the current period.
+func TestRenderWFHRequestForm_CurrentPeriodBannerIsActiveByDefault(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupSwapTestDB(t)
+	defer cleanup()
+
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	h := newRenderFormTestHandler(t, db, wfh.Config{
+		Enabled:             true,
+		MinOnsitePercentage: 50,
+		MinOnsiteAbsolute:   1,
+		MaxDaysPerPeriod:    2,
+		PeriodDays:          7,
+		PeriodAnchor:        "2026-01-05",
+		SettlementDays:      2,
+		RequestHorizonDays:  90,
+	})
+
+	rr := httptest.NewRecorder()
+	h.renderWFHRequestFormAt(rr,
+		httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/wfh/request", nil),
+		map[string]any{"Template": "wfh_request"}, memberID, "", "")
+	out := rr.Body.String()
+
+	assert.Contains(t, out, `id="wfh-period-today"`, "current period banner must render")
+	assert.Contains(t, out, `id="wfh-period-next"`, "next period banner must render")
+
+	// The current-period banner must carry is-active so the inline
+	// script doesn't have to bootstrap it. The next-period banner
+	// must NOT. The template puts id first, class second, so we
+	// match that order — RE2 has no backtracking so we can't rely
+	// on `.*?` to find either order.
+	require.Regexp(t,
+		`<div[^>]*\bid="wfh-period-today"[^>]*\bclass="[^"]*is-active"`,
+		out, "current-period banner must be is-active by default")
+	require.NotRegexp(t,
+		`<div[^>]*\bid="wfh-period-next"[^>]*\bclass="[^"]*is-active"`,
+		out, "next-period banner must NOT be is-active by default")
+
+	assert.Contains(t, out, `id="wfh-submit"`)
+	assert.NotContains(t, out, `id="wfh-submit"[^>]*disabled`,
+		"submit must be enabled when the user has unused quota")
+}
+
+// TestRenderWFHRequestForm_NextPeriodBannerActiveWhenQueryParamDateIsInNextPeriod
+// pins the cross-period behavior: a GET ?date=YYYY-MM-DD where the date
+// lands in the next quota period must render the next-period banner as
+// is-active and the current-period banner as inactive. This is the
+// scenario the user complained about: "I've used 2/2 this month, can I
+// request for next month?" — the form must answer YES by showing the
+// next-period banner with Remaining=2 and the submit button enabled.
+func TestRenderWFHRequestForm_NextPeriodBannerActiveWhenQueryParamDateIsInNextPeriod(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupSwapTestDB(t)
+	defer cleanup()
+
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	h := newRenderFormTestHandler(t, db, wfh.Config{
+		Enabled:             true,
+		MinOnsitePercentage: 50,
+		MinOnsiteAbsolute:   1,
+		MaxDaysPerPeriod:    2,
+		PeriodDays:          7,
+		PeriodAnchor:        "2026-01-05",
+		SettlementDays:      2,
+		RequestHorizonDays:  90,
+	})
+
+	// Fill the current period to the max so the current-period
+	// banner shows Remaining=0 and the next-period banner shows
+	// Remaining=2 (untouched). The two WFH rows must land in the
+	// current period (anchor-aligned to 2026-01-05 a Monday) and
+	// must be in the FUTURE so CreateWFHRequest's date guard
+	// doesn't reject them. We pick the last two days of the
+	// current period.
+	today := time.Now().UTC()
+	_, currentEnd, err := h.wfhService.ComputePeriodBounds(today)
+	require.NoError(t, err)
+	_, err = db.CreateWFHRequest(ctx, memberID,
+		currentEnd.AddDate(0, 0, -2).Format("2006-01-02"))
+	require.NoError(t, err)
+	_, err = db.CreateWFHRequest(ctx, memberID,
+		currentEnd.AddDate(0, 0, -1).Format("2006-01-02"))
+	require.NoError(t, err)
+
+	// A date 1 day past currentEnd is in the next period
+	// (PeriodDays=7). Using today+14 would skip into a later
+	// period — the test is about the cross-period UX, not the
+	// offset.
+	nextPeriodDate := currentEnd.AddDate(0, 0, 1).Format("2006-01-02")
+
+	rr := httptest.NewRecorder()
+	h.renderWFHRequestFormAt(rr,
+		httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/wfh/request?date="+nextPeriodDate, nil),
+		map[string]any{"Template": "wfh_request"}, memberID, "", nextPeriodDate)
+	out := rr.Body.String()
+
+	require.Regexp(t,
+		`<div[^>]*\bid="wfh-period-next"[^>]*\bclass="[^"]*is-active"`,
+		out, "next-period banner must be is-active when selected date is in next period")
+	require.NotRegexp(t,
+		`<div[^>]*\bid="wfh-period-today"[^>]*\bclass="[^"]*is-active"`,
+		out, "current-period banner must NOT be is-active when selected date is in next period")
+
+	assert.Contains(t, out, `value="`+nextPeriodDate+`"`,
+		"selected date must be preserved in the input value attribute")
+
+	// Next-period quota is full (2 remaining), so the submit button
+	// must NOT be disabled despite the current period being exhausted.
+	assert.NotContains(t, out, `id="wfh-submit"[^>]*disabled`,
+		"submit must be enabled when the selected date's period has unused quota")
+}
+
+// TestRenderWFHRequestForm_SubmitDisabledWhenCurrentPeriodExhausted pins
+// the disabled state: when the user has 0 remaining in the current
+// period AND the selected date is in the current period, the submit
+// button must be disabled at render time. The server-side CheckQuota
+// would also reject — but the disable prevents the wasted round-trip
+// and the confusing "you have no tokens anywhere" message.
+func TestRenderWFHRequestForm_SubmitDisabledWhenCurrentPeriodExhausted(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupSwapTestDB(t)
+	defer cleanup()
+
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	h := newRenderFormTestHandler(t, db, wfh.Config{
+		Enabled:             true,
+		MinOnsitePercentage: 50,
+		MinOnsiteAbsolute:   1,
+		MaxDaysPerPeriod:    2,
+		PeriodDays:          7,
+		PeriodAnchor:        "2026-01-05",
+		SettlementDays:      2,
+		RequestHorizonDays:  90,
+	})
+
+	// Fill the current period to the max with future dates so
+	// CreateWFHRequest's date guard accepts the rows. Pick the
+	// last two days of the current period.
+	today := time.Now().UTC()
+	_, currentEnd, err := h.wfhService.ComputePeriodBounds(today)
+	require.NoError(t, err)
+	_, err = db.CreateWFHRequest(ctx, memberID,
+		currentEnd.AddDate(0, 0, -2).Format("2006-01-02"))
+	require.NoError(t, err)
+	_, err = db.CreateWFHRequest(ctx, memberID,
+		currentEnd.AddDate(0, 0, -1).Format("2006-01-02"))
+	require.NoError(t, err)
+
+	rr := httptest.NewRecorder()
+	h.renderWFHRequestFormAt(rr,
+		httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/wfh/request", nil),
+		map[string]any{"Template": "wfh_request"}, memberID, "", "")
+	out := rr.Body.String()
+
+	require.Regexp(t, `id="wfh-submit"[^>]*disabled`,
+		out, "submit must be disabled when the user has 0 remaining in the current period")
+
+	// The current-period banner must show 0 remaining — confirms the
+	// quota data wired through to the template, not just the disabled
+	// attribute being hard-coded.
+	require.Regexp(t,
+		`id="wfh-period-today"[^>]*data-remaining="0"`,
+		out, "current-period banner must report data-remaining=0")
+}
+
+// TestRenderWFHRequestForm_HolidaySelectDisablesSubmit pins the holiday
+// short-circuit: when the selected date is a public holiday (per the
+// installed holiday checker), the submit button must be disabled at
+// render time and a "this is a holiday" notification must surface.
+// Mirrors the CheckQuota ErrWFHOnHoliday guard at the form layer.
+func TestRenderWFHRequestForm_HolidaySelectDisablesSubmit(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupSwapTestDB(t)
+	defer cleanup()
+
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	// Pick a date 3 days out (still in the horizon, still in the
+	// current period with default anchors) and register it as a
+	// holiday via the install hook.
+	holiday := time.Now().UTC().AddDate(0, 0, 3).Format("2006-01-02")
+	db.SetHolidayChecker(func(t time.Time) bool {
+		return t.Format("2006-01-02") == holiday
+	})
+	t.Cleanup(func() { db.SetHolidayChecker(nil) })
+
+	h := newRenderFormTestHandler(t, db, wfh.Config{
+		Enabled:             true,
+		MinOnsitePercentage: 50,
+		MinOnsiteAbsolute:   1,
+		MaxDaysPerPeriod:    2,
+		PeriodDays:          7,
+		PeriodAnchor:        "2026-01-05",
+		SettlementDays:      2,
+		RequestHorizonDays:  90,
+	})
+
+	rr := httptest.NewRecorder()
+	h.renderWFHRequestFormAt(rr,
+		httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/wfh/request?date="+holiday, nil),
+		map[string]any{"Template": "wfh_request"}, memberID, "", holiday)
+	out := rr.Body.String()
+
+	require.Regexp(t, `id="wfh-submit"[^>]*disabled`,
+		out, "submit must be disabled when the selected date is a holiday")
+	assert.Contains(t, out, "is a public holiday",
+		"holiday notification must surface when the selected date is a holiday")
+}
+
+// TestHandleWFHRequestPost_BeyondHorizon_PreservesSelectedDate ensures
+// that when the POST handler re-renders the form after rejecting a date
+// (horizon, invalid format, quota), the user's submitted date is
+// preserved in the input value attribute. The previous implementation
+// reset to today, forcing the user to re-pick — a friction point that
+// hid the new per-period quota UX.
+func TestHandleWFHRequestPost_BeyondHorizon_PreservesSelectedDate(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupSwapTestDB(t)
+	defer cleanup()
+
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	svc := wfh.NewService(db, wfh.Config{
+		Enabled:             true,
+		MinOnsitePercentage: 50,
+		MinOnsiteAbsolute:   1,
+		MaxDaysPerPeriod:    2,
+		PeriodDays:          7,
+		PeriodAnchor:        "2026-01-05",
+		SettlementDays:      2,
+		RequestHorizonDays:  90,
+	})
+	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+	h.wfhService = svc
+
+	farFuture := testutil.NextBusinessDay(time.Now().UTC().AddDate(0, 0, 91))
+	formBody := "date=" + farFuture.Format("2006-01-02")
+	rec := httptest.NewRequestWithContext(ctx, http.MethodPost, "/wfh/request", strings.NewReader(formBody))
+	rec.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec = withUser(rec, "alice@example.com", "Alice", false)
+	// Seed data the way wfhBaseData would: with Template=wfh_request so
+	// base.html routes to the wfh_request content block instead of the
+	// login fallback. handleWFHRequestPost reuses the same data map
+	// the parent handleWFHRequest builds in production.
+	data := map[string]any{"Template": "wfh_request"}
+	rr := httptest.NewRecorder()
+	h.handleWFHRequestPost(rr, rec, data, memberID)
+
+	assert.Equal(t, http.StatusOK, rr.Code, "form must re-render on horizon error")
+	assert.Contains(t, rr.Body.String(),
+		`value="`+farFuture.Format("2006-01-02")+`"`,
+		"the rejected date must be preserved in the input value so the user can correct without re-picking")
+}

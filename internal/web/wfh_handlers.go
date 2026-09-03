@@ -104,7 +104,7 @@ func (h *Handler) handleWFHRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.renderWFHRequestForm(w, r, data, memberID, "")
+	h.renderWFHRequestFormAt(w, r, data, memberID, "", r.URL.Query().Get("date"))
 }
 
 // handleWFHRequestPost processes a WFH request form submission. Validates the
@@ -120,12 +120,14 @@ func (h *Handler) handleWFHRequestPost(w http.ResponseWriter, r *http.Request, d
 
 	date := r.FormValue("date")
 	if date == "" {
-		h.renderWFHRequestForm(w, r, data, memberID, "Date is required.")
+		h.renderWFHRequestFormAt(w, r, data, memberID, "Date is required.", "")
 		return
 	}
 
 	if _, err := time.Parse("2006-01-02", date); err != nil {
-		h.renderWFHRequestForm(w, r, data, memberID, "Invalid date format, expected YYYY-MM-DD.")
+		// Selected date is preserved on the form so the user can
+		// correct the format without re-picking the day.
+		h.renderWFHRequestFormAt(w, r, data, memberID, "Invalid date format, expected YYYY-MM-DD.", date)
 		return
 	}
 
@@ -134,7 +136,7 @@ func (h *Handler) handleWFHRequestPost(w http.ResponseWriter, r *http.Request, d
 	if h.wfhService != nil {
 		if err := h.wfhService.ValidateRequestDate(date); err != nil {
 			horizon := h.wfhService.Config().RequestHorizonDays
-			h.renderWFHRequestForm(w, r, data, memberID, wfhBeyondHorizonMessage(horizon))
+			h.renderWFHRequestFormAt(w, r, data, memberID, wfhBeyondHorizonMessage(horizon), date)
 			return
 		}
 	}
@@ -143,24 +145,28 @@ func (h *Handler) handleWFHRequestPost(w http.ResponseWriter, r *http.Request, d
 	if h.wfhService != nil {
 		hasQuota, err := h.wfhService.CheckQuota(ctx, memberID, date)
 		if err != nil {
-			h.renderWFHRequestForm(w, r, data, memberID, "Failed to check WFH quota.")
+			h.renderWFHRequestFormAt(w, r, data, memberID, "Failed to check WFH quota.", date)
 			return
 		}
 		if !hasQuota {
-			h.renderWFHRequestForm(w, r, data, memberID, "You have reached your WFH quota for this period.")
+			h.renderWFHRequestFormAt(w, r, data, memberID, "You have reached your WFH quota for this period.", date)
 			return
 		}
 	}
 
 	if _, err := h.db.CreateWFHRequest(ctx, memberID, date); err != nil {
-		h.renderWFHRequestForm(w, r, data, memberID, wfhWebErrorMessage(err))
+		h.renderWFHRequestFormAt(w, r, data, memberID, wfhWebErrorMessage(err), date)
 		return
 	}
 
 	http.Redirect(w, r, "/wfh", http.StatusSeeOther)
 }
 
-func (h *Handler) renderWFHRequestForm(w http.ResponseWriter, r *http.Request, data map[string]any, memberID, errMsg string) {
+// renderWFHRequestFormAt is the full form renderer with an explicit
+// selected date. selectedDate="" falls back to today. The selected
+// date drives the quota banner so it reflects the period the user
+// is requesting for, not always the current period.
+func (h *Handler) renderWFHRequestFormAt(w http.ResponseWriter, r *http.Request, data map[string]any, memberID, errMsg, selectedDate string) {
 	ctx := r.Context()
 
 	if errMsg != "" {
@@ -170,19 +176,92 @@ func (h *Handler) renderWFHRequestForm(w http.ResponseWriter, r *http.Request, d
 	// UTC-based date comparisons. Mismatch would let a user in a positive
 	// offset pick a date the server then rejects (or vice versa).
 	now := time.Now().UTC()
-	data["Today"] = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).Format("2006-01-02")
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	data["Today"] = today.Format("2006-01-02")
+
+	if selectedDate == "" {
+		selectedDate = data["Today"].(string)
+	}
+	data["SelectedDate"] = selectedDate
 
 	if h.wfhService != nil {
-		data["MaxRequestDate"] = h.wfhService.MaxRequestDate().Format("2006-01-02")
-		quota, err := h.wfhService.GetQuotaStatus(ctx, memberID)
-		if err == nil {
-			data["Quota"] = quota
-		}
+		h.populateWFHRequestFormData(ctx, data, memberID, selectedDate, today)
 	}
 
 	if err := h.tmpl.ExecuteTemplate(w, "wfh_request.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+// populateWFHRequestFormData fills the quota, current-period, next-period,
+// and holiday fields on the form data map. Extracted from
+// renderWFHRequestFormAt to keep the orchestrator cyclomatic complexity
+// under the 10-branch limit — the period-bounds + quota-fetch logic
+// naturally nests 3 levels deep.
+//
+// Errors from individual lookups are intentionally swallowed: a missing
+// quota, missing current-period quota, or missing next-period quota
+// each just leaves that field unset. The corresponding template block
+// (wrapped in `{{if .Field}}`) hides the banner, so the form still
+// renders. The server-side CheckQuota is the authoritative guard.
+func (h *Handler) populateWFHRequestFormData(ctx context.Context, data map[string]any, memberID, selectedDate string, today time.Time) {
+	data["MaxRequestDate"] = h.wfhService.MaxRequestDate().Format("2006-01-02")
+
+	// Quota for the selected date's period. The form banner must
+	// reflect the period the user is requesting for, not always
+	// today: a user with 0 remaining in the current month can
+	// still have 2 remaining in the next month, and the form
+	// should show that instead of misleadingly saying "no
+	// tokens anywhere".
+	selectedQuota, qerr := h.wfhService.GetQuotaStatusForDate(ctx, memberID, parseDateOr(selectedDate, today))
+	if qerr == nil {
+		data["Quota"] = selectedQuota
+		data["QuotaExhausted"] = selectedQuota.Remaining == 0
+	}
+
+	// Also precompute the current period and the next period so
+	// the inline script can swap the banner without a server
+	// round-trip when the user picks a date in a different
+	// period. Both lookups go through the same code path so the
+	// values stay consistent with what CheckQuota would compute
+	// on submit.
+	currentQuota, qerr := h.wfhService.GetQuotaStatus(ctx, memberID)
+	if qerr == nil {
+		data["CurrentPeriodQuota"] = currentQuota
+	}
+	currentPeriodStart, _, perr := h.wfhService.ComputePeriodBounds(today)
+	if perr == nil {
+		// The current period's start plus one full period length
+		// is the next period's start (period bounds are aligned to
+		// the period anchor, so this lands exactly on the boundary
+		// even when `today` is at the edge of the current period).
+		nextPeriodStart := currentPeriodStart.AddDate(0, 0, h.wfhService.Config().PeriodDays)
+		nextQuota, qerr := h.wfhService.GetQuotaStatusForDate(ctx, memberID, nextPeriodStart)
+		if qerr == nil {
+			data["NextPeriodQuota"] = nextQuota
+		}
+	}
+
+	// Holiday precheck: the form disables the submit button
+	// when the selected date is a holiday, mirroring the
+	// CheckQuota guard. parseDateOr returns the zero time on
+	// parse failure and the holiday check is a no-op then; the
+	// server still rejects invalid dates on submit.
+	data["SelectedDateIsHoliday"] = h.wfhService.IsHoliday(selectedDate)
+}
+
+// parseDateOr parses a YYYY-MM-DD string or returns fallback on
+// failure. Used by the form renderer to coerce the selected date
+// into a time.Time for quota-period computation; we don't want a
+// parse failure on the form to 500 the page, so the fallback is
+// "today" and the server-side POST handler is the one that
+// surfaces the parse error.
+func parseDateOr(date string, fallback time.Time) time.Time {
+	t, err := time.Parse("2006-01-02", date)
+	if err != nil {
+		return fallback
+	}
+	return t
 }
 
 // handleWFHCancel lets the current user cancel their own pending WFH request.

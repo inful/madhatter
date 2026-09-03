@@ -122,7 +122,11 @@ func (s *Service) Config() Config {
 	return s.cfg
 }
 
-// QuotaStatus describes a member's WFH usage in the current period.
+// QuotaStatus describes a member's WFH usage in the quota period
+// containing some reference date. The reference date is normally
+// today (GetQuotaStatus) but can be a future date (GetQuotaStatusForDate)
+// — useful for forms where the user picks a date in a different
+// quota period than the one today belongs to.
 type QuotaStatus struct {
 	PeriodStart string
 	PeriodEnd   string
@@ -234,7 +238,18 @@ func (s *Service) PurgePastPeriodsDryRun(ctx context.Context) (string, int64, er
 
 // GetQuotaStatus returns the quota status for the given member as of now.
 func (s *Service) GetQuotaStatus(ctx context.Context, memberID string) (QuotaStatus, error) {
-	start, end, err := s.ComputePeriodBounds(time.Now().UTC())
+	return s.GetQuotaStatusForDate(ctx, memberID, time.Now().UTC())
+}
+
+// GetQuotaStatusForDate returns the quota status for the quota period
+// containing the given date. Mirrors GetQuotaStatus but lets the caller
+// scope the period to a non-today date — needed by the WFH request
+// form so the quota banner reflects the period the user is requesting
+// for, not always the current period. A user with 0 remaining in the
+// current period can still have 2 remaining in the next period, and
+// the form should reflect that.
+func (s *Service) GetQuotaStatusForDate(ctx context.Context, memberID string, refDate time.Time) (QuotaStatus, error) {
+	start, end, err := s.ComputePeriodBounds(refDate)
 	if err != nil {
 		return QuotaStatus{}, err
 	}
@@ -259,6 +274,19 @@ func (s *Service) GetQuotaStatus(ctx context.Context, memberID string) (QuotaSta
 		Remaining:   remaining,
 		OverQuotaBy: overQuotaBy,
 	}, nil
+}
+
+// IsHoliday reports whether the given date (YYYY-MM-DD) falls on a
+// holiday according to the database's installed holiday checker.
+// Returns false when the date fails to parse (the form layer will
+// surface that as a separate error) or when no checker is installed
+// (the production default installs one on database init).
+func (s *Service) IsHoliday(date string) bool {
+	t, err := time.Parse("2006-01-02", date)
+	if err != nil {
+		return false
+	}
+	return s.db.IsHoliday(t)
 }
 
 // CanWithdraw reports whether the WFH request for the given date

@@ -449,6 +449,13 @@ func (s *Service) CheckQuota(ctx context.Context, memberID, date string) (bool, 
 // SettlePendingRequests auto-approves or denies all pending WFH requests whose dates fall
 // within the settlement window. It groups requests by date, enforces on-site minimums,
 // and prioritizes by (fewest period days used ASC, earliest created_at ASC).
+//
+// Phase 2 of plans/assigned-wfh-plan.md: the picker (step 8) runs
+// after settlement for every working day in the settlement window,
+// independent of byDate. A date can be over cap even with zero
+// pending WFH requests (everyone is on-site, no one asked to WFH,
+// but the cap is exceeded) — running the picker over the full window
+// catches that case. byDate iteration alone wouldn't.
 func (s *Service) SettlePendingRequests(ctx context.Context) error {
 	cutoff := time.Now().UTC().AddDate(0, 0, s.cfg.SettlementDays)
 	cutoffStr := cutoff.Format("2006-01-02")
@@ -467,6 +474,7 @@ func (s *Service) SettlePendingRequests(ctx context.Context) error {
 		return err
 	}
 	if len(pending) == 0 {
+		s.settleAssignmentPass(ctx, today, cutoff)
 		return nil
 	}
 
@@ -488,7 +496,30 @@ func (s *Service) SettlePendingRequests(ctx context.Context) error {
 			slog.Error("WFH settlement error", "date", date, "error", err)
 		}
 	}
+	s.settleAssignmentPass(ctx, today, cutoff)
 	return nil
+}
+
+// settleAssignmentPass runs the seat-cap picker for every working
+// day in the settlement window [today, cutoff]. Independent of
+// byDate — a date can be over cap even with zero pending WFH
+// requests. The picker is a no-op for past dates, holidays, and
+// weekends (handled inside AssignWFHForDate). Errors are logged
+// and the loop continues — one bad date must not block the rest
+// of the window.
+func (s *Service) settleAssignmentPass(ctx context.Context, today, cutoff time.Time) {
+	if !s.cfg.Enabled || !s.cfg.AssignmentEnabled || s.cfg.SeatCap <= 0 {
+		return
+	}
+	for d := today; !d.After(cutoff); d = d.AddDate(0, 0, 1) {
+		if d.Weekday() == time.Saturday || d.Weekday() == time.Sunday {
+			continue
+		}
+		date := d.Format("2006-01-02")
+		if err := s.AssignWFHForDate(ctx, date); err != nil {
+			slog.Error("WFH picker failed", "date", date, "error", err)
+		}
+	}
 }
 
 // ReportToday is the same-day "unforeseen WFH" entry point. It is the

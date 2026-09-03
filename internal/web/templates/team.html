@@ -123,6 +123,25 @@
                                         </button>
                                     </form>
 
+                                    {{/*
+                                        is_exempt_from_assignment toggles whether the
+                                        seat-cap picker can ever select this member as an
+                                        involuntary Assigned WFH. Their voluntary WFHs
+                                        still count; this only affects the picker's
+                                        candidate pool. Submitted as a separate form so
+                                        the recurring-days form above stays focused on
+                                        per-weekday state.
+                                    */}}
+                                    <form method="POST" action="/team/{{.ID}}/exempt" class="exempt-toggle-form">
+                                        <label class="checkbox" title="Picker never selects this member as an involuntary Assigned WFH. Voluntary WFHs still count against capacity.">
+                                            <input type="checkbox" name="is_exempt_from_assignment" value="1" {{if .IsExemptFromAssignment}}checked{{end}}>
+                                            Exempt from picker
+                                        </label>
+                                        <button type="submit" class="button is-small is-link is-light" title="Save exemption from seat-cap picker">
+                                            <i class="fas fa-save mr-1"></i> Save
+                                        </button>
+                                    </form>
+
                                     <div class="member-actions">
                                         <button class="button is-small is-info is-light" data-edit-team data-id="{{.ID}}" data-name="{{.Name}}" data-email="{{.Email}}" aria-label="Edit team member">
                                             <i class="fas fa-edit"></i>

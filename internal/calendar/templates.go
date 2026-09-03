@@ -225,7 +225,11 @@ type holidayData struct {
 // WFH events if they want to. AdminMarked is rendered as a small
 // banner in the description so subscribers can tell the row apart
 // from a self-requested WFH (the same visual distinction the
-// dashboard uses).
+// dashboard uses). Origin mirrors the wfh_requests.origin column
+// (ad_hoc | recurring | assigned | swap) so templates can render
+// origin-aware suffixes; the default template appends "(assigned)"
+// or "(swap)" to the BaseText for non-default origins, but custom
+// overrides may branch directly on .Origin instead.
 type wfhData struct {
 	//nolint:unused // Read by template execution.
 	presenceSnapshot
@@ -234,6 +238,7 @@ type wfhData struct {
 	MemberName  string
 	Date        string
 	AdminMarked bool
+	Origin      string
 }
 
 // renderTemplate executes a text/template against data and returns the

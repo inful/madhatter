@@ -290,6 +290,51 @@ func (h *Handler) handleTeamMemberPermanentWFHUpdate(w http.ResponseWriter, r *h
 	http.Redirect(w, r, "/team", http.StatusSeeOther)
 }
 
+// handleTeamMemberExemptUpdate toggles the is_exempt_from_assignment
+// flag. The picker excludes exempt members from its candidate pool
+// (see service.go isExemptFromAssignment check), so an admin who
+// never wants this member picked as Assigned WFH can flip the
+// checkbox once. POST /team/{id}/exempt. Body:
+// is_exempt_from_assignment=1 when checked.
+//
+// Step 17 of plans/assigned-wfh-plan.md. The DB column and the
+// SetTeamMemberExemptFromAssignment method shipped in Phase 1
+// (migration 26); this handler is the form-side wiring that
+// Phase 4 deferred.
+func (h *Handler) handleTeamMemberExemptUpdate(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	memberID := chi.URLParam(r, "id")
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxTeamFormBytes)
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	_, err := h.db.GetMemberByID(ctx, memberID)
+	if errors.Is(err, sql.ErrNoRows) {
+		http.Error(w, "team member not found", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	exempt := parseCheckboxBool(r.PostForm.Get("is_exempt_from_assignment"))
+	if err := h.db.SetTeamMemberExemptFromAssignment(ctx, memberID, exempt); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, "/team", http.StatusSeeOther)
+}
+
 func parseCheckboxBool(v string) bool {
 	return v == "1" || v == "on" || strings.EqualFold(v, "true")
 }

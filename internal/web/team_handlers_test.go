@@ -510,6 +510,105 @@ func TestHandleTeamMemberPermanentWFHUpdate_ValidPost_UpdatesRecurringDays(t *te
 }
 
 // ---------------------------------------------------------------------------
+// handleTeamMemberExemptUpdate — Step 17 of Phase 4
+// ---------------------------------------------------------------------------
+
+// TestHandleTeamMemberExemptUpdate_WrongMethod_Returns405 pins the
+// route's method gate: a stray GET must 405, not 200, so a stale
+// tab linking to the route doesn't accidentally toggle state.
+func TestHandleTeamMemberExemptUpdate_WrongMethod_Returns405(t *testing.T) {
+	db, err := database.New(":memory:")
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/team/members/x/exempt", nil)
+	req = withChiParam(req, "x")
+	w := httptest.NewRecorder()
+
+	h.handleTeamMemberExemptUpdate(w, req)
+
+	assert.Equal(t, http.StatusMethodNotAllowed, w.Code)
+}
+
+// TestHandleTeamMemberExemptUpdate_NotFound_Returns404 covers the
+// member-existence guard. Without it, an admin could flip the
+// flag on a phantom row and the DB UPDATE would silently no-op.
+func TestHandleTeamMemberExemptUpdate_NotFound_Returns404(t *testing.T) {
+	db, err := database.New(":memory:")
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	form := url.Values{}
+	form.Set("is_exempt_from_assignment", "1")
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/team/members/missing/exempt", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req = withChiParam(req, uuid.NewString())
+	w := httptest.NewRecorder()
+
+	h.handleTeamMemberExemptUpdate(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+// TestHandleTeamMemberExemptUpdate_ValidPost_TogglesFlag pins the
+// happy path: a checked form flips the flag on, an unchecked
+// form flips it back off. The exempt member must remain eligible
+// for voluntary WFH (covered by the picker math at the service
+// layer; the integration tests there are the load-bearing proof;
+// this test only pins the form's storage write).
+func TestHandleTeamMemberExemptUpdate_ValidPost_TogglesFlag(t *testing.T) {
+	db, err := database.New(":memory:")
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	ctx := context.Background()
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	setForm := url.Values{}
+	setForm.Set("is_exempt_from_assignment", "1")
+	setReq := httptest.NewRequestWithContext(ctx, http.MethodPost, "/team/members/"+memberID+"/exempt", strings.NewReader(setForm.Encode()))
+	setReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	setReq = withChiParam(setReq, memberID)
+	setResp := httptest.NewRecorder()
+
+	h.handleTeamMemberExemptUpdate(setResp, setReq)
+
+	assert.Equal(t, http.StatusSeeOther, setResp.Code)
+	assert.Equal(t, "/team", setResp.Header().Get("Location"))
+
+	member, err := db.GetMemberByID(ctx, memberID)
+	require.NoError(t, err)
+	assert.True(t, member.IsExemptFromAssignment, "checked form must flip the flag on")
+
+	// Unchecked form must flip it back off. parseCheckboxBool
+	// reads "1", "on", or case-insensitive "true" as true; an
+	// absent key is the off path that matters here.
+	unsetForm := url.Values{}
+	unsetReq := httptest.NewRequestWithContext(ctx, http.MethodPost, "/team/members/"+memberID+"/exempt", strings.NewReader(unsetForm.Encode()))
+	unsetReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	unsetReq = withChiParam(unsetReq, memberID)
+	unsetResp := httptest.NewRecorder()
+
+	h.handleTeamMemberExemptUpdate(unsetResp, unsetReq)
+
+	assert.Equal(t, http.StatusSeeOther, unsetResp.Code)
+	member, err = db.GetMemberByID(ctx, memberID)
+	require.NoError(t, err)
+	assert.False(t, member.IsExemptFromAssignment, "unchecked form must flip the flag off")
+}
+
+// ---------------------------------------------------------------------------
 // handleUserAdminUpdate — additional edge cases
 // ---------------------------------------------------------------------------
 

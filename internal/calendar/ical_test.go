@@ -716,7 +716,7 @@ func writeFile(path, contents string) error {
 func TestAddWFHEvent_DefaultsRenderEvent(t *testing.T) {
 	g := NewICalGenerator()
 	date := time.Date(2026, 9, 4, 0, 0, 0, 0, time.UTC)
-	require.NoError(t, g.AddWFHEvent("Alice", date, false))
+	require.NoError(t, g.AddWFHEvent("Alice", date, "", false))
 
 	out, err := g.Serialize()
 	require.NoError(t, err)
@@ -738,12 +738,83 @@ func TestAddWFHEvent_DefaultsRenderEvent(t *testing.T) {
 func TestAddWFHEvent_AdminMarkedAppendsBanner(t *testing.T) {
 	g := NewICalGenerator()
 	date := time.Date(2026, 9, 4, 0, 0, 0, 0, time.UTC)
-	require.NoError(t, g.AddWFHEvent("Alice", date, true))
+	require.NoError(t, g.AddWFHEvent("Alice", date, "", true))
 
 	out, err := g.Serialize()
 	require.NoError(t, err)
 	assert.Contains(t, out, "(marked by admin)",
 		"admin-marked WFH event should carry the banner in the description")
+}
+
+// TestAddWFHEvent_AssignedOriginAppendsSuffix is the Step 18
+// (plans/assigned-wfh-plan.md) regression test for the calendar
+// origin branch. A system-assigned WFH (origin="assigned") must
+// render with the "(assigned)" suffix in the description so a
+// calendar subscriber can distinguish it from a self-requested
+// day. The dashboard already uses color for this distinction
+// (the chip is is-link); calendar clients don't render color,
+// so language is the only signal.
+func TestAddWFHEvent_AssignedOriginAppendsSuffix(t *testing.T) {
+	g := NewICalGenerator()
+	date := time.Date(2026, 9, 4, 0, 0, 0, 0, time.UTC)
+	require.NoError(t, g.AddWFHEvent("Alice", date, "assigned", false))
+
+	out, err := g.Serialize()
+	require.NoError(t, err)
+	assert.Contains(t, out, "(assigned)",
+		"assigned-origin WFH must render with the '(assigned)' suffix")
+	assert.NotContains(t, out, "(swap)",
+		"an assigned row must not also claim the swap suffix")
+}
+
+// TestAddWFHEvent_SwapOriginAppendsSuffix is the swap twin of
+// the assigned test. A swap-target's transferred WFH renders
+// with the "(swap)" suffix.
+func TestAddWFHEvent_SwapOriginAppendsSuffix(t *testing.T) {
+	g := NewICalGenerator()
+	date := time.Date(2026, 9, 4, 0, 0, 0, 0, time.UTC)
+	require.NoError(t, g.AddWFHEvent("Alice", date, "swap", false))
+
+	out, err := g.Serialize()
+	require.NoError(t, err)
+	assert.Contains(t, out, "(swap)",
+		"swap-origin WFH must render with the '(swap)' suffix")
+}
+
+// TestAddWFHEvent_AdHocOriginNoSuffix pins the negative case:
+// an ad-hoc / recurring / empty origin must NOT add an origin
+// suffix; it should look exactly like the default render.
+func TestAddWFHEvent_AdHocOriginNoSuffix(t *testing.T) {
+	g := NewICalGenerator()
+	date := time.Date(2026, 9, 4, 0, 0, 0, 0, time.UTC)
+	require.NoError(t, g.AddWFHEvent("Alice", date, "ad_hoc", false))
+
+	out, err := g.Serialize()
+	require.NoError(t, err)
+	assert.Contains(t, out, "Alice is working from home",
+		"ad-hoc origin must keep the default base text")
+	assert.NotContains(t, out, "(assigned)",
+		"ad-hoc origin must not leak the assigned suffix")
+	assert.NotContains(t, out, "(swap)",
+		"ad-hoc origin must not leak the swap suffix")
+}
+
+// TestAddWFHEvent_AssignedAndAdminMarkedAppendsBoth is the
+// composition test. A row that is both system-assigned and
+// admin-marked (rare but possible — admin re-marks a picker
+// decision) must show BOTH signals in the description so a
+// subscriber can tell the layered history apart.
+func TestAddWFHEvent_AssignedAndAdminMarkedAppendsBoth(t *testing.T) {
+	g := NewICalGenerator()
+	date := time.Date(2026, 9, 4, 0, 0, 0, 0, time.UTC)
+	require.NoError(t, g.AddWFHEvent("Alice", date, "assigned", true))
+
+	out, err := g.Serialize()
+	require.NoError(t, err)
+	assert.Contains(t, out, "(marked by admin)",
+		"admin-marked flag must surface even on an assigned row")
+	assert.Contains(t, out, "(assigned)",
+		"assigned origin must surface even when admin-marked is also true")
 }
 
 // TestAddWFHEvent_UidIsStablePerDay pins that the per-member
@@ -755,8 +826,8 @@ func TestAddWFHEvent_UidIsStablePerDay(t *testing.T) {
 	g := NewICalGenerator()
 	date1 := time.Date(2026, 9, 4, 0, 0, 0, 0, time.UTC)
 	date2 := time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC)
-	require.NoError(t, g.AddWFHEvent("Alice", date1, false))
-	require.NoError(t, g.AddWFHEvent("Alice", date2, false))
+	require.NoError(t, g.AddWFHEvent("Alice", date1, "", false))
+	require.NoError(t, g.AddWFHEvent("Alice", date2, "", false))
 
 	out, err := g.Serialize()
 	require.NoError(t, err)

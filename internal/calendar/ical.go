@@ -472,20 +472,24 @@ func (g *ICalGenerator) AddHoliday(name string, date time.Time) error {
 // `<member> - WFH` VEVENT on that day. Admin-marked WFH rows
 // render the same shape, distinguished by a "marked by admin"
 // line in the alt-desc so subscribers can tell the two apart.
+// The origin parameter captures how the row was created
+// (ad_hoc | recurring | assigned | swap) so the calendar can
+// render a distinct suffix for system-assigned or swap-target
+// rows — the same chip distinction the dashboard uses.
 //
 // Callers that have a per-day snapshot should prefer
 // AddWFHEventWithSnapshot so the operator's HTML template can
 // reference the same on-site/leave/WFH lists that the leave and
 // HAT-assignment events use.
-func (g *ICalGenerator) AddWFHEvent(memberName string, date time.Time, adminMarked bool) error {
-	return g.AddWFHEventWithSnapshot(memberName, date, adminMarked, &presenceSnapshot{Date: date.Format("2006-01-02")})
+func (g *ICalGenerator) AddWFHEvent(memberName string, date time.Time, origin string, adminMarked bool) error {
+	return g.AddWFHEventWithSnapshot(memberName, date, origin, adminMarked, &presenceSnapshot{Date: date.Format("2006-01-02")})
 }
 
 // AddWFHEventWithSnapshot renders a per-member WFH event with the
 // configured WFH templates. The snapshot is embedded in the
 // template data so operators can reference per-day fields
 // (OnSite, OnLeave, WFH, etc.) just like the leave and HAT events.
-func (g *ICalGenerator) AddWFHEventWithSnapshot(memberName string, date time.Time, adminMarked bool, snap *presenceSnapshot) error {
+func (g *ICalGenerator) AddWFHEventWithSnapshot(memberName string, date time.Time, origin string, adminMarked bool, snap *presenceSnapshot) error {
 	event := g.calendar.AddEvent(fmt.Sprintf("wfh-%s-%d", strings.ToLower(memberName), date.Unix()))
 
 	// All-day event spanning the single WFH day. End date is
@@ -503,6 +507,20 @@ func (g *ICalGenerator) AddWFHEventWithSnapshot(memberName string, date time.Tim
 		// language is the only signal here.
 		baseText += " (marked by admin)"
 	}
+	// Origin branch (Step 18 of plans/assigned-wfh-plan.md):
+	// appended after the admin-marked banner so a row that is
+	// both assigned and admin-marked shows both signals. The
+	// ad_hoc / recurring / empty origins get no suffix —
+	// "is working from home" already covers the default case.
+	// Bare strings match the WFHOrigin usage everywhere else in
+	// the codebase (no constants are defined in the database
+	// package; the picker writes the literal value at insert).
+	switch origin {
+	case "assigned":
+		baseText += " (assigned)"
+	case "swap":
+		baseText += " (swap)"
+	}
 	event.SetSummary(summary)
 
 	if snap == nil {
@@ -515,6 +533,7 @@ func (g *ICalGenerator) AddWFHEventWithSnapshot(memberName string, date time.Tim
 		MemberName:       memberName,
 		Date:             date.Format("2006-01-02"),
 		AdminMarked:      adminMarked,
+		Origin:           origin,
 	}
 
 	textDescription, err := renderTemplate(g.resolvedWFHTextTemplate(), "wfhText", data)
@@ -751,7 +770,7 @@ func addUpcomingWFHEvents(ctx context.Context, generator *ICalGenerator, wfhDays
 		if sErr != nil {
 			return fmt.Errorf("build snapshot for wfh %s: %w", wfhDays[i].Date, sErr)
 		}
-		if addErr := generator.AddWFHEventWithSnapshot(memberName, wfhDate, wfhDays[i].IsAdminMarked, snap); addErr != nil {
+		if addErr := generator.AddWFHEventWithSnapshot(memberName, wfhDate, wfhDays[i].Origin, wfhDays[i].IsAdminMarked, snap); addErr != nil {
 			return fmt.Errorf("failed to add wfh event: %w", addErr)
 		}
 	}

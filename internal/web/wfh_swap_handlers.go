@@ -145,22 +145,17 @@ func (h *Handler) handleWFHSwapCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	targetID := r.FormValue("target_member_id")
 	if targetID == "" {
-		http.Redirect(w, r, "/wfh/"+id+"/swap", http.StatusSeeOther)
+		// Closed redirect: `id` came from chi.URLParam on the
+		// matched route /wfh/{id}/swap and we redirect back to
+		// the same form for that same request. Host and scheme
+		// are server-controlled (relative URL).
+		http.Redirect(w, r, "/wfh/"+id+"/swap", http.StatusSeeOther) //nolint:gosec // closed back-redirect to the same route segment
 		return
 	}
 
 	ok, wfh, err := h.swapCreateValidate(ctx, id, memberID)
 	if err != nil {
-		switch {
-		case errors.Is(err, database.ErrWFHNotFound):
-			http.Error(w, "WFH request not found", http.StatusNotFound)
-		case errors.Is(err, errNotMember):
-			http.Error(w, errNotTeamMember, http.StatusForbidden)
-		case errors.Is(err, errWrongOrigin):
-			http.Error(w, "Only assigned or swap WFHs can be re-swapped", http.StatusConflict)
-		default:
-			http.Error(w, "Failed to validate swap", http.StatusInternalServerError)
-		}
+		writeSwapCreateValidationError(w, err)
 		return
 	}
 	if !ok {
@@ -190,6 +185,27 @@ func (h *Handler) handleWFHSwapCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, "/wfh?flash=swap_requested", http.StatusSeeOther)
+}
+
+// writeSwapCreateValidationError maps the sentinel errors
+// returned by swapCreateValidate to HTTP responses. Each case
+// carries its own status code so the helper can be called once
+// from the handler without dragging the switch into the
+// orchestrator's cyclomatic budget.
+//
+// Extracted from handleWFHSwapCreate so the parent stays
+// under cyclop.
+func writeSwapCreateValidationError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, database.ErrWFHNotFound):
+		http.Error(w, "WFH request not found", http.StatusNotFound)
+	case errors.Is(err, errNotMember):
+		http.Error(w, errNotTeamMember, http.StatusForbidden)
+	case errors.Is(err, errWrongOrigin):
+		http.Error(w, "Only assigned or swap WFHs can be re-swapped", http.StatusConflict)
+	default:
+		http.Error(w, "Failed to validate swap", http.StatusInternalServerError)
+	}
 }
 
 // errWrongOrigin is the sentinel for the "wrong origin" guard

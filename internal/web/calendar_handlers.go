@@ -388,8 +388,6 @@ func (h *Handler) handleTeamCalendarICS(w http.ResponseWriter, r *http.Request) 
 }
 
 func baseURLFromRequest(r *http.Request) string {
-	const maxSplitParts = 2
-
 	host := strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
 	if host == "" {
 		host = r.Host
@@ -408,7 +406,8 @@ func baseURLFromRequest(r *http.Request) string {
 		}
 	} else if xfProto := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")); xfProto != "" {
 		// Example: X-Forwarded-Proto: https
-		scheme = strings.TrimSpace(strings.SplitN(xfProto, ",", maxSplitParts)[0])
+		scheme, _, _ = strings.Cut(xfProto, ",")
+		scheme = strings.TrimSpace(scheme)
 	}
 
 	if host == "" {
@@ -442,7 +441,7 @@ func parseForwardedHeader(headerValue string) (proto string, host string) {
 	const maxSplitParts = 2
 
 	// Example: Forwarded: for=1.2.3.4;proto=https;host=example.com
-	first := strings.SplitN(headerValue, ",", maxSplitParts)[0]
+	first, _, _ := strings.Cut(headerValue, ",")
 	for part := range strings.SplitSeq(first, ";") {
 		kv := strings.SplitN(strings.TrimSpace(part), "=", maxSplitParts)
 		if len(kv) != maxSplitParts {

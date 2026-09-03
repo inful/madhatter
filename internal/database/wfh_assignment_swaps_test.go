@@ -79,7 +79,7 @@ func TestGetPendingWFHSwapForRequesterRow_ConflictGuard(t *testing.T) {
 
 	// No swap exists yet → nil.
 	first, err := db.GetPendingWFHSwapForRequesterRow(ctx, assignedID)
-	require.NoError(t, err)
+	require.ErrorIs(t, err, ErrNoPendingSwapForRow)
 	assert.Nil(t, first, "no pending swap before insert")
 
 	// Insert one.
@@ -96,7 +96,7 @@ func TestGetPendingWFHSwapForRequesterRow_ConflictGuard(t *testing.T) {
 	// (the conflict guard releases).
 	require.NoError(t, db.UpdateWFHAssignmentSwapStatus(ctx, second.ID, "cancelled", time.Now().UTC()))
 	third, err := db.GetPendingWFHSwapForRequesterRow(ctx, assignedID)
-	require.NoError(t, err)
+	require.ErrorIs(t, err, ErrNoPendingSwapForRow)
 	assert.Nil(t, third, "cancelled swap is not pending")
 }
 
@@ -125,8 +125,8 @@ func TestGetPendingWFHSwapsForTarget_Inbox(t *testing.T) {
 	for i, offset := range []int{1, 2, 3} {
 		date := time.Now().UTC().AddDate(0, 0, offset).Format("2006-01-02")
 		assignedID := seedAssignedWFH(t, ctx, db, requesterID, date)
-		_, err := db.CreateWFHAssignmentSwap(ctx, assignedID, targetID, date)
-		require.NoError(t, err, "swap %d", i)
+		_, createErr := db.CreateWFHAssignmentSwap(ctx, assignedID, targetID, date)
+		require.NoError(t, createErr, "swap %d", i)
 	}
 	carolAssigned := seedAssignedWFH(t, ctx, db, carolID, time.Now().UTC().AddDate(0, 0, 4).Format("2006-01-02"))
 	_, err = db.CreateWFHAssignmentSwap(ctx, carolAssigned, daveID, time.Now().UTC().AddDate(0, 0, 4).Format("2006-01-02"))
@@ -178,7 +178,7 @@ func TestUpdateWFHAssignmentSwapStatus_StateTransitions(t *testing.T) {
 	// The conflict guard must skip accepted swaps — they no
 	// longer count as pending.
 	guard, err := db.GetPendingWFHSwapForRequesterRow(ctx, assignedID)
-	require.NoError(t, err)
+	require.ErrorIs(t, err, ErrNoPendingSwapForRow)
 	assert.Nil(t, guard, "accepted swap is not pending; the guard releases")
 }
 

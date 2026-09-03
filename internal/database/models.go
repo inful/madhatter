@@ -203,17 +203,17 @@ const (
 	WFHStatusWithdrawn = "withdrawn"
 )
 
-// WFHAssignmentSwap status constants. The state machine is
-// pending → accepted | rejected | cancelled. Cancellation has two
-// paths: the requester voluntarily cancels, or the scheduler's
-// auto-cancel pass flips pending swaps whose swap_date is in
-// the past (step 15 of plans/assigned-wfh-plan.md).
+// WFHSwapStatus is the status of a WFH assignment swap. The state
+// machine is pending → accepted | rejected | cancelled. Cancellation
+// has two paths: the requester voluntarily cancels, or the
+// scheduler's auto-cancel pass flips pending swaps whose swap_date
+// is in the past (step 15 of plans/assigned-wfh-plan.md).
 type WFHSwapStatus string
 
 const (
-	WFHSwapStatusPending  WFHSwapStatus = "pending"
-	WFHSwapStatusAccepted WFHSwapStatus = "accepted"
-	WFHSwapStatusRejected WFHSwapStatus = "rejected"
+	WFHSwapStatusPending   WFHSwapStatus = "pending"
+	WFHSwapStatusAccepted  WFHSwapStatus = "accepted"
+	WFHSwapStatusRejected  WFHSwapStatus = "rejected"
 	WFHSwapStatusCancelled WFHSwapStatus = "cancelled"
 )
 

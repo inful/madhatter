@@ -77,22 +77,33 @@ func (db *DB) GetPendingWFHSwapsForRequesterMember(ctx context.Context, memberID
 	return out, nil
 }
 
+// ErrNoPendingSwapForRow is the sentinel returned by
+// GetPendingWFHSwapForRequesterRow when no pending swap
+// exists for the given assigned wfh_request row. The
+// 409-conflict guard in handleWFHSwapCreate relies on
+// this returning a non-nil pointer to refuse a second
+// concurrent submission; the sentinel lets callers
+// disambiguate "no row" from a genuine DB error via
+// errors.Is without relying on pointer-nil alone.
+var ErrNoPendingSwapForRow = errors.New("no pending swap exists for the WFH row")
+
 // GetPendingWFHSwapForRequesterRow returns the pending swap
-// for the given assigned wfh_request row, or nil if none
-// exists. The 409-conflict guard in handleWFHSwapCreate
-// relies on this returning a non-nil value to refuse the
-// second concurrent swap submission.
+// for the given assigned wfh_request row, or (nil,
+// ErrNoPendingSwapForRow) when none exists. A non-sentinel
+// error is returned only when the underlying query fails
+// for some other reason.
 func (db *DB) GetPendingWFHSwapForRequesterRow(ctx context.Context, requesterWfhRequestID string) (*WFHAssignmentSwap, error) {
 	row, err := db.queries.GetPendingSwapForRequesterRow(ctx, requesterWfhRequestID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil // no pending swap exists — that's not an error
+			return nil, ErrNoPendingSwapForRow
 		}
 		return nil, err
 	}
 	return swapFromSQLC(row), nil
 }
 
+// UpdateWFHAssignmentSwapStatus sets the swap's status to the
 // given status. Sets resolved_at to the supplied timestamp
 // (the auto-cancel pass uses now; manual accept/reject uses
 // now; the requester cancel uses now too).

@@ -279,3 +279,26 @@ CREATE TABLE IF NOT EXISTS r1_rotation_state (
     last_date DATE NOT NULL,
     last_index INTEGER NOT NULL
 );
+-- Co-presence history for the seat-cap picker tiebreaker. Records
+-- unordered pairs (member_id_a < member_id_b) of members who were
+-- on-site together on a working day. The picker (step 9 of
+-- plans/assigned-wfh-plan.md) reads this for the
+-- "haven't been on-site with the cohort recently" tiebreaker.
+-- Three access patterns (date scan, member-a scan, member-b
+-- scan) are covered by the three indexes below. See migration
+-- 000027.
+CREATE TABLE IF NOT EXISTS wfh_co_presence (
+    co_presence_id TEXT PRIMARY KEY,
+    working_date DATE NOT NULL,
+    member_id_a TEXT NOT NULL,
+    member_id_b TEXT NOT NULL,
+    recorded_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (member_id_a) REFERENCES team_members(id) ON DELETE CASCADE,
+    FOREIGN KEY (member_id_b) REFERENCES team_members(id) ON DELETE CASCADE,
+    UNIQUE(working_date, member_id_a, member_id_b),
+    CHECK (member_id_a < member_id_b)
+);
+
+CREATE INDEX IF NOT EXISTS idx_wfh_co_presence_date     ON wfh_co_presence(working_date);
+CREATE INDEX IF NOT EXISTS idx_wfh_co_presence_member_a ON wfh_co_presence(member_id_a, working_date);
+CREATE INDEX IF NOT EXISTS idx_wfh_co_presence_member_b ON wfh_co_presence(member_id_b, working_date);

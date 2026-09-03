@@ -171,6 +171,29 @@ type WFHRequest struct {
 	MemberName string `json:"member_name,omitempty"`
 }
 
+// WFHCoPresence records that two members were on-site together
+// on a working day. The seat-cap picker reads this for the
+// co-presence tiebreaker — "haven't been on-site with the cohort
+// recently" lowers a candidate's priority so the picker keeps
+// them on-site to meet the cohort.
+//
+// Rows are unordered pairs in canonical ordering
+// (MemberIDA < MemberIDB) — halves the row count and removes
+// the symmetric-pair problem. The CHECK constraint at the
+// storage layer enforces this; the writer is responsible for
+// ordering before inserting.
+//
+// Migration 000027 introduces the table and three indexes. The
+// retention prune (step 11 of plans/assigned-wfh-plan.md) keeps
+// rows bounded to WFH_COPRESENCE_RETENTION_DAYS.
+type WFHCoPresence struct {
+	ID          string    `json:"id"`
+	WorkingDate string    `json:"working_date"` // "2006-01-02"
+	MemberIDA   string    `json:"member_id_a"`
+	MemberIDB   string    `json:"member_id_b"`
+	RecordedAt  time.Time `json:"recorded_at"`
+}
+
 // WFH status constants.
 const (
 	WFHStatusPending   = "pending"

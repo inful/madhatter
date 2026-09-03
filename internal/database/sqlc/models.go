@@ -147,6 +147,14 @@ type User struct {
 	UpdatedAt     sql.NullTime  `json:"updated_at"`
 }
 
+type WfhCoPresence struct {
+	CoPresenceID string    `json:"co_presence_id"`
+	WorkingDate  time.Time `json:"working_date"`
+	MemberIDA    string    `json:"member_id_a"`
+	MemberIDB    string    `json:"member_id_b"`
+	RecordedAt   time.Time `json:"recorded_at"`
+}
+
 type WfhRequest struct {
 	ID            string         `json:"id"`
 	MemberID      string         `json:"member_id"`

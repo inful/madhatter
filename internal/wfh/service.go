@@ -254,7 +254,7 @@ func (s *Service) GetQuotaStatusForDate(ctx context.Context, memberID string, re
 		return QuotaStatus{}, err
 	}
 
-	requests, err := s.db.GetWFHRequestsUsedInPeriod(ctx, memberID,
+	requests, err := s.db.GetWFHRequestsVoluntaryInPeriod(ctx, memberID,
 		start.Format("2006-01-02"), end.Format("2006-01-02"))
 	if err != nil {
 		return QuotaStatus{}, err
@@ -340,7 +340,7 @@ func (s *Service) CheckQuota(ctx context.Context, memberID, date string) (bool, 
 		return false, err
 	}
 
-	requests, err := s.db.GetWFHRequestsUsedInPeriod(ctx, memberID,
+	requests, err := s.db.GetWFHRequestsVoluntaryInPeriod(ctx, memberID,
 		start.Format("2006-01-02"), end.Format("2006-01-02"))
 	if err != nil {
 		return false, err
@@ -819,7 +819,7 @@ func (s *Service) prioritisePending(ctx context.Context, date string, pending []
 
 	items := make([]pendingWithUsage, 0, len(pending))
 	for i := range pending {
-		used, err := s.db.GetWFHRequestsUsedInPeriod(ctx, pending[i].MemberID, startStr, endStr)
+		used, err := s.db.GetWFHRequestsVoluntaryInPeriod(ctx, pending[i].MemberID, startStr, endStr)
 		if err != nil {
 			return nil, err
 		}

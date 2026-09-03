@@ -158,6 +158,7 @@ type Querier interface {
 	GetWFHRequestsByDateAndStatus(ctx context.Context, arg GetWFHRequestsByDateAndStatusParams) ([]GetWFHRequestsByDateAndStatusRow, error)
 	GetWFHRequestsByMember(ctx context.Context, memberID string) ([]GetWFHRequestsByMemberRow, error)
 	GetWFHRequestsByMemberAndPeriod(ctx context.Context, arg GetWFHRequestsByMemberAndPeriodParams) ([]GetWFHRequestsByMemberAndPeriodRow, error)
+	GetWFHRequestsVoluntaryInPeriod(ctx context.Context, arg GetWFHRequestsVoluntaryInPeriodParams) ([]GetWFHRequestsVoluntaryInPeriodRow, error)
 	// Returns 1 if an admin-marked row exists for (member_id, date),
 	// 0 otherwise. Cheap point-lookup behind the
 	// idx_wfh_requests_admin_marked index.

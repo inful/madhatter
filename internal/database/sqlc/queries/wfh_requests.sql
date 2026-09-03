@@ -85,6 +85,16 @@ WHERE member_id = ?
   AND status IN ('pending', 'approved')
 ORDER BY date ASC;
 
+-- name: GetWFHRequestsVoluntaryInPeriod :many
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason, origin
+FROM wfh_requests
+WHERE member_id = ?
+  AND date >= ?
+  AND date <= ?
+  AND status IN ('pending', 'approved')
+  AND origin != 'assigned'
+ORDER BY date ASC;
+
 -- name: GetPendingWFHRequestsForSettlement :many
 SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason, origin
 FROM wfh_requests

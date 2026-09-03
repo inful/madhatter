@@ -656,6 +656,78 @@ func (q *Queries) GetWFHRequestsByMemberAndPeriod(ctx context.Context, arg GetWF
 	return items, nil
 }
 
+const getWFHRequestsVoluntaryInPeriod = `-- name: GetWFHRequestsVoluntaryInPeriod :many
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason, origin
+FROM wfh_requests
+WHERE member_id = ?
+  AND date >= ?
+  AND date <= ?
+  AND status IN ('pending', 'approved')
+  AND origin != 'assigned'
+ORDER BY date ASC
+`
+
+type GetWFHRequestsVoluntaryInPeriodParams struct {
+	MemberID string    `json:"member_id"`
+	Date     time.Time `json:"date"`
+	Date_2   time.Time `json:"date_2"`
+}
+
+type GetWFHRequestsVoluntaryInPeriodRow struct {
+	ID            string         `json:"id"`
+	MemberID      string         `json:"member_id"`
+	Date          time.Time      `json:"date"`
+	Status        string         `json:"status"`
+	CreatedAt     sql.NullTime   `json:"created_at"`
+	SettledAt     sql.NullTime   `json:"settled_at"`
+	WithdrawnBy   sql.NullString `json:"withdrawn_by"`
+	WithdrawnAt   sql.NullTime   `json:"withdrawn_at"`
+	IsRecurring   int64          `json:"is_recurring"`
+	IsAdminMarked int64          `json:"is_admin_marked"`
+	MarkedBy      sql.NullString `json:"marked_by"`
+	MarkedAt      sql.NullTime   `json:"marked_at"`
+	DenialReason  sql.NullString `json:"denial_reason"`
+	Origin        string         `json:"origin"`
+}
+
+func (q *Queries) GetWFHRequestsVoluntaryInPeriod(ctx context.Context, arg GetWFHRequestsVoluntaryInPeriodParams) ([]GetWFHRequestsVoluntaryInPeriodRow, error) {
+	rows, err := q.db.QueryContext(ctx, getWFHRequestsVoluntaryInPeriod, arg.MemberID, arg.Date, arg.Date_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetWFHRequestsVoluntaryInPeriodRow{}
+	for rows.Next() {
+		var i GetWFHRequestsVoluntaryInPeriodRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.MemberID,
+			&i.Date,
+			&i.Status,
+			&i.CreatedAt,
+			&i.SettledAt,
+			&i.WithdrawnBy,
+			&i.WithdrawnAt,
+			&i.IsRecurring,
+			&i.IsAdminMarked,
+			&i.MarkedBy,
+			&i.MarkedAt,
+			&i.DenialReason,
+			&i.Origin,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const isAdminMarkedWFH = `-- name: IsAdminMarkedWFH :one
 SELECT is_admin_marked
 FROM wfh_requests

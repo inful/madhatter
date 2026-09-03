@@ -368,6 +368,62 @@ func (db *DB) GetWFHRequestsUsedInPeriod(ctx context.Context, memberID, periodSt
 	return result, nil
 }
 
+// GetWFHRequestsVoluntaryInPeriod is the voluntary-only sibling of
+// GetWFHRequestsUsedInPeriod — it returns pending + approved WFH
+// rows for a member within a period, but EXCLUDES rows with
+// origin='assigned'. An Assigned WFH must not burn the member's
+// voluntary quota, matching the user-facing promise in
+// docs/ASSIGNED_WFH.md ("Your quota does not count Assigned
+// WFHs"). The seat-cap picker (step 6 of
+// plans/assigned-wfh-plan.md) also uses this so a member
+// carrying many Assigned WFHs is still a fair candidate for
+// further assignment based on their voluntary usage.
+//
+// The original GetWFHRequestsUsedInPeriod is kept unchanged
+// because the on-site-floor math in the existing settlement path
+// counts an Assigned WFH day toward the floor — which is correct:
+// an Assigned member is WFH, not on-site. Migration 000024 + the
+// upcoming picker (step 6) preserve that distinction; this
+// sibling query is the quota/picker math that excludes assigned.
+func (db *DB) GetWFHRequestsVoluntaryInPeriod(ctx context.Context, memberID, periodStart, periodEnd string) ([]WFHRequest, error) {
+	start, err := time.Parse("2006-01-02", periodStart)
+	if err != nil {
+		return nil, ErrWFHInvalidDate
+	}
+	end, err := time.Parse("2006-01-02", periodEnd)
+	if err != nil {
+		return nil, ErrWFHInvalidDate
+	}
+	rows, err := db.queries.GetWFHRequestsVoluntaryInPeriod(ctx, sqlc.GetWFHRequestsVoluntaryInPeriodParams{
+		MemberID: memberID,
+		Date:     start,
+		Date_2:   end,
+	})
+	if err != nil {
+		return nil, err
+	}
+	result := make([]WFHRequest, len(rows))
+	for i := range rows {
+		result[i] = wfhFromSQLCFields(wfhFields{
+			ID:            rows[i].ID,
+			MemberID:      rows[i].MemberID,
+			Date:          rows[i].Date,
+			Status:        rows[i].Status,
+			CreatedAt:     rows[i].CreatedAt,
+			SettledAt:     rows[i].SettledAt,
+			WithdrawnBy:   rows[i].WithdrawnBy,
+			WithdrawnAt:   rows[i].WithdrawnAt,
+			IsRecurring:   rows[i].IsRecurring,
+			IsAdminMarked: rows[i].IsAdminMarked,
+			MarkedBy:      rows[i].MarkedBy,
+			MarkedAt:      rows[i].MarkedAt,
+			DenialReason:  rows[i].DenialReason,
+			Origin:        rows[i].Origin,
+		})
+	}
+	return result, nil
+}
+
 // HasWFHRequestOnDate reports whether any wfh_requests row exists for the
 // (memberID, date) pair in any status. Used by the recurring materializer
 // to preserve explicit user state (withdrawn, cancelled, etc.) when filling

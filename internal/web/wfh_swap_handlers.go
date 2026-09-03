@@ -2,13 +2,67 @@ package web
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/inful/madhatter/internal/database"
+	"github.com/inful/madhatter/internal/notify"
 )
+
+// handleWFHAdminReassign is the admin's "Reassign" button on
+// an assigned row. POST /admin/wfh/{id}/reassign. Body:
+// replacement_member_id=<id>. Moves the assigned WFH from
+// the original member to the replacement in a single
+// transaction (withdraw + insert), preserving the seat cap.
+//
+// Step 16 of plans/assigned-wfh-plan.md. Authorization: the
+// safeRequireAdmin middleware on the route group guards the
+// endpoint; the handler itself assumes the caller is admin.
+func (h *Handler) handleWFHAdminReassign(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id := chi.URLParam(r, "id")
+
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	replacementID := r.FormValue("replacement_member_id")
+	if replacementID == "" {
+		http.Redirect(w, r, "/admin/wfh?flash=reassign_missing", http.StatusSeeOther)
+		return
+	}
+
+	user := mustGetUser(ctx)
+
+	newID, err := h.wfhService.AdminReassignWFH(ctx, id, replacementID, user.UserID, user.Name)
+	if err != nil {
+		slog.ErrorContext(ctx, "admin reassign failed", "id", id, "replacement", replacementID, "error", err)
+		http.Redirect(w, r, "/admin/wfh?flash=reassign_error", http.StatusSeeOther)
+		return
+	}
+	_ = newID // currently unused at the handler level — the notifier fires inside the service
+
+	// Fire an extra notification for the audit trail so the
+	// admin's reassign is visible in the email outbox. The
+	// service already fires per-row notifications; this adds
+	// an admin-side log entry. Use a synthetic RequestID
+	// that combines the original and replacement row IDs so
+	// the audit log can correlate.
+	h.notifierOrNil().WFHStateChanged(ctx, notify.WFHEvent{
+		RequestID:  "reassign:" + id + "->" + replacementID,
+		MemberID:   replacementID,
+		MemberName: h.memberName(ctx, replacementID),
+		Date:       time.Now().UTC().Format("2006-01-02"),
+		OldStatus:  database.WFHStatusApproved,
+		NewStatus:  database.WFHStatusApproved,
+		ActorName:  user.Name + " (reassign)",
+	})
+
+	http.Redirect(w, r, "/admin/wfh?flash=reassigned", http.StatusSeeOther)
+}
 
 // handleWFHSwapForm serves the swap-request form for an
 // assigned WFH row. GET /wfh/{id}/swap. The form's only input
@@ -95,44 +149,34 @@ func (h *Handler) handleWFHSwapCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	wfh, err := h.db.GetWFHRequestByID(ctx, id)
+	ok, wfh, err := h.swapCreateValidate(ctx, id, memberID)
 	if err != nil {
-		http.Error(w, "WFH request not found", http.StatusNotFound)
+		switch {
+		case errors.Is(err, database.ErrWFHNotFound):
+			http.Error(w, "WFH request not found", http.StatusNotFound)
+		case errors.Is(err, errNotMember):
+			http.Error(w, errNotTeamMember, http.StatusForbidden)
+		case errors.Is(err, errWrongOrigin):
+			http.Error(w, "Only assigned or swap WFHs can be re-swapped", http.StatusConflict)
+		default:
+			http.Error(w, "Failed to validate swap", http.StatusInternalServerError)
+		}
 		return
 	}
-	if wfh.MemberID != memberID {
-		http.Error(w, errNotTeamMember, http.StatusForbidden)
-		return
-	}
-	if wfh.Origin != "assigned" && wfh.Origin != "swap" {
-		http.Error(w, "Only assigned or swap WFHs can be re-swapped", http.StatusConflict)
+	if !ok {
 		return
 	}
 
-	// 409-conflict guard: refuse if a pending swap already
-	// exists for this assigned row.
 	if existing, _ := h.db.GetPendingWFHSwapForRequesterRow(ctx, id); existing != nil {
 		http.Redirect(w, r, "/wfh?flash=swap_exists", http.StatusSeeOther)
 		return
 	}
 
-	// Confirm target is eligible. The form only listed
-	// eligible targets but a tampered POST could submit any
-	// ID; re-check before persisting.
-	var eligible bool
-	if h.wfhService != nil {
-		targets, err := h.wfhService.EligibleSwapTargets(ctx, wfh.Date, memberID)
-		if err != nil {
-			slog.ErrorContext(ctx, "eligibility check failed", "error", err)
-			http.Error(w, "Failed to validate swap target", http.StatusInternalServerError)
-			return
-		}
-		for i := range targets {
-			if targets[i].ID == targetID {
-				eligible = true
-				break
-			}
-		}
+	eligible, err := h.swapCreateCheckEligibility(ctx, wfh, memberID, targetID)
+	if err != nil {
+		slog.ErrorContext(ctx, "eligibility check failed", "error", err)
+		http.Error(w, "Failed to validate swap target", http.StatusInternalServerError)
+		return
 	}
 	if !eligible {
 		http.Error(w, "Swap target is not eligible (on leave, WFH, exempt, or self)", http.StatusConflict)
@@ -146,6 +190,59 @@ func (h *Handler) handleWFHSwapCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, "/wfh?flash=swap_requested", http.StatusSeeOther)
+}
+
+// errWrongOrigin is the sentinel for the "wrong origin" guard
+// (assigned or swap only). Local var so swapCreateValidate
+// can communicate which guard failed without coupling to the
+// handler's switch.
+var errWrongOrigin = errors.New("wrong origin")
+
+// swapCreateValidate performs the input + ownership + origin
+// guards before any DB work. Returns (true, wfh, nil) when
+// the caller can proceed; (false, _, err) when the handler
+// should surface the error.
+//
+// Extracted from handleWFHSwapCreate to keep the orchestrator
+// under the 10-branch cyclomatic-complexity budget.
+func (h *Handler) swapCreateValidate(ctx context.Context, id, memberID string) (bool, *database.WFHRequest, error) {
+	wfh, err := h.db.GetWFHRequestByID(ctx, id)
+	if err != nil {
+		return false, nil, database.ErrWFHNotFound
+	}
+	if wfh.MemberID != memberID {
+		return false, nil, errNotMember
+	}
+	if wfh.Origin != "assigned" && wfh.Origin != "swap" {
+		return false, nil, errWrongOrigin
+	}
+	return true, wfh, nil
+}
+
+// errNotMember is the sentinel used by swapCreateValidate to
+// signal "the requester isn't the WFH row's owner". The
+// handler's string constant `errNotTeamMember` is used in the
+// HTTP layer's message body; this is for the type-safe
+// errors.Is check in the validation path.
+var errNotMember = errors.New("requester is not the WFH row's owner")
+
+// swapCreateCheckEligibility verifies the target is in the
+// eligible set. The form only listed eligible targets but a
+// tampered POST could submit any ID; re-check before persisting.
+func (h *Handler) swapCreateCheckEligibility(ctx context.Context, wfh *database.WFHRequest, memberID, targetID string) (bool, error) {
+	if h.wfhService == nil {
+		return false, errors.New("wfh service not configured")
+	}
+	targets, err := h.wfhService.EligibleSwapTargets(ctx, wfh.Date, memberID)
+	if err != nil {
+		return false, err
+	}
+	for i := range targets {
+		if targets[i].ID == targetID {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // handleWFHSwapInbox renders the inbox for the current user.

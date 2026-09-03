@@ -810,6 +810,125 @@ func (s *Service) ReportToday(ctx context.Context, memberID string) (database.WF
 // leave/report-sick patterns). The UNIQUE(member_id, date) constraint
 // on wfh_requests guarantees idempotency: a second mark for the same
 // (member, date) returns ErrWFHDuplicateRequest. The caller is
+// AdminReassignWFH moves a system-assigned WFH row from one
+// member to another in a single transaction. The cap is
+// preserved: the original row flips to status='withdrawn'
+// (the withdrawn_by column references users(id), so the
+// actorUserID is stored raw — the reassign nature is
+// surfaced in the notifier's ActorName suffix), and a new
+// row with origin='assigned' lands for the replacement.
+// Returns the new row's ID.
+//
+// Step 16 of plans/assigned-wfh-plan.md. The handler (web
+// layer) calls this from POST /admin/wfh/{id}/reassign.
+//
+// Constraints:
+//   - original row must be origin='assigned' and status='approved'.
+//   - replacement member must be active, not exempt, not on
+//     leave, not WFH on the date (mirrors the picker's
+//     candidate filter).
+//
+// The transaction is best-effort: if the withdrawal succeeds
+// but the new row insert fails (UNIQUE collision), the cap
+// short-falls for one tick. The next SettlePendingRequests
+// call re-issues the picker and re-balances. This is
+// preferable to a strict transactional invariant because the
+// admin-reassign path is rare and the recovery is automatic.
+func (s *Service) AdminReassignWFH(ctx context.Context, originalRowID, replacementMemberID, actorUserID, actorName string) (string, error) {
+	if !s.cfg.Enabled {
+		return "", database.ErrWFHDisabled
+	}
+	original, err := s.db.GetWFHRequestByID(ctx, originalRowID)
+	if err != nil {
+		return "", err
+	}
+	if original.Origin != "assigned" {
+		return "", database.ErrWFHAssigned
+	}
+	if original.Status != database.WFHStatusApproved {
+		return "", database.ErrWFHNotApproved
+	}
+
+	ok, err := s.adminReassignTargetOK(ctx, original.Date, original.MemberID, replacementMemberID)
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "", errors.New("replacement member is not eligible (active, not on leave, not WFH on date, not exempt)")
+	}
+
+	if err := s.db.WithdrawAssignedWFHRequest(ctx, originalRowID, actorUserID); err != nil {
+		return "", err
+	}
+
+	settledAt := time.Now().UTC()
+	if err := s.db.CreateApprovedAssignedWFHRequest(ctx, replacementMemberID, original.Date, settledAt); err != nil {
+		return "", err
+	}
+
+	s.adminReassignNotify(ctx, originalRowID, original, replacementMemberID, original.Date, actorName)
+	return s.adminReassignResultID(ctx, replacementMemberID, original.Date)
+}
+
+// adminReassignTargetOK returns true when replacementMemberID
+// is in the eligible-target set for date. The picker-style
+// filter (active, not exempt, not on leave, not WFH on date,
+// not the requester) is applied via EligibleSwapTargets.
+// Extracted from AdminReassignWFH to keep the orchestrator
+// under the cyclomatic-complexity budget.
+func (s *Service) adminReassignTargetOK(ctx context.Context, date, requesterID, replacementMemberID string) (bool, error) {
+	targets, err := s.EligibleSwapTargets(ctx, date, requesterID)
+	if err != nil {
+		return false, err
+	}
+	for i := range targets {
+		if targets[i].ID == replacementMemberID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// adminReassignNotify fires the WFHStateChanged events for
+// both the original (withdrawn) and replacement (approved)
+// rows. nil-safe — the notifier can be nil in tests.
+func (s *Service) adminReassignNotify(ctx context.Context, originalRowID string, original *database.WFHRequest, replacementMemberID, date, actorName string) {
+	if s.notifier == nil {
+		return
+	}
+	s.notifier.WFHStateChanged(ctx, notify.WFHEvent{
+		RequestID:  originalRowID,
+		MemberID:   original.MemberID,
+		MemberName: s.resolveMemberName(ctx, original.MemberID),
+		Date:       date,
+		OldStatus:  database.WFHStatusApproved,
+		NewStatus:  database.WFHStatusWithdrawn,
+		ActorName:  actorName,
+	})
+	replacementReq, _ := s.db.GetWFHRequestByMemberAndDate(ctx, replacementMemberID, date)
+	if replacementReq != nil {
+		s.notifier.WFHStateChanged(ctx, notify.WFHEvent{
+			RequestID:  replacementReq.ID,
+			MemberID:   replacementMemberID,
+			MemberName: s.resolveMemberName(ctx, replacementMemberID),
+			Date:       date,
+			OldStatus:  "",
+			NewStatus:  database.WFHStatusApproved,
+			ActorName:  actorName,
+		})
+	}
+}
+
+// adminReassignResultID returns the just-inserted replacement
+// row ID, or "" if the lookup failed. Best-effort.
+func (s *Service) adminReassignResultID(ctx context.Context, replacementMemberID, date string) (string, error) {
+	replacementReq, _ := s.db.GetWFHRequestByMemberAndDate(ctx, replacementMemberID, date)
+	if replacementReq == nil {
+		return "", nil
+	}
+	return replacementReq.ID, nil
+}
+
 // expected to translate that into a "already marked" flash message.
 func (s *Service) MarkWFH(ctx context.Context, memberID, date, actorUserID, actorName string) (database.WFHRequest, error) {
 	if !s.cfg.Enabled {

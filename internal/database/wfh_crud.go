@@ -199,6 +199,47 @@ func (db *DB) GetWFHRequestByID(ctx context.Context, id string) (*WFHRequest, er
 	return &result, nil
 }
 
+// GetWFHRequestByMemberAndDate retrieves the WFH row for a
+// specific member on a specific date. Used by the admin
+// reassign flow (step 16) to fetch the just-inserted
+// replacement row so the notifier can emit the right
+// RequestID. Returns nil + ErrWFHNotFound when no row exists
+// for (member, date) — the admin reassign handler treats
+// that as a non-fatal warning since the cap is still met.
+func (db *DB) GetWFHRequestByMemberAndDate(ctx context.Context, memberID, date string) (*WFHRequest, error) {
+	dateTime, err := time.Parse("2006-01-02", date)
+	if err != nil {
+		return nil, ErrWFHInvalidDate
+	}
+	row, err := db.queries.GetWFHRequestByMemberAndDate(ctx, sqlc.GetWFHRequestByMemberAndDateParams{
+		MemberID: memberID,
+		Date:     dateTime,
+	})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrWFHNotFound
+		}
+		return nil, err
+	}
+	result := wfhFromSQLCFields(wfhFields{
+		ID:            row.ID,
+		MemberID:      row.MemberID,
+		Date:          row.Date,
+		Status:        row.Status,
+		CreatedAt:     row.CreatedAt,
+		SettledAt:     row.SettledAt,
+		WithdrawnBy:   row.WithdrawnBy,
+		WithdrawnAt:   row.WithdrawnAt,
+		IsRecurring:   row.IsRecurring,
+		IsAdminMarked: row.IsAdminMarked,
+		MarkedBy:      row.MarkedBy,
+		MarkedAt:      row.MarkedAt,
+		DenialReason:  row.DenialReason,
+		Origin:        row.Origin,
+	})
+	return &result, nil
+}
+
 // GetWFHRequestsByDate returns all WFH requests for a specific date.
 func (db *DB) GetWFHRequestsByDate(ctx context.Context, date string) ([]WFHRequest, error) {
 	dateTime, err := time.Parse("2006-01-02", date)
@@ -556,6 +597,45 @@ func (db *DB) WithdrawWFHRequest(ctx context.Context, id, adminUserID string) er
 	return db.withdrawWFH(ctx, id, "", adminUserID)
 }
 
+// WithdrawAssignedWFHRequest is the admin reassign path's
+// bypass for the withdraw gate. It withdraws an
+// origin='assigned' row directly, bypassing the
+// origin check in withdrawWFH. Used by Service.AdminReassignWFH
+// (Phase 3 / step 16 of plans/assigned-whf-plan.md), which
+// inserts a replacement row in the same transaction so the cap
+// is still met.
+//
+// The "reassign:" prefix on the actorUserID lets the audit
+// trail distinguish admin reassigns from picker-assigned
+// withdrawals (which use the actor's plain user ID via
+// WithdrawWFHRequest). The query layer doesn't care — it's
+// just a stored string.
+func (db *DB) WithdrawAssignedWFHRequest(ctx context.Context, id, actorUserID string) error {
+	req, err := db.GetWFHRequestByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if req.Status != WFHStatusApproved {
+		return ErrWFHNotApproved
+	}
+	// past-date guard from withdrawWFH
+	wfhDate, err := time.Parse("2006-01-02", req.Date)
+	if err != nil {
+		return errors.New("invalid stored WFH date")
+	}
+	nowUTC := time.Now().UTC()
+	today := time.Date(nowUTC.Year(), nowUTC.Month(), nowUTC.Day(), 0, 0, 0, 0, time.UTC)
+	if wfhDate.UTC().Before(today) {
+		return ErrWFHDatePassed
+	}
+
+	_, err = db.queries.UpdateWFHRequestWithdrawn(ctx, sqlc.UpdateWFHRequestWithdrawnParams{
+		WithdrawnBy: sql.NullString{String: actorUserID, Valid: true},
+		ID:          id,
+	})
+	return err
+}
+
 // MarkAdminWFH inserts an admin-asserted WFH row in one shot. The
 // row is created with status='approved' and is_admin_marked=1 so
 // every downstream query (quota, floor, ICS, dashboard presence)
@@ -623,6 +703,13 @@ func (db *DB) WithdrawOwnWFHRequest(ctx context.Context, id, memberID string) er
 // withdraw button in the WFH list page is hidden when origin='assigned'; this
 // gate is defense-in-depth in case a request slips through. The cap stays met
 // because the swap is one-out, one-in.
+//
+// The admin reassign path (Phase 3 / step 16 of
+// plans/assigned-wfh-plan.md) needs to withdraw an assigned row
+// because it explicitly moves the WFH to another member. It uses
+// WithdrawAssignedWFHRequest which bypasses this gate — the
+// replacement row is inserted in the same transaction so the
+// cap is still met.
 func (db *DB) withdrawWFH(ctx context.Context, id, memberID, actorUserID string) error {
 	req, err := db.GetWFHRequestByID(ctx, id)
 	if err != nil {

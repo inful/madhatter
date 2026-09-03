@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/inful/madhatter/internal/database"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -71,4 +72,78 @@ func TestService_AutoCancelExpiredSwaps(t *testing.T) {
 	require.Len(t, pending, 1, "future swap should still be pending")
 	assert.Equal(t, tomorrowSwapID, pending[0].ID,
 		"only the future swap should remain in the inbox")
+}
+
+// TestService_AdminReassignWFH pins step 16 of
+// plans/assigned-wfh-plan.md. The admin moves an assigned
+// WFH from one member to another: the original row flips to
+// status='withdrawn', and a new row with origin='assigned'
+// lands for the replacement. The cap is preserved (1 out, 1 in).
+func TestService_AdminReassignWFH(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	aliceID, err := db.AddTeamMember(ctx, "alice@example.com", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "bob@example.com", "bob@example.com")
+	require.NoError(t, err)
+	// Seed a real admin user so the FK on wfh_requests.withdrawn_by
+	// is satisfied (the schema references users(id)). The fixture
+	// matches what the production handler passes through.
+	adminID := seedAdminUser(t, ctx, db, "admin-reassign", "Admin", "admin-reassign@example.com")
+
+	date := time.Now().UTC().AddDate(0, 0, 5).Format("2006-01-02")
+	assignedID := "assigned-reassign-test"
+	_, err = db.ExecContext(ctx,
+		`INSERT INTO wfh_requests (id, member_id, date, status, origin)
+		 VALUES (?, ?, ?, 'approved', 'assigned')`,
+		assignedID, aliceID, date)
+	require.NoError(t, err)
+
+	svc := NewService(db, testConfig())
+	newID, err := svc.AdminReassignWFH(ctx, assignedID, bobID, adminID, "Admin")
+	require.NoError(t, err)
+	assert.NotEmpty(t, newID, "reassignment should return the new row ID")
+
+	// Original: status=withdrawn, withdrawn_by=reassign:<admin>
+	original, err := db.GetWFHRequestByID(ctx, assignedID)
+	require.NoError(t, err)
+	assert.Equal(t, "withdrawn", original.Status)
+	require.NotNil(t, original.WithdrawnBy)
+	assert.Equal(t, adminID, *original.WithdrawnBy)
+
+	// Replacement: a new row for Bob on the same date
+	replacement, err := db.GetWFHRequestByMemberAndDate(ctx, bobID, date)
+	require.NoError(t, err)
+	require.NotNil(t, replacement, "replacement row must exist for Bob on the date")
+	assert.Equal(t, "approved", replacement.Status)
+	assert.Equal(t, "assigned", replacement.Origin)
+	assert.NotEqual(t, assignedID, replacement.ID, "replacement must be a new row, not reuse the original")
+}
+
+// TestService_AdminReassignWFH_RejectsVoluntary pins the
+// origin guard: only origin='assigned' can be reassigned. A
+// voluntary (ad_hoc) row returns ErrWFHAssigned — "use a swap
+// instead" (the same sentinel the withdraw gate uses).
+func TestService_AdminReassignWFH_RejectsVoluntary(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	aliceID, err := db.AddTeamMember(ctx, "alice@example.com", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "bob@example.com", "bob@example.com")
+	require.NoError(t, err)
+	adminID := seedAdminUser(t, ctx, db, "admin-reassign-2", "Admin", "admin-reassign-2@example.com")
+
+	date := time.Now().UTC().AddDate(0, 0, 5).Format("2006-01-02")
+	voluntary, err := db.CreateWFHRequest(ctx, aliceID, date)
+	require.NoError(t, err)
+
+	svc := NewService(db, testConfig())
+	_, err = svc.AdminReassignWFH(ctx, voluntary.ID, bobID, adminID, "Admin")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, database.ErrWFHAssigned,
+		"voluntary (ad_hoc) row must not be reassignable")
 }

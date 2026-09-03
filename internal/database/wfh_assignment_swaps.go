@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
@@ -37,7 +38,7 @@ func (db *DB) CreateWFHAssignmentSwap(ctx context.Context, requesterWfhRequestID
 func (db *DB) GetWFHAssignmentSwapByID(ctx context.Context, id string) (*WFHAssignmentSwap, error) {
 	row, err := db.queries.GetSwapByID(ctx, id)
 	if err != nil {
-		if errorsIsNoRows(err) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrWFHNotFound
 		}
 		return nil, err
@@ -84,15 +85,14 @@ func (db *DB) GetPendingWFHSwapsForRequesterMember(ctx context.Context, memberID
 func (db *DB) GetPendingWFHSwapForRequesterRow(ctx context.Context, requesterWfhRequestID string) (*WFHAssignmentSwap, error) {
 	row, err := db.queries.GetPendingSwapForRequesterRow(ctx, requesterWfhRequestID)
 	if err != nil {
-		if errorsIsNoRows(err) {
-			return nil, nil
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil // no pending swap exists — that's not an error
 		}
 		return nil, err
 	}
 	return swapFromSQLC(row), nil
 }
 
-// UpdateWFHAssignmentSwapStatus transitions a swap to the
 // given status. Sets resolved_at to the supplied timestamp
 // (the auto-cancel pass uses now; manual accept/reject uses
 // now; the requester cancel uses now too).
@@ -140,11 +140,4 @@ func swapFromSQLC(row sqlc.WfhAssignmentSwap) *WFHAssignmentSwap {
 		s.ResolvedAt = &t
 	}
 	return s
-}
-
-// errorsIsNoRows is a small wrapper to keep the swap read
-// adapters readable. Same semantics as errors.Is(err,
-// sql.ErrNoRows); the inline form hurts scanning.
-func errorsIsNoRows(err error) bool {
-	return err != nil && (err == sql.ErrNoRows || (err.Error() == "sql: no rows in result set"))
 }

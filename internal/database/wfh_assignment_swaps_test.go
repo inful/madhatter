@@ -270,7 +270,7 @@ func TestProbe_CancelExpiredSwapsInspect(t *testing.T) {
 	// List all rows before cancel.
 	rows, err := db.db.QueryContext(ctx, `SELECT id, swap_date, status FROM wfh_assignment_swaps`)
 	require.NoError(t, err)
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var id, status string
 		var date time.Time
@@ -284,7 +284,7 @@ func TestProbe_CancelExpiredSwapsInspect(t *testing.T) {
 
 	rows, err = db.db.QueryContext(ctx, `SELECT id, swap_date, status FROM wfh_assignment_swaps`)
 	require.NoError(t, err)
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var id, status string
 		var date time.Time

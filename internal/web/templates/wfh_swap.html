@@ -1,0 +1,68 @@
+{{define "wfh_swap.html"}}
+{{template "base" .}}
+{{end}}
+
+{{define "wfh_swap_title"}}Request Swap for Assigned WFH{{end}}
+
+{{define "wfh_swap_content"}}
+{{template "user_card" .}}
+{{template "page_header" (dict "Title" "Request Swap" "Icon" "fas fa-exchange-alt" "BackHref" "/wfh" "BackLabel" "WFH Requests")}}
+
+{{if .Error}}
+<div class="notification is-danger is-light mb-4">
+    <i class="fas fa-exclamation-triangle mr-2"></i> {{.Error}}
+</div>
+{{end}}
+
+<div class="card">
+    <header class="card-header">
+        <p class="card-header-title">
+            <i class="fas fa-paper-plane mr-2"></i> Request a Swap for {{.WFHDate}}
+        </p>
+    </header>
+    <div class="card-content">
+        <div class="notification is-info is-light mb-4">
+            <i class="fas fa-info-circle mr-2"></i>
+            You were <strong>assigned WFH</strong> on
+            <strong>{{.WFHDate}}</strong> by the seat-cap picker because the
+            on-site count would have exceeded the seat cap. You can swap
+            this assigned day with a willing on-site teammate.
+        </div>
+        <form method="POST" action="/wfh/{{.WFHRequestID}}/swap">
+            <div class="field">
+                <label class="label" for="target_member_id">On-site teammate to swap with</label>
+                <div class="control has-icons-left">
+                    <div class="select is-fullwidth">
+                        <select id="target_member_id" name="target_member_id" required>
+                            <option value="">Select teammate</option>
+                            {{range .EligibleTargets}}
+                            <option value="{{.ID}}">{{.Name}} ({{.Email}})</option>
+                            {{end}}
+                        </select>
+                    </div>
+                    <span class="icon is-small is-left">
+                        <i class="fas fa-user"></i>
+                    </span>
+                </div>
+                <p class="help">Teammates must be active, not on leave, not exempt, and not WFH on {{.WFHDate}}.</p>
+            </div>
+            <div class="field is-grouped mt-4">
+                <div class="control">
+                    <button type="submit" class="button is-primary submit-btn">
+                        <i class="fas fa-paper-plane mr-2"></i> Send Swap Request
+                    </button>
+                </div>
+                <div class="control">
+                    <a href="/wfh" class="button is-light">Cancel</a>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+{{end}}
+
+{{define "wfh_swap_styles"}}
+{{end}}
+
+{{define "wfh_swap_scripts"}}
+{{end}}

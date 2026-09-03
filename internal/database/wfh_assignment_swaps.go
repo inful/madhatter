@@ -96,9 +96,9 @@ func (db *DB) GetPendingWFHSwapForRequesterRow(ctx context.Context, requesterWfh
 // given status. Sets resolved_at to the supplied timestamp
 // (the auto-cancel pass uses now; manual accept/reject uses
 // now; the requester cancel uses now too).
-func (db *DB) UpdateWFHAssignmentSwapStatus(ctx context.Context, id, status string, resolvedAt time.Time) error {
+func (db *DB) UpdateWFHAssignmentSwapStatus(ctx context.Context, id string, status WFHSwapStatus, resolvedAt time.Time) error {
 	_, err := db.queries.UpdateSwapStatus(ctx, sqlc.UpdateSwapStatusParams{
-		Status:     status,
+		Status:     string(status),
 		ResolvedAt: sql.NullTime{Time: resolvedAt, Valid: true},
 		ID:         id,
 	})

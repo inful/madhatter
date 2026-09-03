@@ -1463,6 +1463,63 @@ func (s *Service) resolveMemberName(ctx context.Context, memberID string) string
 	return m.Name
 }
 
+// ResolveMemberName is the public wrapper for resolveMemberName,
+// exposed so the swap inbox (web layer) can attach the
+// requester's display name to each pending swap without
+// duplicating the GetMemberByID lookup. Used in step 14 of
+// plans/assigned-wfh-plan.md.
+func (s *Service) ResolveMemberName(ctx context.Context, memberID string) string {
+	return s.resolveMemberName(ctx, memberID)
+}
+
+// EligibleSwapTargets returns the active members who could
+// swap onto this date: not the requester, not on leave, not
+// WFH today, not exempt. Mirrors the picker's candidate
+// filter (Phase 2 / step 7) so the dropdown contains the
+// same set the picker would have picked from.
+//
+// Used by the swap form (step 14) to populate the
+// target_member_id select. Exposed as a public service
+// method so the web layer doesn't have to re-implement the
+// picker's eligibility rules.
+func (s *Service) EligibleSwapTargets(ctx context.Context, dateStr, requesterID string) ([]database.TeamMember, error) {
+	members, err := s.db.GetActiveTeamMembers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	onLeaveIDs, err := s.leaveMemberIDsForDate(ctx, dateStr)
+	if err != nil {
+		return nil, err
+	}
+	approvedWFH, err := s.db.GetWFHRequestsByDateAndStatus(ctx, dateStr, database.WFHStatusApproved)
+	if err != nil {
+		return nil, err
+	}
+	approvedIDs := memberIDsFromWFHRequests(approvedWFH)
+
+	out := make([]database.TeamMember, 0, len(members))
+	for i := range members {
+		m := members[i]
+		if !m.IsActive {
+			continue
+		}
+		if m.ID == requesterID {
+			continue
+		}
+		if m.IsExemptFromAssignment {
+			continue
+		}
+		if _, onLeave := onLeaveIDs[m.ID]; onLeave {
+			continue
+		}
+		if _, wfh := approvedIDs[m.ID]; wfh {
+			continue
+		}
+		out = append(out, m)
+	}
+	return out, nil
+}
+
 // leaveMemberIDsForDate returns the set of team-member IDs on leave for date.
 // Recurring-WFH availability is no longer tracked here — the materializer
 // inserts those occurrences as approved wfh_requests rows, so they appear

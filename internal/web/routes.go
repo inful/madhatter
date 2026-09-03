@@ -82,6 +82,12 @@ func (h *Handler) registerRoutes() {
 		r.Post("/wfh/report-today", h.handleWFHReportToday)
 		r.Post("/wfh/{id}/cancel", h.handleWFHCancel)
 		r.Post("/wfh/{id}/withdraw", h.handleWFHSelfWithdraw)
+		r.Get("/wfh/{id}/swap", h.handleWFHSwapForm)
+		r.Post("/wfh/{id}/swap", h.handleWFHSwapCreate)
+		r.Get("/wfh/swap/inbox", h.handleWFHSwapInbox)
+		r.Post("/wfh/swap/{swapId}/accept", h.handleWFHSwapAccept)
+		r.Post("/wfh/swap/{swapId}/reject", h.handleWFHSwapReject)
+		r.Post("/wfh/swap/{swapId}/cancel", h.handleWFHSwapCancel)
 	})
 
 	// Admin routes (require authentication and admin privileges).

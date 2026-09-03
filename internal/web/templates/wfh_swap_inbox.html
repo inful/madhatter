@@ -1,0 +1,90 @@
+{{define "wfh_swap_inbox.html"}}
+{{template "base" .}}
+{{end}}
+
+{{define "wfh_swap_inbox_title"}}WFH Swap Inbox{{end}}
+
+{{define "wfh_swap_inbox_content"}}
+{{template "user_card" .}}
+{{template "page_header" (dict "Title" "WFH Swap Inbox" "Icon" "fas fa-inbox" "BackHref" "/wfh" "BackLabel" "WFH Requests")}}
+
+{{if .Error}}
+<div class="notification is-danger is-light mb-4">
+    <i class="fas fa-exclamation-triangle mr-2"></i> {{.Error}}
+</div>
+{{end}}
+
+{{if .PendingSwaps}}
+<div class="card">
+    <header class="card-header">
+        <p class="card-header-title">
+            <i class="fas fa-inbox mr-2"></i> Pending Swap Requests
+            <span class="tag is-danger ml-2">{{len .PendingSwaps}}</span>
+        </p>
+    </header>
+    <div class="card-content">
+        <div class="table-container">
+            <table class="table is-fullwidth is-striped is-hoverable">
+                <caption class="is-sr-only">
+                    Pending WFH-swap requests — from, their assigned WFH day, when requested, and available actions.
+                </caption>
+                <thead>
+                    <tr>
+                        <th scope="col">From</th>
+                        <th scope="col">Their Assigned WFH Day</th>
+                        <th scope="col">Requested</th>
+                        <th scope="col">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{range .PendingSwaps}}
+                    <tr>
+                        <th scope="row">
+                            <span class="has-text-weight-semibold">
+                                <i class="fas fa-user mr-1"></i>{{.RequesterName}}
+                            </span>
+                        </th>
+                        <td>
+                            <span class="tag is-warning is-light">
+                                <i class="fas fa-calendar-day mr-1"></i>{{.SwapDate}}
+                            </span>
+                        </td>
+                        <td><small class="has-text-grey">{{.CreatedAt.Format "Jan 2, 2006 15:04"}}</small></td>
+                        <td>
+                            <div class="buttons are-small">
+                                <form method="POST" action="/wfh/swap/{{.ID}}/accept" style="display:inline">
+                                    <button type="submit" class="button is-success">
+                                        <i class="fas fa-check mr-1"></i> Accept
+                                    </button>
+                                </form>
+                                <form method="POST" action="/wfh/swap/{{.ID}}/reject" style="display:inline">
+                                    <button type="submit" class="button is-danger is-light">
+                                        <i class="fas fa-times mr-1"></i> Reject
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {{end}}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{{else}}
+<div class="card">
+    <div class="card-content">
+        <div class="empty-state">
+            <i class="fas fa-inbox fa-2x has-text-grey mb-3"></i>
+            <p class="has-text-grey">No pending swap requests. You're up to date!</p>
+        </div>
+    </div>
+</div>
+{{end}}
+{{end}}
+
+{{define "wfh_swap_inbox_styles"}}
+{{end}}
+
+{{define "wfh_swap_inbox_scripts"}}
+{{end}}

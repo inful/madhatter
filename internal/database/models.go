@@ -208,11 +208,13 @@ const (
 // paths: the requester voluntarily cancels, or the scheduler's
 // auto-cancel pass flips pending swaps whose swap_date is in
 // the past (step 15 of plans/assigned-wfh-plan.md).
+type WFHSwapStatus string
+
 const (
-	WFHSwapStatusPending  = "pending"
-	WFHSwapStatusAccepted = "accepted"
-	WFHSwapStatusRejected = "rejected"
-	WFHSwapStatusCancelled = "cancelled"
+	WFHSwapStatusPending  WFHSwapStatus = "pending"
+	WFHSwapStatusAccepted WFHSwapStatus = "accepted"
+	WFHSwapStatusRejected WFHSwapStatus = "rejected"
+	WFHSwapStatusCancelled WFHSwapStatus = "cancelled"
 )
 
 // WFHAssignmentSwap represents a request to swap a seat-cap-

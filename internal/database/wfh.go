@@ -21,6 +21,7 @@ var (
 	ErrWFHRecurringContractDay = errors.New("this weekday is already configured as recurring WFH for the member")
 	ErrWFHPermanentMember      = ErrWFHRecurringContractDay
 	ErrWFHNotApproved          = errors.New("WFH request is not approved")
+	ErrWFHAssigned             = errors.New("WFH request was system-assigned; use a swap instead of withdrawing")
 	ErrWFHOnHoliday            = errors.New("WFH requests cannot be made for holidays")
 	ErrWFHQuotaExhausted       = errors.New("WFH quota for this period has been reached")
 	ErrWFHDisabled             = errors.New("the WFH feature is disabled")
@@ -54,6 +55,7 @@ var wfhErrorTable = []struct {
 	{ErrWFHRecurringContractDay, WFHErrorInfo{Status: http.StatusConflict, Message: "This date falls on your contractual recurring WFH day."}},
 	{ErrWFHOnHoliday, WFHErrorInfo{Status: http.StatusUnprocessableEntity, Message: "WFH requests cannot be made for holidays."}},
 	{ErrWFHNotApproved, WFHErrorInfo{Status: http.StatusConflict, Message: "Only approved WFH requests can be withdrawn."}},
+	{ErrWFHAssigned, WFHErrorInfo{Status: http.StatusConflict, Message: "This WFH request was system-assigned. Request a swap instead of withdrawing it."}},
 	{ErrWFHQuotaExhausted, WFHErrorInfo{Status: http.StatusUnprocessableEntity, Message: "You have reached your WFH quota for this period. Withdraw an approved WFH to free a slot, or contact an admin."}},
 	{ErrWFHDisabled, WFHErrorInfo{Status: http.StatusServiceUnavailable, Message: "The WFH feature is disabled on this server."}},
 }
@@ -73,6 +75,13 @@ func WFHErrorFor(err error) (WFHErrorInfo, bool) {
 // wfhFields holds the WFH request columns selected by every read query.
 // sqlc v1.31 emits a per-query *Row type, so adapters in this file copy the
 // fields into a wfhFields value before delegating to wfhFromSQLCFields.
+//
+// Origin is read by every WFH query now that the picker, quota, and
+// calendar layers branch on it (origin='ad_hoc'|'recurring'|'assigned'|'swap').
+// Adding a new column here requires updating every wfhFields adapter
+// below and every read query's SELECT list to include the column —
+// see the migrations table in plans/assigned-wfh-plan.md for the
+// authoritative list.
 type wfhFields struct {
 	ID            string
 	MemberID      string
@@ -87,6 +96,7 @@ type wfhFields struct {
 	MarkedBy      sql.NullString
 	MarkedAt      sql.NullTime
 	DenialReason  sql.NullString
+	Origin        string
 }
 
 // wfhFromSQLCFields converts the canonical column set to the domain WFHRequest.
@@ -98,6 +108,7 @@ func wfhFromSQLCFields(f wfhFields) WFHRequest {
 		Status:        f.Status,
 		IsRecurring:   f.IsRecurring == 1,
 		IsAdminMarked: f.IsAdminMarked == 1,
+		Origin:        f.Origin,
 	}
 	if f.CreatedAt.Valid {
 		req.CreatedAt = f.CreatedAt.Time

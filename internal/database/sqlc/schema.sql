@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS team_members (
     email TEXT UNIQUE NOT NULL,
     is_active INTEGER DEFAULT 1,
     is_permanent_wfh INTEGER NOT NULL DEFAULT 0,
+    is_exempt_from_assignment INTEGER NOT NULL DEFAULT 0,
     recurring_wfh_monday INTEGER NOT NULL DEFAULT 0,
     recurring_wfh_tuesday INTEGER NOT NULL DEFAULT 0,
     recurring_wfh_wednesday INTEGER NOT NULL DEFAULT 0,
@@ -185,6 +186,8 @@ CREATE TABLE IF NOT EXISTS wfh_requests (
                     CHECK (status IN ('pending', 'approved', 'denied', 'cancelled', 'withdrawn')),
     is_recurring    INTEGER NOT NULL DEFAULT 0,
     is_admin_marked INTEGER NOT NULL DEFAULT 0,
+    origin          TEXT NOT NULL DEFAULT 'ad_hoc'
+                    CHECK (origin IN ('ad_hoc', 'recurring', 'assigned', 'swap')),
     created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
     settled_at      DATETIME,
     withdrawn_by    TEXT,
@@ -198,11 +201,12 @@ CREATE TABLE IF NOT EXISTS wfh_requests (
     UNIQUE(member_id, date)
 );
 
-CREATE INDEX IF NOT EXISTS idx_wfh_requests_date         ON wfh_requests(date);
-CREATE INDEX IF NOT EXISTS idx_wfh_requests_member       ON wfh_requests(member_id);
-CREATE INDEX IF NOT EXISTS idx_wfh_requests_status       ON wfh_requests(status);
-CREATE INDEX IF NOT EXISTS idx_wfh_requests_recurring    ON wfh_requests(member_id, date, is_recurring);
-CREATE INDEX IF NOT EXISTS idx_wfh_requests_admin_marked ON wfh_requests(member_id, date, is_admin_marked);
+CREATE INDEX IF NOT EXISTS idx_wfh_requests_date           ON wfh_requests(date);
+CREATE INDEX IF NOT EXISTS idx_wfh_requests_member         ON wfh_requests(member_id);
+CREATE INDEX IF NOT EXISTS idx_wfh_requests_status         ON wfh_requests(status);
+CREATE INDEX IF NOT EXISTS idx_wfh_requests_recurring      ON wfh_requests(member_id, date, is_recurring);
+CREATE INDEX IF NOT EXISTS idx_wfh_requests_admin_marked   ON wfh_requests(member_id, date, is_admin_marked);
+CREATE INDEX IF NOT EXISTS idx_wfh_requests_origin_date    ON wfh_requests(origin, date);
 
 -- Notification Outbox
 CREATE TABLE IF NOT EXISTS notification_outbox (
@@ -275,3 +279,26 @@ CREATE TABLE IF NOT EXISTS r1_rotation_state (
     last_date DATE NOT NULL,
     last_index INTEGER NOT NULL
 );
+-- Co-presence history for the seat-cap picker tiebreaker. Records
+-- unordered pairs (member_id_a < member_id_b) of members who were
+-- on-site together on a working day. The picker (step 9 of
+-- plans/assigned-wfh-plan.md) reads this for the
+-- "haven't been on-site with the cohort recently" tiebreaker.
+-- Three access patterns (date scan, member-a scan, member-b
+-- scan) are covered by the three indexes below. See migration
+-- 000027.
+CREATE TABLE IF NOT EXISTS wfh_co_presence (
+    co_presence_id TEXT PRIMARY KEY,
+    working_date DATE NOT NULL,
+    member_id_a TEXT NOT NULL,
+    member_id_b TEXT NOT NULL,
+    recorded_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (member_id_a) REFERENCES team_members(id) ON DELETE CASCADE,
+    FOREIGN KEY (member_id_b) REFERENCES team_members(id) ON DELETE CASCADE,
+    UNIQUE(working_date, member_id_a, member_id_b),
+    CHECK (member_id_a < member_id_b)
+);
+
+CREATE INDEX IF NOT EXISTS idx_wfh_co_presence_date     ON wfh_co_presence(working_date);
+CREATE INDEX IF NOT EXISTS idx_wfh_co_presence_member_a ON wfh_co_presence(member_id_a, working_date);
+CREATE INDEX IF NOT EXISTS idx_wfh_co_presence_member_b ON wfh_co_presence(member_id_b, working_date);

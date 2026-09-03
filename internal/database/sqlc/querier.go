@@ -40,6 +40,12 @@ type Querier interface {
 	// dev-mode seeder; the production OAuth flow goes through
 	// CreateUser (pending) and is approved by an admin.
 	CreateActiveUser(ctx context.Context, arg CreateActiveUserParams) (User, error)
+	// origin='recurring' is set explicitly even though the column default
+	// is 'ad_hoc': the migration 000024 backfilled historical rows by
+	// origin = 'recurring' WHERE is_recurring = 1, and we want every new
+	// recurring row to land with the matching origin so the picker,
+	// quota counter, and calendar layers can branch on it without
+	// inferring from is_recurring.
 	CreateApprovedRecurringWFHRequest(ctx context.Context, arg CreateApprovedRecurringWFHRequestParams) (sql.Result, error)
 	CreateCalendarSubscription(ctx context.Context, arg CreateCalendarSubscriptionParams) (sql.Result, error)
 	CreateHatSwap(ctx context.Context, arg CreateHatSwapParams) (sql.Result, error)
@@ -152,6 +158,7 @@ type Querier interface {
 	GetWFHRequestsByDateAndStatus(ctx context.Context, arg GetWFHRequestsByDateAndStatusParams) ([]GetWFHRequestsByDateAndStatusRow, error)
 	GetWFHRequestsByMember(ctx context.Context, memberID string) ([]GetWFHRequestsByMemberRow, error)
 	GetWFHRequestsByMemberAndPeriod(ctx context.Context, arg GetWFHRequestsByMemberAndPeriodParams) ([]GetWFHRequestsByMemberAndPeriodRow, error)
+	GetWFHRequestsVoluntaryInPeriod(ctx context.Context, arg GetWFHRequestsVoluntaryInPeriodParams) ([]GetWFHRequestsVoluntaryInPeriodRow, error)
 	// Returns 1 if an admin-marked row exists for (member_id, date),
 	// 0 otherwise. Cheap point-lookup behind the
 	// idx_wfh_requests_admin_marked index.
@@ -181,8 +188,10 @@ type Querier interface {
 	MarkOutboxDead(ctx context.Context, arg MarkOutboxDeadParams) (sql.Result, error)
 	MarkOutboxFailed(ctx context.Context, arg MarkOutboxFailedParams) (sql.Result, error)
 	MarkOutboxSent(ctx context.Context, id string) (sql.Result, error)
+	PruneCoPresenceOlderThan(ctx context.Context, workingDate time.Time) (sql.Result, error)
 	PurgeWFHRequestsBefore(ctx context.Context, date time.Time) (sql.Result, error)
 	ReactivateUser(ctx context.Context, id string) (User, error)
+	RecordWFHCoPresencePair(ctx context.Context, arg RecordWFHCoPresencePairParams) (sql.Result, error)
 	// Flip a previously cancelled or self-withdrawn row back to pending and
 	// clear the audit fields, so the user can change their mind and re-request
 	// WFH for the same date. Only self-withdrawals are resurrectable: admin
@@ -196,6 +205,10 @@ type Querier interface {
 	// 0 to disable. disabled_at is set/cleared by the application
 	// before calling this query.
 	SetNotificationEmailEnabled(ctx context.Context, arg SetNotificationEmailEnabledParams) error
+	// Toggle the seat-cap-picker exemption. Mirrors SetTeamMemberPermanentWFH
+	// (also an :exec UPDATE) so the team-member-edit admin form can call
+	// both setters side-by-side. The picker reads this flag in step 6.
+	SetTeamMemberExemptFromAssignment(ctx context.Context, arg SetTeamMemberExemptFromAssignmentParams) error
 	SetTeamMemberPermanentWFH(ctx context.Context, arg SetTeamMemberPermanentWFHParams) error
 	SetTeamMemberRecurringWFHDays(ctx context.Context, arg SetTeamMemberRecurringWFHDaysParams) error
 	TouchMeetingsSubscription(ctx context.Context, token string) error

@@ -194,6 +194,7 @@ func (db *DB) GetWFHRequestByID(ctx context.Context, id string) (*WFHRequest, er
 		MarkedBy:      row.MarkedBy,
 		MarkedAt:      row.MarkedAt,
 		DenialReason:  row.DenialReason,
+		Origin:        row.Origin,
 	})
 	return &result, nil
 }
@@ -224,6 +225,7 @@ func (db *DB) GetWFHRequestsByDate(ctx context.Context, date string) ([]WFHReque
 			MarkedBy:      rows[i].MarkedBy,
 			MarkedAt:      rows[i].MarkedAt,
 			DenialReason:  rows[i].DenialReason,
+			Origin:        rows[i].Origin,
 		})
 	}
 	return result, nil
@@ -258,6 +260,7 @@ func (db *DB) GetWFHRequestsByDateAndStatus(ctx context.Context, date, status st
 			MarkedBy:      rows[i].MarkedBy,
 			MarkedAt:      rows[i].MarkedAt,
 			DenialReason:  rows[i].DenialReason,
+			Origin:        rows[i].Origin,
 		})
 	}
 	return result, nil
@@ -291,6 +294,7 @@ func (db *DB) GetUpcomingWFHForMember(ctx context.Context, memberID string, look
 			MarkedBy:      rows[i].MarkedBy,
 			MarkedAt:      rows[i].MarkedAt,
 			DenialReason:  rows[i].DenialReason,
+			Origin:        rows[i].Origin,
 		})
 	}
 	return result, nil
@@ -318,6 +322,7 @@ func (db *DB) GetWFHRequestsByMember(ctx context.Context, memberID string) ([]WF
 			MarkedBy:      rows[i].MarkedBy,
 			MarkedAt:      rows[i].MarkedAt,
 			DenialReason:  rows[i].DenialReason,
+			Origin:        rows[i].Origin,
 		})
 	}
 	return result, nil
@@ -357,6 +362,63 @@ func (db *DB) GetWFHRequestsUsedInPeriod(ctx context.Context, memberID, periodSt
 			MarkedBy:      rows[i].MarkedBy,
 			MarkedAt:      rows[i].MarkedAt,
 			DenialReason:  rows[i].DenialReason,
+			Origin:        rows[i].Origin,
+		})
+	}
+	return result, nil
+}
+
+// GetWFHRequestsVoluntaryInPeriod is the voluntary-only sibling of
+// GetWFHRequestsUsedInPeriod — it returns pending + approved WFH
+// rows for a member within a period, but EXCLUDES rows with
+// origin='assigned'. An Assigned WFH must not burn the member's
+// voluntary quota, matching the user-facing promise in
+// docs/ASSIGNED_WFH.md ("Your quota does not count Assigned
+// WFHs"). The seat-cap picker (step 6 of
+// plans/assigned-wfh-plan.md) also uses this so a member
+// carrying many Assigned WFHs is still a fair candidate for
+// further assignment based on their voluntary usage.
+//
+// The original GetWFHRequestsUsedInPeriod is kept unchanged
+// because the on-site-floor math in the existing settlement path
+// counts an Assigned WFH day toward the floor — which is correct:
+// an Assigned member is WFH, not on-site. Migration 000024 + the
+// upcoming picker (step 6) preserve that distinction; this
+// sibling query is the quota/picker math that excludes assigned.
+func (db *DB) GetWFHRequestsVoluntaryInPeriod(ctx context.Context, memberID, periodStart, periodEnd string) ([]WFHRequest, error) {
+	start, err := time.Parse("2006-01-02", periodStart)
+	if err != nil {
+		return nil, ErrWFHInvalidDate
+	}
+	end, err := time.Parse("2006-01-02", periodEnd)
+	if err != nil {
+		return nil, ErrWFHInvalidDate
+	}
+	rows, err := db.queries.GetWFHRequestsVoluntaryInPeriod(ctx, sqlc.GetWFHRequestsVoluntaryInPeriodParams{
+		MemberID: memberID,
+		Date:     start,
+		Date_2:   end,
+	})
+	if err != nil {
+		return nil, err
+	}
+	result := make([]WFHRequest, len(rows))
+	for i := range rows {
+		result[i] = wfhFromSQLCFields(wfhFields{
+			ID:            rows[i].ID,
+			MemberID:      rows[i].MemberID,
+			Date:          rows[i].Date,
+			Status:        rows[i].Status,
+			CreatedAt:     rows[i].CreatedAt,
+			SettledAt:     rows[i].SettledAt,
+			WithdrawnBy:   rows[i].WithdrawnBy,
+			WithdrawnAt:   rows[i].WithdrawnAt,
+			IsRecurring:   rows[i].IsRecurring,
+			IsAdminMarked: rows[i].IsAdminMarked,
+			MarkedBy:      rows[i].MarkedBy,
+			MarkedAt:      rows[i].MarkedAt,
+			DenialReason:  rows[i].DenialReason,
+			Origin:        rows[i].Origin,
 		})
 	}
 	return result, nil
@@ -410,6 +472,7 @@ func (db *DB) GetPendingForSettlement(ctx context.Context, cutoffDate string) ([
 			MarkedBy:      rows[i].MarkedBy,
 			MarkedAt:      rows[i].MarkedAt,
 			DenialReason:  rows[i].DenialReason,
+			Origin:        rows[i].Origin,
 		})
 	}
 	return result, nil
@@ -437,6 +500,7 @@ func (db *DB) GetAllWFHRequests(ctx context.Context) ([]WFHRequest, error) {
 			MarkedBy:      rows[i].MarkedBy,
 			MarkedAt:      rows[i].MarkedAt,
 			DenialReason:  rows[i].DenialReason,
+			Origin:        rows[i].Origin,
 		})
 	}
 	return result, nil
@@ -552,6 +616,13 @@ func (db *DB) WithdrawOwnWFHRequest(ctx context.Context, id, memberID string) er
 // withdrawWFH is the shared implementation for admin and self-withdrawal. The
 // memberID, when non-empty, is enforced as the owning member. The actorUserID
 // is recorded as withdrawn_by.
+//
+// Gate: origin IN ('assigned', 'swap'). An Assigned WFH (system-allocated by
+// the seat-cap picker) and a Swap WFH (target of an accepted swap) cannot be
+// withdrawn — they must be swapped to a willing on-site teammate instead. The
+// withdraw button in the WFH list page is hidden when origin='assigned'; this
+// gate is defense-in-depth in case a request slips through. The cap stays met
+// because the swap is one-out, one-in.
 func (db *DB) withdrawWFH(ctx context.Context, id, memberID, actorUserID string) error {
 	req, err := db.GetWFHRequestByID(ctx, id)
 	if err != nil {
@@ -559,6 +630,9 @@ func (db *DB) withdrawWFH(ctx context.Context, id, memberID, actorUserID string)
 	}
 	if req.Status != WFHStatusApproved {
 		return ErrWFHNotApproved
+	}
+	if req.Origin == "assigned" || req.Origin == "swap" {
+		return ErrWFHAssigned
 	}
 	if memberID != "" && req.MemberID != memberID {
 		return ErrWFHNotOwner

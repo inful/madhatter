@@ -45,7 +45,7 @@ func TestGetQuotaStatus_RecurringDaysCountAfterMaterialization(t *testing.T) {
 	periodStart, periodEnd, err := svc.ComputePeriodBounds(firstDate)
 	require.NoError(t, err)
 
-	used, err := db.GetWFHRequestsUsedInPeriod(ctx, memberID,
+	used, err := db.GetWFHRequestsVoluntaryInPeriod(ctx, memberID,
 		periodStart.Format("2006-01-02"), periodEnd.Format("2006-01-02"))
 	require.NoError(t, err)
 	// 14 days contains 1-2 occurrences of each of Wed and Thu, so

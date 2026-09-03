@@ -21,8 +21,17 @@ type TeamMember struct {
 	RecurringWFHThursday  bool   `json:"recurring_wfh_thursday"`
 	RecurringWFHFriday    bool   `json:"recurring_wfh_friday"`
 	// Deprecated semantic alias; true when all weekdays are recurring WFH.
-	IsPermanentWFH bool      `json:"is_permanent_wfh"`
-	CreatedAt      time.Time `json:"created_at"`
+	IsPermanentWFH bool `json:"is_permanent_wfh"`
+	// IsExemptFromAssignment is true when an admin has marked the
+	// member as exempt from the seat-cap picker. An exempt member
+	// is never selected as an involuntary Assigned WFH candidate,
+	// but their voluntary WFHs still count against the on-site
+	// capacity math and they can still volunteer via a swap.
+	// Separate concept from IsPermanentWFH (a permanent on-site
+	// exception; the picker also excludes permanent-WFH members
+	// from its candidate pool).
+	IsExemptFromAssignment bool       `json:"is_exempt_from_assignment"`
+	CreatedAt              time.Time  `json:"created_at"`
 }
 
 // IsRecurringWFHOn reports whether the member has a contractual recurring WFH day on date.
@@ -141,6 +150,17 @@ type WFHRequest struct {
 	IsAdminMarked bool       `json:"is_admin_marked"`
 	MarkedBy      *string    `json:"marked_by,omitempty"`
 	MarkedAt      *time.Time `json:"marked_at,omitempty"`
+	// Origin describes how the row came to exist. The picker, the
+	// quota counter, the API, the calendar, and the WFH list page
+	// all branch on this so they can distinguish a self-requested
+	// WFH from a system-assigned one, a contractual recurring day,
+	// or a swap-target's accepted transfer.
+	//
+	//   ad_hoc     — self-requested via the WFH request form
+	//   recurring  — auto-inserted by the recurring-WFH materializer
+	//   assigned   — auto-inserted by the seat-cap picker
+	//   swap       — created when a swap request was accepted
+	Origin string `json:"origin"`
 	// DenialReason is the human-readable explanation for why a
 	// request was denied. Set by the settlement path when the row
 	// flips to status=denied; surfaced on the dashboard, the WFH
@@ -149,6 +169,29 @@ type WFHRequest struct {
 	DenialReason *string `json:"denial_reason,omitempty"`
 	// Enriched fields (populated by callers).
 	MemberName string `json:"member_name,omitempty"`
+}
+
+// WFHCoPresence records that two members were on-site together
+// on a working day. The seat-cap picker reads this for the
+// co-presence tiebreaker — "haven't been on-site with the cohort
+// recently" lowers a candidate's priority so the picker keeps
+// them on-site to meet the cohort.
+//
+// Rows are unordered pairs in canonical ordering
+// (MemberIDA < MemberIDB) — halves the row count and removes
+// the symmetric-pair problem. The CHECK constraint at the
+// storage layer enforces this; the writer is responsible for
+// ordering before inserting.
+//
+// Migration 000027 introduces the table and three indexes. The
+// retention prune (step 11 of plans/assigned-wfh-plan.md) keeps
+// rows bounded to WFH_COPRESENCE_RETENTION_DAYS.
+type WFHCoPresence struct {
+	ID          string    `json:"id"`
+	WorkingDate string    `json:"working_date"` // "2006-01-02"
+	MemberIDA   string    `json:"member_id_a"`
+	MemberIDB   string    `json:"member_id_b"`
+	RecordedAt  time.Time `json:"recorded_at"`
 }
 
 // WFH status constants.

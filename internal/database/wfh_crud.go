@@ -194,6 +194,7 @@ func (db *DB) GetWFHRequestByID(ctx context.Context, id string) (*WFHRequest, er
 		MarkedBy:      row.MarkedBy,
 		MarkedAt:      row.MarkedAt,
 		DenialReason:  row.DenialReason,
+		Origin:        row.Origin,
 	})
 	return &result, nil
 }
@@ -224,6 +225,7 @@ func (db *DB) GetWFHRequestsByDate(ctx context.Context, date string) ([]WFHReque
 			MarkedBy:      rows[i].MarkedBy,
 			MarkedAt:      rows[i].MarkedAt,
 			DenialReason:  rows[i].DenialReason,
+			Origin:        rows[i].Origin,
 		})
 	}
 	return result, nil
@@ -258,6 +260,7 @@ func (db *DB) GetWFHRequestsByDateAndStatus(ctx context.Context, date, status st
 			MarkedBy:      rows[i].MarkedBy,
 			MarkedAt:      rows[i].MarkedAt,
 			DenialReason:  rows[i].DenialReason,
+			Origin:        rows[i].Origin,
 		})
 	}
 	return result, nil
@@ -291,6 +294,7 @@ func (db *DB) GetUpcomingWFHForMember(ctx context.Context, memberID string, look
 			MarkedBy:      rows[i].MarkedBy,
 			MarkedAt:      rows[i].MarkedAt,
 			DenialReason:  rows[i].DenialReason,
+			Origin:        rows[i].Origin,
 		})
 	}
 	return result, nil
@@ -318,6 +322,7 @@ func (db *DB) GetWFHRequestsByMember(ctx context.Context, memberID string) ([]WF
 			MarkedBy:      rows[i].MarkedBy,
 			MarkedAt:      rows[i].MarkedAt,
 			DenialReason:  rows[i].DenialReason,
+			Origin:        rows[i].Origin,
 		})
 	}
 	return result, nil
@@ -357,6 +362,7 @@ func (db *DB) GetWFHRequestsUsedInPeriod(ctx context.Context, memberID, periodSt
 			MarkedBy:      rows[i].MarkedBy,
 			MarkedAt:      rows[i].MarkedAt,
 			DenialReason:  rows[i].DenialReason,
+			Origin:        rows[i].Origin,
 		})
 	}
 	return result, nil
@@ -410,6 +416,7 @@ func (db *DB) GetPendingForSettlement(ctx context.Context, cutoffDate string) ([
 			MarkedBy:      rows[i].MarkedBy,
 			MarkedAt:      rows[i].MarkedAt,
 			DenialReason:  rows[i].DenialReason,
+			Origin:        rows[i].Origin,
 		})
 	}
 	return result, nil
@@ -437,6 +444,7 @@ func (db *DB) GetAllWFHRequests(ctx context.Context) ([]WFHRequest, error) {
 			MarkedBy:      rows[i].MarkedBy,
 			MarkedAt:      rows[i].MarkedAt,
 			DenialReason:  rows[i].DenialReason,
+			Origin:        rows[i].Origin,
 		})
 	}
 	return result, nil

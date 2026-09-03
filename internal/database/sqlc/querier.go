@@ -40,6 +40,12 @@ type Querier interface {
 	// dev-mode seeder; the production OAuth flow goes through
 	// CreateUser (pending) and is approved by an admin.
 	CreateActiveUser(ctx context.Context, arg CreateActiveUserParams) (User, error)
+	// origin='recurring' is set explicitly even though the column default
+	// is 'ad_hoc': the migration 000024 backfilled historical rows by
+	// origin = 'recurring' WHERE is_recurring = 1, and we want every new
+	// recurring row to land with the matching origin so the picker,
+	// quota counter, and calendar layers can branch on it without
+	// inferring from is_recurring.
 	CreateApprovedRecurringWFHRequest(ctx context.Context, arg CreateApprovedRecurringWFHRequestParams) (sql.Result, error)
 	CreateCalendarSubscription(ctx context.Context, arg CreateCalendarSubscriptionParams) (sql.Result, error)
 	CreateHatSwap(ctx context.Context, arg CreateHatSwapParams) (sql.Result, error)

@@ -42,8 +42,8 @@ func (q *Queries) CountWFHRequestsBefore(ctx context.Context, date time.Time) (i
 }
 
 const createApprovedRecurringWFHRequest = `-- name: CreateApprovedRecurringWFHRequest :execresult
-INSERT INTO wfh_requests (id, member_id, date, status, is_recurring, settled_at)
-VALUES (?, ?, ?, 'approved', 1, ?)
+INSERT INTO wfh_requests (id, member_id, date, status, is_recurring, settled_at, origin)
+VALUES (?, ?, ?, 'approved', 1, ?, 'recurring')
 `
 
 type CreateApprovedRecurringWFHRequestParams struct {
@@ -53,6 +53,12 @@ type CreateApprovedRecurringWFHRequestParams struct {
 	SettledAt sql.NullTime `json:"settled_at"`
 }
 
+// origin='recurring' is set explicitly even though the column default
+// is 'ad_hoc': the migration 000024 backfilled historical rows by
+// origin = 'recurring' WHERE is_recurring = 1, and we want every new
+// recurring row to land with the matching origin so the picker,
+// quota counter, and calendar layers can branch on it without
+// inferring from is_recurring.
 func (q *Queries) CreateApprovedRecurringWFHRequest(ctx context.Context, arg CreateApprovedRecurringWFHRequestParams) (sql.Result, error) {
 	return q.db.ExecContext(ctx, createApprovedRecurringWFHRequest,
 		arg.ID,
@@ -107,7 +113,7 @@ func (q *Queries) DenyWFHRequest(ctx context.Context, arg DenyWFHRequestParams) 
 }
 
 const getAllWFHRequests = `-- name: GetAllWFHRequests :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason, origin
 FROM wfh_requests
 ORDER BY date DESC, created_at DESC
 `
@@ -126,6 +132,7 @@ type GetAllWFHRequestsRow struct {
 	MarkedBy      sql.NullString `json:"marked_by"`
 	MarkedAt      sql.NullTime   `json:"marked_at"`
 	DenialReason  sql.NullString `json:"denial_reason"`
+	Origin        string         `json:"origin"`
 }
 
 func (q *Queries) GetAllWFHRequests(ctx context.Context) ([]GetAllWFHRequestsRow, error) {
@@ -151,6 +158,7 @@ func (q *Queries) GetAllWFHRequests(ctx context.Context) ([]GetAllWFHRequestsRow
 			&i.MarkedBy,
 			&i.MarkedAt,
 			&i.DenialReason,
+			&i.Origin,
 		); err != nil {
 			return nil, err
 		}
@@ -166,7 +174,7 @@ func (q *Queries) GetAllWFHRequests(ctx context.Context) ([]GetAllWFHRequestsRow
 }
 
 const getPendingWFHRequestsForSettlement = `-- name: GetPendingWFHRequestsForSettlement :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason, origin
 FROM wfh_requests
 WHERE status = 'pending'
   AND is_recurring = 0
@@ -188,6 +196,7 @@ type GetPendingWFHRequestsForSettlementRow struct {
 	MarkedBy      sql.NullString `json:"marked_by"`
 	MarkedAt      sql.NullTime   `json:"marked_at"`
 	DenialReason  sql.NullString `json:"denial_reason"`
+	Origin        string         `json:"origin"`
 }
 
 func (q *Queries) GetPendingWFHRequestsForSettlement(ctx context.Context, date time.Time) ([]GetPendingWFHRequestsForSettlementRow, error) {
@@ -213,6 +222,7 @@ func (q *Queries) GetPendingWFHRequestsForSettlement(ctx context.Context, date t
 			&i.MarkedBy,
 			&i.MarkedAt,
 			&i.DenialReason,
+			&i.Origin,
 		); err != nil {
 			return nil, err
 		}
@@ -228,7 +238,7 @@ func (q *Queries) GetPendingWFHRequestsForSettlement(ctx context.Context, date t
 }
 
 const getUpcomingWFHForMember = `-- name: GetUpcomingWFHForMember :many
-SELECT id, member_id, date, status, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason
+SELECT id, member_id, date, status, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason, origin
 FROM wfh_requests
 WHERE member_id = ?
   AND date >= date('now')
@@ -252,6 +262,7 @@ type GetUpcomingWFHForMemberRow struct {
 	MarkedBy      sql.NullString `json:"marked_by"`
 	MarkedAt      sql.NullTime   `json:"marked_at"`
 	DenialReason  sql.NullString `json:"denial_reason"`
+	Origin        string         `json:"origin"`
 }
 
 func (q *Queries) GetUpcomingWFHForMember(ctx context.Context, arg GetUpcomingWFHForMemberParams) ([]GetUpcomingWFHForMemberRow, error) {
@@ -273,6 +284,7 @@ func (q *Queries) GetUpcomingWFHForMember(ctx context.Context, arg GetUpcomingWF
 			&i.MarkedBy,
 			&i.MarkedAt,
 			&i.DenialReason,
+			&i.Origin,
 		); err != nil {
 			return nil, err
 		}
@@ -288,7 +300,7 @@ func (q *Queries) GetUpcomingWFHForMember(ctx context.Context, arg GetUpcomingWF
 }
 
 const getWFHRequestByID = `-- name: GetWFHRequestByID :one
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason, origin
 FROM wfh_requests
 WHERE id = ?
 `
@@ -307,6 +319,7 @@ type GetWFHRequestByIDRow struct {
 	MarkedBy      sql.NullString `json:"marked_by"`
 	MarkedAt      sql.NullTime   `json:"marked_at"`
 	DenialReason  sql.NullString `json:"denial_reason"`
+	Origin        string         `json:"origin"`
 }
 
 func (q *Queries) GetWFHRequestByID(ctx context.Context, id string) (GetWFHRequestByIDRow, error) {
@@ -326,12 +339,13 @@ func (q *Queries) GetWFHRequestByID(ctx context.Context, id string) (GetWFHReque
 		&i.MarkedBy,
 		&i.MarkedAt,
 		&i.DenialReason,
+		&i.Origin,
 	)
 	return i, err
 }
 
 const getWFHRequestByMemberAndDate = `-- name: GetWFHRequestByMemberAndDate :one
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason, origin
 FROM wfh_requests
 WHERE member_id = ? AND date = ?
 `
@@ -355,6 +369,7 @@ type GetWFHRequestByMemberAndDateRow struct {
 	MarkedBy      sql.NullString `json:"marked_by"`
 	MarkedAt      sql.NullTime   `json:"marked_at"`
 	DenialReason  sql.NullString `json:"denial_reason"`
+	Origin        string         `json:"origin"`
 }
 
 func (q *Queries) GetWFHRequestByMemberAndDate(ctx context.Context, arg GetWFHRequestByMemberAndDateParams) (GetWFHRequestByMemberAndDateRow, error) {
@@ -374,12 +389,13 @@ func (q *Queries) GetWFHRequestByMemberAndDate(ctx context.Context, arg GetWFHRe
 		&i.MarkedBy,
 		&i.MarkedAt,
 		&i.DenialReason,
+		&i.Origin,
 	)
 	return i, err
 }
 
 const getWFHRequestsByDate = `-- name: GetWFHRequestsByDate :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason, origin
 FROM wfh_requests
 WHERE date = ?
 ORDER BY created_at ASC
@@ -399,6 +415,7 @@ type GetWFHRequestsByDateRow struct {
 	MarkedBy      sql.NullString `json:"marked_by"`
 	MarkedAt      sql.NullTime   `json:"marked_at"`
 	DenialReason  sql.NullString `json:"denial_reason"`
+	Origin        string         `json:"origin"`
 }
 
 func (q *Queries) GetWFHRequestsByDate(ctx context.Context, date time.Time) ([]GetWFHRequestsByDateRow, error) {
@@ -424,6 +441,7 @@ func (q *Queries) GetWFHRequestsByDate(ctx context.Context, date time.Time) ([]G
 			&i.MarkedBy,
 			&i.MarkedAt,
 			&i.DenialReason,
+			&i.Origin,
 		); err != nil {
 			return nil, err
 		}
@@ -439,7 +457,7 @@ func (q *Queries) GetWFHRequestsByDate(ctx context.Context, date time.Time) ([]G
 }
 
 const getWFHRequestsByDateAndStatus = `-- name: GetWFHRequestsByDateAndStatus :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason, origin
 FROM wfh_requests
 WHERE date = ? AND status = ?
 ORDER BY created_at ASC
@@ -464,6 +482,7 @@ type GetWFHRequestsByDateAndStatusRow struct {
 	MarkedBy      sql.NullString `json:"marked_by"`
 	MarkedAt      sql.NullTime   `json:"marked_at"`
 	DenialReason  sql.NullString `json:"denial_reason"`
+	Origin        string         `json:"origin"`
 }
 
 func (q *Queries) GetWFHRequestsByDateAndStatus(ctx context.Context, arg GetWFHRequestsByDateAndStatusParams) ([]GetWFHRequestsByDateAndStatusRow, error) {
@@ -489,6 +508,7 @@ func (q *Queries) GetWFHRequestsByDateAndStatus(ctx context.Context, arg GetWFHR
 			&i.MarkedBy,
 			&i.MarkedAt,
 			&i.DenialReason,
+			&i.Origin,
 		); err != nil {
 			return nil, err
 		}
@@ -504,7 +524,7 @@ func (q *Queries) GetWFHRequestsByDateAndStatus(ctx context.Context, arg GetWFHR
 }
 
 const getWFHRequestsByMember = `-- name: GetWFHRequestsByMember :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason, origin
 FROM wfh_requests
 WHERE member_id = ?
 ORDER BY date DESC
@@ -524,6 +544,7 @@ type GetWFHRequestsByMemberRow struct {
 	MarkedBy      sql.NullString `json:"marked_by"`
 	MarkedAt      sql.NullTime   `json:"marked_at"`
 	DenialReason  sql.NullString `json:"denial_reason"`
+	Origin        string         `json:"origin"`
 }
 
 func (q *Queries) GetWFHRequestsByMember(ctx context.Context, memberID string) ([]GetWFHRequestsByMemberRow, error) {
@@ -549,6 +570,7 @@ func (q *Queries) GetWFHRequestsByMember(ctx context.Context, memberID string) (
 			&i.MarkedBy,
 			&i.MarkedAt,
 			&i.DenialReason,
+			&i.Origin,
 		); err != nil {
 			return nil, err
 		}
@@ -564,7 +586,7 @@ func (q *Queries) GetWFHRequestsByMember(ctx context.Context, memberID string) (
 }
 
 const getWFHRequestsByMemberAndPeriod = `-- name: GetWFHRequestsByMemberAndPeriod :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason, origin
 FROM wfh_requests
 WHERE member_id = ?
   AND date >= ?
@@ -593,6 +615,7 @@ type GetWFHRequestsByMemberAndPeriodRow struct {
 	MarkedBy      sql.NullString `json:"marked_by"`
 	MarkedAt      sql.NullTime   `json:"marked_at"`
 	DenialReason  sql.NullString `json:"denial_reason"`
+	Origin        string         `json:"origin"`
 }
 
 func (q *Queries) GetWFHRequestsByMemberAndPeriod(ctx context.Context, arg GetWFHRequestsByMemberAndPeriodParams) ([]GetWFHRequestsByMemberAndPeriodRow, error) {
@@ -618,6 +641,7 @@ func (q *Queries) GetWFHRequestsByMemberAndPeriod(ctx context.Context, arg GetWF
 			&i.MarkedBy,
 			&i.MarkedAt,
 			&i.DenialReason,
+			&i.Origin,
 		); err != nil {
 			return nil, err
 		}

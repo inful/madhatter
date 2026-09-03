@@ -153,6 +153,7 @@ type WfhRequest struct {
 	Status        string         `json:"status"`
 	IsRecurring   int64          `json:"is_recurring"`
 	IsAdminMarked int64          `json:"is_admin_marked"`
+	Origin        string         `json:"origin"`
 	CreatedAt     sql.NullTime   `json:"created_at"`
 	SettledAt     sql.NullTime   `json:"settled_at"`
 	WithdrawnBy   sql.NullString `json:"withdrawn_by"`

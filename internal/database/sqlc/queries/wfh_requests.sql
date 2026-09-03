@@ -30,7 +30,7 @@ FROM wfh_requests
 WHERE member_id = ? AND date = ?;
 
 -- name: GetUpcomingWFHForMember :many
-SELECT id, member_id, date, status, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason
+SELECT id, member_id, date, status, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason, origin
 FROM wfh_requests
 WHERE member_id = ?
   AND date >= date('now')
@@ -39,39 +39,45 @@ WHERE member_id = ?
 ORDER BY date;
 
 -- name: CreateApprovedRecurringWFHRequest :execresult
-INSERT INTO wfh_requests (id, member_id, date, status, is_recurring, settled_at)
-VALUES (?, ?, ?, 'approved', 1, ?);
+-- origin='recurring' is set explicitly even though the column default
+-- is 'ad_hoc': the migration 000024 backfilled historical rows by
+-- origin = 'recurring' WHERE is_recurring = 1, and we want every new
+-- recurring row to land with the matching origin so the picker,
+-- quota counter, and calendar layers can branch on it without
+-- inferring from is_recurring.
+INSERT INTO wfh_requests (id, member_id, date, status, is_recurring, settled_at, origin)
+VALUES (?, ?, ?, 'approved', 1, ?, 'recurring');
 
 -- name: GetWFHRequestByID :one
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason, origin
 FROM wfh_requests
 WHERE id = ?;
 
 -- name: GetWFHRequestByMemberAndDate :one
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason, origin
 FROM wfh_requests
 WHERE member_id = ? AND date = ?;
 
 -- name: GetWFHRequestsByDate :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason, origin
 FROM wfh_requests
 WHERE date = ?
 ORDER BY created_at ASC;
 
 -- name: GetWFHRequestsByDateAndStatus :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason, origin
 FROM wfh_requests
 WHERE date = ? AND status = ?
 ORDER BY created_at ASC;
 
 -- name: GetWFHRequestsByMember :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason, origin
 FROM wfh_requests
 WHERE member_id = ?
 ORDER BY date DESC;
 
 -- name: GetWFHRequestsByMemberAndPeriod :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason, origin
 FROM wfh_requests
 WHERE member_id = ?
   AND date >= ?
@@ -80,7 +86,7 @@ WHERE member_id = ?
 ORDER BY date ASC;
 
 -- name: GetPendingWFHRequestsForSettlement :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason, origin
 FROM wfh_requests
 WHERE status = 'pending'
   AND is_recurring = 0
@@ -88,7 +94,7 @@ WHERE status = 'pending'
 ORDER BY date ASC, created_at ASC;
 
 -- name: GetAllWFHRequests :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason, origin
 FROM wfh_requests
 ORDER BY date DESC, created_at DESC;
 

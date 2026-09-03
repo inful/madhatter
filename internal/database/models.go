@@ -141,6 +141,17 @@ type WFHRequest struct {
 	IsAdminMarked bool       `json:"is_admin_marked"`
 	MarkedBy      *string    `json:"marked_by,omitempty"`
 	MarkedAt      *time.Time `json:"marked_at,omitempty"`
+	// Origin describes how the row came to exist. The picker, the
+	// quota counter, the API, the calendar, and the WFH list page
+	// all branch on this so they can distinguish a self-requested
+	// WFH from a system-assigned one, a contractual recurring day,
+	// or a swap-target's accepted transfer.
+	//
+	//   ad_hoc     — self-requested via the WFH request form
+	//   recurring  — auto-inserted by the recurring-WFH materializer
+	//   assigned   — auto-inserted by the seat-cap picker
+	//   swap       — created when a swap request was accepted
+	Origin string `json:"origin"`
 	// DenialReason is the human-readable explanation for why a
 	// request was denied. Set by the settlement path when the row
 	// flips to status=denied; surfaced on the dashboard, the WFH

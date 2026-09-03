@@ -14,6 +14,10 @@ to `internal/notify/channels/`.
 | HAT swap accepted | swap handler | requester + target | After a swap is accepted |
 | HAT swap rejected | swap handler | requester | After a swap is rejected |
 | HAT swap cancelled | swap handler | target | After a swap is cancelled by the requester |
+| WFH swap requested | wfh swap handler | target member | After a WFH-swap is created (assigned / swap-origin rows only) |
+| WFH swap accepted | wfh swap handler | requester | After the target accepts a WFH-swap |
+| WFH swap rejected | wfh swap handler | requester | After the target rejects a WFH-swap |
+| WFH swap cancelled | wfh swap handler | target | After the requester cancels a pending WFH-swap |
 | WFH request approved | WFH service | requester | After settlement approves the request |
 | WFH request denied | WFH service | requester | After settlement denies the request |
 | WFH admin-withdrawn | admin handler | requester | After an admin withdraws an approved request |
@@ -160,6 +164,14 @@ var pointing at a file path:
 | `NOTIFY_WFH_STATE_CHANGED_SUBJECT_TXT_PATH` | wfh.state_changed subject |
 | `NOTIFY_COVER_ASSIGNED_TXT_PATH` | cover.assigned body |
 | `NOTIFY_COVER_ASSIGNED_SUBJECT_TXT_PATH` | cover.assigned subject |
+| `NOTIFY_SWAP_REQUESTED_TXT_PATH` | swap.requested body (used by both HAT and WFH swap paths) |
+| `NOTIFY_SWAP_REQUESTED_SUBJECT_TXT_PATH` | swap.requested subject |
+| `NOTIFY_SWAP_ACCEPTED_TXT_PATH` | swap.accepted body |
+| `NOTIFY_SWAP_ACCEPTED_SUBJECT_TXT_PATH` | swap.accepted subject |
+| `NOTIFY_SWAP_REJECTED_TXT_PATH` | swap.rejected body |
+| `NOTIFY_SWAP_REJECTED_SUBJECT_TXT_PATH` | swap.rejected subject |
+| `NOTIFY_SWAP_CANCELLED_TXT_PATH` | swap.cancelled body |
+| `NOTIFY_SWAP_CANCELLED_SUBJECT_TXT_PATH` | swap.cancelled subject |
 
 Templates have access to a single data struct with the relevant
 fields per event. See `internal/notify/templates/*.tmpl` for the

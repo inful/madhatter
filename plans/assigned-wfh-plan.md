@@ -571,9 +571,11 @@ Per-member `notification_preferences.email_enabled` opt-out is honoured by the e
 
 ## 17. Status tracker
 
-Steps 1–16 are complete across v0.28.0 / v0.29.0 / v0.30.0.
-Steps 17–22 are Phase 4 (target v0.31.0). Migration numbers
-are the post-#1 lift: 000024, 000025, 000026, 000027.
+Steps 1–22 are complete across v0.28.0 / v0.29.0 / v0.30.0 /
+v0.31.0. Phase 4 (steps 17–22) landed in three commits
+(`ac29f16`, `9c0946c`, and the Phase-4 docs/tracker commit).
+Migration numbers are the post-#1 lift: 000024, 000025, 000026,
+000027.
 
 | Step | Status | Released | Notes |
 |---|---|---|---|
@@ -593,12 +595,12 @@ are the post-#1 lift: 000024, 000025, 000026, 000027.
 | 14 — Swap routes | ✅ | v0.30.0 | GET/POST `/wfh/{id}/swap`, GET `/wfh/swap/inbox`, POST `/wfh/swap/{swapId}/{accept,reject,cancel}`. |
 | 15 — Swap auto-cancel | ✅ | v0.30.0 | `AutoCancelExpiredSwaps` in `SettlePendingRequests` after the picker pass. |
 | 16 — Admin reassign | ✅ | v0.30.0 | `Service.AdminReassignWFH` + `DB.WithdrawAssignedWFHRequest` (focused bypass of the Phase-1 withdraw gate). |
-| 17 — Exempt checkbox | ⏳ | Phase 4 | Team-member edit form's `is_exempt_from_assignment` checkbox. |
-| 18 — Calendar ICS branch | ⏳ | Phase 4 | Branch on `origin` in the calendar template — admin-marked WFHs render with the existing Phase-2 distinct color. |
-| 19 — API `origin` | ⏳ | Phase 4 | Expose `origin` field on the `/api/v1/wfh` response. |
-| 20 — Notification template (4 new event kinds) | ⏳ | Phase 4 | `SwapRequested`, `SwapAccepted`, `SwapRejected`, `SwapCancelled` — actor / target distinct. |
-| 21 — Docs | ⏳ | Phase 4 | README, help.html, CONSOLIDATED_REFERENCE.md, NOTIFICATIONS.md, `docs/ASSIGNED_WFH.md`. |
-| 22 — Pre-commit | ⏳ | Phase 4 | Tests + lint + sqlc + grep-test that no `WFH_MAX_ONSITE_ABSOLUTE` references remain. |
+| 17 — Exempt checkbox | ✅ | Phase 4 | `handleTeamMemberExemptUpdate` + `POST /team/{id}/exempt` route + admin-row form on the team-edit card (`ac29f16`). |
+| 18 — Calendar ICS branch | ✅ | Phase 4 | `AddWFHEventWithSnapshot` accepts an `origin` parameter and appends `(assigned)` / `(swap)` to the description; `wfhData.Origin` exposed to operator templates (`ac29f16`). |
+| 19 — API `origin` | ✅ | Phase 4 | `/api/v1/wfh` rows surface `origin` at the wire level; `TestWFHAPI_ListExposesOriginField` parses the response as raw JSON so a future drop/rename fails (`ac29f16`). |
+| 20 — Notification template (4 new event kinds) | ✅ | Phase 4 | WFH-swap handlers fire `SwapRequested` / `SwapAccepted` / `SwapRejected` / `SwapCancelled` via the existing `internal/notify` pipeline; swap templates rewritten generically (no "HAT" wording) so HAT and WFH swap paths share one set (`9c0946c`). |
+| 21 — Docs | ✅ | Phase 4 | README, `help.html`, `CONSOLIDATED_REFERENCE.md`, `docs/NOTIFICATIONS.md`, `docs/ASSIGNED_WFH.md` updated. |
+| 22 — Pre-commit | ✅ | Phase 4 | `go test ./...` green; `golangci-lint ./...` reports 0 issues; `sqlc generate` is a no-op (no schema changes this phase); `grep -rn WFH_MAX_ONSITE_ABSOLUTE` returns nothing. |
 
 ## 18. Decisions log
 

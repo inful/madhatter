@@ -36,10 +36,6 @@ type Querier interface {
 	CountApprovedWFHByDate(ctx context.Context, date time.Time) (int64, error)
 	CountPendingSwapsForMember(ctx context.Context, targetMemberID string) (int64, error)
 	CountPendingUsers(ctx context.Context) (int64, error)
-	// Count wfh_requests rows whose date is strictly before the cutoff.
-	// Used by the past-period purge dry-run to preview the affected row
-	// count without touching the table. The cutoff is the start of the
-	// previous quota period: rows on or after that date are kept.
 	CountWFHRequestsBefore(ctx context.Context, date time.Time) (int64, error)
 	CreateAPIToken(ctx context.Context, arg CreateAPITokenParams) (sql.Result, error)
 	// Inserts an already-active user. Used by test fixtures and the
@@ -70,9 +66,9 @@ type Querier interface {
 	// (is_active = 0) and requires admin approval.
 	CreateUserAsFirstAdmin(ctx context.Context, arg CreateUserAsFirstAdminParams) (User, error)
 	// Mark a request as denied and record the human-readable reason in
-	// wfh_requests.denial_reason. The reason rides the same row to the
-	// dashboard, the WFH list page, the admin manage page, and the
-	// email notification so the user is never left guessing why their
+	// wfh_requests.denial_reason. The reason rides the same row to
+	// the dashboard, the WFH list page, the admin manage page, and
+	// the email notification so the user is never left guessing why their
 	// request was rejected.
 	CreateWFHRequest(ctx context.Context, arg CreateWFHRequestParams) (sql.Result, error)
 	DeactivateAPIToken(ctx context.Context, id string) (sql.Result, error)
@@ -182,9 +178,6 @@ type Querier interface {
 	GetWFHRequestsByMember(ctx context.Context, memberID string) ([]GetWFHRequestsByMemberRow, error)
 	GetWFHRequestsByMemberAndPeriod(ctx context.Context, arg GetWFHRequestsByMemberAndPeriodParams) ([]GetWFHRequestsByMemberAndPeriodRow, error)
 	GetWFHRequestsVoluntaryInPeriod(ctx context.Context, arg GetWFHRequestsVoluntaryInPeriodParams) ([]GetWFHRequestsVoluntaryInPeriodRow, error)
-	// Returns 1 if an admin-marked row exists for (member_id, date),
-	// 0 otherwise. Cheap point-lookup behind the
-	// idx_wfh_requests_admin_marked index.
 	IsAdminMarkedWFH(ctx context.Context, arg IsAdminMarkedWFHParams) (int64, error)
 	// Returns 1 when the member has not disabled email, 0 when they
 	// have. Returns 1 by default (no row) so callers don't have to
@@ -198,14 +191,6 @@ type Querier interface {
 	// Users awaiting admin approval. Excludes admin-deactivated
 	// users (those have deactivated_at set).
 	ListPendingUsers(ctx context.Context) ([]User, error)
-	// Insert an admin-marked WFH row in one shot. is_admin_marked=1 and
-	// status='approved' so the row participates in every existing
-	// query (quota, floor, ICS, dashboard presence) without the
-	// rendering layer needing a special case for admin marks. The
-	// UNIQUE(member_id, date) constraint guarantees idempotency: a
-	// second mark for the same (member, date) returns SQLITE_CONSTRAINT
-	// to the caller, which the service layer translates into
-	// "already marked".
 	MarkAdminWFH(ctx context.Context, arg MarkAdminWFHParams) (sql.Result, error)
 	MarkAssignmentSwapped(ctx context.Context, id string) error
 	MarkOutboxDead(ctx context.Context, arg MarkOutboxDeadParams) (sql.Result, error)
@@ -215,14 +200,6 @@ type Querier interface {
 	PurgeWFHRequestsBefore(ctx context.Context, date time.Time) (sql.Result, error)
 	ReactivateUser(ctx context.Context, id string) (User, error)
 	RecordWFHCoPresencePair(ctx context.Context, arg RecordWFHCoPresencePairParams) (sql.Result, error)
-	// Flip a previously cancelled or self-withdrawn row back to pending and
-	// clear the audit fields, so the user can change their mind and re-request
-	// WFH for the same date. Only self-withdrawals are resurrectable: admin
-	// withdrawals (withdrawn_by IS NOT NULL) are preserved as final decisions.
-	// is_recurring is cleared on resurrect so the row is treated as ad-hoc:
-	// settlement filters is_recurring=0 (so recurring rows are skipped), and
-	// preserving the flag would leave the resurrected row stuck in pending
-	// with neither settlement nor the materializer able to advance it.
 	ResurrectWFHRequest(ctx context.Context, id string) (sql.Result, error)
 	// Upserts the email-enabled flag for a member. Pass 1 to enable,
 	// 0 to disable. disabled_at is set/cleared by the application

@@ -203,6 +203,43 @@ const (
 	WFHStatusWithdrawn = "withdrawn"
 )
 
+// WFHAssignmentSwap status constants. The state machine is
+// pending → accepted | rejected | cancelled. Cancellation has two
+// paths: the requester voluntarily cancels, or the scheduler's
+// auto-cancel pass flips pending swaps whose swap_date is in
+// the past (step 15 of plans/assigned-wfh-plan.md).
+const (
+	WFHSwapStatusPending  = "pending"
+	WFHSwapStatusAccepted = "accepted"
+	WFHSwapStatusRejected = "rejected"
+	WFHSwapStatusCancelled = "cancelled"
+)
+
+// WFHAssignmentSwap represents a request to swap a seat-cap-
+// picker-assigned WFH day with an on-site teammate. The cap
+// stays met across the swap: the original assigned row is
+// withdrawn (status='withdrawn', withdrawn_by='swap:<id>')
+// and a new row is inserted for the target with origin='swap'.
+// Single-transaction update.
+//
+// Phase 3 of plans/assigned-wfh-plan.md. Migration 000025
+// introduces the table; the swap routes and form land in
+// step 14.
+type WFHAssignmentSwap struct {
+	ID                    string     `json:"id"`
+	RequesterWFHRequestID string     `json:"requester_wfh_request_id"`
+	TargetMemberID        string     `json:"target_member_id"`
+	SwapDate              string     `json:"swap_date"` // "2006-01-02"
+	Status                string     `json:"status"`
+	CreatedAt             time.Time  `json:"created_at"`
+	UpdatedAt             time.Time  `json:"updated_at"`
+	ResolvedAt            *time.Time `json:"resolved_at,omitempty"`
+	// Enriched fields (populated by callers; not stored).
+	RequesterName string `json:"requester_name,omitempty"`
+	TargetName    string `json:"target_name,omitempty"`
+	WFHOrigin     string `json:"wfh_origin,omitempty"`
+}
+
 // HatSwap represents a request to swap HAT day assignments between two team members.
 type HatSwap struct {
 	ID                    string    `json:"id"`

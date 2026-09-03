@@ -4,3 +4,23 @@ VALUES (?, ?, ?, ?);
 
 -- name: PruneCoPresenceOlderThan :execresult
 DELETE FROM wfh_co_presence WHERE working_date < ?;
+
+-- name: GetLatestCoPresenceWithCohortA :many
+SELECT working_date
+FROM wfh_co_presence
+WHERE working_date >= ?
+  AND working_date < ?
+  AND member_id_a = ?
+  AND member_id_b IN (?, ?, ?)
+ORDER BY working_date DESC
+LIMIT 1;
+
+-- name: GetLatestCoPresenceWithCohortB :many
+SELECT working_date
+FROM wfh_co_presence
+WHERE working_date >= ?
+  AND working_date < ?
+  AND member_id_b = ?
+  AND member_id_a IN (?, ?, ?)
+ORDER BY working_date DESC
+LIMIT 1;

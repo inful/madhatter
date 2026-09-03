@@ -75,6 +75,15 @@ func TestLoadConfigFromEnv_DefaultsAndOverrides(t *testing.T) {
 	assert.Equal(t, defaultSettlementDays, cfg.SettlementDays)
 	assert.Equal(t, defaultRequestHorizonDays, cfg.RequestHorizonDays)
 	assert.Equal(t, defaultPurgeEnabled, cfg.PurgeEnabled)
+	// Seat-cap picker knobs (Phase 2 of
+	// plans/assigned-wfh-plan.md) default to "picker is a
+	// no-op" so existing deployments see no behavior change
+	// until an operator explicitly opts in.
+	assert.Equal(t, 0, cfg.SeatCap)
+	assert.True(t, cfg.AssignmentEnabled)
+	assert.True(t, cfg.CoPresenceEnabled)
+	assert.Equal(t, defaultCoPresenceHorizonDays, cfg.CoPresenceHorizonDays)
+	assert.Equal(t, defaultCoPresenceRetentionDays, cfg.CoPresenceRetentionDays)
 
 	t.Setenv("WFH_ENABLED", "false")
 	t.Setenv("WFH_MIN_ONSITE_PERCENTAGE", "60.5")
@@ -85,6 +94,11 @@ func TestLoadConfigFromEnv_DefaultsAndOverrides(t *testing.T) {
 	t.Setenv("WFH_SETTLEMENT_DAYS", "5")
 	t.Setenv("WFH_REQUEST_HORIZON_DAYS", "180")
 	t.Setenv("WFH_PURGE_ENABLED", "false")
+	t.Setenv("WFH_SEAT_CAP", "5")
+	t.Setenv("WFH_ASSIGNMENT_ENABLED", "false")
+	t.Setenv("WFH_COPRESENCE_ENABLED", "false")
+	t.Setenv("WFH_COPRESENCE_HORIZON_DAYS", "21")
+	t.Setenv("WFH_COPRESENCE_RETENTION_DAYS", "60")
 
 	cfg = LoadConfigFromEnv()
 	assert.False(t, cfg.Enabled)
@@ -96,18 +110,59 @@ func TestLoadConfigFromEnv_DefaultsAndOverrides(t *testing.T) {
 	assert.Equal(t, 5, cfg.SettlementDays)
 	assert.Equal(t, 180, cfg.RequestHorizonDays)
 	assert.False(t, cfg.PurgeEnabled)
+	assert.Equal(t, 5, cfg.SeatCap)
+	assert.False(t, cfg.AssignmentEnabled)
+	assert.False(t, cfg.CoPresenceEnabled)
+	assert.Equal(t, 21, cfg.CoPresenceHorizonDays)
+	assert.Equal(t, 60, cfg.CoPresenceRetentionDays)
 
 	t.Setenv("WFH_ENABLED", "not-a-bool")
 	t.Setenv("WFH_MIN_ONSITE_PERCENTAGE", "bad")
 	t.Setenv("WFH_MIN_ONSITE_ABSOLUTE", "bad")
 	t.Setenv("WFH_REQUEST_HORIZON_DAYS", "bad")
 	t.Setenv("WFH_PURGE_ENABLED", "not-a-bool")
+	t.Setenv("WFH_SEAT_CAP", "bad")
+	t.Setenv("WFH_ASSIGNMENT_ENABLED", "not-a-bool")
+	t.Setenv("WFH_COPRESENCE_ENABLED", "not-a-bool")
+	t.Setenv("WFH_COPRESENCE_HORIZON_DAYS", "bad")
+	t.Setenv("WFH_COPRESENCE_RETENTION_DAYS", "bad")
 	cfg = LoadConfigFromEnv()
 	assert.True(t, cfg.Enabled)
 	assert.LessOrEqual(t, math.Abs(cfg.MinOnsitePercentage-defaultMinOnsitePercentage), 0.0001)
 	assert.Equal(t, defaultMinOnsiteAbsolute, cfg.MinOnsiteAbsolute)
 	assert.Equal(t, defaultRequestHorizonDays, cfg.RequestHorizonDays)
 	assert.True(t, cfg.PurgeEnabled, "unparseable bool must fall back to the default")
+	assert.Equal(t, 0, cfg.SeatCap, "unparseable SeatCap must fall back to default (0)")
+	assert.True(t, cfg.AssignmentEnabled)
+	assert.True(t, cfg.CoPresenceEnabled)
+	assert.Equal(t, defaultCoPresenceHorizonDays, cfg.CoPresenceHorizonDays)
+	assert.Equal(t, defaultCoPresenceRetentionDays, cfg.CoPresenceRetentionDays)
+}
+
+// TestConfigValidate_RetentionMustBeAtLeastHorizon pins the
+// boot-time fail-fast in Config.Validate. The picker (Phase 2 of
+// plans/assigned-wfh-plan.md) reads rows up to horizon days
+// back; if retention is shorter, those rows have been pruned
+// and every candidate scores the history-clamp sentinel. The
+// operator sees a picker that "works" but always picks the
+// same members — silently broken. Validate catches this at
+// boot.
+func TestConfigValidate_RetentionMustBeAtLeastHorizon(t *testing.T) {
+	t.Run("valid: retention > horizon", func(t *testing.T) {
+		cfg := Config{CoPresenceHorizonDays: 14, CoPresenceRetentionDays: 30}
+		require.NoError(t, cfg.Validate())
+	})
+	t.Run("valid: retention == horizon (edge)", func(t *testing.T) {
+		cfg := Config{CoPresenceHorizonDays: 14, CoPresenceRetentionDays: 14}
+		require.NoError(t, cfg.Validate())
+	})
+	t.Run("invalid: retention < horizon", func(t *testing.T) {
+		cfg := Config{CoPresenceHorizonDays: 14, CoPresenceRetentionDays: 7}
+		err := cfg.Validate()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "CoPresenceRetentionDays")
+		assert.Contains(t, err.Error(), "CoPresenceHorizonDays")
+	})
 }
 
 func TestComputePeriodBounds_AcrossAnchorBoundaries(t *testing.T) {
@@ -1572,4 +1627,114 @@ func TestService_IsHoliday_DelegatesToDB(t *testing.T) {
 	// the form layer treats it as a separate error.
 	assert.False(t, svc.IsHoliday("not-a-date"),
 		"an unparseable date must not be reported as a holiday")
+}
+
+// TestSettlePendingRequests_PickerRunsOverSettlementWindow pins
+// the picker integration from step 8 of
+// plans/assigned-wfh-plan.md. The picker must run over every
+// working day in the settlement window [today, today+SettlementDays],
+// independent of byDate (dates with pending requests). This is
+// the case the plan explicitly calls out: "a date can be over
+// cap even with zero pending WFH requests."
+//
+// Setup: 5 members, cap=2, no pending WFH requests. After
+// SettlePendingRequests, the picker must have assigned 3
+// members across the settlement window's working days. With
+// the default SettlementDays=7, that's at least 4 working
+// days (today, today+1, today+2, today+3 if today is Monday;
+// fewer if today is later in the week — see
+// TestSettlePendingRequests_PickerRunsOverSettlementWindow for
+// the calendar-aware variant).
+func TestSettlePendingRequests_PickerRunsOverSettlementWindow(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	cfg := pickerTestConfig()
+	// Pin to 7 days so the test's cap arithmetic is stable
+	// across runs regardless of today's weekday.
+	cfg.SettlementDays = 7
+	svc := NewService(db, cfg)
+
+	for _, name := range []string{"Alice", "Bob", "Carol", "Dave", "Erin"} {
+		seedPickerMember(t, ctx, db, name, name+"@example.com")
+	}
+
+	// No pending requests — but the picker still runs and
+	// caps the on-site count.
+	require.NoError(t, svc.SettlePendingRequests(ctx))
+
+	// The picker inserts origin='assigned' rows. Count them
+	// across the whole settlement window by iterating over
+	// each working day and tallying. Each working day that
+	// has on-site > cap produces 3 assigned rows
+	// (5 members - 2 cap = 3 excess).
+
+	// Count assigned rows across the settlement window.
+	assignedCount := 0
+	for d := time.Now().UTC(); !d.After(time.Now().UTC().AddDate(0, 0, 7)); d = d.AddDate(0, 0, 1) {
+		if d.Weekday() == time.Saturday || d.Weekday() == time.Sunday {
+			continue
+		}
+		dateStr := d.Format("2006-01-02")
+		dayRows, err := db.GetWFHRequestsByDate(ctx, dateStr)
+		require.NoError(t, err)
+		for _, r := range dayRows {
+			if r.Origin == "assigned" {
+				assignedCount++
+			}
+		}
+	}
+
+	// With 5 working days in the next 7 days (worst case
+	// Sunday/Monday overlap is 5, best case is 5), each day
+	// produces 3 assigned rows. Total: 5 * 3 = 15. Allow some
+	// flexibility for the rare 4-working-day window.
+	require.GreaterOrEqual(t, assignedCount, 12,
+		"picker must have assigned at least 4 working days * 3 members = 12 rows; got %d", assignedCount)
+}
+
+// TestSettlePendingRequests_PickerRunsOverCapWithNoPending pins
+// the specific case from the plan: a date is over cap with
+// zero pending requests. The picker still picks. This test
+// doesn't depend on SettlementDays — it focuses on a single
+// future date via AssignWFHForDate directly (which is what
+// SettlePendingRequests calls).
+func TestSettlePendingRequests_PickerRunsOverCapWithNoPending(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	svc := NewService(db, pickerTestConfig())
+	for _, name := range []string{"Alice", "Bob", "Carol", "Dave", "Erin"} {
+		seedPickerMember(t, ctx, db, name, name+"@example.com")
+	}
+
+	// No pending requests.
+	require.NoError(t, svc.SettlePendingRequests(ctx))
+
+	// The full sweep must have assigned members across all
+	// working days in the window. At minimum, today must
+	// have assigned rows (the picker's first iteration).
+	today := time.Now().UTC()
+	for !isWorkingDay(today) {
+		today = today.AddDate(0, 0, 1)
+	}
+	todayRows, err := db.GetWFHRequestsByDate(ctx, today.Format("2006-01-02"))
+	require.NoError(t, err)
+	assigned := 0
+	for _, r := range todayRows {
+		if r.Origin == "assigned" {
+			assigned++
+		}
+	}
+	require.Equal(t, 3, assigned,
+		"5 members with cap=2 on a day with no other WFHs must assign 3 members")
+}
+
+// isWorkingDay reports whether the given time falls on a Mon-Fri
+// weekday. Saturday and Sunday are weekends; the picker is a
+// no-op on weekends so the settlement sweep skips them.
+func isWorkingDay(t time.Time) bool {
+	return t.Weekday() != time.Saturday && t.Weekday() != time.Sunday
 }

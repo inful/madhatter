@@ -39,14 +39,12 @@ WHERE member_id = ?
 ORDER BY date;
 
 -- name: CreateApprovedRecurringWFHRequest :execresult
--- origin='recurring' is set explicitly even though the column default
--- is 'ad_hoc': the migration 000024 backfilled historical rows by
--- origin = 'recurring' WHERE is_recurring = 1, and we want every new
--- recurring row to land with the matching origin so the picker,
--- quota counter, and calendar layers can branch on it without
--- inferring from is_recurring.
 INSERT INTO wfh_requests (id, member_id, date, status, is_recurring, settled_at, origin)
 VALUES (?, ?, ?, 'approved', 1, ?, 'recurring');
+
+-- name: CreateApprovedAssignedWFHRequest :execresult
+INSERT INTO wfh_requests (id, member_id, date, status, is_recurring, settled_at, origin)
+VALUES (?, ?, ?, 'approved', 0, ?, 'assigned');
 
 -- name: GetWFHRequestByID :one
 SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason, origin

@@ -11,6 +11,106 @@ import (
 	"time"
 )
 
+const getLatestCoPresenceWithCohortA = `-- name: GetLatestCoPresenceWithCohortA :many
+SELECT working_date
+FROM wfh_co_presence
+WHERE working_date >= ?
+  AND working_date < ?
+  AND member_id_a = ?
+  AND member_id_b IN (?, ?, ?)
+ORDER BY working_date DESC
+LIMIT 1
+`
+
+type GetLatestCoPresenceWithCohortAParams struct {
+	WorkingDate   time.Time `json:"working_date"`
+	WorkingDate_2 time.Time `json:"working_date_2"`
+	MemberIDA     string    `json:"member_id_a"`
+	MemberIDB     string    `json:"member_id_b"`
+	MemberIDB_2   string    `json:"member_id_b_2"`
+	MemberIDB_3   string    `json:"member_id_b_3"`
+}
+
+func (q *Queries) GetLatestCoPresenceWithCohortA(ctx context.Context, arg GetLatestCoPresenceWithCohortAParams) ([]time.Time, error) {
+	rows, err := q.db.QueryContext(ctx, getLatestCoPresenceWithCohortA,
+		arg.WorkingDate,
+		arg.WorkingDate_2,
+		arg.MemberIDA,
+		arg.MemberIDB,
+		arg.MemberIDB_2,
+		arg.MemberIDB_3,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []time.Time{}
+	for rows.Next() {
+		var working_date time.Time
+		if err := rows.Scan(&working_date); err != nil {
+			return nil, err
+		}
+		items = append(items, working_date)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getLatestCoPresenceWithCohortB = `-- name: GetLatestCoPresenceWithCohortB :many
+SELECT working_date
+FROM wfh_co_presence
+WHERE working_date >= ?
+  AND working_date < ?
+  AND member_id_b = ?
+  AND member_id_a IN (?, ?, ?)
+ORDER BY working_date DESC
+LIMIT 1
+`
+
+type GetLatestCoPresenceWithCohortBParams struct {
+	WorkingDate   time.Time `json:"working_date"`
+	WorkingDate_2 time.Time `json:"working_date_2"`
+	MemberIDB     string    `json:"member_id_b"`
+	MemberIDA     string    `json:"member_id_a"`
+	MemberIDA_2   string    `json:"member_id_a_2"`
+	MemberIDA_3   string    `json:"member_id_a_3"`
+}
+
+func (q *Queries) GetLatestCoPresenceWithCohortB(ctx context.Context, arg GetLatestCoPresenceWithCohortBParams) ([]time.Time, error) {
+	rows, err := q.db.QueryContext(ctx, getLatestCoPresenceWithCohortB,
+		arg.WorkingDate,
+		arg.WorkingDate_2,
+		arg.MemberIDB,
+		arg.MemberIDA,
+		arg.MemberIDA_2,
+		arg.MemberIDA_3,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []time.Time{}
+	for rows.Next() {
+		var working_date time.Time
+		if err := rows.Scan(&working_date); err != nil {
+			return nil, err
+		}
+		items = append(items, working_date)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const pruneCoPresenceOlderThan = `-- name: PruneCoPresenceOlderThan :execresult
 DELETE FROM wfh_co_presence WHERE working_date < ?
 `

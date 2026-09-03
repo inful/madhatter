@@ -41,6 +41,27 @@ func (q *Queries) CountWFHRequestsBefore(ctx context.Context, date time.Time) (i
 	return count, err
 }
 
+const createApprovedAssignedWFHRequest = `-- name: CreateApprovedAssignedWFHRequest :execresult
+INSERT INTO wfh_requests (id, member_id, date, status, is_recurring, settled_at, origin)
+VALUES (?, ?, ?, 'approved', 0, ?, 'assigned')
+`
+
+type CreateApprovedAssignedWFHRequestParams struct {
+	ID        string       `json:"id"`
+	MemberID  string       `json:"member_id"`
+	Date      time.Time    `json:"date"`
+	SettledAt sql.NullTime `json:"settled_at"`
+}
+
+func (q *Queries) CreateApprovedAssignedWFHRequest(ctx context.Context, arg CreateApprovedAssignedWFHRequestParams) (sql.Result, error) {
+	return q.db.ExecContext(ctx, createApprovedAssignedWFHRequest,
+		arg.ID,
+		arg.MemberID,
+		arg.Date,
+		arg.SettledAt,
+	)
+}
+
 const createApprovedRecurringWFHRequest = `-- name: CreateApprovedRecurringWFHRequest :execresult
 INSERT INTO wfh_requests (id, member_id, date, status, is_recurring, settled_at, origin)
 VALUES (?, ?, ?, 'approved', 1, ?, 'recurring')
@@ -53,12 +74,6 @@ type CreateApprovedRecurringWFHRequestParams struct {
 	SettledAt sql.NullTime `json:"settled_at"`
 }
 
-// origin='recurring' is set explicitly even though the column default
-// is 'ad_hoc': the migration 000024 backfilled historical rows by
-// origin = 'recurring' WHERE is_recurring = 1, and we want every new
-// recurring row to land with the matching origin so the picker,
-// quota counter, and calendar layers can branch on it without
-// inferring from is_recurring.
 func (q *Queries) CreateApprovedRecurringWFHRequest(ctx context.Context, arg CreateApprovedRecurringWFHRequestParams) (sql.Result, error) {
 	return q.db.ExecContext(ctx, createApprovedRecurringWFHRequest,
 		arg.ID,

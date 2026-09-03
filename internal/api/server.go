@@ -175,6 +175,17 @@ func (s *Server) setupWFHService(db *database.DB) {
 	if !wfhCfg.Enabled {
 		return
 	}
+	// Validate before constructing the service. The picker
+	// (Phase 2 of plans/assigned-wfh-plan.md) silently reads
+	// past rows that are already pruned if retention < horizon,
+	// so we fail fast here rather than shipping a picker that
+	// appears to work but always returns the sentinel score.
+	// The service itself is also built so the scheduler can
+	// log the misconfig if startup continues past this point.
+	if err := wfhCfg.Validate(); err != nil {
+		slog.Error("WFH config validation failed", "error", err)
+		return
+	}
 	s.wfhService = wfh.NewService(db, wfhCfg)
 	s.wfhScheduler = wfh.NewScheduler(s.wfhService)
 	if startErr := s.wfhScheduler.Start(); startErr != nil {

@@ -32,3 +32,55 @@ func NewWFHMaterialiser(svc *wfh.Service) calendar.WFHMaterialiser {
 	}
 	return wfhMaterialiserAdapter{svc: svc}
 }
+
+// wfhAssignerAdapter implements calendar.AssignWFHAssigner against
+// the wfh.Service. Step 9 of plans/assigned-wfh-plan.md: the
+// calendar's RefreshFor runs the picker once per day before the
+// snapshot is built, so the calendar shows freshly-assigned rows.
+// nil-safe so the web layer can pass it through unconditionally.
+type wfhAssignerAdapter struct {
+	svc *wfh.Service
+}
+
+func (a wfhAssignerAdapter) AssignWFHForDate(ctx context.Context, date string) error {
+	if a.svc == nil {
+		return nil
+	}
+	return a.svc.AssignWFHForDate(ctx, date)
+}
+
+// NewWFHAssigner returns a calendar.AssignWFHAssigner backed by
+// svc. Returns nil when svc is nil so the web layer can pass it
+// through unconditionally.
+func NewWFHAssigner(svc *wfh.Service) calendar.AssignWFHAssigner {
+	if svc == nil {
+		return nil
+	}
+	return wfhAssignerAdapter{svc: svc}
+}
+
+// wfhCopresenceWriterAdapter implements calendar.CoPresenceWriter
+// against the wfh.Service. Step 11 of
+// plans/assigned-wfh-plan.md: the calendar's RefreshFor calls
+// this for past dates so the co-presence cohort stays fresh
+// between scheduler backfill ticks. nil-safe.
+type wfhCopresenceWriterAdapter struct {
+	svc *wfh.Service
+}
+
+func (a wfhCopresenceWriterAdapter) WriteCoPresenceForPastDate(ctx context.Context, date string) (int, error) {
+	if a.svc == nil {
+		return 0, nil
+	}
+	return a.svc.WriteCoPresenceForPastDate(ctx, date)
+}
+
+// NewWFHCopresenceWriter returns a calendar.CoPresenceWriter
+// backed by svc. Returns nil when svc is nil so the web layer
+// can pass it through unconditionally.
+func NewWFHCopresenceWriter(svc *wfh.Service) calendar.CoPresenceWriter {
+	if svc == nil {
+		return nil
+	}
+	return wfhCopresenceWriterAdapter{svc: svc}
+}

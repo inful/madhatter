@@ -30,10 +30,6 @@ FROM wfh_requests
 WHERE date < ?
 `
 
-// Count wfh_requests rows whose date is strictly before the cutoff.
-// Used by the past-period purge dry-run to preview the affected row
-// count without touching the table. The cutoff is the start of the
-// previous quota period: rows on or after that date are kept.
 func (q *Queries) CountWFHRequestsBefore(ctx context.Context, date time.Time) (int64, error) {
 	row := q.db.QueryRowContext(ctx, countWFHRequestsBefore, date)
 	var count int64
@@ -95,9 +91,9 @@ type CreateWFHRequestParams struct {
 }
 
 // Mark a request as denied and record the human-readable reason in
-// wfh_requests.denial_reason. The reason rides the same row to the
-// dashboard, the WFH list page, the admin manage page, and the
-// email notification so the user is never left guessing why their
+// wfh_requests.denial_reason. The reason rides the same row to
+// the dashboard, the WFH list page, the admin manage page, and
+// the email notification so the user is never left guessing why their
 // request was rejected.
 func (q *Queries) CreateWFHRequest(ctx context.Context, arg CreateWFHRequestParams) (sql.Result, error) {
 	return q.db.ExecContext(ctx, createWFHRequest, arg.ID, arg.MemberID, arg.Date)
@@ -754,9 +750,6 @@ type IsAdminMarkedWFHParams struct {
 	Date     time.Time `json:"date"`
 }
 
-// Returns 1 if an admin-marked row exists for (member_id, date),
-// 0 otherwise. Cheap point-lookup behind the
-// idx_wfh_requests_admin_marked index.
 func (q *Queries) IsAdminMarkedWFH(ctx context.Context, arg IsAdminMarkedWFHParams) (int64, error) {
 	row := q.db.QueryRowContext(ctx, isAdminMarkedWFH, arg.MemberID, arg.Date)
 	var is_admin_marked int64
@@ -777,14 +770,6 @@ type MarkAdminWFHParams struct {
 	MarkedAt sql.NullTime   `json:"marked_at"`
 }
 
-// Insert an admin-marked WFH row in one shot. is_admin_marked=1 and
-// status='approved' so the row participates in every existing
-// query (quota, floor, ICS, dashboard presence) without the
-// rendering layer needing a special case for admin marks. The
-// UNIQUE(member_id, date) constraint guarantees idempotency: a
-// second mark for the same (member, date) returns SQLITE_CONSTRAINT
-// to the caller, which the service layer translates into
-// "already marked".
 func (q *Queries) MarkAdminWFH(ctx context.Context, arg MarkAdminWFHParams) (sql.Result, error) {
 	return q.db.ExecContext(ctx, markAdminWFH,
 		arg.ID,
@@ -817,14 +802,6 @@ WHERE id = ?
   )
 `
 
-// Flip a previously cancelled or self-withdrawn row back to pending and
-// clear the audit fields, so the user can change their mind and re-request
-// WFH for the same date. Only self-withdrawals are resurrectable: admin
-// withdrawals (withdrawn_by IS NOT NULL) are preserved as final decisions.
-// is_recurring is cleared on resurrect so the row is treated as ad-hoc:
-// settlement filters is_recurring=0 (so recurring rows are skipped), and
-// preserving the flag would leave the resurrected row stuck in pending
-// with neither settlement nor the materializer able to advance it.
 func (q *Queries) ResurrectWFHRequest(ctx context.Context, id string) (sql.Result, error) {
 	return q.db.ExecContext(ctx, resurrectWFHRequest, id)
 }

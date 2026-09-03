@@ -302,3 +302,28 @@ CREATE TABLE IF NOT EXISTS wfh_co_presence (
 CREATE INDEX IF NOT EXISTS idx_wfh_co_presence_date     ON wfh_co_presence(working_date);
 CREATE INDEX IF NOT EXISTS idx_wfh_co_presence_member_a ON wfh_co_presence(member_id_a, working_date);
 CREATE INDEX IF NOT EXISTS idx_wfh_co_presence_member_b ON wfh_co_presence(member_id_b, working_date);
+
+-- Swap mechanic for the seat-cap picker (Phase 3 of
+-- plans/assigned-wfh-plan.md). When the picker assigns WFH
+-- to a member, that member can request a swap to a willing
+-- on-site teammate. The cap stays met across the swap: the
+-- original assigned WFH is withdrawn and a new WFH row is
+-- inserted for the target with origin='swap'. Single-
+-- transaction update. See migration 000025.
+CREATE TABLE IF NOT EXISTS wfh_assignment_swaps (
+    id TEXT PRIMARY KEY,
+    requester_wfh_request_id TEXT NOT NULL,
+    target_member_id TEXT NOT NULL,
+    swap_date DATE NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'accepted', 'rejected', 'cancelled')),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    resolved_at DATETIME,
+    FOREIGN KEY (requester_wfh_request_id) REFERENCES wfh_requests(id) ON DELETE CASCADE,
+    FOREIGN KEY (target_member_id) REFERENCES team_members(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_wfh_assignment_swaps_target    ON wfh_assignment_swaps(target_member_id, status);
+CREATE INDEX IF NOT EXISTS idx_wfh_assignment_swaps_date      ON wfh_assignment_swaps(swap_date);
+CREATE INDEX IF NOT EXISTS idx_wfh_assignment_swaps_requester ON wfh_assignment_swaps(requester_wfh_request_id);

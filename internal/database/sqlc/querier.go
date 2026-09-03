@@ -16,6 +16,12 @@ type Querier interface {
 	// Activates a pending user. The deactivated_at column stays NULL
 	// (it was NULL while pending and is cleared on approve).
 	ApproveUser(ctx context.Context, id string) (User, error)
+	// Auto-cancel pass run by SettlePendingRequests (step 15
+	// of plans/assigned-wfh-plan.md): flips every pending swap
+	// whose swap_date is strictly before today to status=
+	// 'cancelled'. The idx_wfh_assignment_swaps_date index
+	// covers this; the cutoff is computed in Go as today.
+	CancelExpiredSwaps(ctx context.Context, swapDate time.Time) (sql.Result, error)
 	// Atomically claim a batch of due rows by bumping next_attempt_at far into
 	// the future, so concurrent workers don't pick the same row.
 	//
@@ -40,12 +46,7 @@ type Querier interface {
 	// dev-mode seeder; the production OAuth flow goes through
 	// CreateUser (pending) and is approved by an admin.
 	CreateActiveUser(ctx context.Context, arg CreateActiveUserParams) (User, error)
-	// origin='recurring' is set explicitly even though the column default
-	// is 'ad_hoc': the migration 000024 backfilled historical rows by
-	// origin = 'recurring' WHERE is_recurring = 1, and we want every new
-	// recurring row to land with the matching origin so the picker,
-	// quota counter, and calendar layers can branch on it without
-	// inferring from is_recurring.
+	CreateApprovedAssignedWFHRequest(ctx context.Context, arg CreateApprovedAssignedWFHRequestParams) (sql.Result, error)
 	CreateApprovedRecurringWFHRequest(ctx context.Context, arg CreateApprovedRecurringWFHRequestParams) (sql.Result, error)
 	CreateCalendarSubscription(ctx context.Context, arg CreateCalendarSubscriptionParams) (sql.Result, error)
 	CreateHatSwap(ctx context.Context, arg CreateHatSwapParams) (sql.Result, error)
@@ -54,6 +55,11 @@ type Querier interface {
 	CreateOutboxEntry(ctx context.Context, arg CreateOutboxEntryParams) (sql.Result, error)
 	CreateRotaAssignment(ctx context.Context, arg CreateRotaAssignmentParams) (sql.Result, error)
 	CreateSession(ctx context.Context, arg CreateSessionParams) (Session, error)
+	// Insert a new pending swap request. Caller is responsible
+	// for the 409-conflict check (any pending swap for the same
+	// requester_wfh_request_id); the application enforces it
+	// before calling this query.
+	CreateSwap(ctx context.Context, arg CreateSwapParams) (sql.Result, error)
 	// Inserts a user as pending (is_active = 0). The first-ever
 	// user is bootstrapped via CreateUserAsFirstAdmin instead, which
 	// sets is_active = 1 atomically.
@@ -118,6 +124,8 @@ type Querier interface {
 	GetFutureAssignmentsForMember(ctx context.Context, memberID string) ([]GetFutureAssignmentsForMemberRow, error)
 	GetHatSwapByID(ctx context.Context, id string) (HatSwap, error)
 	GetLatestAssignmentDate(ctx context.Context) (interface{}, error)
+	GetLatestCoPresenceWithCohortA(ctx context.Context, arg GetLatestCoPresenceWithCohortAParams) ([]time.Time, error)
+	GetLatestCoPresenceWithCohortB(ctx context.Context, arg GetLatestCoPresenceWithCohortBParams) ([]time.Time, error)
 	GetLeaveByDate(ctx context.Context, arg GetLeaveByDateParams) ([]LeaveRecord, error)
 	GetLeaveByID(ctx context.Context, id string) (LeaveRecord, error)
 	GetLeaveRecords(ctx context.Context, arg GetLeaveRecordsParams) ([]LeaveRecord, error)
@@ -131,7 +139,21 @@ type Querier interface {
 	GetOAuthToken(ctx context.Context, arg GetOAuthTokenParams) (OauthToken, error)
 	GetOpenSwapForAssignment(ctx context.Context, arg GetOpenSwapForAssignmentParams) (HatSwap, error)
 	GetOutboxEntry(ctx context.Context, id string) (NotificationOutbox, error)
+	// 409-conflict guard: returns the pending swap for a given
+	// assigned wfh_request row, if any. nil when no pending
+	// swap exists. Used in handleWFHSwapCreate before the
+	// INSERT to enforce "one pending swap per assigned row".
+	GetPendingSwapForRequesterRow(ctx context.Context, requesterWfhRequestID string) (WfhAssignmentSwap, error)
 	GetPendingSwapsForMember(ctx context.Context, targetMemberID string) ([]HatSwap, error)
+	// Outbound read for the requester. Returns all swaps the
+	// current member has opened that are still pending. Used
+	// by the swap form to show "your swap is awaiting N's
+	// decision" and by the cancel button.
+	GetPendingSwapsForRequester(ctx context.Context, memberID string) ([]WfhAssignmentSwap, error)
+	// Inbox read for the target member. Returns all swaps where
+	// the target is the current user and status='pending'. The
+	// idx_wfh_assignment_swaps_target index covers this.
+	GetPendingSwapsForTarget(ctx context.Context, targetMemberID string) ([]WfhAssignmentSwap, error)
 	GetPendingWFHRequestsForSettlement(ctx context.Context, date time.Time) ([]GetPendingWFHRequestsForSettlementRow, error)
 	// Returns the R1 (original-HAT) rotation state, or sql.ErrNoRows
 	// if no R1 assignment has been written yet. The R1 rotation is
@@ -146,6 +168,7 @@ type Querier interface {
 	GetSessionByToken(ctx context.Context, token string) (GetSessionByTokenRow, error)
 	GetSubscriptionByToken(ctx context.Context, token string) (CalendarSubscription, error)
 	GetSubscriptionsByMemberID(ctx context.Context, memberID string) ([]CalendarSubscription, error)
+	GetSwapByID(ctx context.Context, id string) (WfhAssignmentSwap, error)
 	GetSwapsForMember(ctx context.Context, arg GetSwapsForMemberParams) ([]HatSwap, error)
 	GetUpcomingAssignments(ctx context.Context, arg GetUpcomingAssignmentsParams) ([]GetUpcomingAssignmentsRow, error)
 	GetUpcomingWFHForMember(ctx context.Context, arg GetUpcomingWFHForMemberParams) ([]GetUpcomingWFHForMemberRow, error)
@@ -226,6 +249,12 @@ type Querier interface {
 	// HandleLeaveChange is safe. The reassign path never reads or
 	// writes the ad-hoc state.
 	UpdateReassignmentAnchor(ctx context.Context, arg UpdateReassignmentAnchorParams) error
+	// State transition for accept / reject / cancel. Caller
+	// passes the new status string and a resolved_at
+	// timestamp. status='cancelled' is used by both the requester
+	// (voluntary) and the scheduler (auto-cancel because the
+	// date passed).
+	UpdateSwapStatus(ctx context.Context, arg UpdateSwapStatusParams) (sql.Result, error)
 	UpdateTeamMember(ctx context.Context, arg UpdateTeamMemberParams) error
 	UpdateUser(ctx context.Context, arg UpdateUserParams) error
 	UpdateUserProvider(ctx context.Context, arg UpdateUserProviderParams) error

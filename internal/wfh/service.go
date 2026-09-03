@@ -658,15 +658,6 @@ func (s *Service) writeCoPresencePairs(ctx context.Context, dateStr string, onSi
 	return written, nil
 }
 
-// BackfillCoPresence runs WriteCoPresenceForPastDate for the
-// last N working days, where N is WFH_COPRESENCE_RETENTION_DAYS
-// bounded by 7 (the plan's recommendation; the full retention
-// window would be 30 days by default but the daily tick only
-// needs to catch the last week). Step 11 of
-// plans/assigned-wfh-plan.md. Called from the scheduler
-// (SettlePendingRequests) after each settlement tick.
-//
-// Eventual consistency: the daily backfill re-reads current
 // AutoCancelExpiredSwaps flips every pending swap whose
 // swap_date is strictly before today to status='cancelled'.
 // Step 15 of plans/assigned-wfh-plan.md: SettlePendingRequests
@@ -684,6 +675,15 @@ func (s *Service) AutoCancelExpiredSwaps(ctx context.Context) error {
 	return s.db.CancelExpiredWFHSwaps(ctx, today)
 }
 
+// BackfillCoPresence runs WriteCoPresenceForPastDate for the
+// last N working days, where N is WFH_COPRESENCE_RETENTION_DAYS
+// bounded by 7 (the plan's recommendation; the full retention
+// window would be 30 days by default but the daily tick only
+// needs to catch the last week). Step 11 of
+// plans/assigned-wfh-plan.md. Called from the scheduler
+// (SettlePendingRequests) after each settlement tick.
+//
+// Eventual consistency: the daily backfill re-reads current
 // state for each day and writes pair rows via INSERT OR
 // IGNORE. Original (possibly incomplete) writes survive
 // because INSERT OR IGNORE skips rows that already exist.
@@ -790,26 +790,6 @@ func (s *Service) ReportToday(ctx context.Context, memberID string) (database.WF
 	return s.reportTodayReRead(ctx, pending)
 }
 
-// MarkWFH is the admin override path: an admin records that a member
-// worked from home today even though the member did not request it.
-// The mark is a "correction" — the system said on-site, reality is WFH,
-// the admin is recording reality. Two consequences of the override:
-//
-//   - The mark BYPASSES the per-member quota (WFH_MAX_DAYS_PER_PERIOD)
-//     and the daily capacity floor (MinOnsiteCount). The admin is
-//     taking responsibility for the action; the safety rails do not
-//     block the override.
-//
-//   - The mark IS still counted in the quota and the floor once
-//     recorded. The row is approved, every downstream query (quota
-//     counter, on-site count, ICS feed) sees it. This keeps the
-//     dashboard math honest — if the mark is excluded from the math,
-//     the dashboard still shows the wrong state.
-//
-// The mark is today-only (matching the existing ReportToday and
-// leave/report-sick patterns). The UNIQUE(member_id, date) constraint
-// on wfh_requests guarantees idempotency: a second mark for the same
-// (member, date) returns ErrWFHDuplicateRequest. The caller is
 // AdminReassignWFH moves a system-assigned WFH row from one
 // member to another in a single transaction. The cap is
 // preserved: the original row flips to status='withdrawn'
@@ -929,7 +909,28 @@ func (s *Service) adminReassignResultID(ctx context.Context, replacementMemberID
 	return replacementReq.ID, nil
 }
 
-// expected to translate that into a "already marked" flash message.
+// MarkWFH is the admin override path: an admin records that a member
+// worked from home today even though the member did not request it.
+// The mark is a "correction" — the system said on-site, reality is WFH,
+// the admin is recording reality. Two consequences of the override:
+//
+//   - The mark BYPASSES the per-member quota (WFH_MAX_DAYS_PER_PERIOD)
+//     and the daily capacity floor (MinOnsiteCount). The admin is
+//     taking responsibility for the action; the safety rails do not
+//     block the override.
+//
+//   - The mark IS still counted in the quota and the floor once
+//     recorded. The row is approved, every downstream query (quota
+//     counter, on-site count, ICS feed) sees it. This keeps the
+//     dashboard math honest — if the mark is excluded from the math,
+//     the dashboard still shows the wrong state.
+//
+// The mark is today-only (matching the existing ReportToday and
+// leave/report-sick patterns). The UNIQUE(member_id, date) constraint
+// on wfh_requests guarantees idempotency: a second mark for the same
+// (member, date) returns ErrWFHDuplicateRequest. Returns the
+// WFHRequest that was created. The caller (web handler) is expected
+// to translate that into a "already marked" flash message.
 func (s *Service) MarkWFH(ctx context.Context, memberID, date, actorUserID, actorName string) (database.WFHRequest, error) {
 	if !s.cfg.Enabled {
 		return database.WFHRequest{}, database.ErrWFHDisabled

@@ -233,6 +233,7 @@ func toData(eventKind string, event any) (data, error) {
 			OldStatus: e.OldStatus,
 			NewStatus: e.NewStatus,
 			ActorName: e.ActorName,
+			Reason:    e.Reason,
 		}, nil
 	case CoverEvent:
 		return data{

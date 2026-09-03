@@ -9,6 +9,10 @@ Your Work-From-Home request for {{.Date}} has been {{.NewStatus}}.
 
   Action by: {{.ActorName}}
 {{- end}}
+{{- if .Reason}}
+
+  Reason: {{.Reason}}
+{{- end}}
 
   {{.BaseURL}}/wfh
 

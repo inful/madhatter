@@ -1351,3 +1351,120 @@ func TestQuotaStatus_ReportsOverQuotaBy(t *testing.T) {
 	assert.Equal(t, 2, post.Used)
 	assert.Equal(t, 1, post.OverQuotaBy, "the dashboard surfaces the overage")
 }
+
+// TestSettlePendingRequests_DenialReasonIsRecorded pins the
+// user-facing surface of a denial: when the settlement path denies
+// a request, the human-readable reason lands in the
+// wfh_requests.denial_reason column (and rides the row to the
+// WFH list page, the admin manage page, and the email
+// notification). Without this, the user sees a bare "Denied" tag
+// and has to guess why. The test exercises the same floor
+// scenario as the existing settlement tests, so the reason
+// computation is exercised end-to-end.
+func TestSettlePendingRequests_DenialReasonIsRecorded(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	cfg := testConfig()
+	cfg.MinOnsitePercentage = 50
+	cfg.MinOnsiteAbsolute = 1
+	svc := NewService(db, cfg)
+	notifier := &recordingNotifier{}
+	svc.SetNotifier(notifier)
+
+	targetDate := testutil.NextBusinessDay(time.Now().UTC().AddDate(0, 0, 1))
+	targetDateStr := targetDate.Format("2006-01-02")
+
+	// Two-person team (50% of 2 = 1, min-absolute 1, floor 1).
+	// Two pending requests. Approve the first, deny the second.
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	aliceReq, err := db.CreateWFHRequest(ctx, aliceID, targetDateStr)
+	require.NoError(t, err)
+	bobReq, err := db.CreateWFHRequest(ctx, bobID, targetDateStr)
+	require.NoError(t, err)
+
+	require.NoError(t, svc.SettlePendingRequests(ctx))
+
+	// Alice wins the slot (created first), Bob is denied.
+	aliceRow, err := db.GetWFHRequestByID(ctx, aliceReq.ID)
+	require.NoError(t, err)
+	assert.Equal(t, database.WFHStatusApproved, aliceRow.Status)
+	assert.Nil(t, aliceRow.DenialReason, "approved rows must not carry a denial reason")
+
+	bobRow, err := db.GetWFHRequestByID(ctx, bobReq.ID)
+	require.NoError(t, err)
+	assert.Equal(t, database.WFHStatusDenied, bobRow.Status)
+	require.NotNil(t, bobRow.DenialReason, "denied rows must carry a denial reason so the user knows why")
+	assert.Contains(t, *bobRow.DenialReason, "On-site coverage would drop below the minimum",
+		"the reason must explain the floor-driven denial in plain language")
+	assert.NotEmpty(t, *bobRow.SettledAt, "denial records settled_at so the audit trail is complete")
+
+	// The notifier sees the same reason so the email template can
+	// render it. Two events fire: one approve for Alice, one
+	// deny for Bob. We assert on Bob's event specifically.
+	var denyEvent *notify.WFHEvent
+	notifier.mu.Lock()
+	defer notifier.mu.Unlock()
+	for i := range notifier.events {
+		if notifier.events[i].NewStatus == database.WFHStatusDenied {
+			denyEvent = &notifier.events[i]
+			break
+		}
+	}
+	require.NotNil(t, denyEvent, "the deny path must fire a notification")
+	assert.Equal(t, *bobRow.DenialReason, denyEvent.Reason,
+		"the email event's Reason must match the on-disk denial_reason")
+}
+
+// TestSettlePendingRequests_DenialReasonCarriesFloorValue pins the
+// user-facing wording: the reason names the floor value (1 in
+// this test) so the user can correlate the message with the
+// dashboard. A generic "on-site count would drop below the
+// minimum" without the number would force the user to dig
+// through the help page; including the value keeps the
+// explanation self-contained.
+func TestSettlePendingRequests_DenialReasonCarriesFloorValue(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	cfg := testConfig()
+	cfg.MinOnsitePercentage = 50
+	cfg.MinOnsiteAbsolute = 1
+	svc := NewService(db, cfg)
+
+	targetDate := testutil.NextBusinessDay(time.Now().UTC().AddDate(0, 0, 1))
+	targetDateStr := targetDate.Format("2006-01-02")
+
+	// Three-person team. Two pending requests; one approval, one
+	// denial (floor is 2 of 3, so only one slot opens up).
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+	carolID, err := db.AddTeamMember(ctx, "Carol", "carol@example.com")
+	require.NoError(t, err)
+
+	aliceReq, err := db.CreateWFHRequest(ctx, aliceID, targetDateStr)
+	require.NoError(t, err)
+	bobReq, err := db.CreateWFHRequest(ctx, bobID, targetDateStr)
+	require.NoError(t, err)
+	_, _ = carolID, bobReq // suppress unused
+
+	require.NoError(t, svc.SettlePendingRequests(ctx))
+
+	bobRow, err := db.GetWFHRequestByID(ctx, bobReq.ID)
+	require.NoError(t, err)
+	require.NotNil(t, bobRow.DenialReason, "denial must carry a reason")
+	// With 3 members and a 50% floor (rounded up = 2, abs min 1),
+	// the floor is 2. The reason must name that number so the
+	// user can correlate the message with the dashboard.
+	assert.Contains(t, *bobRow.DenialReason, "2",
+		"the reason must surface the floor value (2) so the user can correlate with the dashboard")
+	_ = aliceReq
+}

@@ -141,6 +141,12 @@ type WFHRequest struct {
 	IsAdminMarked bool       `json:"is_admin_marked"`
 	MarkedBy      *string    `json:"marked_by,omitempty"`
 	MarkedAt      *time.Time `json:"marked_at,omitempty"`
+	// DenialReason is the human-readable explanation for why a
+	// request was denied. Set by the settlement path when the row
+	// flips to status=denied; surfaced on the dashboard, the WFH
+	// list page, the admin manage page, and the email notification
+	// so the user is never left guessing why a request was rejected.
+	DenialReason *string `json:"denial_reason,omitempty"`
 	// Enriched fields (populated by callers).
 	MemberName string `json:"member_name,omitempty"`
 }

@@ -57,6 +57,11 @@ type Querier interface {
 	// so the operator can log in; every subsequent user is pending
 	// (is_active = 0) and requires admin approval.
 	CreateUserAsFirstAdmin(ctx context.Context, arg CreateUserAsFirstAdminParams) (User, error)
+	// Mark a request as denied and record the human-readable reason in
+	// wfh_requests.denial_reason. The reason rides the same row to the
+	// dashboard, the WFH list page, the admin manage page, and the
+	// email notification so the user is never left guessing why their
+	// request was rejected.
 	CreateWFHRequest(ctx context.Context, arg CreateWFHRequestParams) (sql.Result, error)
 	DeactivateAPIToken(ctx context.Context, id string) (sql.Result, error)
 	DeactivateTeamMember(ctx context.Context, id string) error
@@ -81,6 +86,7 @@ type Querier interface {
 	DeleteUserOAuthTokens(ctx context.Context, userID string) error
 	DeleteUserSessions(ctx context.Context, userID string) error
 	DeleteWFHRequest(ctx context.Context, id string) error
+	DenyWFHRequest(ctx context.Context, arg DenyWFHRequestParams) (sql.Result, error)
 	// INSERT-OR-IGNORE the single row of cover_rotation_state. Used by
 	// the reassign path so its subsequent UPDATE does not fail on a
 	// fresh database where the row does not exist yet. Only the id is
@@ -136,6 +142,7 @@ type Querier interface {
 	GetSubscriptionsByMemberID(ctx context.Context, memberID string) ([]CalendarSubscription, error)
 	GetSwapsForMember(ctx context.Context, arg GetSwapsForMemberParams) ([]HatSwap, error)
 	GetUpcomingAssignments(ctx context.Context, arg GetUpcomingAssignmentsParams) ([]GetUpcomingAssignmentsRow, error)
+	GetUpcomingWFHForMember(ctx context.Context, arg GetUpcomingWFHForMemberParams) ([]GetUpcomingWFHForMemberRow, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id string) (User, error)
 	GetUserByProvider(ctx context.Context, arg GetUserByProviderParams) (User, error)
@@ -174,10 +181,6 @@ type Querier interface {
 	MarkOutboxDead(ctx context.Context, arg MarkOutboxDeadParams) (sql.Result, error)
 	MarkOutboxFailed(ctx context.Context, arg MarkOutboxFailedParams) (sql.Result, error)
 	MarkOutboxSent(ctx context.Context, id string) (sql.Result, error)
-	// NOTE: comments must follow the SQL, not precede it. sqlc v1.28.0 has a
-	// parser bug that strips the trailing `?` from multi-line DELETE statements
-	// ending in `< ?` when there are `--` comment lines between `-- name:` and
-	// the statement. Keep this statement on a single line with comments below.
 	PurgeWFHRequestsBefore(ctx context.Context, date time.Time) (sql.Result, error)
 	ReactivateUser(ctx context.Context, id string) (User, error)
 	// Flip a previously cancelled or self-withdrawn row back to pending and

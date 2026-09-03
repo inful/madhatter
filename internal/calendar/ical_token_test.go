@@ -107,3 +107,102 @@ func TestGenerateICalForTokenWithOptions_IncludesUpcomingAssignments(t *testing.
 	compactDate := date.Format("20060102")
 	assert.Contains(t, icsStr, compactDate, "the assignment date must appear in the event payload")
 }
+
+// TestGenerateICalForTokenWithOptions_IncludesUpcomingWFHEvents pins
+// the new WFH-day calendar affordance. A member with one or more
+// approved WFH rows in the lookahead window must surface them as
+// separate VEVENTs on the per-member calendar feed so the
+// subscriber sees "WFH: <name>" on the day instead of having to
+// consult the dashboard. Admin-marked WFH rows must also render,
+// distinguished by the "(marked by admin)" banner so subscribers
+// can tell a self-requested day from a correction.
+func TestGenerateICalForTokenWithOptions_IncludesUpcomingWFHEvents(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	require.True(t, ok)
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	t.Setenv("MIGRATIONS_PATH", filepath.Join(repoRoot, "migrations"))
+
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	db, err := database.New(filepath.Join(tmpDir, "test.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	// Two WFH days: a future self-requested day and today's
+	// admin-marked day. Both must surface as VEVENTs in the feed.
+	today := time.Now().UTC()
+	wfhDate1 := today.AddDate(0, 0, 2).Format("2006-01-02")
+	row1, err := db.CreateWFHRequest(ctx, memberID, wfhDate1)
+	require.NoError(t, err)
+	require.NoError(t, db.UpdateWFHRequestStatus(ctx, row1.ID, database.WFHStatusApproved))
+	// MarkAdminWFH needs a real user row to satisfy the marked_by
+	// foreign key. Insert directly via SQL so the test is self-
+	// contained (the database package doesn't expose CreateUser
+	// publicly, but it has an unexported queries field).
+	_, err = db.ExecContext(ctx,
+		`INSERT INTO users (id, email, name, provider, provider_id, is_admin, is_active) VALUES (?, ?, ?, ?, ?, 1, 1)`,
+		"admin-1", "admin@example.com", "Admin", "test", "admin-1")
+	require.NoError(t, err)
+	err = db.MarkAdminWFH(ctx, "admin-row", memberID, today.Format("2006-01-02"), "admin-1")
+	require.NoError(t, err)
+
+	token, err := db.CreateCalendarSubscription(ctx, memberID)
+	require.NoError(t, err)
+
+	icsStr, err := GenerateICalForTokenWithOptions(ctx, db, token, 14, SupportCalendarOptions{})
+	require.NoError(t, err)
+
+	// Both WFH days surface as VEVENTs.
+	assert.Contains(t, icsStr, "SUMMARY:Alice - WFH",
+		"per-member WFH events should carry the member-name WFH summary")
+	date1Compact := today.AddDate(0, 0, 2).Format("20060102")
+	date2Compact := today.Format("20060102")
+	assert.Contains(t, icsStr, "DTSTART;VALUE=DATE:"+date1Compact,
+		"the future self-requested WFH day should be a VEVENT")
+	assert.Contains(t, icsStr, "DTSTART;VALUE=DATE:"+date2Compact,
+		"today's admin-marked WFH should also be a VEVENT")
+	// The admin-marked day carries the banner in the description.
+	assert.Contains(t, icsStr, "(marked by admin)",
+		"admin-marked WFH events should carry the banner so subscribers can tell them apart")
+}
+
+// TestGenerateICalForTokenWithOptions_ExcludesPendingWFH pins the
+// negative case: pending / denied / withdrawn WFH rows must NOT
+// show on the calendar. Only confirmed (approved) WFH days
+// surface as VEVENTs.
+func TestGenerateICalForTokenWithOptions_ExcludesPendingWFH(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	require.True(t, ok)
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	t.Setenv("MIGRATIONS_PATH", filepath.Join(repoRoot, "migrations"))
+
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	db, err := database.New(filepath.Join(tmpDir, "test.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	today := time.Now().UTC()
+	pendingDate := today.AddDate(0, 0, 3).Format("2006-01-02")
+	pending, err := db.CreateWFHRequest(ctx, memberID, pendingDate)
+	require.NoError(t, err)
+	require.Equal(t, database.WFHStatusPending, pending.Status)
+
+	token, err := db.CreateCalendarSubscription(ctx, memberID)
+	require.NoError(t, err)
+
+	icsStr, err := GenerateICalForTokenWithOptions(ctx, db, token, 14, SupportCalendarOptions{})
+	require.NoError(t, err)
+
+	pendingCompact := today.AddDate(0, 0, 3).Format("20060102")
+	assert.NotContains(t, icsStr, "DTSTART;VALUE=DATE:"+pendingCompact,
+		"pending WFH rows must not surface as VEVENTs on the calendar")
+	assert.NotContains(t, icsStr, "WFH: Alice",
+		"summary should not appear for a pending-only WFH row")
+}

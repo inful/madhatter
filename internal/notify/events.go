@@ -17,6 +17,8 @@ type SwapEvent struct {
 
 // WFHEvent is the data for a WFH request state change notification.
 // OldStatus / NewStatus are WFHStatus* constants from the database package.
+// Reason is populated for the denial path so the email template can
+// surface the human-readable explanation (mirrors SwapEvent.Reason).
 type WFHEvent struct {
 	RequestID  string
 	MemberID   string
@@ -25,6 +27,7 @@ type WFHEvent struct {
 	OldStatus  string
 	NewStatus  string
 	ActorName  string // "system" for settlement, admin name for admin withdraw
+	Reason     string // populated for denial notifications; empty otherwise
 }
 
 // CoverEvent is the data for a "you have been assigned a HAT day" email.

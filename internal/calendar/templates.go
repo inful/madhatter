@@ -43,6 +43,20 @@ var defaultHolidayHTMLTemplate = template.Must(template.New("holidayHTML").Funcs
 	`{{htmlHeading .Summary}}{{htmlParagraph .BaseText}}`,
 ))
 
+// defaultWFHTextTemplate reproduces "X is working from home" so the
+// per-member calendar feed surfaces the member's own WFH days as
+// all-day VEVENTs alongside their HAT assignments. The text is
+// intentionally terse — calendar clients render the SUMMARY
+// prominently, so a long description here would crowd the day grid.
+var defaultWFHTextTemplate = texttemplate.Must(texttemplate.New("wfhText").Parse(`{{.BaseText}}`))
+
+// defaultWFHHTMLTemplate is the HTML alt-desc body for the WFH event.
+// Mirrors the leave template (heading + paragraph) so custom
+// operator overrides have the same shape as the other event kinds.
+var defaultWFHHTMLTemplate = template.Must(template.New("wfhHTML").Funcs(supportHTMLFuncs).Parse(
+	`{{htmlHeading .Summary}}{{htmlParagraph .BaseText}}`,
+))
+
 // per-event-kind on-disk template caches. Each cache is keyed by the
 // operator-supplied file path; an empty path maps to the built-in
 // default at lookup time.
@@ -53,6 +67,8 @@ var (
 	leaveHTMLCache   sync.Map // map[string]*template.Template
 	holidayTextCache sync.Map // map[string]*texttemplate.Template
 	holidayHTMLCache sync.Map // map[string]*template.Template
+	wfhTextCache     sync.Map // map[string]*texttemplate.Template
+	wfhHTMLCache     sync.Map // map[string]*template.Template
 )
 
 // supportHTMLFuncs is registered on every support HTML template so
@@ -112,6 +128,23 @@ func loadHolidayHTML(path string) (*template.Template, error) {
 		return defaultHolidayHTMLTemplate, nil
 	}
 	return loadHTMLFromFile(path, "holidayHTML", &holidayHTMLCache, supportHTMLFuncs)
+}
+
+// loadWFHText returns the operator's WFH text template, or the
+// built-in default.
+func loadWFHText(path string) (*texttemplate.Template, error) {
+	if path == "" {
+		return defaultWFHTextTemplate, nil
+	}
+	return loadTextFromFile(path, "wfhText", &wfhTextCache)
+}
+
+// loadWFHHTML returns the operator's WFH HTML template.
+func loadWFHHTML(path string) (*template.Template, error) {
+	if path == "" {
+		return defaultWFHHTMLTemplate, nil
+	}
+	return loadHTMLFromFile(path, "wfhHTML", &wfhHTMLCache, supportHTMLFuncs)
 }
 
 // loadTextFromFile is the shared text-template loader. The cache is
@@ -185,6 +218,22 @@ type holidayData struct {
 	BaseText string
 	Name     string
 	Date     string
+}
+
+// wfhData is the data exposed to the WFH-event templates. Mirrors
+// leaveData so operators can reuse leave-style templates against
+// WFH events if they want to. AdminMarked is rendered as a small
+// banner in the description so subscribers can tell the row apart
+// from a self-requested WFH (the same visual distinction the
+// dashboard uses).
+type wfhData struct {
+	//nolint:unused // Read by template execution.
+	presenceSnapshot
+	Summary     string
+	BaseText    string
+	MemberName  string
+	Date        string
+	AdminMarked bool
 }
 
 // renderTemplate executes a text/template against data and returns the

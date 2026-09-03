@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -192,6 +193,7 @@ func (db *DB) GetWFHRequestByID(ctx context.Context, id string) (*WFHRequest, er
 		IsAdminMarked: row.IsAdminMarked,
 		MarkedBy:      row.MarkedBy,
 		MarkedAt:      row.MarkedAt,
+		DenialReason:  row.DenialReason,
 	})
 	return &result, nil
 }
@@ -221,6 +223,7 @@ func (db *DB) GetWFHRequestsByDate(ctx context.Context, date string) ([]WFHReque
 			IsAdminMarked: rows[i].IsAdminMarked,
 			MarkedBy:      rows[i].MarkedBy,
 			MarkedAt:      rows[i].MarkedAt,
+			DenialReason:  rows[i].DenialReason,
 		})
 	}
 	return result, nil
@@ -254,6 +257,40 @@ func (db *DB) GetWFHRequestsByDateAndStatus(ctx context.Context, date, status st
 			IsAdminMarked: rows[i].IsAdminMarked,
 			MarkedBy:      rows[i].MarkedBy,
 			MarkedAt:      rows[i].MarkedAt,
+			DenialReason:  rows[i].DenialReason,
+		})
+	}
+	return result, nil
+}
+
+// GetUpcomingWFHForMember returns the member's future approved
+// WFH rows within the lookahead window. The per-member calendar
+// feed uses this to render WFH days as separate VEVENTs alongside
+// HAT assignments (so the subscriber sees "WFH: Alice" on the
+// day instead of having to consult the dashboard). Pending /
+// denied / withdrawn rows are excluded — only confirmed WFH days
+// show on the calendar. is_admin_marked is included so the
+// alt-desc can flag admin overrides distinctly.
+func (db *DB) GetUpcomingWFHForMember(ctx context.Context, memberID string, lookaheadDays int) ([]WFHRequest, error) {
+	rows, err := db.queries.GetUpcomingWFHForMember(ctx, sqlc.GetUpcomingWFHForMemberParams{
+		MemberID: memberID,
+		Column2:  sql.NullString{String: strconv.Itoa(lookaheadDays), Valid: true},
+	})
+	if err != nil {
+		return nil, err
+	}
+	result := make([]WFHRequest, len(rows))
+	for i := range rows {
+		result[i] = wfhFromSQLCFields(wfhFields{
+			ID:            rows[i].ID,
+			MemberID:      rows[i].MemberID,
+			Date:          rows[i].Date,
+			Status:        rows[i].Status,
+			IsRecurring:   rows[i].IsRecurring,
+			IsAdminMarked: rows[i].IsAdminMarked,
+			MarkedBy:      rows[i].MarkedBy,
+			MarkedAt:      rows[i].MarkedAt,
+			DenialReason:  rows[i].DenialReason,
 		})
 	}
 	return result, nil
@@ -280,6 +317,7 @@ func (db *DB) GetWFHRequestsByMember(ctx context.Context, memberID string) ([]WF
 			IsAdminMarked: rows[i].IsAdminMarked,
 			MarkedBy:      rows[i].MarkedBy,
 			MarkedAt:      rows[i].MarkedAt,
+			DenialReason:  rows[i].DenialReason,
 		})
 	}
 	return result, nil
@@ -318,6 +356,7 @@ func (db *DB) GetWFHRequestsUsedInPeriod(ctx context.Context, memberID, periodSt
 			IsAdminMarked: rows[i].IsAdminMarked,
 			MarkedBy:      rows[i].MarkedBy,
 			MarkedAt:      rows[i].MarkedAt,
+			DenialReason:  rows[i].DenialReason,
 		})
 	}
 	return result, nil
@@ -370,6 +409,7 @@ func (db *DB) GetPendingForSettlement(ctx context.Context, cutoffDate string) ([
 			IsAdminMarked: rows[i].IsAdminMarked,
 			MarkedBy:      rows[i].MarkedBy,
 			MarkedAt:      rows[i].MarkedAt,
+			DenialReason:  rows[i].DenialReason,
 		})
 	}
 	return result, nil
@@ -396,6 +436,7 @@ func (db *DB) GetAllWFHRequests(ctx context.Context) ([]WFHRequest, error) {
 			IsAdminMarked: rows[i].IsAdminMarked,
 			MarkedBy:      rows[i].MarkedBy,
 			MarkedAt:      rows[i].MarkedAt,
+			DenialReason:  rows[i].DenialReason,
 		})
 	}
 	return result, nil
@@ -408,6 +449,22 @@ func (db *DB) UpdateWFHRequestStatus(ctx context.Context, id, status string) err
 		Status:    status,
 		SettledAt: now,
 		ID:        id,
+	})
+	return err
+}
+
+// DenyWFHRequest flips a pending request to denied and
+// records the human-readable reason in wfh_requests.denial_reason.
+// Called by the settlement path; the reason rides the row to the
+// dashboard, the WFH list page, the admin manage page, and the
+// email notification so the user is never left guessing why a
+// request was rejected (no more silent denials).
+func (db *DB) DenyWFHRequest(ctx context.Context, id, reason string) error {
+	now := sql.NullTime{Time: time.Now().UTC(), Valid: true}
+	_, err := db.queries.DenyWFHRequest(ctx, sqlc.DenyWFHRequestParams{
+		SettledAt:    now,
+		DenialReason: sql.NullString{String: reason, Valid: reason != ""},
+		ID:           id,
 	})
 	return err
 }

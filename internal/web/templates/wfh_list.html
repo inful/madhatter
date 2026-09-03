@@ -123,6 +123,11 @@
                             {{end}}
                             {{else if eq .Status "denied"}}
                             <span class="tag is-danger is-light"><i class="fas fa-times mr-1"></i> Denied</span>
+                            {{if .DenialReason}}
+                            <p class="has-text-grey is-size-7 mt-1 mb-0" style="max-width: 28rem;">
+                                <i class="fas fa-info-circle mr-1"></i>{{.DenialReason}}
+                            </p>
+                            {{end}}
                             {{else if eq .Status "cancelled"}}
                             <span class="tag is-light"><i class="fas fa-ban mr-1"></i> Cancelled</span>
                             {{else if eq .Status "withdrawn"}}

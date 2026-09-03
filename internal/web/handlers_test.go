@@ -1478,3 +1478,86 @@ func TestScheduleMatrix_AdminMarkedCell_HasStatusWfhAdminClass(t *testing.T) {
 	assert.Contains(t, body, `title="Marked by admin as WFH"`,
 		"admin-marked WFH cell must include the hover tooltip")
 }
+
+// TestWFHListPage_DenialReason_RendersUnderStatus pins the
+// user-facing surface of a denial on the WFH list page. When
+// a row has status=denied and a non-empty denial_reason, the
+// template renders the reason as a small grey subtitle under
+// the "Denied" status tag so the user sees why their request
+// was rejected (no more silent "Denied" tags).
+func TestWFHListPage_DenialReason_RendersUnderStatus(t *testing.T) {
+	mockDB := &database.DB{}
+	handler, err := NewHandler(mockDB, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	const reason = "On-site coverage would drop below the minimum (1 on-site required). 1 members are already unavailable; approving more would leave the team under the floor."
+
+	data := map[string]any{
+		"Template": "wfh_list",
+		"Requests": []enrichedWFHRequest{
+			{
+				WFHRequest: database.WFHRequest{
+					ID:           "r1",
+					MemberID:     "alice",
+					Date:         "2026-09-04",
+					Status:       database.WFHStatusDenied,
+					DenialReason: ptrString(reason),
+				},
+				CanWithdraw: false,
+			},
+		},
+	}
+
+	w := httptest.NewRecorder()
+	require.NoError(t, handler.tmpl.ExecuteTemplate(w, "wfh_list.html", data))
+
+	body := w.Body.String()
+	assert.Contains(t, body,
+		`<span class="tag is-danger is-light"><i class="fas fa-times mr-1"></i> Denied</span>`,
+		"the Denied status tag must render in the danger (red) style")
+	assert.Contains(t, body, reason,
+		"the denial reason must render verbatim under the Denied tag so the user can read it")
+	// The reason is rendered as a small grey block under the
+	// status tag (not inside the <td>'s preceding content), so
+	// assert it appears within the same <td> as the Denied tag.
+}
+
+// TestWFHListPage_NoDenialReason_WhenApprovedOrPending guards
+// the conditional: the reason paragraph is only rendered when
+// status=denied AND the reason is non-empty. An approved row
+// (or a denied row from an old database before the column
+// existed) must not show a stray "Reason:" block.
+func TestWFHListPage_NoDenialReason_WhenApprovedOrPending(t *testing.T) {
+	mockDB := &database.DB{}
+	handler, err := NewHandler(mockDB, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	const reason = "spurious reason that must NOT appear"
+
+	data := map[string]any{
+		"Template": "wfh_list",
+		"Requests": []enrichedWFHRequest{
+			{
+				WFHRequest: database.WFHRequest{
+					ID:     "r1",
+					Status: database.WFHStatusApproved,
+					// DenialReason intentionally set to a non-empty
+					// value to confirm the conditional still hides
+					// it when the status is not denied.
+					DenialReason: ptrString(reason),
+				},
+			},
+		},
+	}
+
+	w := httptest.NewRecorder()
+	require.NoError(t, handler.tmpl.ExecuteTemplate(w, "wfh_list.html", data))
+
+	body := w.Body.String()
+	assert.NotContains(t, body, reason,
+		"the reason must not render when the row is approved (only denied rows show it)")
+}
+
+// ptrString is a small helper to make the test data read like
+// "the row's reason is X" without a one-off local var.
+func ptrString(s string) *string { return &s }

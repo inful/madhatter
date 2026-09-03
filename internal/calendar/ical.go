@@ -51,6 +51,8 @@ type ICalGenerator struct {
 	leaveHTMLTemplate             *template.Template
 	holidayTextTemplate           *texttemplate.Template
 	holidayHTMLTemplate           *template.Template
+	wfhTextTemplate               *texttemplate.Template
+	wfhHTMLTemplate               *template.Template
 }
 
 type SupportCalendarOptions struct {
@@ -79,6 +81,8 @@ type SupportCalendarOptions struct {
 	LeaveTemplateHTMLPath             string
 	HolidayTemplateTextPath           string
 	HolidayTemplateHTMLPath           string
+	WFHTemplateTextPath               string
+	WFHTemplateHTMLPath               string
 }
 
 // NewICalGeneratorWithMetadata creates a new iCalendar generator with custom metadata.
@@ -181,6 +185,28 @@ func (g *ICalGenerator) WithHolidayTemplate(textPath, htmlPath string) (*ICalGen
 	return g, nil
 }
 
+// WithWFHTemplate loads the operator's text and HTML templates for
+// the WFH-event kind. WFH events are per-member: a member's own
+// WFH days render as all-day VEVENTs on the per-member calendar
+// feed so the subscriber sees "WFH: Alice" on the day instead of
+// having to consult the dashboard. Admin-marked WFH rows render
+// with the same shape, distinguished by the "marked by admin"
+// banner in the alt-desc.
+func (g *ICalGenerator) WithWFHTemplate(textPath, htmlPath string) (*ICalGenerator, error) {
+	tmpl, err := loadWFHText(textPath)
+	if err != nil {
+		return nil, err
+	}
+	g.wfhTextTemplate = tmpl
+
+	htmlTmpl, err := loadWFHHTML(htmlPath)
+	if err != nil {
+		return nil, err
+	}
+	g.wfhHTMLTemplate = htmlTmpl
+	return g, nil
+}
+
 // resolvedSupportAssignmentTextTemplate returns the configured template
 // or the built-in default.
 func (g *ICalGenerator) resolvedSupportAssignmentTextTemplate() *texttemplate.Template {
@@ -233,6 +259,24 @@ func (g *ICalGenerator) resolvedHolidayHTMLTemplate() *template.Template {
 		return defaultHolidayHTMLTemplate
 	}
 	return g.holidayHTMLTemplate
+}
+
+// resolvedWFHTextTemplate returns the configured WFH text template
+// or the built-in default.
+func (g *ICalGenerator) resolvedWFHTextTemplate() *texttemplate.Template {
+	if g.wfhTextTemplate == nil {
+		return defaultWFHTextTemplate
+	}
+	return g.wfhTextTemplate
+}
+
+// resolvedWFHHTMLTemplate returns the configured WFH HTML template
+// or the built-in default.
+func (g *ICalGenerator) resolvedWFHHTMLTemplate() *template.Template {
+	if g.wfhHTMLTemplate == nil {
+		return defaultWFHHTMLTemplate
+	}
+	return g.wfhHTMLTemplate
 }
 
 // AddAssignment adds a rota assignment as a calendar event using the
@@ -394,6 +438,79 @@ func (g *ICalGenerator) AddHoliday(name string, date time.Time) error {
 	return g.AddHolidayWithSnapshot(name, date, &presenceSnapshot{Date: date.Format("2006-01-02")})
 }
 
+// AddWFHEvent adds a per-member WFH all-day event to the calendar
+// using the built-in templates. The event is what makes a member's
+// own WFH days visible in the per-member calendar feed: each
+// upcoming approved (or recurring) WFH row renders as a
+// `<member> - WFH` VEVENT on that day. Admin-marked WFH rows
+// render the same shape, distinguished by a "marked by admin"
+// line in the alt-desc so subscribers can tell the two apart.
+//
+// Callers that have a per-day snapshot should prefer
+// AddWFHEventWithSnapshot so the operator's HTML template can
+// reference the same on-site/leave/WFH lists that the leave and
+// HAT-assignment events use.
+func (g *ICalGenerator) AddWFHEvent(memberName string, date time.Time, adminMarked bool) error {
+	return g.AddWFHEventWithSnapshot(memberName, date, adminMarked, &presenceSnapshot{Date: date.Format("2006-01-02")})
+}
+
+// AddWFHEventWithSnapshot renders a per-member WFH event with the
+// configured WFH templates. The snapshot is embedded in the
+// template data so operators can reference per-day fields
+// (OnSite, OnLeave, WFH, etc.) just like the leave and HAT events.
+func (g *ICalGenerator) AddWFHEventWithSnapshot(memberName string, date time.Time, adminMarked bool, snap *presenceSnapshot) error {
+	event := g.calendar.AddEvent(fmt.Sprintf("wfh-%s-%d", strings.ToLower(memberName), date.Unix()))
+
+	// All-day event spanning the single WFH day. End date is
+	// exclusive in iCalendar, so add 24h.
+	event.SetAllDayStartAt(date)
+	event.SetAllDayEndAt(date.Add(hoursPerDay * time.Hour))
+
+	summary := fmt.Sprintf("%s - WFH", memberName)
+	baseText := fmt.Sprintf("%s is working from home", memberName)
+	if adminMarked {
+		// Append a clear "marked by admin" note so the calendar
+		// subscriber can tell a self-requested day from a
+		// correction. The dashboard uses the same is-link color,
+		// but a calendar client doesn't render color, so the
+		// language is the only signal here.
+		baseText += " (marked by admin)"
+	}
+	event.SetSummary(summary)
+
+	if snap == nil {
+		snap = &presenceSnapshot{Date: date.Format("2006-01-02")}
+	}
+	data := wfhData{
+		presenceSnapshot: *snap,
+		Summary:          summary,
+		BaseText:         baseText,
+		MemberName:       memberName,
+		Date:             date.Format("2006-01-02"),
+		AdminMarked:      adminMarked,
+	}
+
+	textDescription, err := renderTemplate(g.resolvedWFHTextTemplate(), "wfhText", data)
+	if err != nil {
+		return fmt.Errorf("render wfh text: %w", err)
+	}
+	event.SetDescription(textDescription)
+
+	htmlDescription, err := renderHTMLTemplate(g.resolvedWFHHTMLTemplate(), "wfhHTML", data)
+	if err != nil {
+		return fmt.Errorf("render wfh html: %w", err)
+	}
+	setAltDescHTML(event, htmlDescription)
+
+	// WFH is tentative from the calendar's perspective — the
+	// member could still withdraw — but the time is opaque (busy)
+	// so other meetings don't get scheduled on top of it.
+	event.SetStatus(ics.ObjectStatusTentative)
+	event.SetTimeTransparency(ics.TransparencyOpaque)
+
+	return nil
+}
+
 // AddHolidayWithSnapshot renders a holiday event with the configured
 // holiday templates. The snapshot is embedded in the template data so
 // operators can reference per-day fields.
@@ -494,6 +611,10 @@ func newSupportGenerator(opts SupportCalendarOptions) (*ICalGenerator, error) {
 	if err != nil {
 		return nil, err
 	}
+	generator, err = generator.WithWFHTemplate(opts.WFHTemplateTextPath, opts.WFHTemplateHTMLPath)
+	if err != nil {
+		return nil, err
+	}
 	return generator, nil
 }
 
@@ -507,16 +628,14 @@ func GenerateICalForToken(ctx context.Context, db *database.DB, token string, lo
 }
 
 func GenerateICalForTokenWithOptions(ctx context.Context, db *database.DB, token string, lookaheadDays int, opts SupportCalendarOptions) (string, error) {
-	// Get member by token
-	member, err := db.GetMemberByToken(ctx, token)
+	// Resolve the member + their upcoming data in one call so the
+	// orchestrator stays below the cyclop limit. loadCalendarData
+	// returns the member, the upcoming assignments, and the
+	// upcoming WFH days; any of the three failing is fatal for the
+	// whole feed.
+	member, assignments, wfhDays, err := loadCalendarData(ctx, db, token, lookaheadDays)
 	if err != nil {
-		return "", fmt.Errorf("invalid token: %w", err)
-	}
-
-	// Get upcoming assignments for this member
-	assignments, err := db.GetUpcomingAssignments(ctx, member.ID, lookaheadDays)
-	if err != nil {
-		return "", fmt.Errorf("failed to get assignments: %w", err)
+		return "", err
 	}
 
 	generator, err := newSupportGenerator(opts)
@@ -550,12 +669,67 @@ func GenerateICalForTokenWithOptions(ctx context.Context, db *database.DB, token
 		}
 	}
 
+	if addErr := addUpcomingWFHEvents(ctx, generator, wfhDays, member.Name, snapshotFor); addErr != nil {
+		return "", addErr
+	}
+
 	icalContent, err := generator.Serialize()
 	if err != nil {
 		return "", fmt.Errorf("failed to generate iCalendar: %w", err)
 	}
 
 	return icalContent, nil
+}
+
+// loadCalendarData resolves a subscription token to the
+// corresponding member, then loads the member's upcoming HAT
+// assignments and approved WFH days in a single window. The three
+// queries are independent so combining them under one helper
+// keeps the public orchestrator's cyclop count down without
+// tangling error handling.
+func loadCalendarData(ctx context.Context, db *database.DB, token string, lookaheadDays int) (*database.TeamMember, []database.RotaAssignment, []database.WFHRequest, error) {
+	member, err := db.GetMemberByToken(ctx, token)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("invalid token: %w", err)
+	}
+
+	assignments, err := db.GetUpcomingAssignments(ctx, member.ID, lookaheadDays)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to get assignments: %w", err)
+	}
+
+	wfhDays, err := db.GetUpcomingWFHForMember(ctx, member.ID, lookaheadDays)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("failed to get wfh days: %w", err)
+	}
+
+	return member, assignments, wfhDays, nil
+}
+
+// addUpcomingWFHEvents renders the member's future approved WFH days
+// as separate all-day VEVENTs on the per-member calendar feed. Pulled
+// out of GenerateICalForTokenWithOptions so the orchestrator stays
+// below the cyclop limit. Admin-marked rows are rendered with a
+// "(marked by admin)" banner in the alt-desc so subscribers can tell
+// a self-requested day from a correction — same color cue the
+// dashboard uses, translated into text since calendar clients
+// don't render color.
+func addUpcomingWFHEvents(ctx context.Context, generator *ICalGenerator, wfhDays []database.WFHRequest, memberName string, snapshotFor func(string) (*presenceSnapshot, error)) error {
+	for i := range wfhDays {
+		wfhDate, parseErr := time.Parse("2006-01-02", wfhDays[i].Date)
+		if parseErr != nil {
+			return fmt.Errorf("parse wfh date %q: %w", wfhDays[i].Date, parseErr)
+		}
+		snap, sErr := snapshotFor(wfhDays[i].Date)
+		if sErr != nil {
+			return fmt.Errorf("build snapshot for wfh %s: %w", wfhDays[i].Date, sErr)
+		}
+		if addErr := generator.AddWFHEventWithSnapshot(memberName, wfhDate, wfhDays[i].IsAdminMarked, snap); addErr != nil {
+			return fmt.Errorf("failed to add wfh event: %w", addErr)
+		}
+	}
+	_ = ctx // reserved for future use; the snapshotFor closure already captures ctx
+	return nil
 }
 
 // GenerateOthersICalForToken generates iCalendar content for all upcoming

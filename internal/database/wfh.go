@@ -86,6 +86,7 @@ type wfhFields struct {
 	IsAdminMarked int64
 	MarkedBy      sql.NullString
 	MarkedAt      sql.NullTime
+	DenialReason  sql.NullString
 }
 
 // wfhFromSQLCFields converts the canonical column set to the domain WFHRequest.
@@ -120,6 +121,10 @@ func wfhFromSQLCFields(f wfhFields) WFHRequest {
 	if f.MarkedAt.Valid {
 		t := f.MarkedAt.Time
 		req.MarkedAt = &t
+	}
+	if f.DenialReason.Valid {
+		s := f.DenialReason.String
+		req.DenialReason = &s
 	}
 	return req
 }

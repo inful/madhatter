@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log/slog"
 	"math"
 	"sort"
@@ -627,11 +628,21 @@ func (s *Service) settleDate(ctx context.Context, date string, pending []databas
 		return err
 	}
 
-	// Approve up to availableSlots; deny the rest.
+	// Approve up to availableSlots; deny the rest. Denials land with
+	// a human-readable reason so the user is told why their request
+	// was rejected (the row carries the reason to the WFH list page,
+	// the admin manage page, and the email notification — no more
+	// silent "Denied" tags).
+	reason := denialReason(s.MinOnsiteCount(totalActive), slotsUsed)
 	for i := range prioritized {
-		status := database.WFHStatusDenied
-		if i < availableSlots {
-			status = database.WFHStatusApproved
+		status := database.WFHStatusApproved
+		if i >= availableSlots {
+			if err := s.db.DenyWFHRequest(ctx, prioritized[i].ID, reason); err != nil {
+				slog.Error("WFH: failed to update denied request", "id", prioritized[i].ID, "error", err)
+				continue
+			}
+			s.fireWFHStateChangedWithReason(ctx, prioritized[i], database.WFHStatusPending, database.WFHStatusDenied, reason, "system")
+			continue
 		}
 		if err := s.db.UpdateWFHRequestStatus(ctx, prioritized[i].ID, status); err != nil {
 			slog.Error("WFH: failed to update request", "id", prioritized[i].ID, "status", status, "error", err)
@@ -642,9 +653,43 @@ func (s *Service) settleDate(ctx context.Context, date string, pending []databas
 	return nil
 }
 
+// denialReason returns a human-readable explanation for a request
+// being denied at settlement. The wording is generic enough to be
+// useful regardless of the specific floor value, and the user can
+// always re-read the help page for the floor math. The reason is
+// stored in wfh_requests.denial_reason and shown on the WFH list
+// page, the admin manage page, and the email notification.
+func denialReason(minOnsite, slotsUsed int) string {
+	// The settlement loop denies a request only when approving it
+	// would drop on-site count below the floor. The wording is
+	// the same regardless of which day or which floor, so the user
+	// gets a clear, consistent message.
+	return fmt.Sprintf(
+		"On-site coverage would drop below the minimum (%d on-site required). %d members are already unavailable; approving more would leave the team under the floor.",
+		minOnsite, slotsUsed,
+	)
+}
+
 // fireWFHStateChanged invokes the wired notifier (if any) with the
 // new WFH state. nil notifier is a no-op.
 func (s *Service) fireWFHStateChanged(ctx context.Context, req database.WFHRequest, oldStatus, newStatus, actorName string) {
+	s.fireWFHStateChangedInternal(ctx, req, oldStatus, newStatus, actorName, "")
+}
+
+// fireWFHStateChangedWithReason is the denial-path variant. The
+// reason lands in the email template (and the on-disk
+// wfh_requests.denial_reason column) so the user is told why
+// their request was rejected instead of seeing a bare "Denied"
+// status.
+func (s *Service) fireWFHStateChangedWithReason(ctx context.Context, req database.WFHRequest, oldStatus, newStatus, reason, actorName string) {
+	s.fireWFHStateChangedInternal(ctx, req, oldStatus, newStatus, actorName, reason)
+}
+
+// fireWFHStateChangedInternal invokes the wired notifier (if any)
+// with the new WFH state. nil notifier is a no-op. The reason
+// field is empty for non-denial transitions and populated for
+// denials so the email template can surface it.
+func (s *Service) fireWFHStateChangedInternal(ctx context.Context, req database.WFHRequest, oldStatus, newStatus, actorName, reason string) {
 	if s.notifier == nil {
 		return
 	}
@@ -656,6 +701,7 @@ func (s *Service) fireWFHStateChanged(ctx context.Context, req database.WFHReque
 		OldStatus:  oldStatus,
 		NewStatus:  newStatus,
 		ActorName:  actorName,
+		Reason:     reason,
 	})
 }
 

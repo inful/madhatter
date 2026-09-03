@@ -1,3 +1,10 @@
+-- name: DenyWFHRequest :execresult
+UPDATE wfh_requests SET status = 'denied', settled_at = ?, denial_reason = ? WHERE id = ?;
+-- Mark a request as denied and record the human-readable reason in
+-- wfh_requests.denial_reason. The reason rides the same row to the
+-- dashboard, the WFH list page, the admin manage page, and the
+-- email notification so the user is never left guessing why their
+-- request was rejected.
 -- name: CreateWFHRequest :execresult
 INSERT INTO wfh_requests (id, member_id, date, status)
 VALUES (?, ?, ?, 'pending');
@@ -22,40 +29,49 @@ SELECT is_admin_marked
 FROM wfh_requests
 WHERE member_id = ? AND date = ?;
 
+-- name: GetUpcomingWFHForMember :many
+SELECT id, member_id, date, status, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason
+FROM wfh_requests
+WHERE member_id = ?
+  AND date >= date('now')
+  AND date <= date('now', '+' || ? || ' days')
+  AND status = 'approved'
+ORDER BY date;
+
 -- name: CreateApprovedRecurringWFHRequest :execresult
 INSERT INTO wfh_requests (id, member_id, date, status, is_recurring, settled_at)
 VALUES (?, ?, ?, 'approved', 1, ?);
 
 -- name: GetWFHRequestByID :one
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason
 FROM wfh_requests
 WHERE id = ?;
 
 -- name: GetWFHRequestByMemberAndDate :one
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason
 FROM wfh_requests
 WHERE member_id = ? AND date = ?;
 
 -- name: GetWFHRequestsByDate :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason
 FROM wfh_requests
 WHERE date = ?
 ORDER BY created_at ASC;
 
 -- name: GetWFHRequestsByDateAndStatus :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason
 FROM wfh_requests
 WHERE date = ? AND status = ?
 ORDER BY created_at ASC;
 
 -- name: GetWFHRequestsByMember :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason
 FROM wfh_requests
 WHERE member_id = ?
 ORDER BY date DESC;
 
 -- name: GetWFHRequestsByMemberAndPeriod :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason
 FROM wfh_requests
 WHERE member_id = ?
   AND date >= ?
@@ -64,7 +80,7 @@ WHERE member_id = ?
 ORDER BY date ASC;
 
 -- name: GetPendingWFHRequestsForSettlement :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason
 FROM wfh_requests
 WHERE status = 'pending'
   AND is_recurring = 0
@@ -72,7 +88,7 @@ WHERE status = 'pending'
 ORDER BY date ASC, created_at ASC;
 
 -- name: GetAllWFHRequests :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason
 FROM wfh_requests
 ORDER BY date DESC, created_at DESC;
 
@@ -126,13 +142,10 @@ FROM wfh_requests
 WHERE date < ?;
 
 -- name: PurgeWFHRequestsBefore :execresult
--- NOTE: comments must follow the SQL, not precede it. sqlc v1.28.0 has a
--- parser bug that strips the trailing `?` from multi-line DELETE statements
--- ending in `< ?` when there are `--` comment lines between `-- name:` and
--- the statement. Keep this statement on a single line with comments below.
 DELETE FROM wfh_requests WHERE date < ?;
 -- Hard-delete wfh_requests rows whose date is strictly before the cutoff.
 -- The cutoff is the start of the previous quota period: rows on or after
 -- that date are kept so the current and previous periods remain visible.
 -- Past-period cleanup is a no-recovery operation — callers should run the
 -- matching CountWFHRequestsBefore first when they want to preview impact.
+

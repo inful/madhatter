@@ -191,6 +191,7 @@ CREATE TABLE IF NOT EXISTS wfh_requests (
     withdrawn_at    DATETIME,
     marked_by       TEXT,
     marked_at       DATETIME,
+    denial_reason   TEXT,
     FOREIGN KEY (member_id)    REFERENCES team_members(id) ON DELETE CASCADE,
     FOREIGN KEY (withdrawn_by) REFERENCES users(id)        ON DELETE SET NULL,
     FOREIGN KEY (marked_by)    REFERENCES users(id)        ON DELETE SET NULL,

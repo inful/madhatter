@@ -159,4 +159,5 @@ type WfhRequest struct {
 	WithdrawnAt   sql.NullTime   `json:"withdrawn_at"`
 	MarkedBy      sql.NullString `json:"marked_by"`
 	MarkedAt      sql.NullTime   `json:"marked_at"`
+	DenialReason  sql.NullString `json:"denial_reason"`
 }

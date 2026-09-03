@@ -705,3 +705,62 @@ func TestGenerateSupportCalendar_TemplateSeesAllSnapshotFields(t *testing.T) {
 func writeFile(path, contents string) error {
 	return os.WriteFile(path, []byte(contents), 0o600)
 }
+
+// TestAddWFHEvent_DefaultsRenderEvent pins the per-member WFH
+// VEVENT format. The summary is "<member> - WFH", the description
+// is the default "X is working from home" line, and the event
+// is all-day with the standard transparent-opaque / tentative
+// pairing (busy for calendar-client conflict detection, but
+// status tentative so the user can still see a confirmed
+// WFH as flexibly scheduled).
+func TestAddWFHEvent_DefaultsRenderEvent(t *testing.T) {
+	g := NewICalGenerator()
+	date := time.Date(2026, 9, 4, 0, 0, 0, 0, time.UTC)
+	require.NoError(t, g.AddWFHEvent("Alice", date, false))
+
+	out, err := g.Serialize()
+	require.NoError(t, err)
+	assert.Contains(t, out, "SUMMARY:Alice - WFH",
+		"summary should be the configured WFH format")
+	assert.Contains(t, out, "Alice is working from home",
+		"description should use the default WFH text template")
+	assert.Contains(t, out, "DTSTART;VALUE=DATE:20260904",
+		"event should be all-day starting on the WFH date")
+	assert.Contains(t, out, "STATUS:TENTATIVE",
+		"event should be tentative so the user can see it as flexibly scheduled")
+}
+
+// TestAddWFHEvent_AdminMarkedAppendsBanner pins the admin-marked
+// visual distinction: the description appends "(marked by admin)"
+// so subscribers can tell an admin correction from a self-requested
+// WFH day — same color cue the dashboard uses, translated into
+// text for calendar clients that don't render color.
+func TestAddWFHEvent_AdminMarkedAppendsBanner(t *testing.T) {
+	g := NewICalGenerator()
+	date := time.Date(2026, 9, 4, 0, 0, 0, 0, time.UTC)
+	require.NoError(t, g.AddWFHEvent("Alice", date, true))
+
+	out, err := g.Serialize()
+	require.NoError(t, err)
+	assert.Contains(t, out, "(marked by admin)",
+		"admin-marked WFH event should carry the banner in the description")
+}
+
+// TestAddWFHEvent_UidIsStablePerDay pins that the per-member
+// per-day UID doesn't change between calls (so calendar clients
+// can recognize the same event on the next refresh). Two calls
+// for the same member+date produce the same UID; different dates
+// produce different UIDs.
+func TestAddWFHEvent_UidIsStablePerDay(t *testing.T) {
+	g := NewICalGenerator()
+	date1 := time.Date(2026, 9, 4, 0, 0, 0, 0, time.UTC)
+	date2 := time.Date(2026, 9, 5, 0, 0, 0, 0, time.UTC)
+	require.NoError(t, g.AddWFHEvent("Alice", date1, false))
+	require.NoError(t, g.AddWFHEvent("Alice", date2, false))
+
+	out, err := g.Serialize()
+	require.NoError(t, err)
+	// Two distinct UIDs (one per day).
+	assert.Regexp(t, `UID:wfh-alice-\d+`, out,
+		"WFH events should use a wfh-<member>-<unix> UID scheme")
+}

@@ -73,6 +73,11 @@ type CreateWFHRequestParams struct {
 	Date     time.Time `json:"date"`
 }
 
+// Mark a request as denied and record the human-readable reason in
+// wfh_requests.denial_reason. The reason rides the same row to the
+// dashboard, the WFH list page, the admin manage page, and the
+// email notification so the user is never left guessing why their
+// request was rejected.
 func (q *Queries) CreateWFHRequest(ctx context.Context, arg CreateWFHRequestParams) (sql.Result, error) {
 	return q.db.ExecContext(ctx, createWFHRequest, arg.ID, arg.MemberID, arg.Date)
 }
@@ -87,8 +92,22 @@ func (q *Queries) DeleteWFHRequest(ctx context.Context, id string) error {
 	return err
 }
 
+const denyWFHRequest = `-- name: DenyWFHRequest :execresult
+UPDATE wfh_requests SET status = 'denied', settled_at = ?, denial_reason = ? WHERE id = ?
+`
+
+type DenyWFHRequestParams struct {
+	SettledAt    sql.NullTime   `json:"settled_at"`
+	DenialReason sql.NullString `json:"denial_reason"`
+	ID           string         `json:"id"`
+}
+
+func (q *Queries) DenyWFHRequest(ctx context.Context, arg DenyWFHRequestParams) (sql.Result, error) {
+	return q.db.ExecContext(ctx, denyWFHRequest, arg.SettledAt, arg.DenialReason, arg.ID)
+}
+
 const getAllWFHRequests = `-- name: GetAllWFHRequests :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason
 FROM wfh_requests
 ORDER BY date DESC, created_at DESC
 `
@@ -106,6 +125,7 @@ type GetAllWFHRequestsRow struct {
 	IsAdminMarked int64          `json:"is_admin_marked"`
 	MarkedBy      sql.NullString `json:"marked_by"`
 	MarkedAt      sql.NullTime   `json:"marked_at"`
+	DenialReason  sql.NullString `json:"denial_reason"`
 }
 
 func (q *Queries) GetAllWFHRequests(ctx context.Context) ([]GetAllWFHRequestsRow, error) {
@@ -130,6 +150,7 @@ func (q *Queries) GetAllWFHRequests(ctx context.Context) ([]GetAllWFHRequestsRow
 			&i.IsAdminMarked,
 			&i.MarkedBy,
 			&i.MarkedAt,
+			&i.DenialReason,
 		); err != nil {
 			return nil, err
 		}
@@ -145,7 +166,7 @@ func (q *Queries) GetAllWFHRequests(ctx context.Context) ([]GetAllWFHRequestsRow
 }
 
 const getPendingWFHRequestsForSettlement = `-- name: GetPendingWFHRequestsForSettlement :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason
 FROM wfh_requests
 WHERE status = 'pending'
   AND is_recurring = 0
@@ -166,6 +187,7 @@ type GetPendingWFHRequestsForSettlementRow struct {
 	IsAdminMarked int64          `json:"is_admin_marked"`
 	MarkedBy      sql.NullString `json:"marked_by"`
 	MarkedAt      sql.NullTime   `json:"marked_at"`
+	DenialReason  sql.NullString `json:"denial_reason"`
 }
 
 func (q *Queries) GetPendingWFHRequestsForSettlement(ctx context.Context, date time.Time) ([]GetPendingWFHRequestsForSettlementRow, error) {
@@ -190,6 +212,67 @@ func (q *Queries) GetPendingWFHRequestsForSettlement(ctx context.Context, date t
 			&i.IsAdminMarked,
 			&i.MarkedBy,
 			&i.MarkedAt,
+			&i.DenialReason,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getUpcomingWFHForMember = `-- name: GetUpcomingWFHForMember :many
+SELECT id, member_id, date, status, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason
+FROM wfh_requests
+WHERE member_id = ?
+  AND date >= date('now')
+  AND date <= date('now', '+' || ? || ' days')
+  AND status = 'approved'
+ORDER BY date
+`
+
+type GetUpcomingWFHForMemberParams struct {
+	MemberID string         `json:"member_id"`
+	Column2  sql.NullString `json:"column_2"`
+}
+
+type GetUpcomingWFHForMemberRow struct {
+	ID            string         `json:"id"`
+	MemberID      string         `json:"member_id"`
+	Date          time.Time      `json:"date"`
+	Status        string         `json:"status"`
+	IsRecurring   int64          `json:"is_recurring"`
+	IsAdminMarked int64          `json:"is_admin_marked"`
+	MarkedBy      sql.NullString `json:"marked_by"`
+	MarkedAt      sql.NullTime   `json:"marked_at"`
+	DenialReason  sql.NullString `json:"denial_reason"`
+}
+
+func (q *Queries) GetUpcomingWFHForMember(ctx context.Context, arg GetUpcomingWFHForMemberParams) ([]GetUpcomingWFHForMemberRow, error) {
+	rows, err := q.db.QueryContext(ctx, getUpcomingWFHForMember, arg.MemberID, arg.Column2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetUpcomingWFHForMemberRow{}
+	for rows.Next() {
+		var i GetUpcomingWFHForMemberRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.MemberID,
+			&i.Date,
+			&i.Status,
+			&i.IsRecurring,
+			&i.IsAdminMarked,
+			&i.MarkedBy,
+			&i.MarkedAt,
+			&i.DenialReason,
 		); err != nil {
 			return nil, err
 		}
@@ -205,7 +288,7 @@ func (q *Queries) GetPendingWFHRequestsForSettlement(ctx context.Context, date t
 }
 
 const getWFHRequestByID = `-- name: GetWFHRequestByID :one
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason
 FROM wfh_requests
 WHERE id = ?
 `
@@ -223,6 +306,7 @@ type GetWFHRequestByIDRow struct {
 	IsAdminMarked int64          `json:"is_admin_marked"`
 	MarkedBy      sql.NullString `json:"marked_by"`
 	MarkedAt      sql.NullTime   `json:"marked_at"`
+	DenialReason  sql.NullString `json:"denial_reason"`
 }
 
 func (q *Queries) GetWFHRequestByID(ctx context.Context, id string) (GetWFHRequestByIDRow, error) {
@@ -241,12 +325,13 @@ func (q *Queries) GetWFHRequestByID(ctx context.Context, id string) (GetWFHReque
 		&i.IsAdminMarked,
 		&i.MarkedBy,
 		&i.MarkedAt,
+		&i.DenialReason,
 	)
 	return i, err
 }
 
 const getWFHRequestByMemberAndDate = `-- name: GetWFHRequestByMemberAndDate :one
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason
 FROM wfh_requests
 WHERE member_id = ? AND date = ?
 `
@@ -269,6 +354,7 @@ type GetWFHRequestByMemberAndDateRow struct {
 	IsAdminMarked int64          `json:"is_admin_marked"`
 	MarkedBy      sql.NullString `json:"marked_by"`
 	MarkedAt      sql.NullTime   `json:"marked_at"`
+	DenialReason  sql.NullString `json:"denial_reason"`
 }
 
 func (q *Queries) GetWFHRequestByMemberAndDate(ctx context.Context, arg GetWFHRequestByMemberAndDateParams) (GetWFHRequestByMemberAndDateRow, error) {
@@ -287,12 +373,13 @@ func (q *Queries) GetWFHRequestByMemberAndDate(ctx context.Context, arg GetWFHRe
 		&i.IsAdminMarked,
 		&i.MarkedBy,
 		&i.MarkedAt,
+		&i.DenialReason,
 	)
 	return i, err
 }
 
 const getWFHRequestsByDate = `-- name: GetWFHRequestsByDate :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason
 FROM wfh_requests
 WHERE date = ?
 ORDER BY created_at ASC
@@ -311,6 +398,7 @@ type GetWFHRequestsByDateRow struct {
 	IsAdminMarked int64          `json:"is_admin_marked"`
 	MarkedBy      sql.NullString `json:"marked_by"`
 	MarkedAt      sql.NullTime   `json:"marked_at"`
+	DenialReason  sql.NullString `json:"denial_reason"`
 }
 
 func (q *Queries) GetWFHRequestsByDate(ctx context.Context, date time.Time) ([]GetWFHRequestsByDateRow, error) {
@@ -335,6 +423,7 @@ func (q *Queries) GetWFHRequestsByDate(ctx context.Context, date time.Time) ([]G
 			&i.IsAdminMarked,
 			&i.MarkedBy,
 			&i.MarkedAt,
+			&i.DenialReason,
 		); err != nil {
 			return nil, err
 		}
@@ -350,7 +439,7 @@ func (q *Queries) GetWFHRequestsByDate(ctx context.Context, date time.Time) ([]G
 }
 
 const getWFHRequestsByDateAndStatus = `-- name: GetWFHRequestsByDateAndStatus :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason
 FROM wfh_requests
 WHERE date = ? AND status = ?
 ORDER BY created_at ASC
@@ -374,6 +463,7 @@ type GetWFHRequestsByDateAndStatusRow struct {
 	IsAdminMarked int64          `json:"is_admin_marked"`
 	MarkedBy      sql.NullString `json:"marked_by"`
 	MarkedAt      sql.NullTime   `json:"marked_at"`
+	DenialReason  sql.NullString `json:"denial_reason"`
 }
 
 func (q *Queries) GetWFHRequestsByDateAndStatus(ctx context.Context, arg GetWFHRequestsByDateAndStatusParams) ([]GetWFHRequestsByDateAndStatusRow, error) {
@@ -398,6 +488,7 @@ func (q *Queries) GetWFHRequestsByDateAndStatus(ctx context.Context, arg GetWFHR
 			&i.IsAdminMarked,
 			&i.MarkedBy,
 			&i.MarkedAt,
+			&i.DenialReason,
 		); err != nil {
 			return nil, err
 		}
@@ -413,7 +504,7 @@ func (q *Queries) GetWFHRequestsByDateAndStatus(ctx context.Context, arg GetWFHR
 }
 
 const getWFHRequestsByMember = `-- name: GetWFHRequestsByMember :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason
 FROM wfh_requests
 WHERE member_id = ?
 ORDER BY date DESC
@@ -432,6 +523,7 @@ type GetWFHRequestsByMemberRow struct {
 	IsAdminMarked int64          `json:"is_admin_marked"`
 	MarkedBy      sql.NullString `json:"marked_by"`
 	MarkedAt      sql.NullTime   `json:"marked_at"`
+	DenialReason  sql.NullString `json:"denial_reason"`
 }
 
 func (q *Queries) GetWFHRequestsByMember(ctx context.Context, memberID string) ([]GetWFHRequestsByMemberRow, error) {
@@ -456,6 +548,7 @@ func (q *Queries) GetWFHRequestsByMember(ctx context.Context, memberID string) (
 			&i.IsAdminMarked,
 			&i.MarkedBy,
 			&i.MarkedAt,
+			&i.DenialReason,
 		); err != nil {
 			return nil, err
 		}
@@ -471,7 +564,7 @@ func (q *Queries) GetWFHRequestsByMember(ctx context.Context, memberID string) (
 }
 
 const getWFHRequestsByMemberAndPeriod = `-- name: GetWFHRequestsByMemberAndPeriod :many
-SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at
+SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason
 FROM wfh_requests
 WHERE member_id = ?
   AND date >= ?
@@ -499,6 +592,7 @@ type GetWFHRequestsByMemberAndPeriodRow struct {
 	IsAdminMarked int64          `json:"is_admin_marked"`
 	MarkedBy      sql.NullString `json:"marked_by"`
 	MarkedAt      sql.NullTime   `json:"marked_at"`
+	DenialReason  sql.NullString `json:"denial_reason"`
 }
 
 func (q *Queries) GetWFHRequestsByMemberAndPeriod(ctx context.Context, arg GetWFHRequestsByMemberAndPeriodParams) ([]GetWFHRequestsByMemberAndPeriodRow, error) {
@@ -523,6 +617,7 @@ func (q *Queries) GetWFHRequestsByMemberAndPeriod(ctx context.Context, arg GetWF
 			&i.IsAdminMarked,
 			&i.MarkedBy,
 			&i.MarkedAt,
+			&i.DenialReason,
 		); err != nil {
 			return nil, err
 		}
@@ -593,10 +688,6 @@ const purgeWFHRequestsBefore = `-- name: PurgeWFHRequestsBefore :execresult
 DELETE FROM wfh_requests WHERE date < ?
 `
 
-// NOTE: comments must follow the SQL, not precede it. sqlc v1.28.0 has a
-// parser bug that strips the trailing `?` from multi-line DELETE statements
-// ending in `< ?` when there are `--` comment lines between `-- name:` and
-// the statement. Keep this statement on a single line with comments below.
 func (q *Queries) PurgeWFHRequestsBefore(ctx context.Context, date time.Time) (sql.Result, error) {
 	return q.db.ExecContext(ctx, purgeWFHRequestsBefore, date)
 }

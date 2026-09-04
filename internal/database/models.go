@@ -2,6 +2,10 @@ package database
 
 import "time"
 
+// RecurringWFHDays is the bitmask-shaped view of the five
+// recurring-WFH flags on team_members. Used by SetTeamMemberRecurringWFHDays
+// as the input shape and by the recurring-WFH materializer as the
+// schedule template.
 type RecurringWFHDays struct {
 	Monday    bool
 	Tuesday   bool
@@ -10,6 +14,11 @@ type RecurringWFHDays struct {
 	Friday    bool
 }
 
+// TeamMember is the application-level team member shape. The
+// sqlc-generated TeamMember (internal/database/sqlc) is translated
+// into this shape by teamMemberFromSQLC; the conversion unpacks the
+// nullable int64 flags into bools and exposes the contractual-day
+// helpers below.
 type TeamMember struct {
 	ID                    string `json:"id"`
 	Name                  string `json:"name"`
@@ -34,7 +43,8 @@ type TeamMember struct {
 	CreatedAt              time.Time `json:"created_at"`
 }
 
-// IsRecurringWFHOn reports whether the member has a contractual recurring WFH day on date.
+// IsRecurringWFHOn reports whether the member has a contractual
+// recurring WFH day on date.
 func (m TeamMember) IsRecurringWFHOn(date time.Time) bool {
 	switch date.Weekday() {
 	case time.Monday:
@@ -56,7 +66,8 @@ func (m TeamMember) IsRecurringWFHOn(date time.Time) bool {
 	}
 }
 
-// HasPermanentRecurringWFH reports whether all weekdays are configured as recurring WFH.
+// HasPermanentRecurringWFH reports whether all weekdays are
+// configured as recurring WFH.
 func (m TeamMember) HasPermanentRecurringWFH() bool {
 	return m.RecurringWFHMonday &&
 		m.RecurringWFHTuesday &&
@@ -65,8 +76,9 @@ func (m TeamMember) HasPermanentRecurringWFH() bool {
 		m.RecurringWFHFriday
 }
 
-// HasAnyRecurringWFH reports whether the member has at least one recurring
-// WFH weekday configured. Used by the materializer as a fast-path skip.
+// HasAnyRecurringWFH reports whether the member has at least one
+// recurring WFH weekday configured. Used by the materializer as a
+// fast-path skip.
 func (m TeamMember) HasAnyRecurringWFH() bool {
 	return m.RecurringWFHMonday ||
 		m.RecurringWFHTuesday ||
@@ -75,19 +87,21 @@ func (m TeamMember) HasAnyRecurringWFH() bool {
 		m.RecurringWFHFriday
 }
 
-// LeaveTypeLeave and LeaveTypeConference are the closed set of values
-// leave_records.leave_type accepts. The DB enforces the same set via a
-// CHECK constraint (migration 000021); keeping the constants here lets
-// the application reject bad values before they reach the driver and
-// gives call sites a typed comparison instead of raw string equality.
+// LeaveTypeLeave and LeaveTypeConference are the closed set of
+// values leave_records.leave_type accepts. The DB enforces the
+// same set via a CHECK constraint (migration 000021); keeping the
+// constants here lets the application reject bad values before
+// they reach the driver and gives call sites a typed comparison
+// instead of raw string equality.
 const (
 	LeaveTypeLeave      = "leave"
 	LeaveTypeConference = "conference"
 )
 
-// IsValidLeaveType reports whether v is one of the accepted leave types.
-// Callers should use this when accepting leave_type from user input so
-// the application rejects the same set the DB CHECK constraint would.
+// IsValidLeaveType reports whether v is one of the accepted leave
+// types. Callers should use this when accepting leave_type from
+// user input so the application rejects the same set the DB CHECK
+// constraint would.
 func IsValidLeaveType(v string) bool {
 	switch v {
 	case LeaveTypeLeave, LeaveTypeConference:
@@ -97,6 +111,8 @@ func IsValidLeaveType(v string) bool {
 	}
 }
 
+// LeaveRecord is the application-level leave shape. Translates
+// the sqlc leave_records.sql.go row via LeaveRecordFromSQLC.
 type LeaveRecord struct {
 	ID            string    `json:"id"`
 	MemberID      string    `json:"member_id"`
@@ -108,18 +124,24 @@ type LeaveRecord struct {
 	CreatedAt     time.Time `json:"created_at"`
 }
 
+// RotaAssignment is the application-level rota row. The Date
+// field is the only string-shaped timestamp in the file (matches
+// the rota engine's domain-level "YYYY-MM-DD everywhere" contract).
 type RotaAssignment struct {
 	ID                   string    `json:"id"`
 	Date                 string    `json:"date"`
 	MemberID             string    `json:"member_id"`
 	IsCover              bool      `json:"is_cover"`
 	IsSwapped            bool      `json:"is_swapped"`
-	OriginalAssignmentID *string   `json:"original_assignment_id"`
+	OriginalAssignmentID *string   `json:"original_assignment_id,omitempty"`
 	CreatedAt            time.Time `json:"created_at"`
 	MemberName           string    `json:"member_name,omitempty"`
 	MemberEmail          string    `json:"member_email,omitempty"`
 }
 
+// CalendarSubscription is the calendar/iCal subscription row,
+// paired with a token that the calendar clients use to fetch their
+// private feed without authentication.
 type CalendarSubscription struct {
 	ID                 string     `json:"id"`
 	MemberID           string     `json:"member_id"`
@@ -128,133 +150,4 @@ type CalendarSubscription struct {
 	LastUsedAt         *time.Time `json:"last_used_at,omitempty"`
 	LastUsedRotaAt     *time.Time `json:"last_used_rota_at,omitempty"`
 	LastUsedMeetingsAt *time.Time `json:"last_used_meetings_at,omitempty"`
-}
-
-// WFHRequest represents a work-from-home day request for a team member.
-type WFHRequest struct {
-	ID          string     `json:"id"`
-	MemberID    string     `json:"member_id"`
-	Date        string     `json:"date"` // "2006-01-02"
-	Status      string     `json:"status"`
-	CreatedAt   time.Time  `json:"created_at"`
-	SettledAt   *time.Time `json:"settled_at,omitempty"`
-	WithdrawnBy *string    `json:"withdrawn_by,omitempty"`
-	WithdrawnAt *time.Time `json:"withdrawn_at,omitempty"`
-	// IsRecurring is true when the row was auto-approved by the recurring-WFH
-	// materializer from a member's contractual weekday schedule.
-	IsRecurring bool `json:"is_recurring"`
-	// IsAdminMarked is true when the row was inserted by an admin via
-	// the "Mark WFH" override (wfh.Service.MarkWFH). The chip in the
-	// dashboard renders in a distinct color so the team can see at a
-	// glance which days were admin-asserted rather than requested.
-	IsAdminMarked bool       `json:"is_admin_marked"`
-	MarkedBy      *string    `json:"marked_by,omitempty"`
-	MarkedAt      *time.Time `json:"marked_at,omitempty"`
-	// Origin describes how the row came to exist. The picker, the
-	// quota counter, the API, the calendar, and the WFH list page
-	// all branch on this so they can distinguish a self-requested
-	// WFH from a system-assigned one, a contractual recurring day,
-	// or a swap-target's accepted transfer.
-	//
-	//   ad_hoc     — self-requested via the WFH request form
-	//   recurring  — auto-inserted by the recurring-WFH materializer
-	//   assigned   — auto-inserted by the seat-cap picker
-	//   swap       — created when a swap request was accepted
-	Origin string `json:"origin"`
-	// DenialReason is the human-readable explanation for why a
-	// request was denied. Set by the settlement path when the row
-	// flips to status=denied; surfaced on the dashboard, the WFH
-	// list page, the admin manage page, and the email notification
-	// so the user is never left guessing why a request was rejected.
-	DenialReason *string `json:"denial_reason,omitempty"`
-	// Enriched fields (populated by callers).
-	MemberName string `json:"member_name,omitempty"`
-}
-
-// WFHCoPresence records that two members were on-site together
-// on a working day. The seat-cap picker reads this for the
-// co-presence tiebreaker — "haven't been on-site with the cohort
-// recently" lowers a candidate's priority so the picker keeps
-// them on-site to meet the cohort.
-//
-// Rows are unordered pairs in canonical ordering
-// (MemberIDA < MemberIDB) — halves the row count and removes
-// the symmetric-pair problem. The CHECK constraint at the
-// storage layer enforces this; the writer is responsible for
-// ordering before inserting.
-//
-// Migration 000027 introduces the table and three indexes. The
-// retention prune (step 11 of plans/assigned-wfh-plan.md) keeps
-// rows bounded to WFH_COPRESENCE_RETENTION_DAYS.
-type WFHCoPresence struct {
-	ID          string    `json:"id"`
-	WorkingDate string    `json:"working_date"` // "2006-01-02"
-	MemberIDA   string    `json:"member_id_a"`
-	MemberIDB   string    `json:"member_id_b"`
-	RecordedAt  time.Time `json:"recorded_at"`
-}
-
-// WFH status constants.
-const (
-	WFHStatusPending   = "pending"
-	WFHStatusApproved  = "approved"
-	WFHStatusDenied    = "denied"
-	WFHStatusCancelled = "cancelled"
-	WFHStatusWithdrawn = "withdrawn"
-)
-
-// WFHSwapStatus is the status of a WFH assignment swap. The state
-// machine is pending → accepted | rejected | cancelled. Cancellation
-// has two paths: the requester voluntarily cancels, or the
-// scheduler's auto-cancel pass flips pending swaps whose swap_date
-// is in the past (step 15 of plans/assigned-wfh-plan.md).
-type WFHSwapStatus string
-
-const (
-	WFHSwapStatusPending   WFHSwapStatus = "pending"
-	WFHSwapStatusAccepted  WFHSwapStatus = "accepted"
-	WFHSwapStatusRejected  WFHSwapStatus = "rejected"
-	WFHSwapStatusCancelled WFHSwapStatus = "cancelled"
-)
-
-// WFHAssignmentSwap represents a request to swap a seat-cap-
-// picker-assigned WFH day with an on-site teammate. The cap
-// stays met across the swap: the original assigned row is
-// withdrawn (status='withdrawn', withdrawn_by='swap:<id>')
-// and a new row is inserted for the target with origin='swap'.
-// Single-transaction update.
-//
-// Phase 3 of plans/assigned-wfh-plan.md. Migration 000025
-// introduces the table; the swap routes and form land in
-// step 14.
-type WFHAssignmentSwap struct {
-	ID                    string     `json:"id"`
-	RequesterWFHRequestID string     `json:"requester_wfh_request_id"`
-	TargetMemberID        string     `json:"target_member_id"`
-	SwapDate              string     `json:"swap_date"` // "2006-01-02"
-	Status                string     `json:"status"`
-	CreatedAt             time.Time  `json:"created_at"`
-	UpdatedAt             time.Time  `json:"updated_at"`
-	ResolvedAt            *time.Time `json:"resolved_at,omitempty"`
-	// Enriched fields (populated by callers; not stored).
-	RequesterName string `json:"requester_name,omitempty"`
-	TargetName    string `json:"target_name,omitempty"`
-	WFHOrigin     string `json:"wfh_origin,omitempty"`
-}
-
-// HatSwap represents a request to swap HAT day assignments between two team members.
-type HatSwap struct {
-	ID                    string    `json:"id"`
-	RequesterAssignmentID string    `json:"requester_assignment_id"`
-	TargetAssignmentID    string    `json:"target_assignment_id"`
-	RequesterMemberID     string    `json:"requester_member_id"`
-	TargetMemberID        string    `json:"target_member_id"`
-	Status                string    `json:"status"`
-	CreatedAt             time.Time `json:"created_at"`
-	UpdatedAt             time.Time `json:"updated_at"`
-	// Enriched fields (populated by GetEnrichedSwaps).
-	RequesterName string `json:"requester_name,omitempty"`
-	TargetName    string `json:"target_name,omitempty"`
-	RequesterDate string `json:"requester_date,omitempty"`
-	TargetDate    string `json:"target_date,omitempty"`
 }

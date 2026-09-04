@@ -145,6 +145,65 @@ type scheduleMatrixCell struct {
 	IsAdminMarkedWFH bool
 }
 
+// HandlerConfig is the wired-dependency bundle NewHandlerConfig
+// consumes. Fields are optional except DB, AuthManager, and
+// AuthMiddleware; the constructor defaults the rest (rate limiter,
+// authRateRefill, no-op notifier) so the most common shape —
+// `NewHandlerConfig(HandlerConfig{DB: db, AuthManager: am, AuthMiddleware: mw})`
+// is enough to get a fully-routable Handler in tests.
+//
+// The Config is the additive counterpart to NewHandler (kept for
+// back-compat until every caller migrates). After cut-over, late-
+// bound setters on *Handler can be deleted; today they coexist.
+type HandlerConfig struct {
+	DB             *database.DB
+	AuthManager    *auth.AuthManager
+	AuthMiddleware *auth.Middleware
+
+	Development    bool
+	HolidayChecker func(time.Time) bool
+
+	// HolidayLookup powers per-day presence snapshots in the
+	// calendar/ical package. nil = every date is non-holiday.
+	HolidayLookup calendar.HolidayLookup
+
+	// Notifier is the dispatcher handlers reach via notifierOrNil.
+	// nil is replaced with a no-op adapter so handlers can
+	// unconditionally dispatch without nil checks at every callsite.
+	Notifier notify.Notifier
+}
+
+// NewHandlerConfig builds a Handler from a wired dependency bundle.
+// See HandlerConfig for field semantics. Use this in new code; the
+// positional NewHandler is the back-compat shape and will be
+// deleted once all callers migrate (tracked by a follow-up
+// commit).
+func NewHandlerConfig(cfg HandlerConfig) (*Handler, error) {
+	h, err := NewHandler(
+		cfg.DB,
+		cfg.AuthManager,
+		cfg.AuthMiddleware,
+		cfg.Development,
+		cfg.HolidayChecker,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.Notifier != nil {
+		h.notifier = cfg.Notifier
+	} else {
+		// Default to a no-op adapter so handlers can dispatch
+		// unconditionally without nil checks at every call site.
+		// Migration away from notifyNoop happens alongside the
+		// setter removal in a follow-up commit.
+		h.notifier = notifyNoop{}
+	}
+	if cfg.HolidayLookup != nil {
+		h.holidayLookup = cfg.HolidayLookup
+	}
+	return h, nil
+}
+
 func NewHandler(db *database.DB, authManager *auth.AuthManager, authMiddleware *auth.Middleware, development bool, holidayChecker func(time.Time) bool) (*Handler, error) {
 	// Parse templates.
 	tmpl, err := parseTemplates()

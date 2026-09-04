@@ -152,9 +152,10 @@ type scheduleMatrixCell struct {
 // `NewHandlerConfig(HandlerConfig{DB: db, AuthManager: am, AuthMiddleware: mw})`
 // is enough to get a fully-routable Handler in tests.
 //
-// The Config is the additive counterpart to NewHandler (kept for
-// back-compat until every caller migrates). After cut-over, late-
-// bound setters on *Handler can be deleted; today they coexist.
+// This is the additive counterpart to NewHandler (kept for
+// back-compat until every caller migrates). After cut-over,
+// late-bound setters on *Handler can be deleted; today they
+// coexist.
 type HandlerConfig struct {
 	DB             *database.DB
 	AuthManager    *auth.AuthManager
@@ -171,6 +172,21 @@ type HandlerConfig struct {
 	// nil is replaced with a no-op adapter so handlers can
 	// unconditionally dispatch without nil checks at every callsite.
 	Notifier notify.Notifier
+
+	// WFHService powers the WFH/web flow (request, withdraw,
+	// approve). nil = the WFH routes return 503 / unsupported.
+	WFHService *wfh.Service
+
+	// UnsubscribeSecret is the HMAC key used to sign and verify
+	// per-recipient one-click unsubscribe tokens. Empty disables
+	// the unsubscribe feature (the URL factory stays nil).
+	UnsubscribeSecret string
+
+	// PublicBaseURL is the externally-visible origin (scheme + host)
+	// used to build absolute unsubscribe URLs in email bodies and
+	// List-Unsubscribe headers. Empty disables even when a secret
+	// is set.
+	PublicBaseURL string
 }
 
 // NewHandlerConfig builds a Handler from a wired dependency bundle.
@@ -200,6 +216,27 @@ func NewHandlerConfig(cfg HandlerConfig) (*Handler, error) {
 	}
 	if cfg.HolidayLookup != nil {
 		h.holidayLookup = cfg.HolidayLookup
+	}
+	if cfg.WFHService != nil {
+		h.wfhService = cfg.WFHService
+	}
+	switch {
+	case cfg.UnsubscribeSecret != "" && cfg.PublicBaseURL != "":
+		// Build the URL factory once at construction; this is
+		// the same wiring SetUnsubscribeSecret / SetPublicBaseURL
+		// performed in sequence.
+		h.unsubscribeSecret = cfg.UnsubscribeSecret
+		h.publicBaseURL = cfg.PublicBaseURL
+		h.unsubscribeURLFn = notify.UnsubscribeURLFactory(cfg.PublicBaseURL, cfg.UnsubscribeSecret)
+	case cfg.UnsubscribeSecret != "":
+		// Secret without base URL: keep the secret so callers that
+		// set the base URL later can compose a factory, but skip
+		// building the factory (it would be against a placeholder
+		// origin and produce broken links).
+		h.unsubscribeSecret = cfg.UnsubscribeSecret
+	case cfg.PublicBaseURL != "":
+		// Base URL without secret: same logic in the other axis.
+		h.publicBaseURL = cfg.PublicBaseURL
 	}
 	return h, nil
 }

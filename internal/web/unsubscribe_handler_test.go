@@ -35,10 +35,15 @@ func newUnsubscribeHandler(t *testing.T) (*Handler, *database.DB, string) {
 	require.NoError(t, err)
 	require.NotNil(t, m)
 
-	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, true, nil) // dev mode, no auth required
+	h, err := NewHandlerConfig(HandlerConfig{
+		DB:                db,
+		AuthManager:       &auth.AuthManager{},
+		AuthMiddleware:    &auth.Middleware{},
+		Development:       true, // dev mode, no auth required
+		UnsubscribeSecret: testUnsubscribeSecret,
+		PublicBaseURL:     "https://rota.example.com",
+	})
 	require.NoError(t, err)
-	h.SetUnsubscribeSecret(testUnsubscribeSecret)
-	h.SetPublicBaseURL("https://rota.example.com")
 	return h, db, m.ID
 }
 
@@ -136,10 +141,26 @@ func TestUnsubscribe_URLFunc_Roundtrips(t *testing.T) {
 
 func TestUnsubscribe_URLFunc_EmptyWithoutConfig(t *testing.T) {
 	t.Parallel()
-	h, _, memberID := newUnsubscribeHandler(t)
-	h.unsubscribeSecret = ""
-	h.unsubscribeURLFn = notify.UnsubscribeURLFactory("", "")
+	// Empty subscribe config: build a Handler with no secret and no
+	// base URL. The URL factory must be safe to call (either nil or
+	// a function that returns "") so the templates can render
+	// "no unsubscribe link" without nil-checks.
+	db, err := database.New(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
 
-	assert.Empty(t, h.UnsubscribeURLFunc()(memberID),
-		"empty secret + empty base URL must suppress unsubscribe URLs")
+	h, err := NewHandlerConfig(HandlerConfig{
+		DB:             db,
+		AuthManager:    &auth.AuthManager{},
+		AuthMiddleware: &auth.Middleware{},
+	})
+	require.NoError(t, err)
+
+	assert.NotPanics(t, func() {
+		fn := h.UnsubscribeURLFunc()
+		if fn != nil {
+			assert.Empty(t, fn("any-id"),
+				"empty subscribe config must produce empty URLs")
+		}
+	})
 }

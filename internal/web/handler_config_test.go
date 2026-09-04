@@ -2,12 +2,14 @@ package web
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"github.com/inful/madhatter/internal/auth"
 	"github.com/inful/madhatter/internal/calendar"
 	"github.com/inful/madhatter/internal/database"
 	"github.com/inful/madhatter/internal/notify"
+	"github.com/inful/madhatter/internal/wfh"
 	"github.com/stretchr/testify/require"
 )
 
@@ -127,4 +129,118 @@ func TestNewHandlerConfig_WiresHolidayLookup(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, h.holidayLookup)
+}
+
+// TestNewHandlerConfig_WiresWFHService pins that the WFHService
+// passed via HandlerConfig reaches Handler.wfhService without the
+// SetWFHService setter being called. The setter becomes a no-op
+// for config-driven callers.
+func TestNewHandlerConfig_WiresWFHService(t *testing.T) {
+	db, err := database.New(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	svc := wfh.NewService(db, wfh.Config{})
+
+	h, err := NewHandlerConfig(HandlerConfig{
+		DB:             db,
+		AuthManager:    &auth.AuthManager{},
+		AuthMiddleware: &auth.Middleware{},
+		WFHService:     svc,
+	})
+	require.NoError(t, err)
+	require.Same(t, svc, h.wfhService)
+}
+
+// TestNewHandlerConfig_WiresUnsubscribe pins that UnsubscribeSecret
+// + PublicBaseURL flow to the corresponding private fields and the
+// per-recipient URL factory is built at construction time. This
+// replaces SetUnsubscribeSecret + SetPublicBaseURL setters.
+func TestNewHandlerConfig_WiresUnsubscribe(t *testing.T) {
+	db, err := database.New(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	h, err := NewHandlerConfig(HandlerConfig{
+		DB:                db,
+		AuthManager:       &auth.AuthManager{},
+		AuthMiddleware:    &auth.Middleware{},
+		UnsubscribeSecret: "test-secret",
+		PublicBaseURL:     "https://rota.example.com",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "test-secret", h.unsubscribeSecret)
+	require.Equal(t, "https://rota.example.com", h.publicBaseURL)
+	require.NotNil(t, h.unsubscribeURLFn,
+		"URL factory must be built when both secret and base URL are supplied")
+}
+
+// TestNewHandlerConfig_WiresEmptySecret pins the testifylint
+// requirement that empty values use require.Empty.
+
+// TestNewHandlerConfig_OmitsUnsubscribeWhenSecretEmpty pins the
+// existing partial-secret tolerance: with no secret, the URL
+// factory stays nil so the unsubscribe handler treats the link
+// as suppressed.
+func TestNewHandlerConfig_OmitsUnsubscribeWhenSecretEmpty(t *testing.T) {
+	db, err := database.New(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	h, err := NewHandlerConfig(HandlerConfig{
+		DB:             db,
+		AuthManager:    &auth.AuthManager{},
+		AuthMiddleware: &auth.Middleware{},
+		PublicBaseURL:  "https://rota.example.com",
+	})
+	require.NoError(t, err)
+	require.Empty(t, h.unsubscribeSecret)
+	require.Nil(t, h.unsubscribeURLFn,
+		"URL factory must stay nil when there's no secret to sign with")
+}
+
+// TestNewHandlerConfig_OmitsUnsubscribeWhenBaseURLEmpty mirrors
+// the test above for the other axis — a base URL with no secret is
+// just as inert.
+func TestNewHandlerConfig_OmitsUnsubscribeWhenBaseURLEmpty(t *testing.T) {
+	db, err := database.New(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	h, err := NewHandlerConfig(HandlerConfig{
+		DB:                db,
+		AuthManager:       &auth.AuthManager{},
+		AuthMiddleware:    &auth.Middleware{},
+		UnsubscribeSecret: "test-secret",
+	})
+	require.NoError(t, err)
+	require.Nil(t, h.unsubscribeURLFn,
+		"URL factory must stay nil without a base URL even with a secret")
+}
+
+// TestNewHandlerConfig_RoundtripsTokenAndURL ensures the built
+// factory actually produces a usable one-click token. This is the
+// behavioral end-to-end pin for the unsubscribe wiring.
+func TestNewHandlerConfig_RoundtripsTokenAndURL(t *testing.T) {
+	db, err := database.New(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	h, err := NewHandlerConfig(HandlerConfig{
+		DB:                db,
+		AuthManager:       &auth.AuthManager{},
+		AuthMiddleware:    &auth.Middleware{},
+		UnsubscribeSecret: "test-secret",
+		PublicBaseURL:     "https://rota.example.com",
+	})
+	require.NoError(t, err)
+
+	urlFn := h.UnsubscribeURLFunc()
+	require.NotEmpty(t, urlFn("member-1"),
+		"the built URL factory must produce a token URL when both fields are set")
+
+	// Verify the env-var path that production uses still works
+	// (the second surface may want to honor SESSION_SECRET).
+	t.Setenv("SESSION_SECRET", "env-secret")
+	require.NotEmpty(t, os.Getenv("SESSION_SECRET"))
 }

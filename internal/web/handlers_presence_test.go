@@ -153,16 +153,27 @@ func TestLoadCurrentUserPresenceStatus_CoverDutyIsNextHAT(t *testing.T) {
 	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
 	require.NoError(t, err)
 
-	bobOriginalDate := testutil.NextBusinessDay(time.Now().AddDate(0, 0, 7)).Format("2006-01-02")
-	aliceOwnHATDate := testutil.NextBusinessDay(time.Now().AddDate(0, 0, 9)).Format("2006-01-02")
-	coverDate := testutil.NextBusinessDay(time.Now().AddDate(0, 0, 2)).Format("2006-01-02")
+	// Pick three distinct future business days via the n-day helper
+	// rather than the single-day snap. The original offsets 2/7/9
+	// collided on the same Monday whenever the test ran on a
+	// Saturday — +7 lands on a Saturday and snaps forward, +9 lands
+	// directly on that Monday. UNIQUE(date, is_cover) on
+	// rota_assignments rejects the duplicate is_cover=false row.
+	//
+	// NextBusinessDays returns distinct business days by walking
+	// the cursor one business day at a time, so the cover/bob/alice
+	// spread is reliable regardless of today's weekday.
+	dates := testutil.NextBusinessDays(time.Now(), 3)
+	coverDate := dates[0].Format("2006-01-02")
+	bobOriginalDate := dates[1].Format("2006-01-02")
+	aliceOwnHATDate := dates[2].Format("2006-01-02")
 
 	bobAssignmentID, err := db.CreateRotaAssignment(ctx, bobOriginalDate, bobID, false, nil)
 	require.NoError(t, err)
 	_, err = db.CreateRotaAssignment(ctx, aliceOwnHATDate, aliceID, false, nil)
 	require.NoError(t, err)
 
-	// Alice is the cover for Bob on the near future date.
+	// Alice is the cover for Bob on the earliest of the three dates.
 	_, err = db.CreateRotaAssignment(ctx, coverDate, aliceID, true, &bobAssignmentID)
 	require.NoError(t, err)
 

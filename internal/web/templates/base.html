@@ -1,7 +1,10 @@
 {{define "base"}}
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Support Rota — schedule, leave, and on-call management for small teams.">
     <title>
         {{- if .Template -}}
             {{- render (printf "%s_title" .Template) . -}}
@@ -266,8 +269,10 @@
             <div class="hero-body">
                 <div class="container">
                     {{if .Template}}
-                        {{template "global_user_menu" .}}
-                        {{render (printf "%s_content" .Template) .}}
+                        <main>
+                            {{template "global_user_menu" .}}
+                            {{render (printf "%s_content" .Template) .}}
+                        </main>
                     {{else}}
                         {{template "login_content" .}}
                     {{end}}

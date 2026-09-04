@@ -10,6 +10,12 @@ import (
 )
 
 func (h *Handler) registerRoutes() {
+	// Replace chi's plain-text default 404 with our styled page so
+	// mistyped URLs don't look like the server crashed. The
+	// MethodNotAllowedHandler still returns the bare 405 — there's no
+	// useful UX for that case beyond what chi already emits.
+	h.router.NotFound(h.handleNotFound)
+
 	// Auth routes (no authentication required) - only if auth is configured.
 	if h.authManager != nil {
 		// In development mode, skip registering the production login handler.

@@ -56,6 +56,17 @@
             } else {
                 help.textContent = '';
             }
+        } else {
+            // Date is outside both the current and next period
+            // (e.g. 2+ periods out, or before today). bannerFor
+            // returns null, so without this default branch the
+            // submit button would stay stuck in its server-rendered
+            // state. The server-side CheckQuota is the
+            // authoritative guard for actual quota exhaustion;
+            // default to enabled here so the form is usable for
+            // dates beyond the next period.
+            submit.disabled = false;
+            help.textContent = '';
         }
     }
 

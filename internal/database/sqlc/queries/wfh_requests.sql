@@ -16,7 +16,7 @@ VALUES (?, ?, ?, 'approved', 1, ?, ?);
 -- name: IsAdminMarkedWFH :one
 SELECT is_admin_marked
 FROM wfh_requests
-WHERE member_id = ? AND date = ?;
+WHERE member_id = ? AND julianday(date) = julianday(?);
 
 -- name: GetUpcomingWFHForMember :many
 SELECT id, member_id, date, status, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason, origin
@@ -38,7 +38,7 @@ VALUES (?, ?, ?, 'approved', 0, ?, 'assigned');
 -- name: GetWFHRequestByMemberAndDate :one
 SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason, origin
 FROM wfh_requests
-WHERE member_id = ? AND date = ?;
+WHERE member_id = ? AND julianday(date) = julianday(?);
 
 -- name: GetWFHRequestByID :one
 SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason, origin
@@ -48,13 +48,13 @@ WHERE id = ?;
 -- name: GetWFHRequestsByDate :many
 SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason, origin
 FROM wfh_requests
-WHERE date = ?
+WHERE julianday(date) = julianday(?)
 ORDER BY created_at ASC;
 
 -- name: GetWFHRequestsByDateAndStatus :many
 SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason, origin
 FROM wfh_requests
-WHERE date = ? AND status = ?
+WHERE julianday(date) = julianday(?) AND status = ?
 ORDER BY created_at ASC;
 
 -- name: GetWFHRequestsByMember :many
@@ -67,8 +67,8 @@ ORDER BY date DESC;
 SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason, origin
 FROM wfh_requests
 WHERE member_id = ?
-  AND date >= ?
-  AND date <= ?
+  AND julianday(date) >= julianday(?)
+  AND julianday(date) <= julianday(?)
   AND status IN ('pending', 'approved')
   AND origin != 'assigned'
 ORDER BY date ASC;
@@ -77,8 +77,8 @@ ORDER BY date ASC;
 SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason, origin
 FROM wfh_requests
 WHERE member_id = ?
-  AND date >= ?
-  AND date <= ?
+  AND julianday(date) >= julianday(?)
+  AND julianday(date) <= julianday(?)
   AND status IN ('pending', 'approved')
 ORDER BY date ASC;
 
@@ -87,7 +87,7 @@ SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdr
 FROM wfh_requests
 WHERE status = 'pending'
   AND is_recurring = 0
-  AND date <= ?
+  AND julianday(date) <= julianday(?)
 ORDER BY date ASC, created_at ASC;
 
 -- name: GetAllWFHRequests :many
@@ -125,12 +125,12 @@ WHERE id = ?;
 -- name: CountApprovedWFHByDate :one
 SELECT COUNT(*) AS count
 FROM wfh_requests
-WHERE date = ? AND status = 'approved';
+WHERE julianday(date) = julianday(?) AND status = 'approved';
 
 -- name: CountWFHRequestsBefore :one
 SELECT COUNT(*) AS count
 FROM wfh_requests
-WHERE date < ?;
+WHERE julianday(date) < julianday(?);
 
 -- name: PurgeWFHRequestsBefore :execresult
-DELETE FROM wfh_requests WHERE date < ?;
+DELETE FROM wfh_requests WHERE julianday(date) < julianday(?);

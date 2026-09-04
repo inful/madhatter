@@ -14,11 +14,11 @@ import (
 const countApprovedWFHByDate = `-- name: CountApprovedWFHByDate :one
 SELECT COUNT(*) AS count
 FROM wfh_requests
-WHERE date = ? AND status = 'approved'
+WHERE julianday(date) = julianday(?) AND status = 'approved'
 `
 
-func (q *Queries) CountApprovedWFHByDate(ctx context.Context, date time.Time) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countApprovedWFHByDate, date)
+func (q *Queries) CountApprovedWFHByDate(ctx context.Context, julianday interface{}) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countApprovedWFHByDate, julianday)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -27,11 +27,11 @@ func (q *Queries) CountApprovedWFHByDate(ctx context.Context, date time.Time) (i
 const countWFHRequestsBefore = `-- name: CountWFHRequestsBefore :one
 SELECT COUNT(*) AS count
 FROM wfh_requests
-WHERE date < ?
+WHERE julianday(date) < julianday(?)
 `
 
-func (q *Queries) CountWFHRequestsBefore(ctx context.Context, date time.Time) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countWFHRequestsBefore, date)
+func (q *Queries) CountWFHRequestsBefore(ctx context.Context, julianday interface{}) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countWFHRequestsBefore, julianday)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -189,7 +189,7 @@ SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdr
 FROM wfh_requests
 WHERE status = 'pending'
   AND is_recurring = 0
-  AND date <= ?
+  AND julianday(date) <= julianday(?)
 ORDER BY date ASC, created_at ASC
 `
 
@@ -210,8 +210,8 @@ type GetPendingWFHRequestsForSettlementRow struct {
 	Origin        string         `json:"origin"`
 }
 
-func (q *Queries) GetPendingWFHRequestsForSettlement(ctx context.Context, date time.Time) ([]GetPendingWFHRequestsForSettlementRow, error) {
-	rows, err := q.db.QueryContext(ctx, getPendingWFHRequestsForSettlement, date)
+func (q *Queries) GetPendingWFHRequestsForSettlement(ctx context.Context, julianday interface{}) ([]GetPendingWFHRequestsForSettlementRow, error) {
+	rows, err := q.db.QueryContext(ctx, getPendingWFHRequestsForSettlement, julianday)
 	if err != nil {
 		return nil, err
 	}
@@ -358,12 +358,12 @@ func (q *Queries) GetWFHRequestByID(ctx context.Context, id string) (GetWFHReque
 const getWFHRequestByMemberAndDate = `-- name: GetWFHRequestByMemberAndDate :one
 SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason, origin
 FROM wfh_requests
-WHERE member_id = ? AND date = ?
+WHERE member_id = ? AND julianday(date) = julianday(?)
 `
 
 type GetWFHRequestByMemberAndDateParams struct {
-	MemberID string    `json:"member_id"`
-	Date     time.Time `json:"date"`
+	MemberID  string      `json:"member_id"`
+	Julianday interface{} `json:"julianday"`
 }
 
 type GetWFHRequestByMemberAndDateRow struct {
@@ -384,7 +384,7 @@ type GetWFHRequestByMemberAndDateRow struct {
 }
 
 func (q *Queries) GetWFHRequestByMemberAndDate(ctx context.Context, arg GetWFHRequestByMemberAndDateParams) (GetWFHRequestByMemberAndDateRow, error) {
-	row := q.db.QueryRowContext(ctx, getWFHRequestByMemberAndDate, arg.MemberID, arg.Date)
+	row := q.db.QueryRowContext(ctx, getWFHRequestByMemberAndDate, arg.MemberID, arg.Julianday)
 	var i GetWFHRequestByMemberAndDateRow
 	err := row.Scan(
 		&i.ID,
@@ -408,7 +408,7 @@ func (q *Queries) GetWFHRequestByMemberAndDate(ctx context.Context, arg GetWFHRe
 const getWFHRequestsByDate = `-- name: GetWFHRequestsByDate :many
 SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason, origin
 FROM wfh_requests
-WHERE date = ?
+WHERE julianday(date) = julianday(?)
 ORDER BY created_at ASC
 `
 
@@ -429,8 +429,8 @@ type GetWFHRequestsByDateRow struct {
 	Origin        string         `json:"origin"`
 }
 
-func (q *Queries) GetWFHRequestsByDate(ctx context.Context, date time.Time) ([]GetWFHRequestsByDateRow, error) {
-	rows, err := q.db.QueryContext(ctx, getWFHRequestsByDate, date)
+func (q *Queries) GetWFHRequestsByDate(ctx context.Context, julianday interface{}) ([]GetWFHRequestsByDateRow, error) {
+	rows, err := q.db.QueryContext(ctx, getWFHRequestsByDate, julianday)
 	if err != nil {
 		return nil, err
 	}
@@ -470,13 +470,13 @@ func (q *Queries) GetWFHRequestsByDate(ctx context.Context, date time.Time) ([]G
 const getWFHRequestsByDateAndStatus = `-- name: GetWFHRequestsByDateAndStatus :many
 SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason, origin
 FROM wfh_requests
-WHERE date = ? AND status = ?
+WHERE julianday(date) = julianday(?) AND status = ?
 ORDER BY created_at ASC
 `
 
 type GetWFHRequestsByDateAndStatusParams struct {
-	Date   time.Time `json:"date"`
-	Status string    `json:"status"`
+	Julianday interface{} `json:"julianday"`
+	Status    string      `json:"status"`
 }
 
 type GetWFHRequestsByDateAndStatusRow struct {
@@ -497,7 +497,7 @@ type GetWFHRequestsByDateAndStatusRow struct {
 }
 
 func (q *Queries) GetWFHRequestsByDateAndStatus(ctx context.Context, arg GetWFHRequestsByDateAndStatusParams) ([]GetWFHRequestsByDateAndStatusRow, error) {
-	rows, err := q.db.QueryContext(ctx, getWFHRequestsByDateAndStatus, arg.Date, arg.Status)
+	rows, err := q.db.QueryContext(ctx, getWFHRequestsByDateAndStatus, arg.Julianday, arg.Status)
 	if err != nil {
 		return nil, err
 	}
@@ -600,16 +600,16 @@ const getWFHRequestsByMemberAndPeriod = `-- name: GetWFHRequestsByMemberAndPerio
 SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason, origin
 FROM wfh_requests
 WHERE member_id = ?
-  AND date >= ?
-  AND date <= ?
+  AND julianday(date) >= julianday(?)
+  AND julianday(date) <= julianday(?)
   AND status IN ('pending', 'approved')
 ORDER BY date ASC
 `
 
 type GetWFHRequestsByMemberAndPeriodParams struct {
-	MemberID string    `json:"member_id"`
-	Date     time.Time `json:"date"`
-	Date_2   time.Time `json:"date_2"`
+	MemberID    string      `json:"member_id"`
+	Julianday   interface{} `json:"julianday"`
+	Julianday_2 interface{} `json:"julianday_2"`
 }
 
 type GetWFHRequestsByMemberAndPeriodRow struct {
@@ -630,7 +630,7 @@ type GetWFHRequestsByMemberAndPeriodRow struct {
 }
 
 func (q *Queries) GetWFHRequestsByMemberAndPeriod(ctx context.Context, arg GetWFHRequestsByMemberAndPeriodParams) ([]GetWFHRequestsByMemberAndPeriodRow, error) {
-	rows, err := q.db.QueryContext(ctx, getWFHRequestsByMemberAndPeriod, arg.MemberID, arg.Date, arg.Date_2)
+	rows, err := q.db.QueryContext(ctx, getWFHRequestsByMemberAndPeriod, arg.MemberID, arg.Julianday, arg.Julianday_2)
 	if err != nil {
 		return nil, err
 	}
@@ -671,17 +671,17 @@ const getWFHRequestsVoluntaryInPeriod = `-- name: GetWFHRequestsVoluntaryInPerio
 SELECT id, member_id, date, status, created_at, settled_at, withdrawn_by, withdrawn_at, is_recurring, is_admin_marked, marked_by, marked_at, denial_reason, origin
 FROM wfh_requests
 WHERE member_id = ?
-  AND date >= ?
-  AND date <= ?
+  AND julianday(date) >= julianday(?)
+  AND julianday(date) <= julianday(?)
   AND status IN ('pending', 'approved')
   AND origin != 'assigned'
 ORDER BY date ASC
 `
 
 type GetWFHRequestsVoluntaryInPeriodParams struct {
-	MemberID string    `json:"member_id"`
-	Date     time.Time `json:"date"`
-	Date_2   time.Time `json:"date_2"`
+	MemberID    string      `json:"member_id"`
+	Julianday   interface{} `json:"julianday"`
+	Julianday_2 interface{} `json:"julianday_2"`
 }
 
 type GetWFHRequestsVoluntaryInPeriodRow struct {
@@ -702,7 +702,7 @@ type GetWFHRequestsVoluntaryInPeriodRow struct {
 }
 
 func (q *Queries) GetWFHRequestsVoluntaryInPeriod(ctx context.Context, arg GetWFHRequestsVoluntaryInPeriodParams) ([]GetWFHRequestsVoluntaryInPeriodRow, error) {
-	rows, err := q.db.QueryContext(ctx, getWFHRequestsVoluntaryInPeriod, arg.MemberID, arg.Date, arg.Date_2)
+	rows, err := q.db.QueryContext(ctx, getWFHRequestsVoluntaryInPeriod, arg.MemberID, arg.Julianday, arg.Julianday_2)
 	if err != nil {
 		return nil, err
 	}
@@ -742,16 +742,16 @@ func (q *Queries) GetWFHRequestsVoluntaryInPeriod(ctx context.Context, arg GetWF
 const isAdminMarkedWFH = `-- name: IsAdminMarkedWFH :one
 SELECT is_admin_marked
 FROM wfh_requests
-WHERE member_id = ? AND date = ?
+WHERE member_id = ? AND julianday(date) = julianday(?)
 `
 
 type IsAdminMarkedWFHParams struct {
-	MemberID string    `json:"member_id"`
-	Date     time.Time `json:"date"`
+	MemberID  string      `json:"member_id"`
+	Julianday interface{} `json:"julianday"`
 }
 
 func (q *Queries) IsAdminMarkedWFH(ctx context.Context, arg IsAdminMarkedWFHParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, isAdminMarkedWFH, arg.MemberID, arg.Date)
+	row := q.db.QueryRowContext(ctx, isAdminMarkedWFH, arg.MemberID, arg.Julianday)
 	var is_admin_marked int64
 	err := row.Scan(&is_admin_marked)
 	return is_admin_marked, err
@@ -781,11 +781,11 @@ func (q *Queries) MarkAdminWFH(ctx context.Context, arg MarkAdminWFHParams) (sql
 }
 
 const purgeWFHRequestsBefore = `-- name: PurgeWFHRequestsBefore :execresult
-DELETE FROM wfh_requests WHERE date < ?
+DELETE FROM wfh_requests WHERE julianday(date) < julianday(?)
 `
 
-func (q *Queries) PurgeWFHRequestsBefore(ctx context.Context, date time.Time) (sql.Result, error) {
-	return q.db.ExecContext(ctx, purgeWFHRequestsBefore, date)
+func (q *Queries) PurgeWFHRequestsBefore(ctx context.Context, julianday interface{}) (sql.Result, error) {
+	return q.db.ExecContext(ctx, purgeWFHRequestsBefore, julianday)
 }
 
 const resurrectWFHRequest = `-- name: ResurrectWFHRequest :execresult

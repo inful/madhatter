@@ -218,6 +218,75 @@ func TestCheckQuota_UsesCurrentPeriodLimit(t *testing.T) {
 	assert.False(t, hasQuota)
 }
 
+// TestGetQuotaStatus_DateAffinityBoundaryFix is the regression
+// test for the date-comparison bug surfaced via the WFH
+// request form: rows stored with YYYY-MM-DD TEXT (e.g. via the
+// sqlite3 CLI, or via the legacy column-typed sqlc binding)
+// used to fall out of `date >= ?` / `date <= ?` / `date = ?`
+// queries when the parameter was a Go time.Time, because the
+// ncruces driver encodes time.Time as RFC3339 ("YYYY-MM-DDTHH:MM:SSZ")
+// and the DATE column stored the literal "YYYY-MM-DD" (10 chars).
+// Lexicographic comparison fails. The fix uses julianday() on
+// both sides so the comparison is numeric.
+//
+// Two rows on consecutive business days are enough: the lower
+// row (== periodStart) used to be silently excluded from the
+// range query. After the fix it counts.
+func TestGetQuotaStatus_DateAffinityBoundaryFix(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	svc := NewService(db, testConfig())
+
+	// Burn MaxDaysPerPeriod voluntary WFHs at consecutive
+	// business days inside the current period, starting on the
+	// period start itself (the boundary row the old comparison
+	// The request-date validator rejects past dates
+	// and weekends, so skip past dates and Sat/Sun.
+	maxDays := svc.Config().MaxDaysPerPeriod
+	require.GreaterOrEqual(t, maxDays, 2,
+		"this test needs at least 2 days to burn so the off-by-one matters")
+
+	now := time.Now().UTC()
+	periodStart, _, perr := svc.ComputePeriodBounds(now)
+	require.NoError(t, perr)
+
+	cursor := periodStart
+	inserted := 0
+	for inserted < maxDays {
+		if cursor.Before(now) ||
+			cursor.Weekday() == time.Saturday ||
+			cursor.Weekday() == time.Sunday {
+			cursor = cursor.AddDate(0, 0, 1)
+			continue
+		}
+		req, cErr := db.CreateWFHRequest(ctx, memberID, cursor.Format("2006-01-02"))
+		require.NoError(t, cErr)
+		require.NoError(t, db.UpdateWFHRequestStatus(ctx, req.ID, database.WFHStatusApproved))
+		inserted++
+		cursor = cursor.AddDate(0, 0, 1)
+	}
+
+	require.GreaterOrEqual(t, inserted, maxDays,
+		"need to have burned at least %d days to assert the boundary fix; got %d (periodStart=%s, now=%s, periodDays=%d)",
+		maxDays, inserted, periodStart.Format("2006-01-02"), now.Format("2006-01-02"), testConfig().PeriodDays)
+
+	// The quota lookup runs through GetWFHRequestsVoluntaryInPeriod.
+	// Before the fix this returned len(requests)-1 because the
+	// first business day (periodStart) was excluded by the broken
+	// date comparison. After the fix it returns the full count.
+	status, err := svc.GetQuotaStatus(ctx, memberID)
+	require.NoError(t, err)
+	assert.Equal(t, maxDays, status.Used,
+		"quota used must count every approved voluntary WFH in the period. Before the fix this was maxDays-1 because the boundary row was excluded by the broken date comparison.")
+	assert.Equal(t, 0, status.Remaining,
+		"after burning maxDays in the period, remaining must be 0 (button correctly disables)")
+}
+
 func TestService_MaxRequestDate(t *testing.T) {
 	svc := NewService(nil, Config{RequestHorizonDays: 90})
 	maxDate := svc.MaxRequestDate()

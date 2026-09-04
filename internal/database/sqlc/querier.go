@@ -33,10 +33,10 @@ type Querier interface {
 	ClaimDueOutboxEntries(ctx context.Context, limit int64) ([]NotificationOutbox, error)
 	CleanupExpiredTokens(ctx context.Context) (sql.Result, error)
 	CountAdmins(ctx context.Context) (int64, error)
-	CountApprovedWFHByDate(ctx context.Context, date time.Time) (int64, error)
+	CountApprovedWFHByDate(ctx context.Context, julianday interface{}) (int64, error)
 	CountPendingSwapsForMember(ctx context.Context, targetMemberID string) (int64, error)
 	CountPendingUsers(ctx context.Context) (int64, error)
-	CountWFHRequestsBefore(ctx context.Context, date time.Time) (int64, error)
+	CountWFHRequestsBefore(ctx context.Context, julianday interface{}) (int64, error)
 	CreateAPIToken(ctx context.Context, arg CreateAPITokenParams) (sql.Result, error)
 	// Inserts an already-active user. Used by test fixtures and the
 	// dev-mode seeder; the production OAuth flow goes through
@@ -150,7 +150,7 @@ type Querier interface {
 	// the target is the current user and status='pending'. The
 	// idx_wfh_assignment_swaps_target index covers this.
 	GetPendingSwapsForTarget(ctx context.Context, targetMemberID string) ([]WfhAssignmentSwap, error)
-	GetPendingWFHRequestsForSettlement(ctx context.Context, date time.Time) ([]GetPendingWFHRequestsForSettlementRow, error)
+	GetPendingWFHRequestsForSettlement(ctx context.Context, julianday interface{}) ([]GetPendingWFHRequestsForSettlementRow, error)
 	// Returns the R1 (original-HAT) rotation state, or sql.ErrNoRows
 	// if no R1 assignment has been written yet. The R1 rotation is
 	// kept in its own table (r1_rotation_state) so its write rules
@@ -173,7 +173,7 @@ type Querier interface {
 	GetUserByProvider(ctx context.Context, arg GetUserByProviderParams) (User, error)
 	GetWFHRequestByID(ctx context.Context, id string) (GetWFHRequestByIDRow, error)
 	GetWFHRequestByMemberAndDate(ctx context.Context, arg GetWFHRequestByMemberAndDateParams) (GetWFHRequestByMemberAndDateRow, error)
-	GetWFHRequestsByDate(ctx context.Context, date time.Time) ([]GetWFHRequestsByDateRow, error)
+	GetWFHRequestsByDate(ctx context.Context, julianday interface{}) ([]GetWFHRequestsByDateRow, error)
 	GetWFHRequestsByDateAndStatus(ctx context.Context, arg GetWFHRequestsByDateAndStatusParams) ([]GetWFHRequestsByDateAndStatusRow, error)
 	GetWFHRequestsByMember(ctx context.Context, memberID string) ([]GetWFHRequestsByMemberRow, error)
 	GetWFHRequestsByMemberAndPeriod(ctx context.Context, arg GetWFHRequestsByMemberAndPeriodParams) ([]GetWFHRequestsByMemberAndPeriodRow, error)
@@ -197,7 +197,7 @@ type Querier interface {
 	MarkOutboxFailed(ctx context.Context, arg MarkOutboxFailedParams) (sql.Result, error)
 	MarkOutboxSent(ctx context.Context, id string) (sql.Result, error)
 	PruneCoPresenceOlderThan(ctx context.Context, workingDate time.Time) (sql.Result, error)
-	PurgeWFHRequestsBefore(ctx context.Context, date time.Time) (sql.Result, error)
+	PurgeWFHRequestsBefore(ctx context.Context, julianday interface{}) (sql.Result, error)
 	ReactivateUser(ctx context.Context, id string) (User, error)
 	RecordWFHCoPresencePair(ctx context.Context, arg RecordWFHCoPresencePairParams) (sql.Result, error)
 	ResurrectWFHRequest(ctx context.Context, id string) (sql.Result, error)

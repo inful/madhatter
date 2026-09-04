@@ -125,8 +125,8 @@ func (db *DB) resurrectOrDuplicate(ctx context.Context, memberID string, dateTim
 	}
 
 	existing, err := db.queries.GetWFHRequestByMemberAndDate(ctx, sqlc.GetWFHRequestByMemberAndDateParams{
-		MemberID: memberID,
-		Date:     dateTime,
+		MemberID:  memberID,
+		Julianday: dateTime,
 	})
 	if err != nil {
 		// Lookup failure (DB error or, in a race, no row) — preserve the
@@ -212,8 +212,8 @@ func (db *DB) GetWFHRequestByMemberAndDate(ctx context.Context, memberID, date s
 		return nil, ErrWFHInvalidDate
 	}
 	row, err := db.queries.GetWFHRequestByMemberAndDate(ctx, sqlc.GetWFHRequestByMemberAndDateParams{
-		MemberID: memberID,
-		Date:     dateTime,
+		MemberID:  memberID,
+		Julianday: dateTime,
 	})
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -279,8 +279,8 @@ func (db *DB) GetWFHRequestsByDateAndStatus(ctx context.Context, date, status st
 		return nil, ErrWFHInvalidDate
 	}
 	rows, err := db.queries.GetWFHRequestsByDateAndStatus(ctx, sqlc.GetWFHRequestsByDateAndStatusParams{
-		Date:   dateTime,
-		Status: status,
+		Julianday: dateTime,
+		Status:    status,
 	})
 	if err != nil {
 		return nil, err
@@ -380,9 +380,9 @@ func (db *DB) GetWFHRequestsUsedInPeriod(ctx context.Context, memberID, periodSt
 		return nil, ErrWFHInvalidDate
 	}
 	rows, err := db.queries.GetWFHRequestsByMemberAndPeriod(ctx, sqlc.GetWFHRequestsByMemberAndPeriodParams{
-		MemberID: memberID,
-		Date:     start,
-		Date_2:   end,
+		MemberID:    memberID,
+		Julianday:   start,
+		Julianday_2: end,
 	})
 	if err != nil {
 		return nil, err
@@ -436,9 +436,9 @@ func (db *DB) GetWFHRequestsVoluntaryInPeriod(ctx context.Context, memberID, per
 		return nil, ErrWFHInvalidDate
 	}
 	rows, err := db.queries.GetWFHRequestsVoluntaryInPeriod(ctx, sqlc.GetWFHRequestsVoluntaryInPeriodParams{
-		MemberID: memberID,
-		Date:     start,
-		Date_2:   end,
+		MemberID:    memberID,
+		Julianday:   start,
+		Julianday_2: end,
 	})
 	if err != nil {
 		return nil, err
@@ -475,8 +475,8 @@ func (db *DB) HasWFHRequestOnDate(ctx context.Context, memberID, date string) (b
 		return false, ErrWFHInvalidDate
 	}
 	row, err := db.queries.GetWFHRequestByMemberAndDate(ctx, sqlc.GetWFHRequestByMemberAndDateParams{
-		MemberID: memberID,
-		Date:     dateTime,
+		MemberID:  memberID,
+		Julianday: dateTime,
 	})
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -674,8 +674,8 @@ func (db *DB) IsAdminMarkedWFH(ctx context.Context, memberID, date string) (bool
 		return false, ErrWFHInvalidDate
 	}
 	flag, err := db.queries.IsAdminMarkedWFH(ctx, sqlc.IsAdminMarkedWFHParams{
-		MemberID: memberID,
-		Date:     dateTime,
+		MemberID:  memberID,
+		Julianday: dateTime,
 	})
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

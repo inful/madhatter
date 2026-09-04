@@ -57,18 +57,17 @@
             period.
         </div>
         {{end}}
-        {{if gt .Quota.Remaining 0}}
+        {{if le .Quota.Remaining 0}}
+        <div class="notification is-warning is-light mt-3">
+            <i class="fas fa-exclamation-circle mr-2"></i> You have used your full WFH quota for this period. Withdraw an approved WFH above to free a slot for a different day, or pick a date in a later period below.
+        </div>
+        {{end}}
         <div class="has-text-centered mt-3">
             <a href="/wfh/request" class="button is-primary">
                 <span class="icon"><i class="fas fa-plus"></i></span>
                 <span>Request WFH Day</span>
             </a>
         </div>
-        {{else}}
-        <div class="notification is-warning is-light mt-3">
-            <i class="fas fa-exclamation-circle mr-2"></i> You have used your full WFH quota for this period. Withdraw an approved WFH above to free a slot for a different day.
-        </div>
-        {{end}}
     </div>
 </div>
 {{else}}

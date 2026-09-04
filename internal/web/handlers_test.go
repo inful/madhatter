@@ -1558,6 +1558,83 @@ func TestWFHListPage_NoDenialReason_WhenApprovedOrPending(t *testing.T) {
 		"the reason must not render when the row is approved (only denied rows show it)")
 }
 
+// TestWFHListPage_RequestWFHDayButton_AlwaysVisible pins the
+// user-visible behavior: the "+ Request WFH Day" button must
+// render on the WFH list page regardless of the current-period
+// quota state. When the user's quota is exhausted the warning
+// appears alongside the button, not in place of it — the user
+// can still click through to /wfh/request and try a future
+// period. Server-side CheckQuota on the form is the
+// authoritative guard against over-cap requests.
+//
+// Before the fix the button was hidden when quota was
+// exhausted (the warning replaced it), which left the user
+// stranded — exactly the dead-end the user reported.
+func TestWFHListPage_RequestWFHDayButton_AlwaysVisible(t *testing.T) {
+	mockDB := &database.DB{}
+	handler, err := NewHandler(mockDB, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	requests := []enrichedWFHRequest{
+		{
+			WFHRequest: database.WFHRequest{ID: "r1", Status: database.WFHStatusApproved},
+		},
+	}
+
+	cases := []struct {
+		name             string
+		remaining        int
+		expectWarning    bool
+		expectButtonText string
+	}{
+		{
+			name:             "quota has remaining — button visible, no warning",
+			remaining:        2,
+			expectWarning:    false,
+			expectButtonText: "Request WFH Day",
+		},
+		{
+			name:             "quota exhausted — button still visible, warning alongside",
+			remaining:        0,
+			expectWarning:    true,
+			expectButtonText: "Request WFH Day",
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			data := map[string]any{
+				"Template": "wfh_list",
+				"Quota": map[string]any{
+					"PeriodStart": "2026-08-31",
+					"PeriodEnd":   "2026-09-06",
+					"Used":        2,
+					"Remaining":   c.remaining,
+					"OverQuotaBy": 0,
+				},
+				"Requests": requests,
+			}
+
+			w := httptest.NewRecorder()
+			require.NoError(t, handler.tmpl.ExecuteTemplate(w, "wfh_list.html", data))
+			body := w.Body.String()
+
+			assert.Contains(t, body, `href="/wfh/request"`,
+				"the + Request WFH Day link to /wfh/request must render regardless of quota state")
+			assert.Contains(t, body, c.expectButtonText,
+				"the button copy must be visible")
+
+			if c.expectWarning {
+				assert.Contains(t, body, "You have used your full WFH quota",
+					"warning must render alongside the button when quota is exhausted")
+			} else {
+				assert.NotContains(t, body, "You have used your full WFH quota",
+					"warning must NOT render when quota has remaining")
+			}
+		})
+	}
+}
+
 // ptrString is a small helper to make the test data read like
 // "the row's reason is X" without a one-off local var.
 func ptrString(s string) *string { return &s }

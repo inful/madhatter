@@ -1637,7 +1637,9 @@ func TestWFHListPage_RequestWFHDayButton_AlwaysVisible(t *testing.T) {
 
 // ptrString is a small helper to make the test data read like
 // "the row's reason is X" without a one-off local var.
-func ptrString(s string) *string { return &s }
+//
+//go:fix inline
+func ptrString(s string) *string { return new(s) }
 
 // TestDashboard_ChairsRow_RendersAtUnderAndOverCap is the
 // HTML-level regression test for the ass/chair ratio row on the

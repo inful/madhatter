@@ -14,6 +14,7 @@ import (
 	"github.com/inful/madhatter/internal/auth"
 	"github.com/inful/madhatter/internal/database"
 	"github.com/inful/madhatter/internal/database/sqlc"
+	"github.com/inful/madhatter/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -307,13 +308,10 @@ func TestHandleTeamMemberEdit_WrongMethod_Returns405(t *testing.T) {
 	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
 	require.NoError(t, err)
 
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/team/members/x/edit", nil)
-	req = withChiParam(req, "x")
-	w := httptest.NewRecorder()
+	rec := testutil.HandlerCall(t, h.handleTeamMemberEdit, http.MethodGet, "/team/members/x/edit",
+		testutil.URLParam{Name: "id", Value: "x"})
 
-	h.handleTeamMemberEdit(w, req)
-
-	assert.Equal(t, http.StatusMethodNotAllowed, w.Code)
+	assert.Equal(t, http.StatusMethodNotAllowed, rec.Code)
 }
 
 func TestHandleTeamMemberEdit_InvalidInput_Returns400(t *testing.T) {
@@ -377,13 +375,10 @@ func TestHandleTeamMemberDelete_WrongMethod_Returns405(t *testing.T) {
 	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
 	require.NoError(t, err)
 
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/team/members/x/delete", nil)
-	req = withChiParam(req, "x")
-	w := httptest.NewRecorder()
+	rec := testutil.HandlerCall(t, h.handleTeamMemberDelete, http.MethodGet, "/team/members/x/delete",
+		testutil.URLParam{Name: "id", Value: "x"})
 
-	h.handleTeamMemberDelete(w, req)
-
-	assert.Equal(t, http.StatusMethodNotAllowed, w.Code)
+	assert.Equal(t, http.StatusMethodNotAllowed, rec.Code)
 }
 
 func TestHandleTeamMemberDelete_ValidPost_RedirectsToTeam(t *testing.T) {
@@ -424,13 +419,10 @@ func TestHandleTeamMemberPermanentWFHUpdate_WrongMethod_Returns405(t *testing.T)
 	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
 	require.NoError(t, err)
 
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/team/members/x/permanent-wfh", nil)
-	req = withChiParam(req, "x")
-	w := httptest.NewRecorder()
+	rec := testutil.HandlerCall(t, h.handleTeamMemberPermanentWFHUpdate, http.MethodGet, "/team/members/x/permanent-wfh",
+		testutil.URLParam{Name: "id", Value: "x"})
 
-	h.handleTeamMemberPermanentWFHUpdate(w, req)
-
-	assert.Equal(t, http.StatusMethodNotAllowed, w.Code)
+	assert.Equal(t, http.StatusMethodNotAllowed, rec.Code)
 }
 
 func TestHandleTeamMemberPermanentWFHUpdate_NotFound_Returns404(t *testing.T) {
@@ -524,13 +516,10 @@ func TestHandleTeamMemberExemptUpdate_WrongMethod_Returns405(t *testing.T) {
 	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
 	require.NoError(t, err)
 
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/team/members/x/exempt", nil)
-	req = withChiParam(req, "x")
-	w := httptest.NewRecorder()
+	rec := testutil.HandlerCall(t, h.handleTeamMemberExemptUpdate, http.MethodGet, "/team/members/x/exempt",
+		testutil.URLParam{Name: "id", Value: "x"})
 
-	h.handleTeamMemberExemptUpdate(w, req)
-
-	assert.Equal(t, http.StatusMethodNotAllowed, w.Code)
+	assert.Equal(t, http.StatusMethodNotAllowed, rec.Code)
 }
 
 // TestHandleTeamMemberExemptUpdate_NotFound_Returns404 covers the

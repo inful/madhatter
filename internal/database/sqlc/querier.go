@@ -21,7 +21,14 @@ type Querier interface {
 	// whose swap_date is strictly before today to status=
 	// 'cancelled'. The idx_wfh_assignment_swaps_date index
 	// covers this; the cutoff is computed in Go as today.
-	CancelExpiredSwaps(ctx context.Context, swapDate time.Time) (sql.Result, error)
+	//
+	// Uses julianday() on both sides so the comparison is numeric
+	// rather than lexicographic. Without it, the ncruces driver
+	// encodes time.Time as RFC3339 ("YYYY-MM-DDTHH:MM:SSZ") while
+	// the column is stored as "YYYY-MM-DD" (DATE affinity, 10 chars);
+	// lexicographic compare fails for the boundary date, so a swap
+	// dated today gets auto-cancelled on every tick. See v0.31.5.
+	CancelExpiredSwaps(ctx context.Context, julianday interface{}) (sql.Result, error)
 	// Atomically claim a batch of due rows by bumping next_attempt_at far into
 	// the future, so concurrent workers don't pick the same row.
 	//

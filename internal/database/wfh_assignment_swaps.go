@@ -26,7 +26,7 @@ func (db *DB) CreateWFHAssignmentSwap(ctx context.Context, requesterWfhRequestID
 		ID:                    id,
 		RequesterWfhRequestID: requesterWfhRequestID,
 		TargetMemberID:        targetMemberID,
-		SwapDate:              parsedDate,
+		Julianday:             parsedDate,
 	})
 	if err != nil {
 		return "", err

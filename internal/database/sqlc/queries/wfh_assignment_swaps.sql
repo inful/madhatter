@@ -5,7 +5,7 @@
 -- before calling this query.
 INSERT INTO wfh_assignment_swaps
     (id, requester_wfh_request_id, target_member_id, swap_date, status)
-VALUES (?, ?, ?, ?, 'pending');
+VALUES (?, ?, ?, julianday(?), 'pending');
 
 -- name: GetSwapByID :one
 SELECT id, requester_wfh_request_id, target_member_id, swap_date, status,
@@ -64,9 +64,16 @@ WHERE id = ?;
 -- whose swap_date is strictly before today to status=
 -- 'cancelled'. The idx_wfh_assignment_swaps_date index
 -- covers this; the cutoff is computed in Go as today.
+--
+-- Uses julianday() on both sides so the comparison is numeric
+-- rather than lexicographic. Without it, the ncruces driver
+-- encodes time.Time as RFC3339 ("YYYY-MM-DDTHH:MM:SSZ") while
+-- the column is stored as "YYYY-MM-DD" (DATE affinity, 10 chars);
+-- lexicographic compare fails for the boundary date, so a swap
+-- dated today gets auto-cancelled on every tick. See v0.31.5.
 UPDATE wfh_assignment_swaps
 SET status = 'cancelled',
     updated_at = CURRENT_TIMESTAMP,
     resolved_at = CURRENT_TIMESTAMP
 WHERE status = 'pending'
-  AND swap_date < ?;
+  AND julianday(swap_date) < julianday(?);

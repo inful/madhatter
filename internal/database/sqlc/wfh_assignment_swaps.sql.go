@@ -8,7 +8,6 @@ package sqlc
 import (
 	"context"
 	"database/sql"
-	"time"
 )
 
 const cancelExpiredSwaps = `-- name: CancelExpiredSwaps :execresult
@@ -17,7 +16,7 @@ SET status = 'cancelled',
     updated_at = CURRENT_TIMESTAMP,
     resolved_at = CURRENT_TIMESTAMP
 WHERE status = 'pending'
-  AND swap_date < ?
+  AND julianday(swap_date) < julianday(?)
 `
 
 // Auto-cancel pass run by SettlePendingRequests (step 15
@@ -25,21 +24,28 @@ WHERE status = 'pending'
 // whose swap_date is strictly before today to status=
 // 'cancelled'. The idx_wfh_assignment_swaps_date index
 // covers this; the cutoff is computed in Go as today.
-func (q *Queries) CancelExpiredSwaps(ctx context.Context, swapDate time.Time) (sql.Result, error) {
-	return q.db.ExecContext(ctx, cancelExpiredSwaps, swapDate)
+//
+// Uses julianday() on both sides so the comparison is numeric
+// rather than lexicographic. Without it, the ncruces driver
+// encodes time.Time as RFC3339 ("YYYY-MM-DDTHH:MM:SSZ") while
+// the column is stored as "YYYY-MM-DD" (DATE affinity, 10 chars);
+// lexicographic compare fails for the boundary date, so a swap
+// dated today gets auto-cancelled on every tick. See v0.31.5.
+func (q *Queries) CancelExpiredSwaps(ctx context.Context, julianday interface{}) (sql.Result, error) {
+	return q.db.ExecContext(ctx, cancelExpiredSwaps, julianday)
 }
 
 const createSwap = `-- name: CreateSwap :execresult
 INSERT INTO wfh_assignment_swaps
     (id, requester_wfh_request_id, target_member_id, swap_date, status)
-VALUES (?, ?, ?, ?, 'pending')
+VALUES (?, ?, ?, julianday(?), 'pending')
 `
 
 type CreateSwapParams struct {
-	ID                    string    `json:"id"`
-	RequesterWfhRequestID string    `json:"requester_wfh_request_id"`
-	TargetMemberID        string    `json:"target_member_id"`
-	SwapDate              time.Time `json:"swap_date"`
+	ID                    string      `json:"id"`
+	RequesterWfhRequestID string      `json:"requester_wfh_request_id"`
+	TargetMemberID        string      `json:"target_member_id"`
+	Julianday             interface{} `json:"julianday"`
 }
 
 // Insert a new pending swap request. Caller is responsible
@@ -51,7 +57,7 @@ func (q *Queries) CreateSwap(ctx context.Context, arg CreateSwapParams) (sql.Res
 		arg.ID,
 		arg.RequesterWfhRequestID,
 		arg.TargetMemberID,
-		arg.SwapDate,
+		arg.Julianday,
 	)
 }
 

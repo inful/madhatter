@@ -182,6 +182,40 @@ func TestUpdateWFHAssignmentSwapStatus_StateTransitions(t *testing.T) {
 	assert.Nil(t, guard, "accepted swap is not pending; the guard releases")
 }
 
+// TestCancelExpiredWFHSwaps_TodaySurvives pins the boundary case
+// the v0.31.5 fix resolves: a swap dated today must NOT be
+// auto-cancelled when settlement runs with cutoff=today. Before
+// the fix the lex compare 'YYYY-MM-DD' < 'YYYY-MM-DDTHH:MM:SSZ'
+// was TRUE for today's swap, so the auto-cancel pass would
+// silently kill every swap the user had just created. The
+// julianday() rewrite makes the comparison numeric, so today's
+// swap survives.
+func TestCancelExpiredWFHSwaps_TodaySurvives(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	aliceID, err := db.AddTeamMember(ctx, "alice@example.com", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "bob@example.com", "bob@example.com")
+	require.NoError(t, err)
+
+	today := time.Now().UTC()
+	todayStr := today.Format("2006-01-02")
+	todayAssigned := seedAssignedWFH(t, ctx, db, aliceID, todayStr)
+	_, err = db.CreateWFHAssignmentSwap(ctx, todayAssigned, bobID, todayStr)
+	require.NoError(t, err)
+
+	cutoff := today.Truncate(24 * time.Hour)
+	require.NoError(t, db.CancelExpiredWFHSwaps(ctx, cutoff))
+
+	swapID := mustGetSwapIDByDate(t, ctx, db, todayStr)
+	s, err := db.GetWFHAssignmentSwapByID(ctx, swapID)
+	require.NoError(t, err)
+	assert.Equal(t, "pending", s.Status,
+		"a swap dated today must NOT auto-cancel when cutoff is today — that would lose the swap the user just submitted. v0.31.5 fix.")
+}
+
 // TestCancelExpiredWFHSwaps pins the auto-cancel pass run by
 // SettlePendingRequests (step 15 of plans/assigned-wfh-plan.md).
 // Pending swaps whose swap_date is strictly before the cutoff
@@ -220,22 +254,26 @@ func TestCancelExpiredWFHSwaps(t *testing.T) {
 	assert.Equal(t, "pending", tomorrowSwap.Status, "tomorrow's swap must not be touched")
 }
 
+// TestProbe_CancelExpiredSwapsInspect was a temporary
+// debugging helper left in the suite while TestCancelExpiredWFHSwaps
+// was broken. The boundary fix in v0.31.5 (julianday() rewrite +
+// helper now uses julianday() in its lookup) makes the real test
+// pass; the probe is no longer needed and is intentionally absent
+// from this commit.
+
 // mustGetSwapIDByDate returns the swap ID for the given date
 // (test fixture helper — the swap table has one row per
 // assigned row in this test, so looking up by date works).
-// Uses time.Time because the swap_date column is stored as a
-// datetime in SQLite; comparing a string against the column
-// doesn't always coerce correctly with the ncruces driver.
+// Uses a string param against the julianday(swap_date) column
+// so the comparison is numeric rather than lex (the ncruces
+// driver encodes time.Time as RFC3339 which doesn't lex-match
+// the stored DATE column — see v0.31.2 and v0.31.5).
 func mustGetSwapIDByDate(t *testing.T, ctx context.Context, db *DB, date string) string {
 	t.Helper()
-	parsed, err := time.Parse("2006-01-02", date)
-	if err != nil {
-		t.Fatalf("parse date %s: %v", date, err)
-	}
 	var id string
 	row := db.db.QueryRowContext(ctx,
 		`SELECT s.id FROM wfh_assignment_swaps s
-		 WHERE s.swap_date = ? LIMIT 1`, parsed)
+		 WHERE julianday(swap_date) = julianday(?) LIMIT 1`, date)
 	if err := row.Scan(&id); err != nil {
 		t.Fatalf("lookup swap by date %s: %v", date, err)
 	}

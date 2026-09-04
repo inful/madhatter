@@ -372,6 +372,12 @@ func (h *Handler) loadDashboardData(ctx context.Context, data map[string]any) {
 	}
 
 	h.loadMeetingsToken(ctx, data)
+
+	// The chairs row is conditional on the cap being set; when
+	// the picker is a no-op (cap <= 0 or service unconfigured) the
+	// loader leaves the data map untouched and the template
+	// suppresses the row.
+	h.loadChairsData(ctx, data, today)
 }
 
 // loadCurrentHAT populates the HAT banner data — the most-asked
@@ -504,6 +510,143 @@ func (h *Handler) wfhFloor(ctx context.Context) int {
 		return 0
 	}
 	return h.wfhService.MinOnsiteCount(len(members))
+}
+
+// loadChairsData populates the dashboard data with today's
+// "on-site headcount vs. seat cap" trio. The seats row in the
+// Today card surfaces the ass/chair ratio — a number the picker
+// already computes in the background but that users had no
+// at-a-glance way to see.
+//
+// Behavior matrix:
+//   - Service unconfigured OR cap <= 0 → no data fields set; the
+//     template suppresses the row. (The picker is a no-op in this
+//     mode, so a ratio would be misleading.)
+//   - Cap set → set ChairsOnSite, ChairsTotal, ChairsPercent, and
+//     ChairsColor (the Bulma tag class — is-success / is-warning /
+//     is-danger — picked from the percent band).
+//
+// The math: on-site = active members minus those on leave or
+// WFH today. Leave rows in rejected/denied state are stale and
+// ignored; WFH rows in non-approved status (pending, withdrawn)
+// don't occupy a chair yet. A negative result (transient race
+// during settlement) clamps to zero so the bar doesn't render
+// backwards.
+func (h *Handler) loadChairsData(ctx context.Context, data map[string]any, today string) {
+	seatCap, ok := h.chairsSeatCap()
+	if !ok {
+		return
+	}
+
+	members, err := h.db.GetActiveTeamMembers(ctx)
+	if err != nil || len(members) == 0 {
+		return
+	}
+
+	onLeave, _ := h.countActiveLeaveToday(ctx, today)
+	wfhToday, _ := h.countApprovedWFHToday(ctx, today)
+
+	onSite := max(0, len(members)-onLeave-wfhToday)
+
+	percent := clampPercent((onSite * chairsPercentMultiplier) / seatCap)
+	color := chairsColorForPercent(percent)
+
+	data["ChairsOnSite"] = onSite
+	data["ChairsTotal"] = seatCap
+	data["ChairsPercent"] = percent
+	data["ChairsColor"] = color
+}
+
+// chairsPercentMultiplier and chairsPercentMax are the inline
+// constants for the ratio's percentage band. Pulling them out as
+// named consts satisfies the mnd linter and makes the
+// "under/at/over cap" thresholds grep-able.
+const (
+	chairsPercentMultiplier = 100
+	chairsPercentMax        = 999
+)
+
+// chairsSeatCap returns the configured seat cap, or (0, false)
+// when the cap is unset or the service is missing. The picker
+// is a no-op in the unset case so the chairs row is meaningless;
+// the caller uses the false return to suppress the row.
+func (h *Handler) chairsSeatCap() (int, bool) {
+	if h.wfhService == nil {
+		return 0, false
+	}
+	seatCap := h.wfhService.Config().SeatCap
+	if seatCap <= 0 {
+		return 0, false
+	}
+	return seatCap, true
+}
+
+// countActiveLeaveToday counts the number of distinct leave
+// records that should subtract from today's on-site headcount.
+// Only pending / assigned leaves put the member out of the
+// office today; rejected, denied, and withdrawn rows are stale
+// and excluded (the same filter loadCurrentUserPresenceStatus
+// applies for the per-user chip).
+func (h *Handler) countActiveLeaveToday(ctx context.Context, today string) (int, error) {
+	leaveRows, err := h.db.GetLeaveByDate(ctx, today)
+	if err != nil {
+		return 0, err
+	}
+	count := 0
+	for i := range leaveRows {
+		status := strings.ToLower(strings.TrimSpace(leaveRows[i].Status))
+		if status == "pending" || status == "assigned" {
+			count++
+		}
+	}
+	return count, nil
+}
+
+// countApprovedWFHToday counts approved WFH rows for today.
+// Pending rows haven't settled yet and withdrawn rows are stale;
+// the recurrence materialiser auto-approves its rows so this
+// naturally includes recurring / admin-marked / assigned /
+// swap-origin WFHs.
+func (h *Handler) countApprovedWFHToday(ctx context.Context, today string) (int, error) {
+	wfhRows, err := h.db.GetWFHRequestsByDate(ctx, today)
+	if err != nil {
+		return 0, err
+	}
+	count := 0
+	for i := range wfhRows {
+		if wfhRows[i].Status == database.WFHStatusApproved {
+			count++
+		}
+	}
+	return count, nil
+}
+
+// clampPercent caps the ratio's percentage display at
+// chairsPercentMax so an absurd over-cap state (e.g. 50 of 7 =
+// 714%) doesn't render a four-digit value that breaks the row's
+// visual width. The actual underlying on-site value is preserved
+// in ChairsOnSite, so the loader only clamps the percentage
+// display, not the math.
+func clampPercent(percent int) int {
+	if percent > chairsPercentMax {
+		return chairsPercentMax
+	}
+	return percent
+}
+
+// chairsColorForPercent maps the ratio to a Bulma tag class:
+// green below the cap (picker is happy), orange at exactly the
+// cap (picker has run and filled the room), red over the cap
+// (transient — picker's next settlement tick will resolve).
+func chairsColorForPercent(percent int) string {
+	switch {
+	case percent > chairsPercentMultiplier:
+		return "is-danger"
+	case percent == chairsPercentMultiplier:
+		return "is-warning"
+	default:
+		return "is-success"
+	}
 }
 
 //nolint:cyclop // Matrix assembly is data-oriented and intentionally explicit.

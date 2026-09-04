@@ -95,7 +95,12 @@ When the on-site headcount would exceed the cap, the picker picks the
   the standard `CALENDAR_TEMPLATE_*` env vars.
 - **Dashboard "Today" panel** continues to show who is on-site, on
   leave, and WFH. Assigned WFHs appear in the WFH list with a small
-  chip.
+  chip. When `WFH_SEAT_CAP` is set, the Today card also surfaces
+  an **Office** row showing "X of Y chairs (N%)" with a thin progress
+  bar (green below the cap, orange at exactly the cap, red over) —
+  the ass/chair ratio at a glance, the same arithmetic the picker
+  runs in the background. The row hides entirely when the cap is
+  unset.
 - **API** (`/api/v1/wfh`) exposes the new `origin` field on every WFH
   row. Values: `ad_hoc`, `recurring`, `assigned`, `swap`.
 

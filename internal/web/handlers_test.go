@@ -1561,3 +1561,103 @@ func TestWFHListPage_NoDenialReason_WhenApprovedOrPending(t *testing.T) {
 // ptrString is a small helper to make the test data read like
 // "the row's reason is X" without a one-off local var.
 func ptrString(s string) *string { return &s }
+
+// TestDashboard_ChairsRow_RendersAtUnderAndOverCap is the
+// HTML-level regression test for the ass/chair ratio row on the
+// Today card. The unit-level TestLoadChairsData_* tests pin
+// the data fields; this one pins the rendered output so a future
+// template drift (e.g. someone drops the conditional, or
+// hard-codes the color class) fails loudly here.
+func TestDashboard_ChairsRow_RendersAtUnderAndOverCap(t *testing.T) {
+	mockDB := &database.DB{}
+	handler, err := NewHandler(mockDB, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	cases := []struct {
+		name           string
+		onSite         int
+		total          int
+		percent        int
+		color          string
+		mustContain    []string
+		mustNotContain []string
+	}{
+		{
+			name:    "under-cap green",
+			onSite:  3,
+			total:   7,
+			percent: 42,
+			color:   "is-success",
+			mustContain: []string{
+				`class="tag is-success is-light"`,
+				"3 of 7 chairs (42%)",
+				`value="3"`,
+				`max="7"`,
+			},
+		},
+		{
+			name:    "at-cap orange",
+			onSite:  5,
+			total:   5,
+			percent: 100,
+			color:   "is-warning",
+			mustContain: []string{
+				`class="tag is-warning is-light"`,
+				"5 of 5 chairs (100%)",
+				`value="5"`,
+				`max="5"`,
+			},
+		},
+		{
+			name:    "over-cap red",
+			onSite:  9,
+			total:   7,
+			percent: 128,
+			color:   "is-danger",
+			mustContain: []string{
+				`class="tag is-danger is-light"`,
+				"9 of 7 chairs (128%)",
+				`value="9"`,
+				`max="7"`,
+			},
+		},
+		{
+			name:    "no-cap row hidden",
+			onSite:  0,
+			total:   0,
+			percent: 0,
+			color:   "",
+			mustNotContain: []string{
+				"chairs",
+			},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			data := map[string]any{
+				"User":                      map[string]any{"Email": "alice@example.com", "Name": "Alice"},
+				"IsAdmin":                   false,
+				"Template":                  "dashboard",
+				"CurrentUserPresenceStatus": "On-site",
+				"Today":                     "Friday, Sep 4, 2026",
+			}
+			if c.total > 0 {
+				data["ChairsOnSite"] = c.onSite
+				data["ChairsTotal"] = c.total
+				data["ChairsPercent"] = c.percent
+				data["ChairsColor"] = c.color
+			}
+			w := httptest.NewRecorder()
+			require.NoError(t, handler.tmpl.ExecuteTemplate(w, "dashboard.html", data))
+			body := w.Body.String()
+			for _, needle := range c.mustContain {
+				assert.Contains(t, body, needle,
+					"%s: rendered body must contain %q", c.name, needle)
+			}
+			for _, forbidden := range c.mustNotContain {
+				assert.NotContains(t, body, forbidden,
+					"%s: rendered body must NOT contain %q", c.name, forbidden)
+			}
+		})
+	}
+}

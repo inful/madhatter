@@ -73,6 +73,28 @@
                 <span class="tag is-warning is-light"><i class="fas fa-plane-departure mr-1"></i> Next leave: {{.CurrentUserNextLeaveDay}}</span>
             {{end}}
         </div>
+
+        {{/*
+            Office chairs row. Surfaces the ass/chair ratio — the
+            on-site headcount vs. WFH_SEAT_CAP — the same
+            arithmetic the seat-cap picker runs in the background.
+            Hidden entirely when the cap is unset (the picker is a
+            no-op in that mode, so a ratio would be misleading).
+            Colour band: green below cap, orange at exactly cap,
+            red over cap (transient — picker resolves on next tick).
+        */}}
+        {{if .ChairsTotal}}
+        <div class="status-meta mt-2 mb-0">
+            <span class="status-section-label">
+                <i class="fas fa-chair mr-1"></i> Office
+            </span>
+            <span class="tag {{.ChairsColor}} is-light" title="On-site headcount vs. configured WFH_SEAT_CAP — the same arithmetic the seat-cap picker runs.">
+                <i class="fas fa-chair mr-1"></i>
+                {{.ChairsOnSite}} of {{.ChairsTotal}} chairs ({{.ChairsPercent}}%)
+            </span>
+            <progress class="progress is-small mt-2" value="{{.ChairsOnSite}}" max="{{.ChairsTotal}}">{{.ChairsPercent}}%</progress>
+        </div>
+        {{end}}
     </div>
 </div>
 {{end}}

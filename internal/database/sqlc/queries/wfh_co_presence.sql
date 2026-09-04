@@ -3,24 +3,24 @@ INSERT OR IGNORE INTO wfh_co_presence (co_presence_id, working_date, member_id_a
 VALUES (?, ?, ?, ?);
 
 -- name: PruneCoPresenceOlderThan :execresult
-DELETE FROM wfh_co_presence WHERE working_date < ?;
+DELETE FROM wfh_co_presence WHERE julianday(working_date) < julianday(?);
 
 -- name: GetLatestCoPresenceWithCohortA :many
 SELECT working_date
 FROM wfh_co_presence
-WHERE working_date >= ?
-  AND working_date < ?
+WHERE julianday(working_date) >= julianday(?)
+  AND julianday(working_date) < julianday(?)
   AND member_id_a = ?
   AND member_id_b IN (?, ?, ?)
-ORDER BY working_date DESC
+ORDER BY julianday(working_date) DESC
 LIMIT 1;
 
 -- name: GetLatestCoPresenceWithCohortB :many
 SELECT working_date
 FROM wfh_co_presence
-WHERE working_date >= ?
-  AND working_date < ?
+WHERE julianday(working_date) >= julianday(?)
+  AND julianday(working_date) < julianday(?)
   AND member_id_b = ?
   AND member_id_a IN (?, ?, ?)
-ORDER BY working_date DESC
+ORDER BY julianday(working_date) DESC
 LIMIT 1;

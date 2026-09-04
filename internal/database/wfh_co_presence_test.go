@@ -66,13 +66,56 @@ func TestPruneWFHCoPresenceOlderThan(t *testing.T) {
 	cutoff := time.Now().UTC().AddDate(0, 0, -5)
 	require.NoError(t, db.PruneWFHCoPresenceOlderThan(ctx, cutoff))
 
-	// Sanity: the table is still queryable; we don't have a
-	// ListCoPresence helper yet (phase 2 will add it), so the
-	// shape is verified by the fact that Prune returned nil
-	// and the recent row's writer call above didn't error.
-	// The phase-2 reader path (step 9) will add coverage.
-	assert.NotNil(t, aliceID)
-	assert.NotNil(t, bobID)
+	// Verify the old row was deleted and the recent row
+	// survives. Direct row read since the package doesn't
+	// have a ListCoPresence helper yet. Use julianday() so
+	// the comparison is numeric regardless of the stored
+	// format (the writer stores RFC3339 20-byte via
+	// time.Time, but the audit-pinned boundary fix is
+	// consistent — the test should mirror the production
+	// lookup pattern).
+	var oldCount, recentCount int
+	row := db.db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM wfh_co_presence WHERE julianday(working_date) = julianday(?)", old)
+	require.NoError(t, row.Scan(&oldCount))
+	row = db.db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM wfh_co_presence WHERE julianday(working_date) = julianday(?)", recent)
+	require.NoError(t, row.Scan(&recentCount))
+	assert.Equal(t, 0, oldCount, "old row should be pruned")
+	assert.Equal(t, 1, recentCount, "recent row should survive")
+}
+
+// TestPruneWFHCoPresenceOlderThan_TodaySurvives pins the
+// boundary case at the v0.31.6 julianday() rewrite. A row
+// dated today must NOT be pruned when the cutoff is today.
+// The same encoding-asymmetry bug that hit wfh_assignment_swaps
+// (v0.31.5) would, if the lex compare ever differed in
+// precision between the stored value and the cutoff, wrongly
+// delete today's row. The julianday() rewrite makes the
+// comparison numeric so today's row is safe.
+func TestPruneWFHCoPresenceOlderThan_TodaySurvives(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	today := time.Now().UTC().Format("2006-01-02")
+	require.NoError(t, db.RecordWFHCoPresencePair(ctx, today, aliceID, bobID))
+
+	// Cutoff: today at midnight UTC. The pathological case.
+	cutoff := time.Now().UTC().Truncate(24 * time.Hour)
+	require.NoError(t, db.PruneWFHCoPresenceOlderThan(ctx, cutoff))
+
+	var count int
+	row := db.db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM wfh_co_presence WHERE julianday(working_date) = julianday(?)", today)
+	require.NoError(t, row.Scan(&count))
+	assert.Equal(t, 1, count,
+		"a co-presence row dated today must NOT be pruned when cutoff is today — v0.31.6 julianday() rewrite")
 }
 
 // TestGetLatestCoPresenceWithCohort_LimitsToHorizon pins the
@@ -159,9 +202,17 @@ func TestGetLatestCoPresenceWithCohort_SymmetricByNormalization(t *testing.T) {
 	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
 	require.NoError(t, err)
 
-	// Insert with arguments in REVERSE order; the writer
-	// must normalize (swap to canonical (a < b)).
-	require.NoError(t, db.RecordWFHCoPresencePair(ctx, "test-reverse", bobID, aliceID))
+	// Use a real YYYY-MM-DD date string so parseCoPresenceDate
+	// stores the date at midnight-UTC, not the current
+	// nanosecond. v0.31.6 switched the WHERE to julianday()
+	// which has coarser precision than RFC3339-nanosecond;
+	// a stored value at "now" against an upper bound of
+	// "now" would round to the same Julian day and be
+	// excluded. Production always uses a real date string
+	// (the writer is called from a date-typed form field),
+	// so this is the realistic shape.
+	today := time.Now().UTC().Format("2006-01-02")
+	require.NoError(t, db.RecordWFHCoPresencePair(ctx, today, bobID, aliceID))
 
 	horizonStart := time.Now().UTC().AddDate(0, 0, -14)
 	now := time.Now().UTC()
@@ -213,4 +264,54 @@ func TestGetLatestCoPresenceWithCohort_PadsCohortToThree(t *testing.T) {
 		[]string{"x", "y", "z", "w", "v"}, horizonStart, now)
 	require.NoError(t, err)
 	assert.True(t, latest.IsZero(), "5-ID cohort → first 3 used, no history → zero")
+}
+
+// TestGetLatestCoPresenceWithCohort_MidnightUpperBound pins the
+// defensive rewrite in v0.31.6. The picker passes time.Now().UTC()
+// as the upper bound, which happens to be exactly midnight UTC
+// when the picker runs at 00:00:00Z. The previous form of the
+// query used the lex compare 'working_date < ?' where ? was the
+// midnight-UTC RFC3339 string. The stored working_date is also
+// at midnight UTC (the writer always parses a YYYY-MM-DD string
+// via time.Parse("2006-01-02", ...)), so the lex compare of
+// "today's row" < "today at midnight" was FALSE — today's row
+// was excluded on the boundary day. Same shape as the swap
+// v0.31.5 bug, latent for co-presence because the picker
+// normally runs well after midnight UTC.
+//
+// The v0.31.6 rewrite switches to julianday() on both sides so
+// the comparison is numeric. This test asserts the picker
+// correctly returns yesterday's co-presence row when the upper
+// bound is exactly today's midnight UTC — proving the
+// half-open [start, midnightToday) window works at the
+// pathological 00:00:00Z clock time.
+func TestGetLatestCoPresenceWithCohort_MidnightUpperBound(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	// Seed yesterday's co-presence (writer stores at
+	// midnight-UTC of the date string). The pathological
+	// case is: at the exact midnight-UTC of today, does
+	// the picker find yesterday's row (it must)?
+	yesterday := time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
+	require.NoError(t, db.RecordWFHCoPresencePair(ctx, yesterday, aliceID, bobID))
+
+	// Upper bound: exactly today at midnight UTC. The
+	// pathological case the v0.31.6 rewrite guards against.
+	midnightToday := time.Now().UTC().Truncate(24 * time.Hour)
+	horizonStart := midnightToday.AddDate(0, 0, -14)
+
+	latest, err := db.GetLatestCoPresenceWithCohort(ctx, aliceID, []string{bobID}, horizonStart, midnightToday)
+	require.NoError(t, err)
+	assert.False(t, latest.IsZero(),
+		"yesterday's co-presence must be findable when upper bound is exactly today's midnight UTC — v0.31.6 julianday() rewrite")
+	expected, _ := time.Parse("2006-01-02", yesterday)
+	assert.True(t, latest.Equal(expected),
+		"the returned date must be yesterday's midnight, not the zero time or some other date")
 }

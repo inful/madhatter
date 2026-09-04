@@ -203,7 +203,7 @@ type Querier interface {
 	MarkOutboxDead(ctx context.Context, arg MarkOutboxDeadParams) (sql.Result, error)
 	MarkOutboxFailed(ctx context.Context, arg MarkOutboxFailedParams) (sql.Result, error)
 	MarkOutboxSent(ctx context.Context, id string) (sql.Result, error)
-	PruneCoPresenceOlderThan(ctx context.Context, workingDate time.Time) (sql.Result, error)
+	PruneCoPresenceOlderThan(ctx context.Context, julianday interface{}) (sql.Result, error)
 	PurgeWFHRequestsBefore(ctx context.Context, julianday interface{}) (sql.Result, error)
 	ReactivateUser(ctx context.Context, id string) (User, error)
 	RecordWFHCoPresencePair(ctx context.Context, arg RecordWFHCoPresencePairParams) (sql.Result, error)

@@ -14,27 +14,27 @@ import (
 const getLatestCoPresenceWithCohortA = `-- name: GetLatestCoPresenceWithCohortA :many
 SELECT working_date
 FROM wfh_co_presence
-WHERE working_date >= ?
-  AND working_date < ?
+WHERE julianday(working_date) >= julianday(?)
+  AND julianday(working_date) < julianday(?)
   AND member_id_a = ?
   AND member_id_b IN (?, ?, ?)
-ORDER BY working_date DESC
+ORDER BY julianday(working_date) DESC
 LIMIT 1
 `
 
 type GetLatestCoPresenceWithCohortAParams struct {
-	WorkingDate   time.Time `json:"working_date"`
-	WorkingDate_2 time.Time `json:"working_date_2"`
-	MemberIDA     string    `json:"member_id_a"`
-	MemberIDB     string    `json:"member_id_b"`
-	MemberIDB_2   string    `json:"member_id_b_2"`
-	MemberIDB_3   string    `json:"member_id_b_3"`
+	Julianday   interface{} `json:"julianday"`
+	Julianday_2 interface{} `json:"julianday_2"`
+	MemberIDA   string      `json:"member_id_a"`
+	MemberIDB   string      `json:"member_id_b"`
+	MemberIDB_2 string      `json:"member_id_b_2"`
+	MemberIDB_3 string      `json:"member_id_b_3"`
 }
 
 func (q *Queries) GetLatestCoPresenceWithCohortA(ctx context.Context, arg GetLatestCoPresenceWithCohortAParams) ([]time.Time, error) {
 	rows, err := q.db.QueryContext(ctx, getLatestCoPresenceWithCohortA,
-		arg.WorkingDate,
-		arg.WorkingDate_2,
+		arg.Julianday,
+		arg.Julianday_2,
 		arg.MemberIDA,
 		arg.MemberIDB,
 		arg.MemberIDB_2,
@@ -64,27 +64,27 @@ func (q *Queries) GetLatestCoPresenceWithCohortA(ctx context.Context, arg GetLat
 const getLatestCoPresenceWithCohortB = `-- name: GetLatestCoPresenceWithCohortB :many
 SELECT working_date
 FROM wfh_co_presence
-WHERE working_date >= ?
-  AND working_date < ?
+WHERE julianday(working_date) >= julianday(?)
+  AND julianday(working_date) < julianday(?)
   AND member_id_b = ?
   AND member_id_a IN (?, ?, ?)
-ORDER BY working_date DESC
+ORDER BY julianday(working_date) DESC
 LIMIT 1
 `
 
 type GetLatestCoPresenceWithCohortBParams struct {
-	WorkingDate   time.Time `json:"working_date"`
-	WorkingDate_2 time.Time `json:"working_date_2"`
-	MemberIDB     string    `json:"member_id_b"`
-	MemberIDA     string    `json:"member_id_a"`
-	MemberIDA_2   string    `json:"member_id_a_2"`
-	MemberIDA_3   string    `json:"member_id_a_3"`
+	Julianday   interface{} `json:"julianday"`
+	Julianday_2 interface{} `json:"julianday_2"`
+	MemberIDB   string      `json:"member_id_b"`
+	MemberIDA   string      `json:"member_id_a"`
+	MemberIDA_2 string      `json:"member_id_a_2"`
+	MemberIDA_3 string      `json:"member_id_a_3"`
 }
 
 func (q *Queries) GetLatestCoPresenceWithCohortB(ctx context.Context, arg GetLatestCoPresenceWithCohortBParams) ([]time.Time, error) {
 	rows, err := q.db.QueryContext(ctx, getLatestCoPresenceWithCohortB,
-		arg.WorkingDate,
-		arg.WorkingDate_2,
+		arg.Julianday,
+		arg.Julianday_2,
 		arg.MemberIDB,
 		arg.MemberIDA,
 		arg.MemberIDA_2,
@@ -112,11 +112,11 @@ func (q *Queries) GetLatestCoPresenceWithCohortB(ctx context.Context, arg GetLat
 }
 
 const pruneCoPresenceOlderThan = `-- name: PruneCoPresenceOlderThan :execresult
-DELETE FROM wfh_co_presence WHERE working_date < ?
+DELETE FROM wfh_co_presence WHERE julianday(working_date) < julianday(?)
 `
 
-func (q *Queries) PruneCoPresenceOlderThan(ctx context.Context, workingDate time.Time) (sql.Result, error) {
-	return q.db.ExecContext(ctx, pruneCoPresenceOlderThan, workingDate)
+func (q *Queries) PruneCoPresenceOlderThan(ctx context.Context, julianday interface{}) (sql.Result, error) {
+	return q.db.ExecContext(ctx, pruneCoPresenceOlderThan, julianday)
 }
 
 const recordWFHCoPresencePair = `-- name: RecordWFHCoPresencePair :execresult

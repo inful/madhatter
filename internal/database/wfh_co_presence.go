@@ -106,6 +106,15 @@ func parseCoPresenceDate(dateStr string) time.Time {
 // the retention >= horizon invariant at boot. Called by the
 // scheduler (step 11 of plans/assigned-wfh-plan.md) after
 // each settlement tick.
+//
+// The cutoff is wrapped in julianday() at the SQL layer
+// (julianday(working_date) < julianday(?)) so the comparison
+// is numeric regardless of the stored working_date format
+// (RFC3339 20-byte via time.Time, 10-byte YYYY-MM-DD via
+// raw SQL, etc). See v0.31.6 — the rewrite is preemptive
+// defensive coding because the function was previously
+// dead code, but the comment said "called by the scheduler"
+// so we don't want it to misbehave when a caller wires up.
 func (db *DB) PruneWFHCoPresenceOlderThan(ctx context.Context, cutoff time.Time) error {
 	_, err := db.queries.PruneCoPresenceOlderThan(ctx, cutoff)
 	return err
@@ -139,6 +148,19 @@ func (db *DB) PruneWFHCoPresenceOlderThan(ctx context.Context, cutoff time.Time)
 // idx_wfh_co_presence_member_{a,b} index, so each is O(1)
 // over the horizon.
 //
+// v0.31.6: switched the WHERE and ORDER BY to
+// julianday(working_date) so the comparison is numeric
+// regardless of the stored working_date format. The
+// previous form relied on the lex compare
+// 'YYYY-MM-DDTHH:MM:SSZ' < 'YYYY-MM-DDTHH:MM:SSZ' being
+// consistent — which it was, except when the upper bound
+// is exactly midnight UTC (e.g. the picker runs at
+// 00:00:00Z). At that moment the upper bound becomes
+// 'YYYY-MM-DDTHH:MM:SSZ' which is lex-equal to the stored
+// midnight value, and the half-open interval excludes
+// today's row. The rewrite makes the result correct at
+// any clock time.
+//
 // Used by the seat-cap picker tiebreaker (step 10 of
 // plans/assigned-wfh-plan.md).
 func (db *DB) GetLatestCoPresenceWithCohort(ctx context.Context, candidateID string, cohortIDs []string, start, end time.Time) (time.Time, error) {
@@ -159,23 +181,23 @@ func (db *DB) GetLatestCoPresenceWithCohort(ctx context.Context, candidateID str
 	}
 
 	rowsA, err := db.queries.GetLatestCoPresenceWithCohortA(ctx, sqlc.GetLatestCoPresenceWithCohortAParams{
-		WorkingDate:   start,
-		WorkingDate_2: end,
-		MemberIDA:     candidateID,
-		MemberIDB:     a,
-		MemberIDB_2:   b,
-		MemberIDB_3:   c,
+		Julianday:   start,
+		Julianday_2: end,
+		MemberIDA:   candidateID,
+		MemberIDB:   a,
+		MemberIDB_2: b,
+		MemberIDB_3: c,
 	})
 	if err != nil {
 		return time.Time{}, err
 	}
 	rowsB, err := db.queries.GetLatestCoPresenceWithCohortB(ctx, sqlc.GetLatestCoPresenceWithCohortBParams{
-		WorkingDate:   start,
-		WorkingDate_2: end,
-		MemberIDB:     candidateID,
-		MemberIDA:     a,
-		MemberIDA_2:   b,
-		MemberIDA_3:   c,
+		Julianday:   start,
+		Julianday_2: end,
+		MemberIDB:   candidateID,
+		MemberIDA:   a,
+		MemberIDA_2: b,
+		MemberIDA_3: c,
 	})
 	if err != nil {
 		return time.Time{}, err

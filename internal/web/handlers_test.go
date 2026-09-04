@@ -1770,6 +1770,102 @@ func TestWFHRequestForm_JSApplyDefaultsToEnabledWhenNoBanner(t *testing.T) {
 		"the apply() default branch must clear the help text when no banner matches")
 }
 
+// TestWFHRequestForm_SubmitButtonEnabledWhenQuotaExhausted pins
+// the user-visible behavior: the "+ Request WFH Day" submit
+// button must render enabled even when today's period quota is
+// exhausted. The user may still want to pick a future date, and
+// the server-side CheckQuota is the authoritative guard for
+// over-cap requests — the form simply lets them submit and
+// surfaces the friendly error message if the chosen date's
+// period is also over quota.
+//
+// Only the holiday check should disable the button at render
+// time; quota exhaustion is a per-period condition that the user
+// can sidestep by picking a different date or future period.
+func TestWFHRequestForm_SubmitButtonEnabledWhenQuotaExhausted(t *testing.T) {
+	mockDB := &database.DB{}
+	handler, err := NewHandler(mockDB, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	data := map[string]any{
+		"User":           map[string]any{"Email": "alice@example.com", "Name": "Alice"},
+		"IsAdmin":        false,
+		"Template":       "wfh_request",
+		"Today":          "2026-09-04",
+		"SelectedDate":   "2026-09-04",
+		"MaxRequestDate": "2026-11-30",
+		"Quota": map[string]any{
+			"PeriodStart": "2026-08-31",
+			"PeriodEnd":   "2026-09-06",
+			"Used":        2,
+			"Remaining":   0,
+		},
+		"QuotaExhausted":        true,
+		"SelectedDateIsHoliday": false,
+	}
+
+	w := httptest.NewRecorder()
+	require.NoError(t, handler.tmpl.ExecuteTemplate(w, "wfh_request.html", data))
+	body := w.Body.String()
+
+	// Find the submit button line and assert it does NOT carry
+	// the disabled attribute. The template renders the button
+	// as <button id="wfh-submit" type="submit" class="..." >
+	// (no disabled) when the only condition in the disable
+	// expression (SelectedDateIsHoliday) is false.
+	const btnMarker = `id="wfh-submit" type="submit"`
+	idx := strings.Index(body, btnMarker)
+	require.GreaterOrEqual(t, idx, 0, "wfh-submit button must render")
+	// Look at the surrounding tag opening; assert no disabled
+	// attribute up to the closing '>'.
+	endIdx := strings.Index(body[idx:], ">")
+	require.GreaterOrEqual(t, endIdx, 0)
+	opening := body[idx : idx+endIdx+1]
+	assert.NotContains(t, opening, "disabled",
+		"the submit button must render without the disabled attribute when quota is exhausted but the date is not a holiday")
+}
+
+// TestWFHRequestForm_SubmitButtonDisabledOnHoliday pins the
+// other half of the disable contract: when the picked date is a
+// holiday, the button stays disabled because the form will
+// reject the request anyway. Quota exhaustion is no longer part
+// of the disable condition — only the holiday check.
+func TestWFHRequestForm_SubmitButtonDisabledOnHoliday(t *testing.T) {
+	mockDB := &database.DB{}
+	handler, err := NewHandler(mockDB, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	data := map[string]any{
+		"User":           map[string]any{"Email": "alice@example.com", "Name": "Alice"},
+		"IsAdmin":        false,
+		"Template":       "wfh_request",
+		"Today":          "2026-09-04",
+		"SelectedDate":   "2026-12-25",
+		"MaxRequestDate": "2026-11-30",
+		"Quota": map[string]any{
+			"PeriodStart": "2026-08-31",
+			"PeriodEnd":   "2026-09-06",
+			"Used":        0,
+			"Remaining":   2,
+		},
+		"QuotaExhausted":        false,
+		"SelectedDateIsHoliday": true,
+	}
+
+	w := httptest.NewRecorder()
+	require.NoError(t, handler.tmpl.ExecuteTemplate(w, "wfh_request.html", data))
+	body := w.Body.String()
+
+	const btnMarker = `id="wfh-submit" type="submit"`
+	idx := strings.Index(body, btnMarker)
+	require.GreaterOrEqual(t, idx, 0, "wfh-submit button must render")
+	endIdx := strings.Index(body[idx:], ">")
+	require.GreaterOrEqual(t, endIdx, 0)
+	opening := body[idx : idx+endIdx+1]
+	assert.Contains(t, opening, "disabled",
+		"the submit button must render with the disabled attribute when the selected date is a holiday")
+}
+
 // TestDashboard_ChairsRow_RendersAtUnderAndOverCap is the
 // HTML-level regression test for the ass/chair ratio row on the
 // Today card. The unit-level TestLoadChairsData_* tests pin

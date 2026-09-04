@@ -825,13 +825,18 @@ func TestRenderWFHRequestForm_NextPeriodBannerActiveWhenQueryParamDateIsInNextPe
 		"submit must be enabled when the selected date's period has unused quota")
 }
 
-// TestRenderWFHRequestForm_SubmitDisabledWhenCurrentPeriodExhausted pins
-// the disabled state: when the user has 0 remaining in the current
-// period AND the selected date is in the current period, the submit
-// button must be disabled at render time. The server-side CheckQuota
-// would also reject — but the disable prevents the wasted round-trip
-// and the confusing "you have no tokens anywhere" message.
-func TestRenderWFHRequestForm_SubmitDisabledWhenCurrentPeriodExhausted(t *testing.T) {
+// TestRenderWFHRequestForm_SubmitStaysEnabledWhenCurrentPeriodExhausted
+// pins the new contract: when the user has 0 remaining in the
+// current period, the submit button must still render enabled so
+// they can pick a future date. Server-side CheckQuota is the
+// authoritative guard for over-cap requests — the form simply
+// lets them submit and surfaces the friendly error if the
+// chosen date's period is also over quota.
+//
+// Only the holiday check disables the button at render time;
+// quota exhaustion is a per-period condition the user can
+// sidestep by picking a different date.
+func TestRenderWFHRequestForm_SubmitStaysEnabledWhenCurrentPeriodExhausted(t *testing.T) {
 	ctx := context.Background()
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
@@ -869,12 +874,20 @@ func TestRenderWFHRequestForm_SubmitDisabledWhenCurrentPeriodExhausted(t *testin
 		map[string]any{"Template": "wfh_request"}, memberID, "", "")
 	out := rr.Body.String()
 
-	require.Regexp(t, `id="wfh-submit"[^>]*disabled`,
-		out, "submit must be disabled when the user has 0 remaining in the current period")
+	// The submit button must render WITHOUT the disabled attribute
+	// even when today's quota is exhausted. Match the opening tag
+	// up to the '>' and assert no disabled keyword inside.
+	btnIdx := strings.Index(out, `id="wfh-submit" type="submit"`)
+	require.GreaterOrEqual(t, btnIdx, 0, "wfh-submit button must render")
+	endIdx := strings.Index(out[btnIdx:], ">")
+	require.GreaterOrEqual(t, endIdx, 0)
+	opening := out[btnIdx : btnIdx+endIdx+1]
+	assert.NotContains(t, opening, "disabled",
+		"submit must render enabled when current-period quota is exhausted; server-side CheckQuota is the authoritative guard for over-cap requests")
 
-	// The current-period banner must show 0 remaining — confirms the
-	// quota data wired through to the template, not just the disabled
-	// attribute being hard-coded.
+	// The current-period banner must still report 0 remaining —
+	// confirms the quota data is wired through to the template,
+	// not just the disabled attribute being hard-coded.
 	require.Regexp(t,
 		`id="wfh-period-today"[^>]*data-remaining="0"`,
 		out, "current-period banner must report data-remaining=0")

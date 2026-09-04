@@ -154,7 +154,7 @@
             <div class="field is-grouped mt-4">
                 <div class="control">
                     <button id="wfh-submit" type="submit" class="button is-primary"
-                        {{if or .QuotaExhausted .SelectedDateIsHoliday}}disabled{{end}}>
+                        {{if .SelectedDateIsHoliday}}disabled{{end}}>
                         <span class="icon"><i class="fas fa-paper-plane"></i></span>
                         <span>Submit Request</span>
                     </button>

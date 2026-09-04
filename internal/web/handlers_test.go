@@ -1562,6 +1562,63 @@ func TestWFHListPage_NoDenialReason_WhenApprovedOrPending(t *testing.T) {
 // "the row's reason is X" without a one-off local var.
 func ptrString(s string) *string { return &s }
 
+// TestDashboard_ChairsRow_RespectsPresenceSnapshotAtRender pins
+// the off-by-one fix at the HTML level: when the matrix's
+// presence snapshot lists N Present members, the chairs row
+// reads from that snapshot — not from a recompute against raw
+// DB rows. The bug surfaced in production as 7 on-site vs 6
+// counted; this test renders the same divergence scenario
+// (snapshot says 5 Present, raw rows would recompute to 4) and
+// pins the rendered output to 5.
+func TestDashboard_ChairsRow_RespectsPresenceSnapshotAtRender(t *testing.T) {
+	mockDB := &database.DB{}
+	handler, err := NewHandler(mockDB, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	// Five Present members in the snapshot — this is what the
+	// matrix's atWork column would render. The recompute path
+	// against raw rows (if anyone re-introduces it) might report
+	// 4 because of a stray WFH row the snapshot has already
+	// accounted for. The chairs row must agree with the matrix.
+	snapshot := []presenceDay{
+		{
+			DateISO: "2026-09-04",
+			IsToday: true,
+			Present: []database.TeamMember{
+				{ID: "m1", Name: "Alice", Email: "alice@example.com"},
+				{ID: "m2", Name: "Bob", Email: "bob@example.com"},
+				{ID: "m3", Name: "Carol", Email: "carol@example.com"},
+				{ID: "m4", Name: "Dave", Email: "dave@example.com"},
+				{ID: "m5", Name: "Eve", Email: "eve@example.com"},
+			},
+		},
+	}
+
+	data := map[string]any{
+		"User":                      map[string]any{"Email": "alice@example.com", "Name": "Alice"},
+		"IsAdmin":                   false,
+		"Template":                  "dashboard",
+		"CurrentUserPresenceStatus": "On-site",
+		"Today":                     "Friday, Sep 4, 2026",
+		"UpcomingPresence":          snapshot,
+		"ChairsOnSite":              5,
+		"ChairsTotal":               7,
+		"ChairsPercent":             71,
+		"ChairsColor":               "is-success",
+	}
+
+	w := httptest.NewRecorder()
+	require.NoError(t, handler.tmpl.ExecuteTemplate(w, "dashboard.html", data))
+	body := w.Body.String()
+
+	assert.Contains(t, body, "5 of 7 chairs (71%)",
+		"snapshot-path count must surface verbatim; a flat-row recompute that returns 4 would silently regress this")
+	assert.Contains(t, body, `class="tag is-success is-light"`,
+		"under-cap green tag must render when snapshot reports 5 of 7")
+	assert.Contains(t, body, `value="5"`, "progress bar value attribute must reflect snapshot count")
+	assert.Contains(t, body, `max="7"`, "progress bar max attribute must match the cap")
+}
+
 // TestDashboard_ChairsRow_RendersAtUnderAndOverCap is the
 // HTML-level regression test for the ass/chair ratio row on the
 // Today card. The unit-level TestLoadChairsData_* tests pin

@@ -518,6 +518,20 @@ func (h *Handler) wfhFloor(ctx context.Context) int {
 // already computes in the background but that users had no
 // at-a-glance way to see.
 //
+// Source of truth: the schedule matrix's presence snapshot
+// (data["UpcomingPresence"]). The matrix already accounts for
+// schedule assignments, leave, WFH, covers, exemptions, and
+// weekday filtering — recomputing those inputs from raw DB rows
+// drifts whenever the matrix uses an input we don't (e.g.
+// cover-assignments flip the at-work count on a leave day).
+// Using the snapshot's Present count guarantees the chairs row
+// can never disagree with the matrix's at-work figure.
+//
+// Fallback: when the presence snapshot is empty (test fixtures
+// with no business-day setup, or no team members at all) we
+// recompute on-site = activeMembers − onLeave − wfhToday. This
+// path is defensive — the matrix is the canonical source.
+//
 // Behavior matrix:
 //   - Service unconfigured OR cap <= 0 → no data fields set; the
 //     template suppresses the row. (The picker is a no-op in this
@@ -526,18 +540,24 @@ func (h *Handler) wfhFloor(ctx context.Context) int {
 //     ChairsColor (the Bulma tag class — is-success / is-warning /
 //     is-danger — picked from the percent band).
 //
-// The math: on-site = active members minus those on leave or
-// WFH today. Leave rows in rejected/denied state are stale and
-// ignored; WFH rows in non-approved status (pending, withdrawn)
-// don't occupy a chair yet. A negative result (transient race
-// during settlement) clamps to zero so the bar doesn't render
-// backwards.
+// Math (snapshot path): onSite = len(presence[0].Present).
+// Math (recompute fallback): onSite = max(0, activeMembers −
+// onLeave − wfhToday), where stale states (rejected/denied leave,
+// pending/withdrawn WFH) are excluded. A negative result
+// clamps to zero so the bar doesn't render backwards.
 func (h *Handler) loadChairsData(ctx context.Context, data map[string]any, today string) {
 	seatCap, ok := h.chairsSeatCap()
 	if !ok {
 		return
 	}
 
+	if onSite, snapshotOK := onSiteFromPresenceSnapshot(data); snapshotOK {
+		h.writeChairsFields(data, onSite, seatCap)
+		return
+	}
+
+	// Fallback: snapshot is empty (test fixture or no business
+	// day / no team members). Recompute from raw rows.
 	members, err := h.db.GetActiveTeamMembers(ctx)
 	if err != nil || len(members) == 0 {
 		return
@@ -547,7 +567,28 @@ func (h *Handler) loadChairsData(ctx context.Context, data map[string]any, today
 	wfhToday, _ := h.countApprovedWFHToday(ctx, today)
 
 	onSite := max(0, len(members)-onLeave-wfhToday)
+	h.writeChairsFields(data, onSite, seatCap)
+}
 
+// onSiteFromPresenceSnapshot returns today's on-site headcount
+// from the schedule matrix's presence snapshot. The bool
+// reports whether the snapshot was usable: true means a business
+// day with active members existed and we have a canonical
+// answer; false means the snapshot is empty and the caller
+// should fall back to the recompute path.
+func onSiteFromPresenceSnapshot(data map[string]any) (int, bool) {
+	rawPresence, ok := data["UpcomingPresence"].([]presenceDay)
+	if !ok || len(rawPresence) == 0 {
+		return 0, false
+	}
+	return len(rawPresence[0].Present), true
+}
+
+// writeChairsFields sets the four template fields and applies
+// the percent clamp + color-band mapping. Extracted so both
+// the snapshot path and the recompute fallback share the same
+// formatting logic.
+func (h *Handler) writeChairsFields(data map[string]any, onSite, seatCap int) {
 	percent := clampPercent((onSite * chairsPercentMultiplier) / seatCap)
 	color := chairsColorForPercent(percent)
 

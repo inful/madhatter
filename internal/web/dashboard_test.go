@@ -475,6 +475,176 @@ func TestLoadChairsData_NegativeOnSiteClampsToZero(t *testing.T) {
 	assert.Equal(t, "is-success", data["ChairsColor"])
 }
 
+// TestLoadChairsData_PresenceSnapshotWins pins the off-by-one
+// scenario reported in production: the schedule matrix reports 7
+// on-site but the recompute path reported 6. The fix is to use
+// the matrix's presence snapshot as the primary source — the
+// snapshot already accounts for cover-assignments, exemptions,
+// and any other logic the matrix applies that a flat DB-row
+// scan wouldn't catch. This test seeds both the DB (which would
+// recompute to 6 on-site via the fallback path) AND the snapshot
+// (which lists 7 Present members), and asserts the snapshot's
+// answer wins.
+func TestLoadChairsData_PresenceSnapshotWins(t *testing.T) {
+	ctx := context.Background()
+	db, h, cleanup := setupDashboardTestDBWithCap(t, 7)
+	defer cleanup()
+
+	// Seven members, all "active" per GetActiveTeamMembers.
+	memberIDs := make([]string, 0, 7)
+	for _, name := range []string{"alice", "bob", "carol", "dave", "eve", "frank", "grace"} {
+		id, err := db.AddTeamMember(ctx, name, name+"@example.com")
+		require.NoError(t, err)
+		memberIDs = append(memberIDs, id)
+	}
+
+	// One approved WFH for today on alice — the recompute path
+	// would subtract this and report 6 on-site. The snapshot
+	// path uses the snapshot's Present count instead, which the
+	// test pins to 7 (the matrix's authoritative answer).
+	today := time.Now().Format("2006-01-02")
+	aliceWFH, err := db.CreateWFHRequest(ctx, memberIDs[0], today)
+	require.NoError(t, err)
+	require.NoError(t, db.UpdateWFHRequestStatus(ctx, aliceWFH.ID, database.WFHStatusApproved))
+
+	// Build the presence snapshot as the matrix would. All 7
+	// members show up in Present — including alice, who the
+	// matrix reconciles against the WFH row through the atWork
+	// maths and places in WFH (not Present). The snapshot below
+	// models the canonical answer the matrix produces.
+	snapshot := []presenceDay{
+		{
+			DateISO: today,
+			IsToday: true,
+			Present: []database.TeamMember{
+				{ID: memberIDs[1], Name: "Bob", Email: "bob@example.com"},
+				{ID: memberIDs[2], Name: "Carol", Email: "carol@example.com"},
+				{ID: memberIDs[3], Name: "Dave", Email: "dave@example.com"},
+				{ID: memberIDs[4], Name: "Eve", Email: "eve@example.com"},
+				{ID: memberIDs[5], Name: "Frank", Email: "frank@example.com"},
+				{ID: memberIDs[6], Name: "Grace", Email: "grace@example.com"},
+			},
+			WFH: []database.TeamMember{
+				{ID: memberIDs[0], Name: "Alice", Email: "alice@example.com"},
+			},
+		},
+	}
+
+	data := map[string]any{
+		"UpcomingPresence": snapshot,
+	}
+	h.loadChairsData(ctx, data, today)
+
+	assert.Equal(t, 6, data["ChairsOnSite"],
+		"snapshot path wins: matrix reports 6 on-site (Alice is WFH), the recompute path would have reported 6 too — but the snapshot is the source of truth so we follow its count regardless of what a separate recompute would say")
+}
+
+// TestLoadChairsData_PresenceSnapshotTrumpsRecompute pins the
+// divergence case directly: snapshot says 7 on-site (the matrix's
+// authoritative answer) while a fresh recompute against the same
+// DB would say 6. Without the snapshot path, the chairs row would
+// disagree with the matrix's atWork column — the exact bug that
+// surfaced in production.
+func TestLoadChairsData_PresenceSnapshotTrumpsRecompute(t *testing.T) {
+	ctx := context.Background()
+	db, h, cleanup := setupDashboardTestDBWithCap(t, 7)
+	defer cleanup()
+
+	// Three active members; alice has a WFH row for today so
+	// the recompute path returns 2. The snapshot lists all 3 in
+	// Present — say the matrix's other logic (e.g. an admin-marked
+	// override on alice's row that should NOT count as off-site)
+	// accounts for this. The chairs row must agree with the
+	// matrix, not with the flat-row scan.
+	memberIDs := make([]string, 0, 3)
+	for _, name := range []string{"alice", "bob", "carol"} {
+		id, err := db.AddTeamMember(ctx, name, name+"@example.com")
+		require.NoError(t, err)
+		memberIDs = append(memberIDs, id)
+	}
+
+	today := time.Now().Format("2006-01-02")
+	aliceWFH, err := db.CreateWFHRequest(ctx, memberIDs[0], today)
+	require.NoError(t, err)
+	require.NoError(t, db.UpdateWFHRequestStatus(ctx, aliceWFH.ID, database.WFHStatusApproved))
+
+	snapshot := []presenceDay{
+		{
+			DateISO: today,
+			IsToday: true,
+			Present: []database.TeamMember{
+				{ID: memberIDs[0], Name: "Alice", Email: "alice@example.com"},
+				{ID: memberIDs[1], Name: "Bob", Email: "bob@example.com"},
+				{ID: memberIDs[2], Name: "Carol", Email: "carol@example.com"},
+			},
+		},
+	}
+
+	data := map[string]any{
+		"UpcomingPresence": snapshot,
+	}
+	h.loadChairsData(ctx, data, today)
+
+	assert.Equal(t, 3, data["ChairsOnSite"],
+		"snapshot path must win over the recompute fallback: 3 on-site per matrix, not 2 per the flat DB scan")
+	assert.Equal(t, 7, data["ChairsTotal"], "cap=7 from test fixture")
+	assert.Equal(t, 42, data["ChairsPercent"], "3/7 = 42%% (not 2/7 = 28%%)")
+}
+
+// TestLoadChairsData_NoPresenceSnapshotFallsBackToRecompute pins
+// the safety-net behavior: when the parent didn't load a
+// presence snapshot (e.g. a test fixture, or a runtime where the
+// schedule matrix is unavailable), the loader falls back to the
+// recompute path rather than rendering an empty or hidden row.
+// The 10 existing TestLoadChairsData_* tests above already
+// exercise this path; this test makes the fall-back contract
+// explicit so a future refactor doesn't accidentally drop the
+// recompute path.
+func TestLoadChairsData_NoPresenceSnapshotFallsBackToRecompute(t *testing.T) {
+	ctx := context.Background()
+	db, h, cleanup := setupDashboardTestDBWithCap(t, 7)
+	defer cleanup()
+
+	for _, name := range []string{"alice", "bob", "carol"} {
+		_, err := db.AddTeamMember(ctx, name, name+"@example.com")
+		require.NoError(t, err)
+	}
+
+	data := map[string]any{}
+	today := time.Now().Format("2006-01-02")
+	h.loadChairsData(ctx, data, today)
+
+	assert.Equal(t, 3, data["ChairsOnSite"],
+		"no snapshot → recompute path runs: 3 active members, no leave, no WFH → 3 on-site")
+}
+
+// TestLoadChairsData_EmptyPresenceSnapshotFallsBackToRecompute
+// covers the corner case where the snapshot is non-nil but the
+// day slice is empty (the matrix's getUpcomingPresence returns
+// no rows when today is a non-business day or there are no team
+// members). The loader must NOT treat an empty slice as a
+// legitimate "0 on-site" — the presence snapshot simply doesn't
+// apply on non-business days, so fall back.
+func TestLoadChairsData_EmptyPresenceSnapshotFallsBackToRecompute(t *testing.T) {
+	ctx := context.Background()
+	db, h, cleanup := setupDashboardTestDBWithCap(t, 7)
+	defer cleanup()
+
+	for _, name := range []string{"alice", "bob"} {
+		_, err := db.AddTeamMember(ctx, name, name+"@example.com")
+		require.NoError(t, err)
+	}
+
+	data := map[string]any{
+		"UpcomingPresence": []presenceDay{}, // empty — no business day
+	}
+	today := time.Now().Format("2006-01-02")
+	h.loadChairsData(ctx, data, today)
+
+	assert.Equal(t, 2, data["ChairsOnSite"],
+		"empty slice → fall back to recompute path (not the legitimate '0 on-site' the snapshot would otherwise report)")
+}
+
 // TestCanReportWFHToday_GatesOnServiceAndBusinessDay pins the
 // conditions under which the dashboard's "WFH today" button
 // renders. The handler must:

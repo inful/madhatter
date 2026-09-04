@@ -678,6 +678,15 @@ func TestReportWFHTodayEndpoint_QuotaExhaustedReturns422(t *testing.T) {
 	// is enough to exhaust the quota deterministically.
 	t.Setenv("WFH_MAX_DAYS_PER_PERIOD", "1")
 
+	// Widen the period to 14 days so the period always contains a
+	// future weekday regardless of which weekday today lands on.
+	// With the production 7-day period, today=Friday (period ends
+	// Saturday) has no future weekday inside the period and the
+	// burn loop below fails its `require.True(burned)` assertion.
+	// 14 days is enough to span any two consecutive weekdays across
+	// every day-of-week case.
+	t.Setenv("WFH_PERIOD_DAYS", "14")
+
 	server, cleanup := setupTestServer(t)
 	defer cleanup()
 

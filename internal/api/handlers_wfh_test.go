@@ -109,12 +109,18 @@ func TestWFHAPI_ListExposesOriginField(t *testing.T) {
 	// default empty origin (self-requested shape) and one with
 	// Origin="assigned" seeded via raw SQL so the test can pin
 	// that non-empty values pass through verbatim, not just
-	// structurally present.
-	adHocDate := testutil.NextBusinessDay(time.Now().UTC().AddDate(0, 0, 1)).Format("2006-01-02")
+	// structurally present. Use testutil.NextBusinessDays so the
+	// two dates are guaranteed distinct across every weekday —
+	// NextBusinessDay(today+K) collapses to the same Monday when
+	// today is Friday and K crosses the weekend.
+	dates := testutil.NextBusinessDays(time.Now().UTC(), 2)
+	require.GreaterOrEqual(t, len(dates), 2,
+		"need at least two distinct future business days; today=%s", time.Now().UTC().Format("2006-01-02"))
+	adHocDate := dates[0].Format("2006-01-02")
 	_, err = server.db.CreateWFHRequest(ctx, memberID, adHocDate)
 	require.NoError(t, err)
 
-	assignedDate := testutil.NextBusinessDay(time.Now().UTC().AddDate(0, 0, 2)).Format("2006-01-02")
+	assignedDate := dates[1].Format("2006-01-02")
 	assignedID, err := server.db.CreateWFHRequest(ctx, memberID, assignedDate)
 	require.NoError(t, err)
 	// Promote the row to Origin="assigned" via raw SQL — there is

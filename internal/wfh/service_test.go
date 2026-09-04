@@ -50,15 +50,25 @@ func setupWFHTestDB(t *testing.T) (*database.DB, func()) {
 	return db, cleanup
 }
 
+// testConfig returns the test fixture Config used by the bulk of
+// the wfh-package tests. The PeriodDays is bumped to 14 (vs. the
+// production default of 7) so quota-period math survives the
+// Friday edge case: with a 7-day period ending on Saturday,
+// Friday has no future weekday inside the period — every
+// test that picks "next business day" as a future target date
+// would land in the NEXT period (where today's existing WFH rows
+// don't count toward the new period's quota math). 14-day
+// periods keep today and the next business day reliably in the
+// same period across every weekday.
 func testConfig() Config {
 	return Config{
 		Enabled:             true,
 		MinOnsitePercentage: 50,
 		MinOnsiteAbsolute:   1,
 		MaxDaysPerPeriod:    2,
-		PeriodDays:          7,
+		PeriodDays:          14,
 		PeriodAnchor:        defaultPeriodAnchor,
-		SettlementDays:      2,
+		SettlementDays:      defaultSettlementDays,
 		RequestHorizonDays:  defaultRequestHorizonDays,
 		PurgeEnabled:        defaultPurgeEnabled,
 	}
@@ -168,14 +178,19 @@ func TestConfigValidate_RetentionMustBeAtLeastHorizon(t *testing.T) {
 func TestComputePeriodBounds_AcrossAnchorBoundaries(t *testing.T) {
 	svc := NewService(nil, testConfig())
 
+	// Anchor is 2026-01-05 (Monday); PeriodDays is 14. So the first
+	// period covers 2026-01-05 .. 2026-01-18, and the period
+	// immediately before it covers 2025-12-22 .. 2026-01-03. The
+	// dates 2026-01-07 (inside the first period) and 2026-01-04
+	// (inside the previous period) pin the boundary arithmetic.
 	start, end, err := svc.ComputePeriodBounds(time.Date(2026, time.January, 7, 12, 0, 0, 0, time.UTC))
 	require.NoError(t, err)
 	assert.Equal(t, "2026-01-05", start.Format("2006-01-02"))
-	assert.Equal(t, "2026-01-11", end.Format("2006-01-02"))
+	assert.Equal(t, "2026-01-18", end.Format("2006-01-02"))
 
 	start, end, err = svc.ComputePeriodBounds(time.Date(2026, time.January, 4, 12, 0, 0, 0, time.UTC))
 	require.NoError(t, err)
-	assert.Equal(t, "2025-12-29", start.Format("2006-01-02"))
+	assert.Equal(t, "2025-12-22", start.Format("2006-01-02"))
 	assert.Equal(t, "2026-01-04", end.Format("2006-01-02"))
 }
 

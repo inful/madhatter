@@ -193,14 +193,6 @@ func (s *Server) setupWFHService(db *database.DB) {
 	}
 }
 
-// SetTokenRateLimiter swaps the default token-bucket rate limiter
-// for the API token endpoints. Tests use this to install a tiny
-// bucket so they can exercise the 429 path quickly. A nil value
-// disables rate limiting on the token routes.
-func (s *Server) SetTokenRateLimiter(limiter *ratelimit.Limiter) {
-	s.tokenRateLimit = limiter
-}
-
 // setupNotifier builds the notification system and wires it into
 // the consumers. In --development mode (or when
 // NOTIFY_EMAIL_ENABLED is false), only a LogChannel is registered;

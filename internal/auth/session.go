@@ -105,11 +105,6 @@ func (sm *SessionManager) DestroySession(ctx context.Context, token string) erro
 	return sm.db.DeleteSession(ctx, tokenHash)
 }
 
-// DestroyUserSessions removes all sessions for a user.
-func (sm *SessionManager) DestroyUserSessions(ctx context.Context, userID string) error {
-	return sm.db.DeleteUserSessions(ctx, userID)
-}
-
 // SetSessionCookie sets the session cookie in the response.
 func (sm *SessionManager) SetSessionCookie(w http.ResponseWriter, token string, secure bool) {
 	cookie := &http.Cookie{ //nolint:gosec // G124 false positive: cookie has all required security attributes (HttpOnly, Secure, SameSite); gosec can't see them on multi-line struct literal

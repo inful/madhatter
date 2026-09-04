@@ -194,14 +194,6 @@ func (h *Handler) SetWFHService(svc *wfh.Service) {
 	h.wfhService = svc
 }
 
-// SetAuthRateLimiter swaps the default auth route rate limiter for
-// the given bucket. Tests use this to install a tiny limit so they
-// can exercise the 429 path quickly. A nil value disables rate
-// limiting on the auth route.
-func (h *Handler) SetAuthRateLimiter(limiter *ratelimit.Limiter) {
-	h.authRateLimiter = limiter
-}
-
 // SetNotifier wires the notification dispatcher. Handlers call into
 // it after state changes that should email a user. nil is treated as
 // "no notifier wired" — handlers tolerate this so tests can omit the

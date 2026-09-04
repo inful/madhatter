@@ -187,35 +187,3 @@ func (c *AuthConfig) Validate() error {
 
 	return nil
 }
-
-// GenerateExampleConfig generates an example configuration file.
-func GenerateExampleConfig() string {
-	return `# Authentication Configuration
-# Copy this to config/auth.yaml and fill in your values
-
-providers:
-  forgejo:
-    client_id: "your-forgejo-client-id"
-    client_secret: "your-forgejo-client-secret"
-    redirect_url: "http://localhost:8080/auth/callback?provider=forgejo"
-    auth_url: "https://git.example.com/login/oauth/authorize"
-    token_url: "https://git.example.com/login/oauth/access_token"
-    user_info_url: "https://git.example.com/api/v1/user"
-    scope: "read:user"
-
-  gitlab:
-    client_id: "your-gitlab-client-id"
-    client_secret: "your-gitlab-client-secret"
-    redirect_url: "http://localhost:8080/auth/callback?provider=gitlab"
-    auth_url: "https://gitlab.com/oauth/authorize"
-    token_url: "https://gitlab.com/oauth/token"
-    user_info_url: "https://gitlab.com/api/v4/user"
-    scope: "read_api read_user"  # read_api required for group membership validation
-    allowed_group: ""  # Optional: Restrict authentication to members of a specific GitLab group (e.g., "myorg/mygroup")
-
-sessions:
-  duration_hours: 24
-  cookie_name: "session_token"
-  secret_key: "generate-a-random-secret-key-here"
-`
-}

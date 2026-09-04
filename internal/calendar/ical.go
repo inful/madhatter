@@ -145,17 +145,6 @@ func (g *ICalGenerator) WithShuffleSeed(string) *ICalGenerator { return g }
 // functions.
 func (g *ICalGenerator) WithWFHMaterialiser(WFHMaterialiser) *ICalGenerator { return g }
 
-// WithWFHAssigner is a no-op kept for API stability. The assigner
-// is read from SupportCalendarOptions by the public generator
-// functions and invoked from RefreshFor once per day.
-func (g *ICalGenerator) WithWFHAssigner(AssignWFHAssigner) *ICalGenerator { return g }
-
-// WithWFHCopresenceWriter is a no-op kept for API stability.
-// The writer is read from SupportCalendarOptions by the public
-// generator functions and invoked from RefreshFor for past
-// dates.
-func (g *ICalGenerator) WithWFHCopresenceWriter(CoPresenceWriter) *ICalGenerator { return g }
-
 // WithHolidayLookup is a no-op kept for API stability. The lookup is
 // read from SupportCalendarOptions by the public generator functions.
 func (g *ICalGenerator) WithHolidayLookup(HolidayLookup) *ICalGenerator { return g }
@@ -666,11 +655,6 @@ func newSupportGenerator(opts SupportCalendarOptions) (*ICalGenerator, error) {
 
 func GenerateICalFromAssignments(assignments []database.RotaAssignment, memberName string) (string, error) {
 	return GenerateICalFromAssignmentsWithOptions(assignments, memberName, SupportCalendarOptions{})
-}
-
-// GenerateICalForToken generates iCalendar content for a subscription token.
-func GenerateICalForToken(ctx context.Context, db *database.DB, token string, lookaheadDays int) (string, error) {
-	return GenerateICalForTokenWithOptions(ctx, db, token, lookaheadDays, SupportCalendarOptions{})
 }
 
 func GenerateICalForTokenWithOptions(ctx context.Context, db *database.DB, token string, lookaheadDays int, opts SupportCalendarOptions) (string, error) {

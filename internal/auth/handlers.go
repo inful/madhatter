@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html/template"
 	"net/http"
 	"strings"
 	"time"
@@ -30,7 +29,6 @@ type AuthManager struct {
 	userService     *UserService
 	sessionManager  *SessionManager
 	notifier        notify.Notifier
-	pendingTmpl     *template.Template
 	providers       map[string]Provider
 }
 
@@ -53,14 +51,6 @@ func NewAuthManager(
 // (e.g. in tests that don't care about admin notification).
 func (am *AuthManager) SetNotifier(n notify.Notifier) {
 	am.notifier = n
-}
-
-// SetPendingApprovalTemplate wires the HTML template used to render
-// the "your account is awaiting approval" page in the OAuth callback.
-// nil falls back to a built-in default. The template receives a
-// single struct value: pendingApprovalData.
-func (am *AuthManager) SetPendingApprovalTemplate(t *template.Template) {
-	am.pendingTmpl = t
 }
 
 // RegisterProvider registers an OAuth provider.
@@ -313,13 +303,13 @@ func (am *AuthManager) baseURL(r *http.Request) string {
 }
 
 // renderPendingApproval writes the pending-approval page to w.
-// Defaults to the embedded template; the wired-in template (if
-// any) wins. Errors are surfaced as a 500 so the user still gets
-// a response rather than a blank screen.
+// Always uses the embedded template (kept as a single source of truth
+// for the user-facing copy). Errors are surfaced as a 500 so the user
+// still gets a response rather than a blank screen.
 func (am *AuthManager) renderPendingApproval(w http.ResponseWriter, email, provider, baseURL string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusForbidden)
-	if err := renderPendingApproval(am.pendingTmpl, w, email, provider, baseURL); err != nil {
+	if err := renderPendingApproval(nil, w, email, provider, baseURL); err != nil {
 		http.Error(w, "failed to render pending approval page: "+err.Error(), http.StatusInternalServerError)
 	}
 }

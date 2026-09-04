@@ -15,10 +15,15 @@ const coPresenceCohortPad = 2
 // RecordWFHCoPresencePair inserts a single co-presence pair for
 // (working_date, member_id_a, member_id_b). Idempotent: the
 // UNIQUE(working_date, a, b) constraint plus INSERT OR IGNORE
-// mean repeated calls are no-ops. The canonical ordering
-// (member_id_a < member_id_b) is enforced by the table CHECK
-// constraint, not by this function — the caller is responsible
-// for ordering before calling.
+// mean repeated calls are no-ops. Self-pairs (a == b) are a
+// silent no-op. The canonical ordering (member_id_a <
+// member_id_b) is enforced in InsertWFHCoPresencePair before
+// insert so the table's CHECK constraint is never tripped —
+// callers don't have to pre-sort.
+//
+// This is the error-only convenience: tests use it for fixture
+// insertion. For the (inserted, error) bool return used by the
+// picker and backfill, see InsertWFHCoPresencePair.
 //
 // Used by the co-presence writer (step 10 of
 // plans/assigned-wfh-plan.md) which calls this in O(n²)
@@ -29,26 +34,6 @@ const coPresenceCohortPad = 2
 // The co_presence_id is generated here (not by the caller) so
 // the writer path stays simple — callers don't need to
 // import a UUID library just to record co-presence.
-// RecordWFHCoPresencePair inserts a single co-presence pair for
-// (working_date, member_id_a, member_id_b). Idempotent: the
-// UNIQUE(working_date, a, b) constraint plus INSERT OR IGNORE
-// mean repeated calls are no-ops. The canonical ordering
-// (member_id_a < member_id_b) is enforced by the table CHECK
-// constraint, not by this function — the caller is responsible
-// for ordering before calling.
-//
-// Used by the co-presence writer (step 10 of
-// plans/assigned-wfh-plan.md) which calls this in O(n²)
-// pairs for the on-site set of a past date, and by the
-// eventual-consistent backfill (step 11) which calls it
-// across the last N working days.
-//
-// The co_presence_id is generated here (not by the caller) so
-// the writer path stays simple — callers don't need to
-// import a UUID library just to record co-presence.
-//
-// For a "did this call actually insert or skip-as-duplicate"
-// answer, use InsertWFHCoPresencePair instead.
 func (db *DB) RecordWFHCoPresencePair(ctx context.Context, workingDate, memberIDA, memberIDB string) error {
 	_, err := db.InsertWFHCoPresencePair(ctx, workingDate, memberIDA, memberIDB)
 	return err

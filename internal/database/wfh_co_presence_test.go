@@ -44,6 +44,46 @@ func TestRecordWFHCoPresencePair_Roundtrip(t *testing.T) {
 	require.NoError(t, db.RecordWFHCoPresencePair(ctx, yesterday, aliceID, bobID))
 }
 
+// TestInsertWFHCoPresencePair_ReportsInsertVsNoop pins the
+// bool return contract of the worker method used by the
+// picker and backfill paths. True when the row was newly
+// inserted, false when the UNIQUE(working_date, a, b)
+// constraint dropped it as a duplicate (or when it's a
+// self-pair). The picker uses the bool to count actual
+// writes without re-reading the table.
+//
+// RecordWFHCoPresencePair (the error-only convenience used
+// in fixture setup) delegates to this method and discards
+// the bool, so any regression here breaks both surfaces.
+func TestInsertWFHCoPresencePair_ReportsInsertVsNoop(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	yesterday := time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
+
+	// Self-pair: never inserts, bool is false.
+	inserted, err := db.InsertWFHCoPresencePair(ctx, yesterday, aliceID, aliceID)
+	require.NoError(t, err)
+	assert.False(t, inserted, "self-pair should be a no-op, not an insert")
+
+	// Inverted pair (Bob > Alice) normalized at the writer.
+	inserted, err = db.InsertWFHCoPresencePair(ctx, yesterday, bobID, aliceID)
+	require.NoError(t, err)
+	assert.True(t, inserted, "first normalised insert should report true")
+
+	// Already-normalised pair: second call hits the UNIQUE
+	// constraint and INSERT OR IGNORE skips it.
+	inserted, err = db.InsertWFHCoPresencePair(ctx, yesterday, aliceID, bobID)
+	require.NoError(t, err)
+	assert.False(t, inserted, "duplicate insert should report false")
+}
+
 // TestPruneWFHCoPresenceOlderThan removes rows older than the
 // cutoff. The settlement scheduler calls this after each tick
 // (step 11) to keep the table bounded.

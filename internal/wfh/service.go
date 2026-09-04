@@ -558,11 +558,13 @@ func (s *Service) settleAssignmentPass(ctx context.Context, today, cutoff time.T
 //
 // Implementation: read the on-site set for date (active -
 // leave - permanent WFH - approved WFH), generate all C(n, 2)
-// unordered pairs, write each via RecordWFHCoPresencePair
-// (INSERT OR IGNORE — idempotent). The UNIQUE constraint
-// guarantees correctness across concurrent writers; the
-// CHECK constraint enforces canonical (a < b) ordering at
-// the storage layer.
+// unordered pairs, write each via InsertWFHCoPresencePair
+// (the (inserted, err)-returning variant — RecordWFHCoPresencePair
+// is the error-only convenience used by tests). The bool lets us
+// count actual writes per call without a second SELECT. INSERT OR
+// IGNORE — idempotent. The UNIQUE constraint guarantees
+// correctness across concurrent writers; the CHECK constraint
+// enforces canonical (a < b) ordering at the storage layer.
 //
 // Returns the number of pairs actually written (i.e., not
 // skipped as duplicates). The pair count for an empty

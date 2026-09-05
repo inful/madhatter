@@ -984,3 +984,62 @@ func TestHandleWFHRequestPost_BeyondHorizon_PreservesSelectedDate(t *testing.T) 
 		`value="`+farFuture.Format("2006-01-02")+`"`,
 		"the rejected date must be preserved in the input value so the user can correct without re-picking")
 }
+
+// TestWFHRequest_QuotaBannerHasSpacesBetweenValues pins the
+// contract that the quota banner renders the literal words "for",
+// "period", "to", "used", "remaining" with spaces between them and
+// the dynamic <strong> values. The earlier template put the values
+// inside <strong> tags and lost the leading/trailing whitespace, so
+// the banner rendered as "forthisperiod", "31to2026-09-06",
+// "0used", "2remaining". The fix is &nbsp; between the closing tag
+// and the literal word; this test fails if the regression returns.
+func TestWFHRequest_QuotaBannerHasSpacesBetweenValues(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupSwapTestDB(t)
+	defer cleanup()
+
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	svc := wfh.NewService(db, wfh.Config{
+		Enabled:             true,
+		MinOnsitePercentage: 50,
+		MinOnsiteAbsolute:   1,
+		MaxDaysPerPeriod:    2,
+		PeriodDays:          7,
+		PeriodAnchor:        "2026-01-05",
+		SettlementDays:      2,
+		RequestHorizonDays:  90,
+	})
+	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+	h.wfhService = svc
+
+	rec := httptest.NewRequestWithContext(ctx, http.MethodGet, "/wfh/request", nil)
+	rec = withUser(rec, "alice@example.com", "Alice", false)
+	rr := httptest.NewRecorder()
+	h.handleWFHRequest(rr, rec)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+	body := rr.Body.String()
+	// The banner must read as "WFH quota for <strong>this</strong> period",
+	// not "forthisperiod". The &nbsp; between the closing tag and the
+	// next word is what the test pins — without it, the HTML
+	// normaliser collapses the whitespace and the banner reads as one
+	// run-on word.
+	assert.Contains(t, body, "for&nbsp;<strong>this</strong>&nbsp;period",
+		"current-period banner must have spaces between 'for' and 'period'")
+	assert.Regexp(t, `<strong>\d{4}-\d{2}-\d{2}</strong>&nbsp;to&nbsp;<strong>\d{4}-\d{2}-\d{2}</strong>`,
+		body,
+		"current-period banner must have a space between period start and 'to'")
+	assert.Contains(t, body, "<strong>0</strong>&nbsp;used,",
+		"current-period banner must have a space before 'used'")
+	assert.Contains(t, body, "<strong>2</strong>&nbsp;remaining.",
+		"current-period banner must have a space before 'remaining'")
+
+	// The broken forms are the regressions we want to catch — guard
+	// against any revert to a template that emits no whitespace.
+	assert.NotContains(t, body, "forthisperiod")
+	assert.NotContains(t, body, ">0< used")
+	assert.NotContains(t, body, ">2< remaining")
+}

@@ -1662,11 +1662,12 @@ func TestWFHListPage_RequestWFHDayButton_AlwaysVisible(t *testing.T) {
 	}
 }
 
-// ptrString is a small helper to make the test data read like
-// "the row's reason is X" without a one-off local var.
-//
-//go:fix inline
-func ptrString(s string) *string { return new(s) }
+// ptrString was an inline helper for test-data that read like
+// "the row's reason is X" without a one-off local var. The
+// gopls `//go:fix inline` directive reduced it to `new(s)` and
+// the helper had no callers left in the suite, so it was removed.
+// Kept as a comment so a future test that wants the same idiom
+// can copy the `new(string)` pattern.
 
 // TestDashboard_ChairsRow_RendersAtUnderAndOverCap is the
 // HTML-level regression test for the ass/chair ratio row on the

@@ -84,6 +84,14 @@ func (h *Handler) registerRoutes() {
 		r.Post("/swaps/{id}/reject", h.handleSwapReject)
 
 		r.HandleFunc("/wfh", h.handleWFHList)
+		// /wfh/list is a common typo for /wfh (the URL the Quick
+		// Actions menu links to). Redirect rather than 404 so a
+		// user who bookmarks the wrong path still lands on the
+		// list page. 301 because the canonical URL is /wfh and
+		// this isn't going to flip back.
+		r.Get("/wfh/list", func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "/wfh", http.StatusMovedPermanently)
+		})
 		r.HandleFunc("/wfh/request", h.handleWFHRequest)
 		r.Post("/wfh/report-today", h.handleWFHReportToday)
 		r.Post("/wfh/{id}/cancel", h.handleWFHCancel)

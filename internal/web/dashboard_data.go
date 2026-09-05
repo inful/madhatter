@@ -89,6 +89,31 @@ func (h *Handler) loadCurrentUserPresenceStatus(ctx context.Context, data map[st
 		}
 	}
 
+	// CanSignalOnSiteToday: the dashboard "I'm actually coming in
+	// today" button is shown when the user has an approved WFH
+	// row today that they could self-withdraw. The button is hidden
+	// when there's nothing to override (avoids a flash error on
+	// click). Ad-hoc and recurring rows both qualify; system-
+	// assigned rows don't (they need a swap, which the handler
+	// rejects with ErrWFHAssigned).
+	wfhRows, wfhErr := h.db.GetWFHRequestsByMember(ctx, member.ID)
+	if wfhErr == nil {
+		for i := range wfhRows {
+			r := &wfhRows[i]
+			if r.Date != today {
+				continue
+			}
+			if r.Status != database.WFHStatusApproved {
+				continue
+			}
+			if r.Origin == "assigned" || r.Origin == "swap" {
+				continue
+			}
+			data["CanSignalOnSiteToday"] = true
+			break
+		}
+	}
+
 	h.loadCurrentUserUpcomingDates(ctx, data, member.ID, today, leaveDates)
 
 	if _, onLeave := leaveDates[today]; onLeave {

@@ -98,6 +98,15 @@ func (h *Handler) registerRoutes() {
 		})
 		r.HandleFunc("/wfh/request", h.handleWFHRequest)
 		r.Post("/wfh/report-today", h.handleWFHReportToday)
+		// /wfh/today/on-site is the dashboard "I'm actually coming
+		// in today" affordance: a member projected as WFH today
+		// (recurring weekday, permanent-WFH, or approved ad-hoc)
+		// clicks the button to flip today's row to withdrawn so the
+		// dashboard status flips to On-site. The handler doesn't
+		// need a row ID — the service finds today's approved row
+		// and withdraws it. No-op when there's nothing to
+		// override.
+		r.Post("/wfh/today/on-site", h.handleWFHTodayOnSite)
 		r.Post("/wfh/{id}/cancel", h.handleWFHCancel)
 		r.Post("/wfh/{id}/withdraw", h.handleWFHSelfWithdraw)
 		r.Get("/wfh/{id}/swap", h.handleWFHSwapForm)

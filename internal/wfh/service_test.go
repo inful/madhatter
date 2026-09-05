@@ -1881,3 +1881,88 @@ func TestSettlePendingRequests_PickerRunsOverCapWithNoPending(t *testing.T) {
 func isWorkingDay(t time.Time) bool {
 	return t.Weekday() != time.Saturday && t.Weekday() != time.Sunday
 }
+
+// TestSignalOnSiteToday_WithdrawsApprovedRow covers the happy
+// path: a member with an approved WFH row today (recurring or
+// ad-hoc) calls SignalOnSiteToday and the row flips to withdrawn,
+// freeing the quota slot and switching the dashboard projection
+// to On-site. The contract is the date-keyed counterpart of
+// WithdrawOwnWFHRequest — callers that don't have a row ID (the
+// dashboard "I'm actually coming in today" button) need this
+// entry point.
+func TestSignalOnSiteToday_WithdrawsApprovedRow(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	svc := NewService(db, testConfig())
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	todayStr := time.Now().UTC().Format("2006-01-02")
+	require.NoError(t, db.CreateApprovedRecurringWFHRequest(ctx, aliceID, todayStr, time.Now().UTC()))
+
+	got, err := svc.SignalOnSiteToday(ctx, aliceID)
+	require.NoError(t, err)
+	assert.Equal(t, database.WFHStatusWithdrawn, got.Status,
+		"the row must flip to withdrawn so the dashboard flips to On-site")
+	assert.Nil(t, got.WithdrawnBy,
+		"self-withdraw leaves withdrawn_by nil (vs admin-withdraw which records the actor)")
+
+	// Quota counter must reflect the freed slot. After withdraw the
+	// period is back to MaxDaysPerPeriod available.
+	status, err := svc.GetQuotaStatus(ctx, aliceID)
+	require.NoError(t, err)
+	assert.Equal(t, 0, status.Used,
+		"withdrawn row must drop out of the voluntary quota counter")
+}
+
+// TestSignalOnSiteToday_NoApprovedRow_Errors pins the "nothing to
+// override" case. A member who's not projected as WFH today
+// (no row, recurring weekday flag is off) calls the endpoint and
+// gets a typed sentinel — the handler renders a flash banner
+// rather than rendering an empty success.
+func TestSignalOnSiteToday_NoApprovedRow_Errors(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	svc := NewService(db, testConfig())
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	got, err := svc.SignalOnSiteToday(ctx, aliceID)
+	require.ErrorIs(t, err, database.ErrWFHNotFound,
+		"no approved row → ErrWFHNotFound (handler maps to flash banner)")
+	assert.Empty(t, got.ID, "no row should be returned on not-found")
+}
+
+// TestSignalOnSiteToday_RejectsAssignedRow pins the safety guard:
+// a system-assigned WFH (cap-picker output) can't be self-overridden
+// to On-site because that would unbalance the seat cap. The user
+// must use the swap path instead.
+func TestSignalOnSiteToday_RejectsAssignedRow(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	svc := NewService(db, testConfig())
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	// Seed a system-assigned approved row for today.
+	todayStr := time.Now().UTC().Format("2006-01-02")
+	require.NoError(t, db.CreateApprovedAssignedWFHRequest(ctx, aliceID, todayStr, time.Now().UTC()))
+
+	got, err := svc.SignalOnSiteToday(ctx, aliceID)
+	require.ErrorIs(t, err, database.ErrWFHAssigned,
+		"system-assigned rows are guarded — use the swap path")
+	assert.Empty(t, got.ID)
+
+	// Row must remain approved.
+	rows, err := db.GetWFHRequestsByMember(ctx, aliceID)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.Equal(t, database.WFHStatusApproved, rows[0].Status,
+		"the assigned row must not be flipped by SignalOnSiteToday")
+}

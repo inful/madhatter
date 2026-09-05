@@ -335,19 +335,26 @@ func (h *Handler) handleWFHReportToday(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/?"+wfhReportTodayFlashKey+"="+outcome, http.StatusSeeOther)
 }
 
-// wfhReportTodayFlash surfaces the report-today outcome on the
-// dashboard. Called from handleDashboard so the Today card renders
-// the banner once after a report; subsequent loads ignore it.
-func wfhReportTodayFlash(r *http.Request) (outcome, message string) {
-	raw := r.URL.Query().Get(wfhReportTodayFlashKey)
+// signalOnSiteFlashKey is the URL query parameter that handleWFHTodayOnSite
+// uses to convey the result of the "I'm actually coming in today"
+// override back to the dashboard.
+const signalOnSiteFlashKey = "wfh_signal_on_site"
+
+// readFlashOutcome is the shared helper for the post-redirect
+// flash banner pattern: read a query param keyed by key, map the
+// value to a (outcome, message) pair. The outcome is "approved" /
+// "denied" / "ok" / "error" depending on the caller; the message
+// is the reason query param (empty unless the caller set it).
+// Unknown values return ("", "") so the dashboard renders nothing.
+func readFlashOutcome(r *http.Request, key string) (outcome, message string) {
+	raw := r.URL.Query().Get(key)
 	if raw == "" {
 		return "", ""
 	}
 	switch raw {
-	case database.WFHStatusApproved, database.WFHStatusDenied:
+	case "ok", "approved", "denied":
 		return raw, ""
 	case "error":
-		// Failure path: report-today sent a reason= via query string.
 		return "error", r.URL.Query().Get("reason")
 	default:
 		return "", ""
@@ -373,6 +380,47 @@ func (h *Handler) handleWFHSelfWithdraw(w http.ResponseWriter, r *http.Request) 
 	}
 
 	http.Redirect(w, r, "/wfh", http.StatusSeeOther)
+}
+
+// handleWFHTodayOnSite is the dashboard "I'm actually coming in
+// today" entry point. The button is rendered on the dashboard Today
+// card when the member's projected status is WFH (recurring
+// weekday, permanent-WFH, or an approved ad-hoc request). The
+// service finds today's approved row for the member and withdraws
+// it; the dashboard projection already treats a withdrawn row as
+// On-site, so the badge flips on the next render.
+//
+// Redirects back to the dashboard with a flash banner announcing
+// the success or the typed error (no row to override, system-
+// assigned row that needs a swap instead).
+func (h *Handler) handleWFHTodayOnSite(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	user := mustGetUser(ctx)
+	memberID := h.resolveMemberID(ctx, user.Email)
+	if memberID == "" {
+		http.Error(w, "Not a team member", http.StatusForbidden)
+		return
+	}
+	if h.wfhService == nil {
+		http.Error(w, "WFH service is not enabled", http.StatusServiceUnavailable)
+		return
+	}
+
+	if _, err := h.wfhService.SignalOnSiteToday(ctx, memberID); err != nil {
+		// Map known sentinels to a flash banner via the standard
+		// WFH error table; anything else is a 500. We redirect to
+		// / so the user lands on the dashboard with the banner —
+		// same destination as the success path so the back button
+		// does the obvious thing.
+		if info, ok := database.WFHErrorFor(err); ok {
+			http.Redirect(w, r, "/?wfh_signal_on_site=error&reason="+url.QueryEscape(info.Message), http.StatusSeeOther)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, "/?wfh_signal_on_site=ok", http.StatusSeeOther)
 }
 
 // enrichedWFHRequest wraps a WFHRequest with a CanWithdraw flag for admin display.

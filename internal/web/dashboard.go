@@ -61,13 +61,8 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	// "WFH today" button on business-day + WFH-feature-enabled +
 	// current-user-status. The button only renders when the user is
 	// currently On-site so the affordance matches its outcome.
-	outcome, reason := wfhReportTodayFlash(r)
-	if outcome != "" {
-		data["WFHReportTodayOutcome"] = outcome
-		if reason != "" {
-			data["WFHReportTodayReason"] = reason
-		}
-	}
+	surfaceDashboardFlash(r, data, wfhReportTodayFlashKey, "WFHReportTodayOutcome", "WFHReportTodayReason")
+	surfaceDashboardFlash(r, data, signalOnSiteFlashKey, "SignalOnSiteOutcome", "SignalOnSiteReason")
 	data["CanReportWFHToday"] = h.canReportWFHToday(ctx)
 
 	// Optional URL the HAT day badge in the Today card links to.
@@ -82,6 +77,23 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.tmpl.ExecuteTemplate(w, "dashboard.html", data); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// surfaceDashboardFlash reads the flash banner from the query
+// string under key, and if present, writes the outcome and
+// (optional) reason into the data map under outcomeKey and
+// reasonKey. Two flash banners share this helper (report-today
+// and signal-on-site) so the dashboard orchestrator stays below
+// the cyclomatic-complexity cap.
+func surfaceDashboardFlash(r *http.Request, data map[string]any, key, outcomeKey, reasonKey string) {
+	outcome, reason := readFlashOutcome(r, key)
+	if outcome == "" {
+		return
+	}
+	data[outcomeKey] = outcome
+	if reason != "" {
+		data[reasonKey] = reason
 	}
 }
 

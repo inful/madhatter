@@ -525,6 +525,101 @@ func TestHandleWFHReportToday_Approves_RedirectsWithFlashBanner(t *testing.T) {
 	assert.Equal(t, database.WFHStatusApproved, rows[0].Status)
 }
 
+// TestHandleWFHTodayOnSite_RedirectsToDashboardFlash covers the
+// happy path: a member with an approved WFH row today POSTs
+// /wfh/today/on-site, the row is withdrawn, and the redirect
+// lands on / with the success flash banner. The contract is the
+// dashboard "I'm actually coming in today" button: a single
+// click flips today's status from WFH to On-site without
+// requiring the user to navigate to /wfh.
+func TestHandleWFHTodayOnSite_RedirectsToDashboardFlash(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupSwapTestDB(t)
+	defer cleanup()
+
+	svc := wfh.NewService(db, wfh.Config{
+		Enabled:             true,
+		MinOnsitePercentage: 50,
+		MinOnsiteAbsolute:   1,
+		MaxDaysPerPeriod:    2,
+		PeriodDays:          7,
+		PeriodAnchor:        "2026-01-05",
+		SettlementDays:      2,
+		RequestHorizonDays:  90,
+	})
+	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+	h.wfhService = svc
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	today := time.Now().UTC().Format("2006-01-02")
+	require.NoError(t, db.CreateApprovedRecurringWFHRequest(ctx, aliceID, today, time.Now().UTC()))
+
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/wfh/today/on-site", nil)
+	req = withUser(req, "alice@example.com", "Alice", false)
+	rr := httptest.NewRecorder()
+	h.handleWFHTodayOnSite(rr, req)
+
+	require.Equal(t, http.StatusSeeOther, rr.Code, "body=%s", rr.Body.String())
+	loc := rr.Header().Get("Location")
+	assert.True(t, strings.HasPrefix(loc, "/?"),
+		"must redirect back to the dashboard, got %q", loc)
+	assert.Contains(t, loc, "wfh_signal_on_site=ok",
+		"success flash must surface in the URL")
+
+	// Row on disk must be withdrawn.
+	rows, err := db.GetWFHRequestsByMember(ctx, aliceID)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.Equal(t, database.WFHStatusWithdrawn, rows[0].Status,
+		"the row must be flipped to withdrawn so the dashboard shows On-site")
+}
+
+// TestHandleWFHTodayOnSite_NoRow_FlashesError pins the "nothing to
+// override" case. A member who's not projected as WFH today
+// hits the endpoint and gets a flash banner instead of an empty
+// success. The dashboard's CanSignalOnSiteToday gate should hide
+// the button, but a stale tab or bookmarked URL must not silently
+// succeed.
+func TestHandleWFHTodayOnSite_NoRow_FlashesError(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupSwapTestDB(t)
+	defer cleanup()
+
+	svc := wfh.NewService(db, wfh.Config{
+		Enabled:             true,
+		MinOnsitePercentage: 50,
+		MinOnsiteAbsolute:   1,
+		MaxDaysPerPeriod:    2,
+		PeriodDays:          7,
+		PeriodAnchor:        "2026-01-05",
+		SettlementDays:      2,
+		RequestHorizonDays:  90,
+	})
+	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+	h.wfhService = svc
+
+	_, err = db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	// No WFH rows seeded — nothing to override.
+
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/wfh/today/on-site", nil)
+	req = withUser(req, "alice@example.com", "Alice", false)
+	rr := httptest.NewRecorder()
+	h.handleWFHTodayOnSite(rr, req)
+
+	require.Equal(t, http.StatusSeeOther, rr.Code)
+	loc := rr.Header().Get("Location")
+	assert.True(t, strings.HasPrefix(loc, "/?"),
+		"must redirect back to the dashboard, got %q", loc)
+	assert.Contains(t, loc, "wfh_signal_on_site=error",
+		"no-row case must surface the error flash, got %q", loc)
+	assert.Contains(t, loc, "reason=",
+		"the error flash must carry a human-readable reason")
+}
+
 // TestHandleWFHReportToday_Denied_AtFloor pins the policy decision:
 // when the floor is full, ReportToday still creates a row but
 // settles it to denied, and the dashboard reads it as On-site

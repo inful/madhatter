@@ -792,6 +792,64 @@ func (s *Service) ReportToday(ctx context.Context, memberID string) (database.WF
 	return s.reportTodayReRead(ctx, pending)
 }
 
+// SignalOnSiteToday withdraws any approved WFH row for memberID on
+// today's date (UTC). The intent is the dashboard "I'm actually
+// coming in today" button: a member normally projected as WFH
+// (contractual recurring weekday, permanent-WFH, or an approved
+// ad-hoc request) signals they're in the office instead. The
+// dashboard's status projection already honors a withdrawn row as
+// On-site, so flipping status here is the entire user-visible
+// effect. The contractual pattern is unchanged: a recurring
+// weekday member who withdraws today is still WFH next week
+// unless they withdraw that row too.
+//
+// Returns the withdrawn row on success. Errors map to:
+//   - database.ErrWFHNotFound    — no approved row exists for
+//     (member, today); nothing to override. The handler renders
+//     a flash banner and stays on the dashboard.
+//   - database.ErrWFHDatePassed  — today is in the past
+//     (defensive; the dashboard button shouldn't be rendered for
+//     past dates but the handler must not silently succeed).
+//   - database.ErrWFHAssigned    — the row is system-assigned
+//     (cap-picker) or a swap target; the user can't self-override
+//     those — they must swap instead.
+//
+// Ad-hoc and recurring rows are eligible; permanent-WFH members
+// have recurring rows that flow through the recurring path. The
+// "Withdrawing" wording in the /wfh list page uses the same
+// underlying call; this method is the date-keyed entry point
+// for callers that don't have a row ID.
+func (s *Service) SignalOnSiteToday(ctx context.Context, memberID string) (database.WFHRequest, error) {
+	today := todayUTC().Format("2006-01-02")
+	rows, err := s.db.GetWFHRequestsByMember(ctx, memberID)
+	if err != nil {
+		return database.WFHRequest{}, err
+	}
+	for i := range rows {
+		r := &rows[i]
+		if r.Date != today {
+			continue
+		}
+		if r.Status != database.WFHStatusApproved {
+			continue
+		}
+		// Skip system-assigned rows and swap targets; the user
+		// must use the swap path to move those.
+		if r.Origin == "assigned" || r.Origin == "swap" {
+			return database.WFHRequest{}, database.ErrWFHAssigned
+		}
+		if err := s.db.WithdrawOwnWFHRequest(ctx, r.ID, memberID); err != nil {
+			return database.WFHRequest{}, err
+		}
+		withdrawn, err := s.db.GetWFHRequestByID(ctx, r.ID)
+		if err != nil {
+			return database.WFHRequest{}, err
+		}
+		return *withdrawn, nil
+	}
+	return database.WFHRequest{}, database.ErrWFHNotFound
+}
+
 // AdminReassignWFH moves a system-assigned WFH row from one
 // member to another in a single transaction. The cap is
 // preserved: the original row flips to status='withdrawn'

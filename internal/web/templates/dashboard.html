@@ -29,6 +29,19 @@
 </div>
 {{end}}
 
+{{/* Signal-on-site flash banner (parallel to report-today). */}}
+{{if eq .SignalOnSiteOutcome "ok"}}
+<div class="notification is-success is-light mb-4">
+    <i class="fas fa-building mr-2"></i>
+    Marked as On-site today. Your dashboard now reflects it.
+</div>
+{{else if eq .SignalOnSiteOutcome "error"}}
+<div class="notification is-warning is-light mb-4">
+    <i class="fas fa-exclamation-triangle mr-2"></i>
+    Could not mark as On-site: {{.SignalOnSiteReason}}
+</div>
+{{end}}
+
 <div class="card status-card mb-4">
     <div class="card-content">
         <div class="status-top">
@@ -73,6 +86,29 @@
                 <span class="tag is-warning is-light"><i class="fas fa-plane-departure mr-1"></i> Next leave: {{.CurrentUserNextLeaveDay}}</span>
             {{end}}
         </div>
+
+        {{/*
+            "I'm actually coming in today" override. Renders only
+            when the user has an approved WFH row today that they
+            could self-withdraw (recurring or ad-hoc; not
+            system-assigned). The handler at /wfh/today/on-site
+            finds the row by date and withdraws it — the dashboard
+            projection already treats a withdrawn row as On-site,
+            so the badge flips on the next render. Hidden when
+            there's nothing to override so the click can never
+            surface an error.
+        */}}
+        {{if .CanSignalOnSiteToday}}
+        <div class="status-on-site-override mt-3">
+            <form method="post" action="/wfh/today/on-site" style="display:inline"
+                  data-confirm="Mark yourself as on-site today. Your quota slot is freed and the contractual pattern is unchanged.">
+                <button type="submit" class="button is-small is-success is-light">
+                    <span class="icon"><i class="fas fa-building"></i></span>
+                    <span>I'm actually coming in today</span>
+                </button>
+            </form>
+        </div>
+        {{end}}
 
         {{/*
             Office chairs row. Surfaces the ass/chair ratio — the

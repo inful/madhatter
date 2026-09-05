@@ -74,6 +74,11 @@
             <h4 class="title is-6 mb-2 mt-4">Recurring weekdays</h4>
             <p>If a member has a weekday set as recurring WFH, the system treats every upcoming occurrence of that weekday in the current period as an approved request. Those rows appear in the WFH list alongside ad-hoc requests, marked with the same Approved status, and the same Withdraw button works on them. Withdrawing a single occurrence frees one quota slot for that period; the next period reverts to the configured schedule.</p>
             <p>If you self-withdraw a recurring occurrence and then re-request the same date, the new request is treated as ad-hoc (not recurring) and goes through normal settlement &mdash; so it may be denied if on-site coverage is at the floor. The recurring pattern for that weekday resumes from the next occurrence onward.</p>
+            <p>Recurring rows use a labelled <strong>Coming in instead</strong> button instead of the generic "Withdraw" — the label describes the user-facing intent ("I'm actually in the office that day, despite the contractual pattern") rather than the underlying data operation. Withdrawing frees the quota slot AND flips the dashboard status to On-site for that day.</p>
+
+            <h4 class="title is-6 mb-2 mt-4">Coming in instead</h4>
+            <p>The dashboard's <em>Today</em> card shows whether you're projected as On-site or WFH today. If your projection is WFH (recurring weekday, permanent WFH, or an approved ad-hoc request) and you're actually coming into the office, withdraw the row from the WFH list — the dashboard badge flips to On-site that day. The contractual recurring weekday is unchanged: next week's Wednesday you're still projected as WFH unless you withdraw that row too.</p>
+            <p>Permanent-WFH members (every weekday set as recurring WFH) have a row for every business day in the current period; withdrawing the row for today is the way to signal an in-office day. Ad-hoc requesters withdraw the single row they submitted.</p>
 
             <h4 class="title is-6 mb-2 mt-4">Withdrawing</h4>
             <p>Approved requests can be withdrawn by the requester or by an admin at any time before the WFH day itself. The day itself is still withdrawable, but once the day has passed the request is locked.</p>

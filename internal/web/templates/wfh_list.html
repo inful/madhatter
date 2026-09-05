@@ -153,13 +153,36 @@
                             </form>
                             {{else if eq .Status "approved"}}
                                 {{if .CanWithdraw}}
-                                <form method="post" action="/wfh/{{.ID}}/withdraw" style="display:inline"
-                                      data-confirm="Withdraw this approved WFH request? Quota will be freed.">
-                                    <button type="submit" class="button is-small is-warning is-light">
-                                        <span class="icon"><i class="fas fa-undo"></i></span>
-                                        <span>Withdraw</span>
-                                    </button>
-                                </form>
+                                    {{/*
+                                        Recurring-WFH rows are the contractual
+                                        "I'm normally WFH that day" cases.
+                                        Withdrawing flips the dashboard to
+                                        "On-site" that day and frees the quota
+                                        slot. Phrase the action from the user's
+                                        intent ("coming in instead"), not from
+                                        the data operation ("withdraw"). For
+                                        ad-hoc rows the button stays generic
+                                        since "coming in instead" would mislead —
+                                        the user submitted a one-off request, not
+                                        a contractual pattern.
+                                    */}}
+                                    {{if .IsRecurring}}
+                                    <form method="post" action="/wfh/{{.ID}}/withdraw" style="display:inline"
+                                          data-confirm="You're set as WFH that day. Withdraw to show as On-site — your quota slot is freed and the contractual pattern is unchanged.">
+                                        <button type="submit" class="button is-small is-warning is-light" title="Withdraw this recurring WFH row — the dashboard will show you as On-site that day, and the quota slot is freed for a different day.">
+                                            <span class="icon"><i class="fas fa-building"></i></span>
+                                            <span>Coming in instead</span>
+                                        </button>
+                                    </form>
+                                    {{else}}
+                                    <form method="post" action="/wfh/{{.ID}}/withdraw" style="display:inline"
+                                          data-confirm="Cancel this WFH request and free the quota slot.">
+                                        <button type="submit" class="button is-small is-warning is-light">
+                                            <span class="icon"><i class="fas fa-undo"></i></span>
+                                            <span>Withdraw</span>
+                                        </button>
+                                    </form>
+                                    {{end}}
                                 {{else}}
                                 <span class="tag is-light" title="The WFH day has already passed">
                                     <i class="fas fa-lock mr-1"></i> Locked

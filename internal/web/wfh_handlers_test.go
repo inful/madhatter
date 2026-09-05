@@ -1069,3 +1069,71 @@ func TestWFHRequest_QuotaBannerHasSpacesBetweenValues(t *testing.T) {
 	assert.NotContains(t, body, ">0< used")
 	assert.NotContains(t, body, ">2< remaining")
 }
+
+// TestHandleWFHList_RecurringRowsRenderComingInInsteadButton pins the
+// "Coming in instead" labeling for recurring-WFH rows. Phase 1 of
+// the on-site-override feature: the existing /wfh/{id}/withdraw
+// flow is renamed when the row is a recurring (contractual) WFH
+// occurrence, so the user-facing intent ("I'm actually in the
+// office that day") matches the button copy. Ad-hoc approved rows
+// keep the generic "Withdraw" label since "coming in instead"
+// would mislead for a one-off request.
+func TestHandleWFHList_RecurringRowsRenderComingInInsteadButton(t *testing.T) {
+	// No weekend skip — the test seeds the row directly (bypassing
+	// the materializer's weekday filter) so the labeling can be
+	// verified regardless of which day the test runs on. CanWithdraw
+	// still returns true for today's row (date >= today in UTC).
+	ctx := context.Background()
+	db, cleanup := setupSwapTestDB(t)
+	defer cleanup()
+
+	// Seed a recurring-WFH row directly (skipping the materializer
+	// path so the test runs deterministically regardless of which
+	// weekday the test fires on). The row is for today (the test
+	// picks today via the recurring weekday pattern), is approved,
+	// and is_recurring=1 — exactly the case the new labeling
+	// targets.
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	require.NoError(t, db.SetTeamMemberRecurringWFHDays(ctx, memberID, database.RecurringWFHDays{
+		Monday: true, Tuesday: true, Wednesday: true, Thursday: true, Friday: true,
+	}))
+	today := time.Now().UTC().Format("2006-01-02")
+	err = db.CreateApprovedRecurringWFHRequest(ctx, memberID, today, time.Now().UTC())
+	require.NoError(t, err)
+
+	svc := wfh.NewService(db, wfh.Config{
+		Enabled:             true,
+		MinOnsitePercentage: 50,
+		MinOnsiteAbsolute:   1,
+		MaxDaysPerPeriod:    2,
+		PeriodDays:          7,
+		PeriodAnchor:        "2026-01-05",
+		SettlementDays:      2,
+		RequestHorizonDays:  90,
+	})
+	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+	h.wfhService = svc
+
+	rec := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/wfh", nil)
+	rec = withUser(rec, "alice@example.com", "Alice", false)
+	rr := httptest.NewRecorder()
+	h.handleWFHList(rr, rec)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	body := rr.Body.String()
+	// Recurring rows get the user-facing label.
+	assert.Contains(t, body, "Coming in instead",
+		"recurring-WFH rows must render the user-facing 'Coming in instead' label")
+	assert.Contains(t, body, "fa-building",
+		"recurring-WFH button must use the fa-building icon (vs fa-undo for ad-hoc)")
+	assert.Contains(t, body, "to show as On-site",
+		"recurring-WFH confirm dialog must explain the on-site side effect")
+	// The generic "Withdraw" label still appears in the confirm-dialog
+	// wording ("Withdraw to show as On-site") and in admin context
+	// — that's fine. What MUST be absent is the generic single-word
+	// "Withdraw" *button* for the recurring row.
+	assert.NotContains(t, body, ">Withdraw<",
+		"recurring-WFH button must not use the generic single-word 'Withdraw' label")
+}

@@ -271,7 +271,7 @@ func TestHandleSwaps_InboxSectionAlwaysRenders(t *testing.T) {
 		"incoming card must render even when empty")
 	assert.Contains(t, body, "No incoming swap requests.",
 		"empty-state copy must surface when there's no inbox content")
-	assert.Contains(t, body, "Your Outgoing & History",
+	assert.Contains(t, body, "Your Outgoing &amp; History",
 		"history card must render even when empty")
 	assert.Contains(t, body, "No outgoing swap requests yet.",
 		"empty-state copy must surface when there's no history")

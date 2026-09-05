@@ -155,14 +155,28 @@
                             {{if $.IsAdmin}}
                                 <div class="member-admin-row">
                                     <form method="POST" action="/team/{{.ID}}/recurring-wfh" class="recurring-days-form">
-                                        <label class="checkbox"><input type="checkbox" name="recurring_wfh_monday" value="1" {{if .RecurringWFHMonday}}checked{{end}}> Mon</label>
-                                        <label class="checkbox"><input type="checkbox" name="recurring_wfh_tuesday" value="1" {{if .RecurringWFHTuesday}}checked{{end}}> Tue</label>
-                                        <label class="checkbox"><input type="checkbox" name="recurring_wfh_wednesday" value="1" {{if .RecurringWFHWednesday}}checked{{end}}> Wed</label>
-                                        <label class="checkbox"><input type="checkbox" name="recurring_wfh_thursday" value="1" {{if .RecurringWFHThursday}}checked{{end}}> Thu</label>
-                                        <label class="checkbox"><input type="checkbox" name="recurring_wfh_friday" value="1" {{if .RecurringWFHFriday}}checked{{end}}> Fri</label>
-                                        <button type="submit" class="button is-small is-link is-light" title="Save recurring contractual WFH weekdays">
-                                            <i class="fas fa-save mr-1"></i> Save WFH Days
-                                        </button>
+                                        {{/*
+                                            Bug #14. The Mon/Tue/Wed/Thu/Fri
+                                            checkboxes set the member's
+                                            recurring-WFH weekdays. Without
+                                            a label the user has to guess
+                                            what they're for. Wrap the row in
+                                            a labelled fieldset so screen
+                                            readers announce the group's
+                                            purpose and sighted users see
+                                            what the toggles are about.
+                                        */}}
+                                        <fieldset class="recurring-wfh-fieldset">
+                                            <legend class="is-size-7 has-text-weight-semibold">Recurring WFH days</legend>
+                                            <label class="checkbox"><input type="checkbox" name="recurring_wfh_monday" value="1" {{if .RecurringWFHMonday}}checked{{end}}> Mon</label>
+                                            <label class="checkbox"><input type="checkbox" name="recurring_wfh_tuesday" value="1" {{if .RecurringWFHTuesday}}checked{{end}}> Tue</label>
+                                            <label class="checkbox"><input type="checkbox" name="recurring_wfh_wednesday" value="1" {{if .RecurringWFHWednesday}}checked{{end}}> Wed</label>
+                                            <label class="checkbox"><input type="checkbox" name="recurring_wfh_thursday" value="1" {{if .RecurringWFHThursday}}checked{{end}}> Thu</label>
+                                            <label class="checkbox"><input type="checkbox" name="recurring_wfh_friday" value="1" {{if .RecurringWFHFriday}}checked{{end}}> Fri</label>
+                                            <button type="submit" class="button is-small is-link is-light" title="Save recurring contractual WFH weekdays">
+                                                <i class="fas fa-save mr-1"></i> Save WFH Days
+                                            </button>
+                                        </fieldset>
                                     </form>
 
                                     {{/*
@@ -461,6 +475,30 @@
        explicit tab-all rule is here for safety. */
     body.tab-rota .accounts-section { display: none; }
     body.tab-accounts .rota-section { display: none; }
+
+    /* Bug #14: the recurring-WFH checkbox group needs a visible
+       fieldset border so the user can see it's a labelled group,
+       not five random checkboxes. The browser-default fieldset
+       padding eats too much horizontal space inside the admin row
+       so we zero the margin and shrink the padding to fit the
+       row's existing layout. */
+    .recurring-wfh-fieldset {
+        border: 1px solid #d0d0d0;
+        border-radius: 6px;
+        padding: 0.4rem 0.6rem 0.5rem;
+        margin: 0;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+
+    .recurring-wfh-fieldset legend {
+        margin: 0 0.6rem 0 0;
+        padding: 0;
+        font-size: 0.78rem;
+        color: #4a4a4a;
+    }
 </style>
 {{end}}
 

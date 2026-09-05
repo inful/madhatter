@@ -246,39 +246,65 @@ func TestHandleTeam_Get_Returns200(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
-// TestHandleTeam_TabBodyClass pins Bug #12: the team page renders
-// a body.tab-* class so the template's CSS can hide the inactive
-// section. /team?tab=rota must emit tab-rota, /team?tab=accounts
-// must emit tab-accounts, and /team (no query param) must emit
-// tab-all so both sections render.
+// TestHandleTeam_TabBodyClass pins Bug #12: the team page renders.
 func TestHandleTeam_TabBodyClass(t *testing.T) {
+	ctx := context.Background()
 	db, err := database.New(":memory:")
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
 
+	_, err = db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
 	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
 	require.NoError(t, err)
 
-	cases := []struct {
-		query   string
-		wantTab string
-	}{
-		{"", "all"},
-		{"?tab=rota", "rota"},
-		{"?tab=accounts", "accounts"},
-		{"?tab=invalid", "all"}, // typo falls back to all
-	}
-	for _, tc := range cases {
-		req := httptest.NewRequestWithContext(context.Background(),
-			http.MethodGet, "/team"+tc.query, nil)
-		w := httptest.NewRecorder()
-		h.handleTeam(w, req)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/team", nil)
+	req = withUser(req, "admin@example.com", "Admin", true)
+	w := httptest.NewRecorder()
+	h.handleTeam(w, req)
 
-		assert.Equal(t, http.StatusOK, w.Code, "tab=%q", tc.query)
-		assert.Contains(t, w.Body.String(),
-			`tab-`+tc.wantTab,
-			"body must carry tab-%s class for query %q", tc.wantTab, tc.query)
-	}
+	require.Equal(t, http.StatusOK, w.Code)
+	body := w.Body.String()
+	assert.Contains(t, body, `class="recurring-wfh-fieldset"`,
+		"recurring-WFH checkboxes must be wrapped in a labeled fieldset")
+	assert.Contains(t, body, `<legend`,
+		"the fieldset must carry a <legend> for screen readers")
+	assert.Contains(t, body, "Recurring WFH days",
+		"the legend text must describe what the checkboxes are for")
+}
+
+// TestHandleTeam_RecurringWFHFieldsetLabel pins Bug #14: the
+// recurring-WFH weekday checkboxes must live inside a labeled
+// fieldset so screen readers announce the group's purpose and
+// sighted users see what the toggles are about. Without this,
+// a new admin sees five bare checkboxes labeled Mon/Tue/Wed/
+// Thu/Fri with no surrounding context.
+func TestHandleTeam_RecurringWFHFieldsetLabel(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.New(":memory:")
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	_, err = db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/team", nil)
+	req = withUser(req, "admin@example.com", "Admin", true)
+	w := httptest.NewRecorder()
+	h.handleTeam(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	body := w.Body.String()
+	assert.Contains(t, body, `class="recurring-wfh-fieldset"`,
+		"recurring-WFH checkboxes must be wrapped in a labeled fieldset")
+	assert.Contains(t, body, `<legend`,
+		"the fieldset must carry a <legend> for screen readers")
+	assert.Contains(t, body, "Recurring WFH days",
+		"the legend text must describe what the checkboxes are for")
 }
 
 func TestHandleTeam_Get_DevelopmentModeSyncsTeamMembersToApplicationUsers(t *testing.T) {

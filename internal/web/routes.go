@@ -85,10 +85,14 @@ func (h *Handler) registerRoutes() {
 
 		r.HandleFunc("/wfh", h.handleWFHList)
 		// /wfh/list is a common typo for /wfh (the URL the Quick
-		// Actions menu links to). Redirect rather than 404 so a
-		// user who bookmarks the wrong path still lands on the
-		// list page. 301 because the canonical URL is /wfh and
-		// this isn't going to flip back.
+		// Actions menu links to). 301 redirect so a logged-in user
+		// who bookmarks the wrong path lands on the list page with
+		// the canonical URL in the address bar. Note that
+		// unauthenticated users land on /login via the auth
+		// middleware before this handler runs — that's the same
+		// destination they'd get from /wfh directly, so the
+		// redirect is effectively a no-op for them but a
+		// convenience for anyone with a bookmarked typo.
 		r.Get("/wfh/list", func(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, "/wfh", http.StatusMovedPermanently)
 		})

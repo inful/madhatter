@@ -194,7 +194,7 @@ func TestHandleTeamPost_ValidMember_RedirectsToTeam(t *testing.T) {
 	h.handleTeamPost(w, req)
 
 	assert.Equal(t, http.StatusSeeOther, w.Code)
-	assert.Equal(t, "/team", w.Header().Get("Location"))
+	assert.True(t, strings.HasPrefix(w.Header().Get("Location"), "/team"), "redirect must land on /team, got %q", w.Header().Get("Location"))
 
 	members, err := db.GetActiveTeamMembers(context.Background())
 	require.NoError(t, err)
@@ -354,7 +354,7 @@ func TestHandleTeam_Post_DelegatesToHandleTeamPost(t *testing.T) {
 	h.handleTeam(w, req)
 
 	assert.Equal(t, http.StatusSeeOther, w.Code)
-	assert.Equal(t, "/team", w.Header().Get("Location"))
+	assert.True(t, strings.HasPrefix(w.Header().Get("Location"), "/team"), "redirect must land on /team, got %q", w.Header().Get("Location"))
 }
 
 // ---------------------------------------------------------------------------
@@ -421,7 +421,7 @@ func TestHandleTeamMemberEdit_ValidPost_RedirectsToTeam(t *testing.T) {
 	h.handleTeamMemberEdit(w, req)
 
 	assert.Equal(t, http.StatusSeeOther, w.Code)
-	assert.Equal(t, "/team", w.Header().Get("Location"))
+	assert.True(t, strings.HasPrefix(w.Header().Get("Location"), "/team"), "redirect must land on /team, got %q", w.Header().Get("Location"))
 }
 
 // ---------------------------------------------------------------------------
@@ -465,7 +465,7 @@ func TestHandleTeamMemberDelete_ValidPost_RedirectsToTeam(t *testing.T) {
 	h.handleTeamMemberDelete(w, req)
 
 	assert.Equal(t, http.StatusSeeOther, w.Code)
-	assert.Equal(t, "/team", w.Header().Get("Location"))
+	assert.True(t, strings.HasPrefix(w.Header().Get("Location"), "/team"), "redirect must land on /team, got %q", w.Header().Get("Location"))
 }
 
 // ---------------------------------------------------------------------------
@@ -530,7 +530,7 @@ func TestHandleTeamMemberPermanentWFHUpdate_ValidPost_UpdatesRecurringDays(t *te
 	h.handleTeamMemberPermanentWFHUpdate(setResp, setReq)
 
 	assert.Equal(t, http.StatusSeeOther, setResp.Code)
-	assert.Equal(t, "/team", setResp.Header().Get("Location"))
+	assert.True(t, strings.HasPrefix(setResp.Header().Get("Location"), "/team"), "redirect must land on /team, got %q", setResp.Header().Get("Location"))
 
 	member, err := db.GetMemberByID(ctx, memberID)
 	require.NoError(t, err)
@@ -550,7 +550,7 @@ func TestHandleTeamMemberPermanentWFHUpdate_ValidPost_UpdatesRecurringDays(t *te
 	h.handleTeamMemberPermanentWFHUpdate(unsetResp, unsetReq)
 
 	assert.Equal(t, http.StatusSeeOther, unsetResp.Code)
-	assert.Equal(t, "/team", unsetResp.Header().Get("Location"))
+	assert.True(t, strings.HasPrefix(unsetResp.Header().Get("Location"), "/team"), "redirect must land on /team, got %q", unsetResp.Header().Get("Location"))
 
 	member, err = db.GetMemberByID(ctx, memberID)
 	require.NoError(t, err)
@@ -635,7 +635,7 @@ func TestHandleTeamMemberExemptUpdate_ValidPost_TogglesFlag(t *testing.T) {
 	h.handleTeamMemberExemptUpdate(setResp, setReq)
 
 	assert.Equal(t, http.StatusSeeOther, setResp.Code)
-	assert.Equal(t, "/team", setResp.Header().Get("Location"))
+	assert.True(t, strings.HasPrefix(setResp.Header().Get("Location"), "/team"), "redirect must land on /team, got %q", setResp.Header().Get("Location"))
 
 	member, err := db.GetMemberByID(ctx, memberID)
 	require.NoError(t, err)

@@ -50,7 +50,37 @@ func (h *Handler) handleScheduleGeneratePost(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	// Count the days the user asked to generate, for the success
+	// banner. The maintenance call doesn't return this count; we
+	// compute it client-side from the start/end dates and the same
+	// weekday math the picker uses. Inclusive of start, exclusive
+	// of end would be the convention but we count both endpoints as
+	// days the admin explicitly chose to fill.
+	days := inclusiveWeekdayCount(start, end)
+	SetFlash(w, r, "/", Flash{
+		Kind:  FlashKindReportScheduleGenerated,
+		Count: int64(days),
+	})
+}
+
+// inclusiveWeekdayCount returns the number of weekdays (Mon–Fri)
+// in the inclusive range [from, to]. The picker uses the same
+// math so the success banner's count matches what the admin
+// asked for.
+func inclusiveWeekdayCount(from, to time.Time) int {
+	if to.Before(from) {
+		return 0
+	}
+	count := 0
+	for d := from; !d.After(to); d = d.AddDate(0, 0, 1) {
+		switch d.Weekday() {
+		case time.Monday, time.Tuesday, time.Wednesday, time.Thursday, time.Friday:
+			count++
+		case time.Saturday, time.Sunday:
+			// Weekends don't count toward WFH quota usage.
+		}
+	}
+	return count
 }
 
 func (h *Handler) handleScheduleGenerateGet(w http.ResponseWriter, r *http.Request) {

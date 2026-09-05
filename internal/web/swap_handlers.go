@@ -137,7 +137,10 @@ func (h *Handler) handleSwapRequestPost(w http.ResponseWriter, r *http.Request, 
 		ActorName:         user.Name,
 	})
 
-	http.Redirect(w, r, "/swaps", http.StatusSeeOther)
+	SetFlash(w, r, "/swaps", Flash{
+		Kind:   FlashKindReportSwapRequested,
+		Member: h.memberName(ctx, tgtAssignment.MemberID),
+	})
 }
 
 // swapValidationErrorMessage maps domain errors from ValidateSwapAssignments to user-facing messages.

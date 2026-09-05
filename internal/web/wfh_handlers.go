@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
-	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -159,7 +157,11 @@ func (h *Handler) handleWFHRequestPost(w http.ResponseWriter, r *http.Request, d
 		return
 	}
 
-	http.Redirect(w, r, "/wfh", http.StatusSeeOther)
+	SetFlash(w, r, "/wfh", Flash{
+		Kind:      FlashKindReportWFHRequested,
+		Status:    "approved",
+		StartDate: date,
+	})
 }
 
 // renderWFHRequestFormAt is the full form renderer with an explicit
@@ -284,13 +286,6 @@ func (h *Handler) handleWFHCancel(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/wfh", http.StatusSeeOther)
 }
 
-// wfhReportTodayFlashKey is the query-string key the report-today
-// handler uses to carry the post-action outcome back to the dashboard.
-// Mirrors the wfh_purged pattern used by handleWFHPurge: stateless,
-// shows exactly once after the action that produced it, and keeps the
-// handler from depending on cookies or session storage.
-const wfhReportTodayFlashKey = "wfh_reported"
-
 // handleWFHReportToday is the same-day "unforeseen WFH" entry point.
 // The dashboard's "WFH today" button POSTs here; the handler resolves
 // the session's member, calls Service.ReportToday (which creates +
@@ -322,7 +317,11 @@ func (h *Handler) handleWFHReportToday(w http.ResponseWriter, r *http.Request) {
 		// shared WFHErrorFor table — keeps the message text in one
 		// place. Anything else is a 500.
 		if info, ok := database.WFHErrorFor(err); ok {
-			http.Redirect(w, r, "/?"+wfhReportTodayFlashKey+"=error&reason="+url.QueryEscape(info.Message), http.StatusSeeOther)
+			SetFlash(w, r, "/", Flash{
+				Kind:   FlashKindReportWFHToday,
+				Status: "error",
+				Reason: info.Message,
+			})
 			return
 		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -331,34 +330,10 @@ func (h *Handler) handleWFHReportToday(w http.ResponseWriter, r *http.Request) {
 
 	// Flash banner key is the final status so the dashboard can show
 	// approved / denied distinctly.
-	outcome := req.Status
-	http.Redirect(w, r, "/?"+wfhReportTodayFlashKey+"="+outcome, http.StatusSeeOther)
-}
-
-// signalOnSiteFlashKey is the URL query parameter that handleWFHTodayOnSite
-// uses to convey the result of the "I'm actually coming in today"
-// override back to the dashboard.
-const signalOnSiteFlashKey = "wfh_signal_on_site"
-
-// readFlashOutcome is the shared helper for the post-redirect
-// flash banner pattern: read a query param keyed by key, map the
-// value to a (outcome, message) pair. The outcome is "approved" /
-// "denied" / "ok" / "error" depending on the caller; the message
-// is the reason query param (empty unless the caller set it).
-// Unknown values return ("", "") so the dashboard renders nothing.
-func readFlashOutcome(r *http.Request, key string) (outcome, message string) {
-	raw := r.URL.Query().Get(key)
-	if raw == "" {
-		return "", ""
-	}
-	switch raw {
-	case "ok", "approved", "denied":
-		return raw, ""
-	case "error":
-		return "error", r.URL.Query().Get("reason")
-	default:
-		return "", ""
-	}
+	SetFlash(w, r, "/", Flash{
+		Kind:   FlashKindReportWFHToday,
+		Status: req.Status,
+	})
 }
 
 // handleWFHSelfWithdraw lets the current user withdraw their own approved WFH
@@ -413,14 +388,18 @@ func (h *Handler) handleWFHTodayOnSite(w http.ResponseWriter, r *http.Request) {
 		// same destination as the success path so the back button
 		// does the obvious thing.
 		if info, ok := database.WFHErrorFor(err); ok {
-			http.Redirect(w, r, "/?wfh_signal_on_site=error&reason="+url.QueryEscape(info.Message), http.StatusSeeOther)
+			SetFlash(w, r, "/", Flash{
+				Kind:   FlashKindSignalOnSiteToday,
+				Status: "error",
+				Reason: info.Message,
+			})
 			return
 		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	http.Redirect(w, r, "/?wfh_signal_on_site=ok", http.StatusSeeOther)
+	SetFlash(w, r, "/", Flash{Kind: FlashKindSignalOnSiteToday})
 }
 
 // enrichedWFHRequest wraps a WFHRequest with a CanWithdraw flag for admin display.
@@ -465,23 +444,21 @@ func (h *Handler) handleWFHAdminPage(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// applyPurgeFlash copies the purge confirmation query string
-// (wfh_purged=N&cutoff=YYYY-MM-DD) into data, so the template can
-// render the green "purged N past WFH requests" banner. The query
-// string is the only carrier — it keeps the handler stateless and
-// the message is rendered once, immediately after the action that
-// produced it.
+// applyPurgeFlash copies the purge confirmation from PopFlash into
+// the data map so the template can render the green "purged N past
+// WFH requests" banner. The query string is the only carrier —
+// it keeps the handler stateless and the message is rendered once,
+// immediately after the action that produced it.
 func applyPurgeFlash(data map[string]any, r *http.Request) {
-	purged := r.URL.Query().Get(wfhPurgeFlashKey)
-	if purged == "" {
+	f := PopFlash(r)
+	if f == nil || f.Kind != FlashKindPurgeWFHPeriods {
 		return
 	}
-	n, parseErr := strconv.ParseInt(purged, 10, 64)
-	if parseErr != nil || n < 0 {
+	if f.Count <= 0 {
 		return
 	}
-	data["PurgeFlashCount"] = n
-	data["PurgeFlashCutoff"] = r.URL.Query().Get("cutoff")
+	data["PurgeFlashCount"] = f.Count
+	data["PurgeFlashCutoff"] = f.Cutoff
 }
 
 // loadAdminActionableWFH fetches every WFH request, filters to the
@@ -593,13 +570,6 @@ func (h *Handler) handleWFHAdminSettle(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/admin/wfh", http.StatusSeeOther)
 }
 
-// wfhMarkFlashKey is the query-string key the mark/unmark handlers
-// use to carry the post-action outcome back to the admin WFH page.
-// Same stateless pattern as the report-today and purge flash keys:
-// the message is rendered once, immediately after the action that
-// produced it.
-const wfhMarkFlashKey = "wfh_marked"
-
 // handleAdminMarkWFHPage renders the GET form for the "Mark member
 // as WFH" admin action. Lists active team members (excluding the
 // current admin — admins don't typically mark themselves) and locks
@@ -640,16 +610,16 @@ func (h *Handler) handleAdminMarkWFHPage(w http.ResponseWriter, r *http.Request)
 // applyMarkFlash copies the post-mark outcome from the query
 // string into the template data so the form can render a one-time
 // confirmation banner. The query string carries two fields:
-//   - wfh_marked=ok|error|already
+//   - wfh_marked=ok|error|already|unmarked
 //   - member=<name>  (on success, the member the admin just marked)
 func applyMarkFlash(data map[string]any, r *http.Request) {
-	raw := r.URL.Query().Get(wfhMarkFlashKey)
-	if raw == "" {
+	f := PopFlash(r)
+	if f == nil || f.Kind != FlashKindMarkAdminWFH {
 		return
 	}
-	data["MarkFlashOutcome"] = raw
-	data["MarkFlashMember"] = r.URL.Query().Get("member")
-	data["MarkFlashReason"] = r.URL.Query().Get("reason")
+	data["MarkFlashOutcome"] = f.Status
+	data["MarkFlashMember"] = f.Member
+	data["MarkFlashReason"] = f.Reason
 }
 
 // handleAdminMarkWFH handles the POST that creates the admin-marked
@@ -681,7 +651,11 @@ func (h *Handler) handleAdminMarkWFH(w http.ResponseWriter, r *http.Request) {
 	memberID := r.FormValue("member_id")
 	date := r.FormValue("date")
 	if memberID == "" {
-		http.Redirect(w, r, "/admin/wfh/mark?"+wfhMarkFlashKey+"=error&reason="+url.QueryEscape("Please select a member."), http.StatusSeeOther)
+		SetFlash(w, r, "/admin/wfh/mark", Flash{
+			Kind:   FlashKindMarkAdminWFH,
+			Status: "error",
+			Reason: "Please select a member.",
+		})
 		return
 	}
 
@@ -693,10 +667,18 @@ func (h *Handler) handleAdminMarkWFH(w http.ResponseWriter, r *http.Request) {
 			// "Already marked" surfaces a distinct flash so the
 			// admin form does not look broken.
 			if errors.Is(err, database.ErrWFHDuplicateRequest) {
-				http.Redirect(w, r, "/admin/wfh?"+wfhMarkFlashKey+"=already&member="+url.QueryEscape(req.MemberID), http.StatusSeeOther)
+				SetFlash(w, r, "/admin/wfh", Flash{
+					Kind:   FlashKindMarkAdminWFH,
+					Status: "already",
+					Member: req.MemberID,
+				})
 				return
 			}
-			http.Redirect(w, r, "/admin/wfh/mark?"+wfhMarkFlashKey+"=error&reason="+url.QueryEscape(info.Message), http.StatusSeeOther)
+			SetFlash(w, r, "/admin/wfh/mark", Flash{
+				Kind:   FlashKindMarkAdminWFH,
+				Status: "error",
+				Reason: info.Message,
+			})
 			return
 		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -704,7 +686,11 @@ func (h *Handler) handleAdminMarkWFH(w http.ResponseWriter, r *http.Request) {
 	}
 
 	memberName := h.memberName(ctx, req.MemberID)
-	http.Redirect(w, r, "/admin/wfh?"+wfhMarkFlashKey+"=ok&member="+url.QueryEscape(memberName), http.StatusSeeOther)
+	SetFlash(w, r, "/admin/wfh", Flash{
+		Kind:   FlashKindMarkAdminWFH,
+		Status: "ok",
+		Member: memberName,
+	})
 }
 
 // handleAdminMarkWFHUnmark handles the POST that withdraws an
@@ -748,15 +734,12 @@ func (h *Handler) handleAdminMarkWFHUnmark(w http.ResponseWriter, r *http.Reques
 		ActorName:  user.Name,
 	})
 
-	http.Redirect(w, r, "/admin/wfh?"+wfhMarkFlashKey+"=unmarked&member="+url.QueryEscape(h.memberName(ctx, req.MemberID)), http.StatusSeeOther)
+	SetFlash(w, r, "/admin/wfh", Flash{
+		Kind:   FlashKindMarkAdminWFH,
+		Status: "unmarked",
+		Member: h.memberName(ctx, req.MemberID),
+	})
 }
-
-// wfhPurgeFlashKey is the query-string key used to carry the post-purge
-// confirmation message from the POST handler back to the redirect target
-// on the admin WFH page. Query-string transport keeps the implementation
-// stateless and avoids any session/cookie plumbing — the message is
-// only ever shown once, immediately after the action that produced it.
-const wfhPurgeFlashKey = "wfh_purged"
 
 // handleWFHPurge serves the admin past-period purge page (GET) and
 // commits the purge when the form is confirmed (POST). Both routes are
@@ -807,7 +790,11 @@ func (h *Handler) handleWFHPurge(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		http.Redirect(w, r, "/admin/wfh?"+wfhPurgeFlashKey+"="+strconv.FormatInt(deleted, 10)+"&cutoff="+cutoff, http.StatusSeeOther)
+		SetFlash(w, r, "/admin/wfh", Flash{
+			Kind:   FlashKindPurgeWFHPeriods,
+			Count:  deleted,
+			Cutoff: cutoff,
+		})
 		return
 	}
 

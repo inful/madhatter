@@ -57,12 +57,13 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 
 	h.loadPendingSwapCount(ctx, data)
 
-	// Surface the report-today flash banner (if any) and gate the
-	// "WFH today" button on business-day + WFH-feature-enabled +
-	// current-user-status. The button only renders when the user is
-	// currently On-site so the affordance matches its outcome.
-	surfaceDashboardFlash(r, data, wfhReportTodayFlashKey, "WFHReportTodayOutcome", "WFHReportTodayReason")
-	surfaceDashboardFlash(r, data, signalOnSiteFlashKey, "SignalOnSiteOutcome", "SignalOnSiteReason")
+	// Surface any flash banner from a previous form-submit redirect.
+	// The defaults below make the template's `{{if .X}}` guards
+	// safe (no "invalid type for comparison" errors when the flash
+	// is absent); PopFlashIntoData overwrites only what the flash
+	// carries.
+	h.initDashboardFlashKeys(data)
+	h.applyDashboardFlash(r, data)
 	data["CanReportWFHToday"] = h.canReportWFHToday(ctx)
 
 	// Optional URL the HAT day badge in the Today card links to.
@@ -80,21 +81,89 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// surfaceDashboardFlash reads the flash banner from the query
-// string under key, and if present, writes the outcome and
-// (optional) reason into the data map under outcomeKey and
-// reasonKey. Two flash banners share this helper (report-today
-// and signal-on-site) so the dashboard orchestrator stays below
-// the cyclomatic-complexity cap.
-func surfaceDashboardFlash(r *http.Request, data map[string]any, key, outcomeKey, reasonKey string) {
-	outcome, reason := readFlashOutcome(r, key)
-	if outcome == "" {
+// initDashboardFlashKeys seeds the data map with zero values for
+// every Bug #15 form-success flash key. The template's `{{if .X}}`
+// guards are safe against absent keys but not against `gt`/`eq`
+// comparisons against nil — these defaults keep the dashboard
+// rendering cleanly when no flash is present.
+func (h *Handler) initDashboardFlashKeys(data map[string]any) {
+	data["MemberAddedOK"] = false
+	data["LeaveSubmittedStart"] = ""
+	data["LeaveSubmittedEnd"] = ""
+	data["ScheduleGeneratedCount"] = int64(0)
+	data["SwapRequestedMember"] = ""
+	data["WFHRequestedStart"] = ""
+}
+
+// applyDashboardFlash pops the request's flash and copies the
+// relevant fields into the data map. Admin-only kinds (purge /
+// mark / unmark) are silently skipped — the admin WFH page
+// consumes those via its own apply*Flash helpers, so the
+// dashboard doesn't double-render them.
+func (h *Handler) applyDashboardFlash(r *http.Request, data map[string]any) {
+	f := PopFlash(r)
+	if f == nil {
 		return
 	}
-	data[outcomeKey] = outcome
-	if reason != "" {
-		data[reasonKey] = reason
+	// Dispatch table — each case calls a small typed writer so the
+	// switch itself stays under the cyclomatic-complexity cap.
+	switch f.Kind {
+	case FlashKindReportWFHToday:
+		applyWFHReportTodayFlash(data, f)
+	case FlashKindSignalOnSiteToday:
+		applySignalOnSiteFlash(data, f)
+	case FlashKindReportMemberAdded:
+		applyMemberAddedFlash(data, f)
+	case FlashKindReportLeaveSubmitted:
+		applyLeaveSubmittedFlash(data, f)
+	case FlashKindReportScheduleGenerated:
+		applyScheduleGeneratedFlash(data, f)
+	case FlashKindReportSwapRequested:
+		applySwapRequestedFlash(data, f)
+	case FlashKindReportWFHRequested:
+		applyWFHRequestedFlash(data, f)
+	case FlashKindPurgeWFHPeriods, FlashKindMarkAdminWFH:
+		// Admin-only surfaces; the /admin/wfh page consumes these
+		// directly via applyPurgeFlash / applyMarkFlash, so the
+		// dashboard doesn't need to surface them.
 	}
+}
+
+// Per-kind writers. Each writes the kind's specific keys into the
+// data map; small + focused so they're easy to test in isolation
+// later if we want.
+
+func applyWFHReportTodayFlash(data map[string]any, f *Flash) {
+	data["WFHReportTodayOutcome"] = f.Status
+	if f.Reason != "" {
+		data["WFHReportTodayReason"] = f.Reason
+	}
+}
+
+func applySignalOnSiteFlash(data map[string]any, f *Flash) {
+	data["SignalOnSiteOutcome"] = f.Status
+	if f.Reason != "" {
+		data["SignalOnSiteReason"] = f.Reason
+	}
+}
+
+func applyMemberAddedFlash(data map[string]any, _ *Flash) { data["MemberAddedOK"] = true }
+
+func applyLeaveSubmittedFlash(data map[string]any, f *Flash) {
+	data["LeaveSubmittedStart"] = f.StartDate
+	data["LeaveSubmittedEnd"] = f.EndDate
+}
+
+func applyScheduleGeneratedFlash(data map[string]any, f *Flash) {
+	data["ScheduleGeneratedCount"] = f.Count
+}
+
+func applySwapRequestedFlash(data map[string]any, f *Flash) {
+	data["SwapRequestedMember"] = f.Member
+}
+
+func applyWFHRequestedFlash(data map[string]any, f *Flash) {
+	data["WFHRequestedStart"] = f.StartDate
 }
 
 // canReportWFHToday gates the dashboard "WFH today" button. The

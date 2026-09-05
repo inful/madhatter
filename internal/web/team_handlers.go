@@ -59,7 +59,7 @@ func (h *Handler) handleTeamPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, "/team", http.StatusSeeOther)
+	SetFlash(w, r, "/team", Flash{Kind: FlashKindReportMemberAdded})
 }
 
 //nolint:cyclop // Team page handler orchestrates reads/sync/render branches.

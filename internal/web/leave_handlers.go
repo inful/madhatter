@@ -106,7 +106,11 @@ func (h *Handler) handleLeaveReportPost(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	SetFlash(w, r, "/", Flash{
+		Kind:      FlashKindReportLeaveSubmitted,
+		StartDate: startDate,
+		EndDate:   endDate,
+	})
 }
 
 func (h *Handler) renderLeaveReportForm(w http.ResponseWriter, r *http.Request, data map[string]any, errMsg, memberID, startDate, endDate, leaveType string) {

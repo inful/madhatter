@@ -412,7 +412,7 @@ func TestHandleSwaps_Post_ValidSwap_Redirects(t *testing.T) {
 	h.handleSwaps(w, req)
 
 	assert.Equal(t, http.StatusSeeOther, w.Code)
-	assert.Equal(t, "/swaps", w.Header().Get("Location"))
+	assert.True(t, strings.HasPrefix(w.Header().Get("Location"), "/swaps"), "redirect must land on /swaps, got %q", w.Header().Get("Location"))
 }
 
 func TestHandleSwaps_Post_ValidSwap_NotifiesTarget(t *testing.T) {
@@ -682,7 +682,7 @@ func TestHandleSwapCancel_Valid_Redirects(t *testing.T) {
 	h.handleSwapCancel(w, req)
 
 	assert.Equal(t, http.StatusSeeOther, w.Code)
-	assert.Equal(t, "/swaps", w.Header().Get("Location"))
+	assert.True(t, strings.HasPrefix(w.Header().Get("Location"), "/swaps"), "redirect must land on /swaps, got %q", w.Header().Get("Location"))
 
 	swap, err := db.GetHatSwapByID(ctx, swapID)
 	require.NoError(t, err)
@@ -782,7 +782,7 @@ func TestHandleSwapAccept_Valid_ExecutesSwapAndRedirects(t *testing.T) {
 	h.handleSwapAccept(w, req)
 
 	assert.Equal(t, http.StatusSeeOther, w.Code)
-	assert.Equal(t, "/swaps", w.Header().Get("Location"))
+	assert.True(t, strings.HasPrefix(w.Header().Get("Location"), "/swaps"), "redirect must land on /swaps, got %q", w.Header().Get("Location"))
 
 	// The assignments should now be swapped.
 	updatedAlice, err := db.GetAssignmentByID(ctx, aliceAID)
@@ -909,7 +909,7 @@ func TestHandleSwapReject_Valid_SetsStatusAndRedirects(t *testing.T) {
 	h.handleSwapReject(w, req)
 
 	assert.Equal(t, http.StatusSeeOther, w.Code)
-	assert.Equal(t, "/swaps", w.Header().Get("Location"))
+	assert.True(t, strings.HasPrefix(w.Header().Get("Location"), "/swaps"), "redirect must land on /swaps, got %q", w.Header().Get("Location"))
 
 	swap, err := db.GetHatSwapByID(ctx, swapID)
 	require.NoError(t, err)
@@ -989,7 +989,7 @@ func TestHandleSwapAdminDelete_Valid_Redirects(t *testing.T) {
 	h.handleSwapAdminDelete(w, req)
 
 	assert.Equal(t, http.StatusSeeOther, w.Code)
-	assert.Equal(t, "/swaps", w.Header().Get("Location"))
+	assert.True(t, strings.HasPrefix(w.Header().Get("Location"), "/swaps"), "redirect must land on /swaps, got %q", w.Header().Get("Location"))
 
 	// Verify it was actually deleted — GetHatSwapByID returns an error when not found.
 	swap, err := db.GetHatSwapByID(ctx, swapID)

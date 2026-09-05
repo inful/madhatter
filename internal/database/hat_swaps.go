@@ -398,6 +398,19 @@ func (db *DB) loadSwapAssignmentsForExecution(ctx context.Context, swap *HatSwap
 		return sqlc.GetAssignmentByIDRow{}, sqlc.GetAssignmentByIDRow{}, err
 	}
 
+	// Re-validate the self-swap invariant. The DB-level CHECK
+	// constraint added in migration 000028 prevents future INSERTs of
+	// self-swap rows, but a row inserted before that migration (or via
+	// a path that bypassed the constraint) could still exist. Without
+	// this re-check, ExecuteSwap would silently no-op: it would
+	// "swap" each row to the same member_id it already has and mark
+	// the rows as swapped, leaving the dashboard showing a false
+	// swap badge. Treat self-swap as a hard error here so the
+	// caller can surface the anomaly.
+	if reqAssignment.MemberID == tgtAssignment.MemberID {
+		return sqlc.GetAssignmentByIDRow{}, sqlc.GetAssignmentByIDRow{}, ErrSwapTargetSelf
+	}
+
 	nowUTC := time.Now().UTC()
 	today := time.Date(nowUTC.Year(), nowUTC.Month(), nowUTC.Day(), 0, 0, 0, 0, time.UTC)
 	if reqAssignment.Date.Before(today) || tgtAssignment.Date.Before(today) {

@@ -445,3 +445,111 @@ func TestCheckNoOpenSwaps_SecondAssignmentBusy_ReturnsErrSwapAssignmentBusy(t *t
 	err = db.CheckNoOpenSwaps(ctx, aliceAssignmentID, bobAssignmentID)
 	require.ErrorIs(t, err, ErrSwapAssignmentBusy)
 }
+
+// TestExecuteSwap_RejectsSelfSwapAtExecutionTime pins the defense
+// against the production anomaly: a self-swap row (requester and
+// target owned by the same member) was created via some non-API
+// path and reached ExecuteSwap with status='pending'. The API-level
+// CreateHatSwap would have rejected the row at INSERT time, but a
+// future bug (or a migration that bypassed the check) could put a
+// self-swap row on disk. Without this guard, ExecuteSwap would
+// happily "swap" each row to the same member_id (a wasted
+// transaction) and set is_swapped=1 — leaving the dashboard showing
+// a false swap badge. The guard returns ErrSwapTargetSelf so the
+// caller can surface the anomaly rather than silently committing
+// a no-op swap.
+//
+// The DB-level CHECK constraint added in migration 000028 prevents
+// any FUTURE self-swap INSERT. This test guards against the
+// existing-data case (pre-migration or non-API-INSERTed rows) by
+// re-checking at execute time, before any side-effect can land in
+// the transaction.
+func TestExecuteSwap_RejectsSelfSwapAtExecutionTime(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	baseDate := time.Now().AddDate(0, 0, 7)
+	aliceAssignmentID, err := db.CreateRotaAssignment(ctx, baseDate.Format("2006-01-02"), aliceID, false, nil)
+	require.NoError(t, err)
+	bobAssignmentID, err := db.CreateRotaAssignment(ctx, baseDate.AddDate(0, 0, 1).Format("2006-01-02"), aliceID, false, nil)
+	require.NoError(t, err)
+
+	// Insert a self-swap row directly via SQL, bypassing CreateHatSwap
+	// (the API path that has the check) AND the migration 000028
+	// trigger (the storage-layer guard). We temporarily drop the
+	// triggers, insert the bypass row, then recreate them. This
+	// simulates a real production scenario where the self-swap row
+	// somehow got into the DB — the only thing we can verify is
+	// that executeSwapTx's in-transaction re-check catches it.
+	_, err = db.ExecContext(ctx, `DROP TRIGGER IF EXISTS trg_hat_swaps_no_self_swap_insert`)
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx, `DROP TRIGGER IF EXISTS trg_hat_swaps_no_self_swap_update`)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = db.ExecContext(context.Background(), `
+			CREATE TRIGGER IF NOT EXISTS trg_hat_swaps_no_self_swap_insert
+			BEFORE INSERT ON hat_swaps
+			WHEN NEW.requester_member_id = NEW.target_member_id
+			BEGIN
+			    SELECT RAISE(ABORT, 'hat_swaps: requester_member_id and target_member_id must differ');
+			END
+		`)
+		_, _ = db.ExecContext(context.Background(), `
+			CREATE TRIGGER IF NOT EXISTS trg_hat_swaps_no_self_swap_update
+			BEFORE UPDATE OF requester_member_id, target_member_id ON hat_swaps
+			WHEN NEW.requester_member_id = NEW.target_member_id
+			BEGIN
+			    SELECT RAISE(ABORT, 'hat_swaps: requester_member_id and target_member_id must differ');
+			END
+		`)
+	})
+
+	swapID := "self-swap-bypass"
+	_, err = db.ExecContext(ctx, `
+		INSERT INTO hat_swaps (id, requester_assignment_id, target_assignment_id,
+		                     requester_member_id, target_member_id, status)
+		VALUES (?, ?, ?, ?, ?, 'pending')
+	`, swapID, aliceAssignmentID, bobAssignmentID, aliceID, aliceID)
+	require.NoError(t, err)
+
+	// ExecuteSwap must refuse rather than commit a no-op swap that
+	// leaves is_swapped=1 set on both rows.
+	err = db.ExecuteSwap(ctx, swapID)
+	require.ErrorIs(t, err, ErrSwapTargetSelf)
+
+	// Confirm the rows were NOT touched: no is_swapped=1 set, member_ids
+	// unchanged.
+	row1, err := db.GetAssignmentByID(ctx, aliceAssignmentID)
+	require.NoError(t, err)
+	assert.False(t, row1.IsSwapped, "row1 must not be marked swapped on a rejected self-swap")
+	row2, err := db.GetAssignmentByID(ctx, bobAssignmentID)
+	require.NoError(t, err)
+	assert.False(t, row2.IsSwapped, "row2 must not be marked swapped on a rejected self-swap")
+}
+
+// TestCreateHatSwap_SelfSwapRejectedAtAPI pins the API-level
+// invariant: CreateHatSwap must return ErrSwapTargetSelf when the
+// requester and target member_ids are equal. Pairs with the DB-level
+// CHECK constraint added in migration 000028 — the API check is
+// defense in depth at the storage layer's API boundary.
+func TestCreateHatSwap_SelfSwapRejectedAtAPI(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	baseDate := time.Now().AddDate(0, 0, 7)
+	a1, err := db.CreateRotaAssignment(ctx, baseDate.Format("2006-01-02"), aliceID, false, nil)
+	require.NoError(t, err)
+	a2, err := db.CreateRotaAssignment(ctx, baseDate.AddDate(0, 0, 1).Format("2006-01-02"), aliceID, false, nil)
+	require.NoError(t, err)
+
+	_, err = db.CreateHatSwap(ctx, a1, a2, aliceID, aliceID)
+	require.ErrorIs(t, err, ErrSwapTargetSelf)
+}

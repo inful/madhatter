@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -124,13 +125,57 @@ func (db *DB) CheckNoOpenSwaps(ctx context.Context, assignmentIDs ...string) err
 }
 
 // CreateHatSwap creates a new pending HAT day swap request.
-func (db *DB) CreateHatSwap(ctx context.Context, requesterAssignmentID, targetAssignmentID, requesterMemberID, targetMemberID string) (string, error) {
+//
+// Defense in depth: the web/API handlers validate via
+// ValidateSwapAssignments that the passed requesterMemberID
+// actually matches the requester assignment's current owner.
+// The DB layer previously had no such check, so a swap row could
+// be inserted (via direct SQL, a migration, a future bug that
+// bypasses the handlers) with a stale or wrong requester/target
+// member_id. ExecuteSwap later reads the CURRENT member_id from
+// rota_assignments and would flip the wrong way, silently
+// corrupting the schedule. The production backup shows this exact
+// scenario: a Jone↔Alexey swap where the requester_assignment
+// was Alexey's row, yet the row's member_id ended up Aashish
+// after ExecuteSwap, because the captured member_ids didn't match
+// the live owners.
+//
+// This re-validation at the storage boundary closes that gap. A
+// non-API path that bypassed the handler's ValidateSwapAssignments
+// call still gets rejected here.
+// validateCreateHatSwap enforces the storage-layer invariants for
+// a new swap row. The web/API handlers do most of this via
+// ValidateSwapAssignments; this is the defense in depth at the
+// database boundary. See CreateHatSwap for the rationale.
+func (db *DB) validateCreateHatSwap(ctx context.Context, requesterAssignmentID, targetAssignmentID, requesterMemberID, targetMemberID string) error {
 	if requesterAssignmentID == "" || targetAssignmentID == "" || requesterMemberID == "" || targetMemberID == "" {
-		return "", errors.New("all swap fields are required")
+		return errors.New("all swap fields are required")
+	}
+	if requesterMemberID == targetMemberID {
+		return ErrSwapTargetSelf
 	}
 
-	if requesterMemberID == targetMemberID {
-		return "", ErrSwapTargetSelf
+	reqAssignment, err := db.queries.GetAssignmentByID(ctx, requesterAssignmentID)
+	if err != nil {
+		return fmt.Errorf("load requester assignment: %w", err)
+	}
+	if reqAssignment.MemberID != requesterMemberID {
+		return ErrSwapNotOwner
+	}
+	tgtAssignment, err := db.queries.GetAssignmentByID(ctx, targetAssignmentID)
+	if err != nil {
+		return fmt.Errorf("load target assignment: %w", err)
+	}
+	if tgtAssignment.MemberID != targetMemberID {
+		return errors.New("recorded target member does not own the target assignment")
+	}
+	return nil
+}
+
+// CreateHatSwap creates a new pending HAT day swap request.
+func (db *DB) CreateHatSwap(ctx context.Context, requesterAssignmentID, targetAssignmentID, requesterMemberID, targetMemberID string) (string, error) {
+	if err := db.validateCreateHatSwap(ctx, requesterAssignmentID, targetAssignmentID, requesterMemberID, targetMemberID); err != nil {
+		return "", err
 	}
 
 	id := uuid.New().String()

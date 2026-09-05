@@ -853,12 +853,25 @@ func (e *Engine) ensureOriginalAssignment(ctx context.Context, dateStr string, l
 // date. It is idempotent:
 //   - if a cover already exists with the same member, it is a no-op;
 //   - if a cover exists with a different member, the member_id is updated
-//     to point to the new person (e.g. when a cover themselves take leave);
+//     to point at the new person (e.g. when a cover themselves take leave);
 //   - if no cover exists, a new one is created.
 //
 // This idempotency is required because AssignCoversForLeave is invoked from
 // multiple paths (web form, API, manual reprocess, HandleLeaveChange
 // reconcile) and any of them may run more than once for the same leave.
+//
+// IMPORTANT: this function MUST NOT touch rows where is_swapped=1.
+// Those rows were created by a HAT day swap (see handleSwapRequestPost,
+// ExecuteSwap) — the user / the swap owns them, not the cover
+// scheduler. The production backup showed the bug: a Jone↔Alexey
+// swap on Sep 17 ↔ Sep 7 cover was accepted (status='accepted'),
+// the swap set is_swapped=1 on the Sep 7 cover, and then a later
+// cover-scheduler run on Olga's Sep 7 leave re-pointed the cover
+// to Aashish. The dashboard then showed Aashish as a swap partner
+// even though the actual swap was Jone↔Alexey — the dashboard
+// "swap icon" rendered on the wrong rows. The fix is to leave
+// is_swapped=1 rows strictly alone; the swap may still need to be
+// cancelled or modified via the swap endpoints.
 func (e *Engine) createCoverAssignment(ctx context.Context, dateStr, coverMemberID, originalAssignmentID string) error {
 	// Check if there's already a cover assignment for this date.
 	existingAssignments, err := e.db.GetAssignmentsByDate(ctx, dateStr)
@@ -869,6 +882,12 @@ func (e *Engine) createCoverAssignment(ctx context.Context, dateStr, coverMember
 	for _, a := range existingAssignments {
 		if !a.IsCover {
 			continue
+		}
+		// A swap set this row — leave it strictly alone. The
+		// swap's owner (requester / target) decides who shows up
+		// there; the cover scheduler must not stomp on that.
+		if a.IsSwapped {
+			return nil
 		}
 		if a.MemberID == coverMemberID {
 			// Cover already points at the right person; leave it alone.
@@ -881,7 +900,7 @@ func (e *Engine) createCoverAssignment(ctx context.Context, dateStr, coverMember
 			return parseErr
 		}
 
-		query := `UPDATE rota_assignments SET member_id = ? WHERE date = ? AND is_cover = 1`
+		query := `UPDATE rota_assignments SET member_id = ? WHERE date = ? AND is_cover = 1 AND is_swapped = 0`
 		_, err = e.db.ExecContext(ctx, query, coverMemberID, dateTime)
 		return err
 	}

@@ -286,6 +286,32 @@ func TestHandleNotFound_RendersStyledPage(t *testing.T) {
 	assert.NotEqual(t, "404 page not found\n", body)
 }
 
+// TestGlobalUserMenu_EmailUsesGreyDark pins the WCAG AA contrast
+// contract on the email line in the global user menu (Bug #11).
+// The earlier template used .has-text-grey (#7a7a7a on white,
+// fails AA at 0.8rem); the fix bumped to .has-text-grey-dark
+// (#4a4a4a). Without this test, a regression back to .has-text-grey
+// would slip through because the email is small and the contrast
+// issue is hard to spot in screenshots.
+func TestGlobalUserMenu_EmailUsesGreyDark(t *testing.T) {
+	mockDB := &database.DB{}
+	handler, err := NewHandler(mockDB, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/help", nil)
+	req = withUser(req, "alice@example.com", "Alice", false)
+	w := httptest.NewRecorder()
+	handler.handleHelp(w, req)
+
+	body := w.Body.String()
+	assert.Contains(t, body, "menu-email",
+		"the user-menu card must render the menu-email line")
+	assert.Contains(t, body, `class="has-text-grey-dark menu-email"`,
+		"menu-email must use has-text-grey-dark for AA contrast")
+	assert.NotContains(t, body, `class="has-text-grey menu-email"`,
+		"menu-email must not regress to has-text-grey")
+}
+
 // TestPageHeader_HeadingIsReasonablySized is the regression guard
 // for the page-header h1 size. The previous is-2 + 32-39px clamp
 // rendered at sizes appropriate for a marketing landing page; for

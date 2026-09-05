@@ -2,6 +2,8 @@ package web
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -737,5 +739,66 @@ func TestCanReportWFHToday_GatesOnServiceAndBusinessDay(t *testing.T) {
 			got2 := h.canReportWFHTodayAt(ctx, c.today)
 			assert.Equal(t, c.want, got2)
 		})
+	}
+}
+
+// TestDashboard_StatusLegendRendersAllSixStates pins the contract
+// that the schedule matrix renders a status legend under the table
+// with all six statuses (On-site, WFH, Admin WFH, On leave,
+// Conference, No data). The earlier UI audit (Bug #5) found that
+// the status chips in the matrix had distinct background colors
+// but the user had no way to decode them without an inline key.
+// This test fails if any of the six legend chips is missing.
+func TestDashboard_StatusLegendRendersAllSixStates(t *testing.T) {
+	ctx := context.Background()
+	db, h, cleanup := setupDashboardTestDB(t)
+	defer cleanup()
+
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	// Seed a rota assignment for the next 5 business days so the
+	// schedule matrix has rows to render and the legend (which lives
+	// under the matrix) appears.
+	now := time.Now()
+	for offset := range 7 {
+		d := now.AddDate(0, 0, offset)
+		if d.Weekday() == time.Saturday || d.Weekday() == time.Sunday {
+			continue
+		}
+		_, err = db.CreateRotaAssignment(ctx, d.Format("2006-01-02"), memberID, false, nil)
+		require.NoError(t, err)
+	}
+	_, err = h.maintenance.EnsureSchedule(ctx)
+	require.NoError(t, err)
+
+	req := withUser(httptest.NewRequestWithContext(ctx, http.MethodGet, "/", nil),
+		"alice@example.com", "Alice", false)
+	rr := httptest.NewRecorder()
+	h.handleDashboard(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	body := rr.Body.String()
+
+	// The legend <dl> must be present and contain all six chips,
+	// each in its own .status-* class so the CSS rules apply. The
+	// class attribute also carries "mt-3" (Bulma top margin), so we
+	// match the leading class name rather than the whole attribute.
+	assert.Contains(t, body, `class="status-legend`,
+		"matrix must render a status-legend under the table")
+	for _, status := range []string{
+		"status-onsite",
+		"status-wfh",
+		"status-wfh-admin",
+		"status-away",
+		"status-away conference-leave",
+		"status-none",
+	} {
+		assert.Contains(t, body, status,
+			"legend must include a chip for %s", status)
+	}
+	// Each chip also carries a human-readable label.
+	for _, label := range []string{"On-site", "WFH", "Admin WFH", "On leave", "Conference", "No data"} {
+		assert.Contains(t, body, label,
+			"legend must include the %q label", label)
 	}
 }

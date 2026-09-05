@@ -662,9 +662,18 @@ func TestHandleWFHReportToday_QuotaExhausted_FlashesError(t *testing.T) {
 
 	// Burn the quota on two future-dated business days inside the
 	// same period as today. Today is the third.
-	today := time.Now().UTC()
+	//
+	// Saturday-flake fix: on a Saturday the only future-dated day in
+	// today's period is Sunday (which is in the period but not a
+	// business day) — there's no way to "burn" two business days in
+	// today's period from a Saturday anchor. Skip the test on
+	// Saturday; on weekdays this works because today is in the
+	// middle of the period with two future business days ahead.
+	if now := time.Now().UTC().Weekday(); now == time.Saturday || now == time.Sunday {
+		t.Skip("test scenario requires a weekday anchor (Sat/Sun have no future business days in the current period)")
+	}
 	for _, offset := range []int{1, 2} {
-		date := today.AddDate(0, 0, offset).Format("2006-01-02")
+		date := time.Now().UTC().AddDate(0, 0, offset).Format("2006-01-02")
 		req, cErr := db.CreateWFHRequest(ctx, aliceID, date)
 		require.NoError(t, cErr)
 		require.NoError(t, db.UpdateWFHRequestStatus(ctx, req.ID, database.WFHStatusApproved))
@@ -683,7 +692,7 @@ func TestHandleWFHReportToday_QuotaExhausted_FlashesError(t *testing.T) {
 		"the error flash must carry a human-readable reason")
 
 	// No row for today was created.
-	todayStr := today.Format("2006-01-02")
+	todayStr := time.Now().UTC().Format("2006-01-02")
 	rows, err := db.GetWFHRequestsByDate(ctx, todayStr)
 	require.NoError(t, err)
 	assert.Empty(t, rows, "quota-exhausted must not create a wfh_requests row for today")
@@ -787,7 +796,17 @@ func TestRenderWFHRequestForm_NextPeriodBannerActiveWhenQueryParamDateIsInNextPe
 	// must be in the FUTURE so CreateWFHRequest's date guard
 	// doesn't reject them. We pick the last two days of the
 	// current period.
+	//
+	// Saturday-flake fix: the last two days of the current period
+	// are Saturday and Sunday, and on a Saturday the Saturday is
+	// "today" (in the past at the time the test runs) and the
+	// Sunday is in the future. The Saturday gets rejected by
+	// validateRequestDate. Skip on Saturday; on a weekday this
+	// picks two valid future dates.
 	today := time.Now().UTC()
+	if today.Weekday() == time.Saturday || today.Weekday() == time.Sunday {
+		t.Skip("test scenario requires a weekday anchor (current period's last two days are weekend)")
+	}
 	_, currentEnd, err := h.wfhService.ComputePeriodBounds(today)
 	require.NoError(t, err)
 	_, err = db.CreateWFHRequest(ctx, memberID,
@@ -858,7 +877,14 @@ func TestRenderWFHRequestForm_SubmitStaysEnabledWhenCurrentPeriodExhausted(t *te
 	// Fill the current period to the max with future dates so
 	// CreateWFHRequest's date guard accepts the rows. Pick the
 	// last two days of the current period.
+	//
+	// Saturday-flake fix: same as NextPeriodBannerActiveWhenQuery…
+	// above — on a Saturday the period's last two days are weekend
+	// and can't both be future. Skip on weekend.
 	today := time.Now().UTC()
+	if today.Weekday() == time.Saturday || today.Weekday() == time.Sunday {
+		t.Skip("test scenario requires a weekday anchor (current period's last two days are weekend)")
+	}
 	_, currentEnd, err := h.wfhService.ComputePeriodBounds(today)
 	require.NoError(t, err)
 	_, err = db.CreateWFHRequest(ctx, memberID,

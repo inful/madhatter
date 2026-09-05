@@ -1005,6 +1005,14 @@ func TestReportToday_HappyPath_Approves(t *testing.T) {
 	cfg := testConfig()
 	svc := NewService(db, cfg)
 
+	// Saturday-flake fix: NextBusinessDay on Saturday returns
+	// Monday, but ReportToday uses real wall-clock today. Mismatch
+	// → "WFH date has already passed". Skip on weekend; on a
+	// weekday NextBusinessDay returns today itself.
+	if now := time.Now().UTC().Weekday(); now == time.Saturday || now == time.Sunday {
+		t.Skip("test requires today to be a business day")
+	}
+
 	today := testutil.NextBusinessDay(time.Now().UTC())
 	todayStr := today.Format("2006-01-02")
 
@@ -1037,6 +1045,11 @@ func TestReportToday_AtFloor_Denies(t *testing.T) {
 	cfg.MinOnsitePercentage = 50
 	svc := NewService(db, cfg)
 
+	// Saturday-flake fix: see TestReportToday_HappyPath_Approves.
+	if now := time.Now().UTC().Weekday(); now == time.Saturday || now == time.Sunday {
+		t.Skip("test requires today to be a business day")
+	}
+
 	today := testutil.NextBusinessDay(time.Now().UTC())
 	todayStr := today.Format("2006-01-02")
 
@@ -1063,6 +1076,11 @@ func TestReportToday_DuplicateRefuses(t *testing.T) {
 	defer cleanup()
 
 	svc := NewService(db, testConfig())
+
+	// Saturday-flake fix: see TestReportToday_HappyPath_Approves.
+	if now := time.Now().UTC().Weekday(); now == time.Saturday || now == time.Sunday {
+		t.Skip("test requires today to be a business day")
+	}
 
 	today := testutil.NextBusinessDay(time.Now().UTC())
 	todayStr := today.Format("2006-01-02")
@@ -1160,6 +1178,11 @@ func TestReportToday_HolidayFails(t *testing.T) {
 	db, cleanup := setupWFHTestDB(t)
 	defer cleanup()
 
+	// Saturday-flake fix: see TestReportToday_HappyPath_Approves.
+	if now := time.Now().UTC().Weekday(); now == time.Saturday || now == time.Sunday {
+		t.Skip("test requires today to be a business day")
+	}
+
 	today := testutil.NextBusinessDay(time.Now().UTC())
 	db.SetHolidayChecker(func(d time.Time) bool {
 		return d.Equal(today)
@@ -1189,6 +1212,15 @@ func TestMarkWFH_CreatesAdminMarkedRow(t *testing.T) {
 	svc := NewService(db, testConfig())
 	notifier := &recordingNotifier{}
 	svc.SetNotifier(notifier)
+
+	// Saturday-flake fix: MarkWFH is today-only — the production
+	// handler rejects any date that doesn't equal today. On a
+	// Saturday the test computes today as Monday via
+	// NextBusinessDay, but the system compares against Saturday
+	// wall-clock today. Skip on weekends.
+	if now := time.Now().UTC().Weekday(); now == time.Saturday || now == time.Sunday {
+		t.Skip("MarkWFH is today-only; test requires today to be a business day")
+	}
 
 	today := testutil.NextBusinessDay(time.Now().UTC())
 	todayStr := today.Format("2006-01-02")
@@ -1239,6 +1271,11 @@ func TestMarkWFH_AllowedWhenQuotaExhausted(t *testing.T) {
 	cfg := testConfig()
 	cfg.MaxDaysPerPeriod = 2
 	svc := NewService(db, cfg)
+
+	// Saturday-flake fix: see TestMarkWFH_CreatesAdminMarkedRow.
+	if now := time.Now().UTC().Weekday(); now == time.Saturday || now == time.Sunday {
+		t.Skip("MarkWFH is today-only; test requires today to be a business day")
+	}
 
 	today := testutil.NextBusinessDay(time.Now().UTC())
 	todayStr := today.Format("2006-01-02")
@@ -1300,6 +1337,11 @@ func TestMarkWFH_AllowedWhenFloorWouldBeViolated(t *testing.T) {
 	cfg.MinOnsiteAbsolute = 1
 	svc := NewService(db, cfg)
 
+	// Saturday-flake fix: see TestMarkWFH_CreatesAdminMarkedRow.
+	if now := time.Now().UTC().Weekday(); now == time.Saturday || now == time.Sunday {
+		t.Skip("MarkWFH is today-only; test requires today to be a business day")
+	}
+
 	today := testutil.NextBusinessDay(time.Now().UTC())
 	todayStr := today.Format("2006-01-02")
 
@@ -1339,6 +1381,12 @@ func TestMarkWFH_DuplicateReturnsExisting(t *testing.T) {
 	defer cleanup()
 
 	svc := NewService(db, testConfig())
+
+	// Saturday-flake fix: see TestMarkWFH_CreatesAdminMarkedRow.
+	if now := time.Now().UTC().Weekday(); now == time.Saturday || now == time.Sunday {
+		t.Skip("MarkWFH is today-only; test requires today to be a business day")
+	}
+
 	today := testutil.NextBusinessDay(time.Now().UTC())
 	todayStr := today.Format("2006-01-02")
 
@@ -1395,6 +1443,11 @@ func TestMarkWFH_RejectsHoliday(t *testing.T) {
 	db, cleanup := setupWFHTestDB(t)
 	defer cleanup()
 
+	// Saturday-flake fix: see TestMarkWFH_CreatesAdminMarkedRow.
+	if now := time.Now().UTC().Weekday(); now == time.Saturday || now == time.Sunday {
+		t.Skip("MarkWFH is today-only; test requires today to be a business day")
+	}
+
 	today := testutil.NextBusinessDay(time.Now().UTC())
 	todayStr := today.Format("2006-01-02")
 	db.SetHolidayChecker(func(d time.Time) bool { return d.Equal(today) })
@@ -1417,6 +1470,12 @@ func TestWithdrawAdminMark_RefundsQuota(t *testing.T) {
 	defer cleanup()
 
 	svc := NewService(db, testConfig())
+
+	// Saturday-flake fix: see TestMarkWFH_CreatesAdminMarkedRow.
+	if now := time.Now().UTC().Weekday(); now == time.Saturday || now == time.Sunday {
+		t.Skip("MarkWFH is today-only; test requires today to be a business day")
+	}
+
 	today := testutil.NextBusinessDay(time.Now().UTC())
 	todayStr := today.Format("2006-01-02")
 

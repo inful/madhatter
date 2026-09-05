@@ -256,7 +256,7 @@ func TestHandleHelp_Returns200(t *testing.T) {
 	assert.Equal(t, 200, w.Code)
 	assert.Contains(t, w.Body.String(), "User Guide")
 	assert.Contains(t, w.Body.String(), "HAT Day Swaps")
-	assert.Contains(t, w.Body.String(), "How WFH Is Settled")
+	assert.Contains(t, w.Body.String(), "For admins")
 }
 
 // TestHandleNotFound_RendersStyledPage pins the contract that any

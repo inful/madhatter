@@ -25,7 +25,67 @@
 <div class="card">
     <header class="card-header">
         <p class="card-header-title">
-            <i class="fas fa-user-clock mr-2"></i> Leave And WFH
+            <i class="fas fa-calendar-day mr-2"></i> Today: On-site or WFH?
+        </p>
+    </header>
+    <div class="card-content">
+        <div class="content">
+            <p>The dashboard's <em>Today</em> card shows the badge that describes your day:</p>
+            <ul>
+                <li><strong>On-site</strong> &mdash; you're in the office.</li>
+                <li><strong>WFH</strong> &mdash; you're working from home. Either a recurring weekday, permanent-WFH, or an approved ad-hoc request.</li>
+                <li><strong>On leave</strong> &mdash; you reported leave for today.</li>
+                <li><strong>@conference</strong> &mdash; you're away for a conference (a leave variant).</li>
+            </ul>
+
+            <h4 class="title is-6 mb-2 mt-4">I'm actually coming in today</h4>
+            <p>If your projection is WFH (recurring weekday, permanent-WFH, or an approved ad-hoc request) and you're actually in the office, the <strong>Coming in instead</strong> button on the <em>Today</em> card withdraws today's row for you. The badge flips to <strong>On-site</strong> that day and your quota slot is freed. The contractual pattern is unchanged: the next occurrence of the same weekday is still projected as WFH unless you withdraw that row too.</p>
+            <p>Permanent-WFH members (every weekday set as recurring WFH) have a row for every business day in the current period; withdrawing today's row is the way to signal an in-office day. The button is hidden when there's nothing to override, so a stale bookmarked URL produces a typed-error flash rather than a silent success.</p>
+
+            <h4 class="title is-6 mb-2 mt-4">WFH today (unforeseen)</h4>
+            <p>If you need to <strong>report WFH for today</strong> due to unforeseen circumstances (e.g. you're sick and working from home), open the <strong>Quick Actions</strong> menu (top-right of the user card) and choose <em>WFH today</em>. The request is created and settled inline so the dashboard reflects the outcome within the same request &mdash; no waiting for the next settlement tick. The entry only renders when you're currently On-site, today is a business day, and the WFH feature is enabled. Capacity-floor enforcement is identical to the regular request path: if today's at-work count has already hit the floor, the report is denied rather than auto-approving through. A flash banner reports the outcome (approved / denied / error). The same path is exposed as <code>POST /api/v1/wfh/report-today</code> and the CLI subcommand <code>wfh report &lt;member-id&gt;</code>.</p>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <header class="card-header">
+        <p class="card-header-title">
+            <i class="fas fa-house-laptop mr-2"></i> WFH: requesting and withdrawing
+        </p>
+    </header>
+    <div class="card-content">
+        <div class="content">
+            <p>Use WFH to submit work-from-home requests. Requests are settled by policy and may be approved or denied based on capacity rules.</p>
+
+            <h4 class="title is-6 mb-2 mt-4">Quota</h4>
+            <p>Each member has a WFH quota per period: a cap on how many work-from-home days count against you. Both ad-hoc requests and contracted recurring weekdays are counted together. When your quota is full, the form blocks new requests until you withdraw an approved one to free a slot.</p>
+            <p>The Request WFH form (<a href="/wfh/request">/wfh/request</a>) shows your quota for the period containing the date in the date picker &mdash; not always today's period. A user who has used 2 of 2 days this month still sees "2 remaining" when picking a date next month, because the quota resets at the period boundary. The submit button disables itself when the selected period is at the limit, with a help line under the date input explaining why; holidays disable it the same way with a "this is a public holiday" notice. Pick a date in a later period &mdash; or ask an admin to mark the day &mdash; to bypass the quota.</p>
+
+            <h4 class="title is-6 mb-2 mt-4">Why a request can be denied</h4>
+            <p>A request is denied only when approving it would drop the day's on-site headcount below the minimum. When that happens the request row carries a human-readable explanation in the <em>Denial reason</em> column. The reason is rendered under the <em>Denied</em> tag on your WFH list page, on the admin manage page, and in the email notification you receive &mdash; so a denied request always tells you why, never just "Denied". The most common wording is <em>"On-site coverage would drop below the minimum (N on-site required). M members are already unavailable; approving more would leave the team under the floor."</em> The numbers reflect the day's actual state, so a re-read at a different time will reflect a different headcount. The reason is for information only; you cannot contest a denial from the WFH list &mdash; if you believe the floor is wrong, talk to an admin.</p>
+
+            <h4 class="title is-6 mb-2 mt-4">Recurring weekdays</h4>
+            <p>If a member has a weekday set as recurring WFH, the system treats every upcoming occurrence of that weekday in the current period as an approved request. Those rows appear in the WFH list alongside ad-hoc requests, all marked Approved. Withdrawing a single occurrence frees one quota slot for that period; the next period reverts to the configured schedule.</p>
+            <p>If you self-withdraw a recurring occurrence and then re-request the same date, the new request is treated as ad-hoc (not recurring) and goes through normal settlement &mdash; so it may be denied if on-site coverage is at the floor. The recurring pattern for that weekday resumes from the next occurrence onward.</p>
+
+            <h4 class="title is-6 mb-2 mt-4">Withdrawing</h4>
+            <p>Approved requests can be withdrawn by the requester or by an admin at any time before the WFH day itself. The day itself is still withdrawable, but once the day has passed the request is locked.</p>
+            <p>You can also cancel a <strong>pending</strong> request (before settlement) from your WFH list. In both cases, if you change your mind afterwards you can re-request the same date &mdash; the row is resurrected in place as a new pending request, audit fields are cleared, and it will go through settlement like any other pending request.</p>
+            <p>On the WFH list, the button is labelled differently per row type to match the user-facing intent:</p>
+            <ul>
+                <li>Recurring-WFH rows show <strong>Coming in instead</strong> with a building icon. Clicking withdraws the recurring row and flips today's status to On-site.</li>
+                <li>Ad-hoc approved rows keep the generic <strong>Withdraw</strong> label. The user-facing intent is the same (cancel a request), but the label matches the operation.</li>
+            </ul>
+            <p>Admin withdrawals are different: they represent an admin's decision and cannot be reversed by re-requesting. If an admin withdraws your WFH, ask them to reinstate it if you want it back. If you self-withdraw a row by mistake, an admin can re-create the request on your behalf via <strong>Manage WFH</strong>.</p>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <header class="card-header">
+        <p class="card-header-title">
+            <i class="fas fa-plane-departure mr-2"></i> Leave
         </p>
     </header>
     <div class="card-content">
@@ -33,112 +93,21 @@
             <p>Use Leave to report absences. Admins review and manage leave records from the management page.</p>
             <p>If a colleague calls in sick, any authenticated user can register that absence on their behalf via the <strong>Someone Called In Sick</strong> form (link in the user menu under Leave). The date is pinned to today &mdash; the form re-validates against the server's clock, so a tampered submission cannot file a future or past-dated leave. The same cover-assignment and maintenance machinery runs as the regular report flow; the row is always recorded as plain Leave (no leave-type selector, no email address in the member picker). A duplicate row for the same person on the same day is refused rather than stacked. If the absence is expected to last longer than today, the colleague or an admin can extend it via <strong>Manage Leave</strong>.</p>
             <p>Each leave record carries a <strong>leave type</strong> tag (Leave or Conference). Plain Leave is the default and behaves exactly as before. Conference leave is the same in every respect except for how it surfaces on the dashboard: the "Today" status badge changes from <strong>On leave</strong> to <strong>@conference</strong>, and the schedule-matrix cell swaps its plane icon for a people-group icon and uses a distinct colour. The tag is purely cosmetic &mdash; it does not change scheduling, cover assignment, or quotas.</p>
-            <p>Use WFH to submit work-from-home requests. Requests are settled by policy and may be approved or denied based on capacity rules.</p>
-            <p><strong>Quota is per-period, and the form shows the period for the date you picked.</strong> The Request WFH form (<a href="/wfh/request">/wfh/request</a>) shows your quota for the period containing the date in the date picker &mdash; not always today's period. A user who has used 2 of 2 days this month still sees "2 remaining" when picking a date next month, because the quota resets at the period boundary. The submit button disables itself when the selected period is at the limit, with a help line under the date input explaining why; holidays disable it the same way with a "this is a public holiday" notice. Pick a date in a later period &mdash; or ask an admin to mark the day &mdash; to bypass the quota.</p>
-            <p><strong>Why a WFH request can be denied.</strong> A request is denied only when approving it would drop the day's on-site headcount below the minimum. When that happens the request row carries a human-readable explanation in the <em>Denial reason</em> column. The reason is rendered under the <em>Denied</em> tag on your WFH list page, on the admin manage page, and in the email notification you receive &mdash; so a denied request always tells you why, never just "Denied". The most common wording is <em>"On-site coverage would drop below the minimum (N on-site required). M members are already unavailable; approving more would leave the team under the floor."</em> The numbers reflect the day's actual state, so a re-read at a different time will reflect a different headcount. The reason is for information only; you cannot contest a denial from the WFH list &mdash; if you believe the floor is wrong, talk to an admin.</p>
-            <p>If you need to <strong>report WFH for today</strong> due to unforeseen circumstances (e.g. you're sick and working from home), open the <strong>Quick Actions</strong> menu (top-right of the user card) and choose <em>WFH today</em>. The request is created and settled inline so the dashboard reflects the outcome within the same request &mdash; no waiting for the next settlement tick. The entry only renders when you're currently On-site, today is a business day, and the WFH feature is enabled. Capacity-floor enforcement is identical to the regular request path: if today's at-work count has already hit the floor, the report is denied rather than auto-approving through. A flash banner reports the outcome (approved / denied / error). The same path is exposed as <code>POST /api/v1/wfh/report-today</code> and the CLI subcommand <code>wfh report &lt;member-id&gt;</code>.</p>
-            <p>Approved WFH requests can be withdrawn by the requester (or by an admin) up until midnight of the WFH day.</p>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <header class="card-header">
+        <p class="card-header-title">
+            <i class="fas fa-calendar-star mr-2"></i> Calendar Subscriptions
+        </p>
+    </header>
+    <div class="card-content">
+        <div class="content">
+            <p>Open Calendar to create subscription links for rota and meetings feeds.</p>
+            <p>You can copy feed URLs into your calendar app and keep schedules up to date automatically.</p>
             <p><strong>WFH days on the calendar feed.</strong> The per-member calendar subscription (<a href="/calendar/subscriptions">/calendar/subscriptions</a>) surfaces your own WFH days as separate all-day events alongside the HAT-day assignments. A subscriber sees an entry titled <em>Alice - WFH</em> on each day you have an approved (or contractual recurring) WFH row, so the calendar stays accurate without consulting the dashboard. Admin-marked WFH days carry a "(marked by admin)" note in the event description so calendar clients (which don't render color) can tell a self-requested day from a correction. Only approved WFH rows surface on the calendar &mdash; pending, denied, and withdrawn rows do not appear. The look is overridable via the <code>SUPPORT_DAY_LINKS</code>-style template path: an operator can customize the WFH event text and HTML via the standard template-override env vars.</p>
-            <p><strong>Admin override &mdash; marking a member as WFH.</strong> When a member worked from home today but never submitted a WFH request (e.g. they called in sick and forgot to report), an admin can record the actual state via <strong>Manage WFH &raquo; Mark member WFH</strong>. The mark is a full override: it bypasses the per-member quota and the daily on-site capacity floor, so the admin can correct the dashboard even when the math would otherwise block the action. The row is still recorded as approved, so the quota counter, the on-site count, and the calendar feed all reflect the corrected state &mdash; the dashboard is honest. The chip on the dashboard and the schedule-matrix cell render in a distinct purple-blue color (Bulma <code>is-link</code>) so the team can see at a glance which days were admin-asserted rather than self-requested. The mark is today-only and can be undone from the same admin page via the <em>Unmark</em> button on the row. Members see a "marked by admin" tag on their own WFH list and a quota notice if the mark took them past their period quota.</p>
-
-            <h4 class="title is-6 mb-2 mt-4">Assigned WFH &amp; seat-cap picker (admins)</h4>
-            <p>When <code>WFH_SEAT_CAP</code> is set, the system enforces a hard seat cap on the office. On every settlement pass the picker walks the next <code>WFH_SETTLEMENT_DAYS</code> working days and, for any date where the on-site headcount would exceed the cap, inserts a system-allocated <strong>Assigned</strong> WFH row for the excess members. Picks are deterministic &mdash; the priority is fewest voluntary WFHs in the period, then a co-presence tiebreaker (members who haven't been on-site with the cohort recently are kept on-site), then alphabetical. Assigned rows appear in the affected member's WFH list with a yellow badge; they don't burn voluntary quota. Members can swap an Assigned row with an on-site teammate via <strong>Request swap</strong> on the row. Admins can <strong>Exempt from picker</strong> on the team-edit form (a per-member checkbox) &mdash; an exempt member is never picked for involuntary WFH, but they can still volunteer via a swap. Admins can also <strong>Reassign</strong> an Assigned row from <strong>Manage WFH</strong> to move it to a different active teammate in one transaction, preserving the cap. See <a href="/docs/ASSIGNED_WFH.md">docs/ASSIGNED_WFH.md</a> for the full reference.</p>
-
-            <h4 class="title is-6 mb-2 mt-4">WFH swap notifications</h4>
-            <p>The WFH-swap path (Assigned / swap-origin rows only) shares the same email pipeline as HAT swaps. When you create a swap, the target receives a <em>swap requested</em> email; when they accept or reject, you receive the matching outcome; when you cancel a pending swap, the target receives a <em>swap cancelled</em> notice. The default templates read generically so the same set covers both HAT and WFH swaps. Per-member email opt-out via <strong>Manage WFH &raquo; Email preferences</strong> is honoured.</p>
-        </div>
-    </div>
-</div>
-
-<div class="card">
-    <header class="card-header">
-        <p class="card-header-title">
-            <i class="fas fa-balance-scale mr-2"></i> How WFH Is Settled
-        </p>
-    </header>
-    <div class="card-content">
-        <div class="content">
-            <h4 class="title is-6 mb-2">Quota</h4>
-            <p>Each member has a WFH quota per period: a cap on how many work-from-home days count against you. Both ad-hoc requests and contracted recurring weekdays are counted together. When your quota is full, the form blocks new requests until you withdraw an approved one to free a slot.</p>
-            <p>Periods are fixed-length windows aligned to a known Monday. They start and end on the same day-of-week for everyone, so quota usage is comparable across the team.</p>
-
-            <h4 class="title is-6 mb-2 mt-4">On-site coverage</h4>
-            <p>Every day has a minimum number of people who must be physically on site. The minimum is the larger of two values: a percentage of active members, and a hard absolute floor. The percentage is rounded up before the comparison so a fractional result never under-counts. The system uses whichever is higher so a small team can never drop below the absolute floor even when the rounded percentage would otherwise allow it.</p>
-            <p>On a given day, members already on leave, members with a recurring weekday, and approved ad-hoc WFH requests all count against that day's on-site capacity. The remaining members are the pool of available WFH slots for that day.</p>
-            <p>When the day's at-work count has reached the floor, the WFH chip on the dashboard turns orange for that column to signal no more WFH can be approved that day. Any new pending request for that date will be denied at settlement time, because approving it would drop on-site coverage below the floor.</p>
-
-            <h4 class="title is-6 mb-2 mt-4">Settlement</h4>
-            <p>Pending WFH requests are processed in a rolling window of one full quota period ahead (7 days by default), not all at once. The system reviews requests whose dates fall inside that window, decides them against the day's available slots, and leaves anything further out as pending until it enters the window. The scheduler runs every {{.WFHSettlementInterval}} so a request submitted during business hours is usually settled within the same quarter-hour.</p>
-            <p>When more members request WFH on the same day than there are slots, requests are prioritised by who has used the fewest WFH days in the current period. Ties are broken by who submitted first.</p>
-
-            <h4 class="title is-6 mb-2 mt-4">Recurring weekdays</h4>
-            <p>If a member has a weekday set as recurring WFH, the system treats every upcoming occurrence of that weekday in the current period as an approved request. Those rows appear in the WFH list alongside ad-hoc requests, marked with the same Approved status, and the same Withdraw button works on them. Withdrawing a single occurrence frees one quota slot for that period; the next period reverts to the configured schedule.</p>
-            <p>If you self-withdraw a recurring occurrence and then re-request the same date, the new request is treated as ad-hoc (not recurring) and goes through normal settlement &mdash; so it may be denied if on-site coverage is at the floor. The recurring pattern for that weekday resumes from the next occurrence onward.</p>
-            <p>Recurring rows use a labelled <strong>Coming in instead</strong> button instead of the generic "Withdraw" — the label describes the user-facing intent ("I'm actually in the office that day, despite the contractual pattern") rather than the underlying data operation. Withdrawing frees the quota slot AND flips the dashboard status to On-site for that day.</p>
-
-            <h4 class="title is-6 mb-2 mt-4">Coming in instead</h4>
-            <p>The dashboard's <em>Today</em> card shows whether you're projected as On-site or WFH today. If your projection is WFH (recurring weekday, permanent WFH, or an approved ad-hoc request) and you're actually coming into the office, withdraw the row from the WFH list — the dashboard badge flips to On-site that day. The contractual recurring weekday is unchanged: next week's Wednesday you're still projected as WFH unless you withdraw that row too.</p>
-            <p>Permanent-WFH members (every weekday set as recurring WFH) have a row for every business day in the current period; withdrawing the row for today is the way to signal an in-office day. Ad-hoc requesters withdraw the single row they submitted.</p>
-
-            <h4 class="title is-6 mb-2 mt-4">Withdrawing</h4>
-            <p>Approved requests can be withdrawn by the requester or by an admin at any time before the WFH day itself. The day itself is still withdrawable, but once the day has passed the request is locked.</p>
-            <p>You can also cancel a <strong>pending</strong> request (before settlement) from your WFH list. In both cases, if you change your mind afterwards you can re-request the same date &mdash; the row is resurrected in place as a new pending request, audit fields are cleared, and it will go through settlement like any other pending request.</p>
-            <p>Admin withdrawals are different: they represent an admin's decision and cannot be reversed by re-requesting. If an admin withdraws your WFH, ask them to reinstate it if you want it back.</p>
-        </div>
-
-        {{if .WFHConfigured}}
-        <h4 class="title is-6 mb-2 mt-4">Current configuration</h4>
-        <table class="table is-fullwidth is-striped is-hoverable is-size-7">
-            <caption class="is-sr-only">
-                Current WFH configuration — settlement window, settlement tick, request horizon, and minimum on-site coverage.
-            </caption>
-            <tbody>
-                <tr>
-                    <th scope="row">Settlement window</th>
-                    <td>{{.WFHSettlementDays}} day(s) ahead</td>
-                </tr>
-                <tr>
-                    <th scope="row">Settlement tick</th>
-                    <td>Every {{.WFHSettlementInterval}}</td>
-                </tr>
-                <tr>
-                    <th scope="row">Request horizon</th>
-                    <td>Ad-hoc requests accepted up to {{.WFHRequestHorizonDays}} day(s) in advance</td>
-                </tr>
-                <tr>
-                    <th scope="row">Minimum on-site coverage</th>
-                    <td>{{printf "%.0f" .WFHMinOnsitePercentage}}% of active members, with a floor of {{.WFHMinOnsiteAbsolute}} person(s)</td>
-                </tr>
-                <tr>
-                    <th>WFH quota per period</th>
-                    <td>{{.WFHMaxDaysPerPeriod}} day(s)</td>
-                </tr>
-                <tr>
-                    <th>Period length</th>
-                    <td>{{.WFHPeriodDays}} day(s)</td>
-                </tr>
-            </tbody>
-        </table>
-        {{else}}
-        <div class="notification is-warning is-light mt-3">
-            <i class="fas fa-triangle-exclamation mr-2"></i>
-            WFH service is currently disabled, so settlement rules are not active.
-        </div>
-        {{end}}
-    </div>
-</div>
-
-<div class="card">
-    <header class="card-header">
-        <p class="card-header-title">
-            <i class="fas fa-broom mr-2"></i> WFH Past-Period Purge
-        </p>
-    </header>
-    <div class="card-content">
-        <div class="content">
-            <p>The <code>wfh_requests</code> table accumulates history forever by default, so a long-running deployment would grow without bound. To keep it bounded, the settlement scheduler hard-deletes rows whose date is strictly before the start of the previous quota period after each tick. The current and previous periods are always preserved.</p>
-            <p>Admins can preview or run the same purge from the web UI at <a href="/admin/wfh/purge">/admin/wfh/purge</a> (admin only). <code>GET</code> shows the cutoff and the row count that would be deleted; <code>POST</code> with <code>confirm=true</code> commits the deletion and redirects back with a flash banner. The web preview never mutates the table.</p>
-            <p>The same operation is exposed on the CLI as <code>wfh purge</code> (dry-run by default; pass <code>--apply</code> to commit, or <code>--before YYYY-MM-DD</code> to override the period-derived cutoff for a one-off catch-up clean). Errors with <code>WFH feature is disabled</code> when <code>WFH_ENABLED=false</code>. Set <code>WFH_PURGE_ENABLED=false</code> to opt out of the scheduler-driven cleanup without disabling the WFH feature as a whole.</p>
         </div>
     </div>
 </div>
@@ -161,15 +130,70 @@
 <div class="card">
     <header class="card-header">
         <p class="card-header-title">
-            <i class="fas fa-user-check mr-2"></i> User Approval
+            <i class="fas fa-shield-halved mr-2"></i> For admins
         </p>
     </header>
     <div class="card-content">
         <div class="content">
+            <h4 class="title is-6 mb-2 mt-4">Admin override &mdash; marking a member as WFH</h4>
+            <p>When a member worked from home today but never submitted a WFH request (e.g. they called in sick and forgot to report), an admin can record the actual state via <strong>Manage WFH &raquo; Mark member WFH</strong>. The mark is a full override: it bypasses the per-member quota and the daily on-site capacity floor, so the admin can correct the dashboard even when the math would otherwise block the action. The row is still recorded as approved, so the quota counter, the on-site count, and the calendar feed all reflect the corrected state &mdash; the dashboard is honest. The chip on the dashboard and the schedule-matrix cell render in a distinct purple-blue color (Bulma <code>is-link</code>) so the team can see at a glance which days were admin-asserted rather than self-requested. The mark is today-only and can be undone from the same admin page via the <em>Unmark</em> button on the row. Members see a "marked by admin" tag on their own WFH list and a quota notice if the mark took them past their period quota.</p>
+
+            <h4 class="title is-6 mb-2 mt-4">Assigned WFH &amp; seat-cap picker</h4>
+            <p>When <code>WFH_SEAT_CAP</code> is set, the system enforces a hard seat cap on the office. On every settlement pass the picker walks the next <code>WFH_SETTLEMENT_DAYS</code> working days and, for any date where the on-site headcount would exceed the cap, inserts a system-allocated <strong>Assigned</strong> WFH row for the excess members. Picks are deterministic &mdash; the priority is fewest voluntary WFHs in the period, then a co-presence tiebreaker (members who haven't been on-site with the cohort recently are kept on-site), then alphabetical. Assigned rows appear in the affected member's WFH list with a yellow badge; they don't burn voluntary quota. Members can swap an Assigned row with an on-site teammate via <strong>Request swap</strong> on the row. Admins can <strong>Exempt from picker</strong> on the team-edit form (a per-member checkbox) &mdash; an exempt member is never picked for involuntary WFH, but they can still volunteer via a swap. Admins can also <strong>Reassign</strong> an Assigned row from <strong>Manage WFH</strong> to move it to a different active teammate in one transaction, preserving the cap. See <a href="/docs/ASSIGNED_WFH.md">docs/ASSIGNED_WFH.md</code> for the full reference.</p>
+
+            <h4 class="title is-6 mb-2 mt-4">WFH swap notifications</h4>
+            <p>The WFH-swap path (Assigned / swap-origin rows only) shares the same email pipeline as HAT swaps. When you create a swap, the target receives a <em>swap requested</em> email; when they accept or reject, you receive the matching outcome; when you cancel a pending swap, the target receives a <em>swap cancelled</em> notice. The default templates read generically so the same set covers both HAT and WFH swaps. Per-member email opt-out via <strong>Manage WFH &raquo; Email preferences</strong> is honoured.</p>
+
+            <h4 class="title is-6 mb-2 mt-4">User approval</h4>
             <p>New users who sign in via an OAuth provider (Google, GitLab, etc.) start in a <strong>pending</strong> state. They see a "your account is awaiting approval" page and cannot log in until an admin approves them. Pending users appear on the team page under "Awaiting Approval" with Approve and Deny buttons.</p>
             <p>Admins are notified by email when a new user signs in. The email links to the team page where the admin can approve or deny.</p>
             <p>Approved users become active. An admin can also <strong>deactivate</strong> an active user (e.g. when they leave the team). Deactivated users cannot log in but their team-member row is preserved for audit. They appear under "Deactivated Users" on the team page with a Reactivate button.</p>
             <p>Deactivation and reactivation both work by toggling a flag on the user row. Sessions belonging to a deactivated user are rejected by <code>ValidateSession</code> on the next request, so changing the flag is effective immediately for any future request.</p>
+
+            <h4 class="title is-6 mb-2 mt-4">WFH past-period purge</h4>
+            <p>The <code>wfh_requests</code> table accumulates history forever by default, so a long-running deployment would grow without bound. To keep it bounded, the settlement scheduler hard-deletes rows whose date is strictly before the start of the previous quota period after each tick. The current and previous periods are always preserved.</p>
+            <p>Admins can preview or run the same purge from the web UI at <a href="/admin/wfh/purge">/admin/wfh/purge</a> (admin only). <code>GET</code> shows the cutoff and the row count that would be deleted; <code>POST</code> with <code>confirm=true</code> commits the deletion and redirects back with a flash banner. The web preview never mutates the table.</p>
+            <p>The same operation is exposed on the CLI as <code>wfh purge</code> (dry-run by default; pass <code>--apply</code> to commit, or <code>--before YYYY-MM-DD</code> to override the period-derived cutoff for a one-off catch-up clean). Errors with <code>WFH feature is disabled</code> when <code>WFH_ENABLED=false</code>. <code>WFH_PURGE_ENABLED</code> defaults to <code>true</code>; set it to <code>false</code> to opt out of the scheduler-driven cleanup without disabling the WFH feature as a whole.</p>
+
+            <h4 class="title is-6 mb-2 mt-4">Current configuration</h4>
+            {{if .WFHConfigured}}
+            <table class="table is-fullwidth is-striped is-hoverable is-size-7">
+                <caption class="is-sr-only">
+                    Current WFH configuration &mdash; settlement window, settlement tick, request horizon, and minimum on-site coverage.
+                </caption>
+                <tbody>
+                    <tr>
+                        <th scope="row">Settlement window</th>
+                        <td>{{.WFHSettlementDays}} day(s) ahead</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Settlement tick</th>
+                        <td>Every {{.WFHSettlementInterval}}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Request horizon</th>
+                        <td>Ad-hoc requests accepted up to {{.WFHRequestHorizonDays}} day(s) in advance</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Minimum on-site coverage</th>
+                        <td>{{printf "%.0f" .WFHMinOnsitePercentage}}% of active members, with a floor of {{.WFHMinOnsiteAbsolute}} person(s)</td>
+                    </tr>
+                    <tr>
+                        <th>WFH quota per period</th>
+                        <td>{{.WFHMaxDaysPerPeriod}} day(s)</td>
+                    </tr>
+                    <tr>
+                        <th>Period length</th>
+                        <td>{{.WFHPeriodDays}} day(s)</td>
+                    </tr>
+                </tbody>
+            </table>
+            {{else}}
+            <div class="notification is-warning is-light mt-3">
+                <i class="fas fa-triangle-exclamation mr-2"></i>
+                WFH service is currently disabled, so settlement rules are not active.
+            </div>
+            {{end}}
         </div>
     </div>
 </div>
@@ -182,21 +206,21 @@
     </header>
     <div class="card-content">
         <div class="content">
-            <p>Every business day on the rota gets exactly one <strong>HAT day</strong> — the person who carries the duty that day. Two independent rotations run side by side, so a leave on one day never reshuffles the rest of the rota.</p>
+            <p>Every business day on the rota gets exactly one <strong>HAT day</strong> &mdash; the person on call that day. Two independent rotations run side by side, so a leave on one day never reshuffles the rest of the rota.</p>
 
             <h4 class="title is-6 mb-2 mt-4">The original-HAT rotation (R1)</h4>
-            <p>Each business day is assigned to the next active member in alphabetical order, wrapping around at the end of the list. The R1 index is read from a small persisted state row that records the date of the most recent original assignment and the index that was used. So Alice, Bob, Carla, Dave, Alice, Bob, … is the pattern on a four-person team with no breaks.</p>
-            <p>Because the state persists in the database, a schedule that is generated in multiple calls — for example, a 14-day rolling window that runs on every page load, or a partial regeneration of a sub-range — picks up exactly where the previous call left off. There is no in-memory cursor to clobber, so a concurrent regeneration can't roll the rotation back.</p>
-            <p>The R1 state advances <em>only</em> when a new original assignment is successfully written. A failed write leaves the state untouched, so a retry picks up at the same index. Weekends and configured holidays are skipped — the index only advances on a day that becomes an assignment.</p>
+            <p>Each business day is assigned to the next active member in alphabetical order, wrapping around at the end of the list. The R1 index is read from a small persisted state row that records the date of the most recent original assignment and the index that was used. So Alice, Bob, Carla, Dave, Alice, Bob, &hellip; is the pattern on a four-person team with no breaks.</p>
+            <p>Because the state persists in the database, a schedule that is generated in multiple calls &mdash; for example, a 14-day rolling window that runs on every page load, or a partial regeneration of a sub-range &mdash; picks up exactly where the previous call left off. There is no in-memory cursor to clobber, so a concurrent regeneration can't roll the rotation back.</p>
+            <p>The R1 state advances <em>only</em> when a new original assignment is successfully written. A failed write leaves the state untouched, so a retry picks up at the same index. Weekends and configured holidays are skipped &mdash; the index only advances on a day that becomes an assignment.</p>
 
             <h4 class="title is-6 mb-2 mt-4">The cover rotation (R2)</h4>
             <p>When the R1 member is on leave, the system needs a cover. Covers come from a second rotation that is deliberately independent of R1: it advances on its own, not as a side effect of who's on leave, so a long leave on one person cannot freeze the cover slot on another.</p>
-            <p>The cover rotation is a small piece of persistent state — a single row in the database that remembers the last date an index was computed and the index for that date. The flow is:</p>
+            <p>The cover rotation is a small piece of persistent state &mdash; a single row in the database that remembers the last date an index was computed and the index for that date. The flow is:</p>
             <ol>
-                <li><strong>First call ever:</strong> the row doesn't exist, so the system seeds it at the current date with index <code>0</code> — i.e. the first member in the active list. The current date is its own anchor.</li>
+                <li><strong>First call ever:</strong> the row doesn't exist, so the system seeds it at the current date with index <code>0</code> &mdash; i.e. the first member in the active list. The current date is its own anchor.</li>
                 <li><strong>Same date, later call:</strong> return the stored index directly, no advance.</li>
                 <li><strong>Later date:</strong> count the working days (weekdays that are not holidays) between the stored date and the new date, add that count to the stored index, take the result modulo the team size, persist the new state, and return it. A one-day advance shifts the index by one slot; a Monday-to-Friday advance of three working days shifts it by three.</li>
-                <li><strong>Earlier date:</strong> walk backward from the stored state without updating it. This is a safety net — the system only ever looks forward in normal operation, so this branch shouldn't fire.</li>
+                <li><strong>Earlier date:</strong> walk backward from the stored state without updating it. This is a safety net &mdash; the system only ever looks forward in normal operation, so this branch shouldn't fire.</li>
             </ol>
             <p>Because the state stores the index for the date it was computed on (not just an opaque counter), retroactive changes to the holiday list only affect the gap between the last stored date and the current query, not the entire history of the rota.</p>
 
@@ -205,29 +229,11 @@
 
             <h4 class="title is-6 mb-2 mt-4">What this guarantees</h4>
             <ul>
-                <li>The R1 (original) and R2 (cover) for any given date are both fully determined by the team composition and the date — there is no randomisation and no dependence on the order in which leaves were reported or the order in which the schedule was generated.</li>
+                <li>The R1 (original) and R2 (cover) for any given date are both fully determined by the team composition and the date &mdash; there is no randomisation and no dependence on the order in which leaves were reported or the order in which the schedule was generated.</li>
                 <li>The same person cannot be picked for every new leave (the old failure mode this algorithm replaced).</li>
-                <li>Across a year of random leave, the total HAT-day count — originals plus covers — comes out close to equal for every team member, with a measured spread of 1–6 days on a 5-person team over 250 working days.</li>
+                <li>Across a year of random leave, the total HAT-day count &mdash; originals plus covers &mdash; comes out close to equal for every team member, with a measured spread of 1&ndash;6 days on a 5-person team over 250 working days.</li>
                 <li>Existing schedule entries are preserved: a leave that gets added after the rota is already generated only triggers a cover for the affected dates, never a regeneration. A regeneration of a sub-range reuses the persisted state, so the rotation continues from where the surrounding schedule left off instead of restarting from the first member.</li>
             </ul>
-
-            <h4 class="title is-6 mb-2 mt-4">Periodic reassignment (ReassignCovers)</h4>
-            <p>The server runs the cover-assignment algorithm against every leave on startup (and the <code>reassign-covers</code> CLI command re-runs it on demand). The reassignment uses a separate rotation anchor from the one used for ad-hoc new-leave submissions, so a periodic reassign never disturbs the rotation position of leaves submitted through the web form or API between runs.</p>
-            <p>The reassign anchor records the end of the most recent reassign run. On unchanged data it lands on the same date and slot on every run, which is what makes the operation idempotent on stable data. If a new leave is added between runs, the next reassign reprocesses from scratch and the new leave's slot is consumed by the rotation as expected.</p>
-        </div>
-    </div>
-</div>
-
-<div class="card">
-    <header class="card-header">
-        <p class="card-header-title">
-            <i class="fas fa-calendar-star mr-2"></i> Calendar Subscriptions
-        </p>
-    </header>
-    <div class="card-content">
-        <div class="content">
-            <p>Open Calendar to create subscription links for rota and meetings feeds.</p>
-            <p>You can copy feed URLs into your calendar app and keep schedules up to date automatically.</p>
         </div>
     </div>
 </div>

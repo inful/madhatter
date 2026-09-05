@@ -236,6 +236,47 @@ func TestHandleSwaps_TeamMember_RendersPage(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
+// TestHandleSwaps_InboxSectionAlwaysRenders pins Bug #13: the
+// /swaps page must show the Incoming Swap Requests card even
+// when there's nothing in it. Before this fix the {{if .Incoming}}
+// guard hid the whole card when empty, so users had no visible
+// place to look for "anything waiting on me" — the badge in
+// the Quick Actions menu was the only signal. The card now
+// always renders, with an empty state inside the body when
+// .Incoming is empty. The history card gets the same treatment.
+func TestHandleSwaps_InboxSectionAlwaysRenders(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupSwapTestDB(t)
+	defer cleanup()
+
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	h := newSwapHandler(t, db)
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/swaps", nil)
+	req = withUser(req, "alice@example.com", "Alice", false)
+	w := httptest.NewRecorder()
+
+	h.handleSwaps(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	body := w.Body.String()
+
+	// Both the Incoming and the History (now "Your Outgoing &
+	// History") cards must be in the rendered HTML even with no
+	// swaps in flight. The empty-state copy is inside the body
+	// when there are no rows.
+	assert.Contains(t, body, "Incoming Swap Requests",
+		"incoming card must render even when empty")
+	assert.Contains(t, body, "No incoming swap requests.",
+		"empty-state copy must surface when there's no inbox content")
+	assert.Contains(t, body, "Your Outgoing & History",
+		"history card must render even when empty")
+	assert.Contains(t, body, "No outgoing swap requests yet.",
+		"empty-state copy must surface when there's no history")
+}
+
 // ---------------------------------------------------------------------------
 // handleSwaps POST (create swap request)
 // ---------------------------------------------------------------------------

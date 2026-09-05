@@ -14,71 +14,83 @@
 </div>
 {{end}}
 
-{{/* ── Incoming requests ── */}}
-{{if .Incoming}}
+{{/*
+    Incoming swap requests. Always renders the card header so the
+    inbox section is visible even when empty — that's where the
+    user looks for "anything waiting on me", and a hidden card
+    hides the question. The empty state inside the card body
+    makes it explicit there are no incoming swaps right now.
+*/}}
 <div class="card">
     <header class="card-header">
         <p class="card-header-title">
             <i class="fas fa-inbox mr-2"></i> Incoming Swap Requests
-            <span class="tag is-danger ml-2">{{len .Incoming}}</span>
+            {{if .Incoming}}<span class="tag is-danger ml-2">{{len .Incoming}}</span>{{end}}
         </p>
     </header>
     <div class="card-content">
-        <div class="table-container">
-            <table class="table is-fullwidth is-striped is-hoverable">
-                <caption class="is-sr-only">
-                    Incoming HAT-day swap requests — from, their HAT day, your HAT day, when requested, and available actions.
-                </caption>
-                <thead>
-                    <tr>
-                        <th scope="col">From</th>
-                        <th scope="col">Their HAT Day</th>
-                        <th scope="col">Your HAT Day</th>
-                        <th scope="col">Requested</th>
-                        <th scope="col">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {{range .Incoming}}
-                    <tr>
-                        <th scope="row">
-                            <span class="has-text-weight-semibold">
-                                <i class="fas fa-user mr-1"></i>{{.RequesterName}}
-                            </span>
-                        </th>
-                        <td>
-                            <span class="tag is-link is-light">
-                                <i class="fas fa-hat-wizard mr-1"></i>{{.RequesterDate}}
-                            </span>
-                        </td>
-                        <td>
-                            <span class="tag is-info is-light">
-                                <i class="fas fa-hat-wizard mr-1"></i>{{.TargetDate}}
-                            </span>
-                        </td>
-                        <td><small class="has-text-grey">{{.CreatedAt.Format "Jan 2, 2006"}}</small></td>
-                        <td>
-                            <div class="buttons are-small">
-                                <form method="POST" action="/swaps/{{.ID}}/accept" style="display:inline">
-                                    <button type="submit" class="button is-success">
-                                        <i class="fas fa-check mr-1"></i> Accept
-                                    </button>
-                                </form>
-                                <form method="POST" action="/swaps/{{.ID}}/reject" style="display:inline">
-                                    <button type="submit" class="button is-danger is-light">
-                                        <i class="fas fa-times mr-1"></i> Reject
-                                    </button>
-                                </form>
-                            </div>
-                        </td>
-                    </tr>
-                    {{end}}
-                </tbody>
-            </table>
-        </div>
+        {{if .Incoming}}
+            <div class="table-container">
+                <table class="table is-fullwidth is-striped is-hoverable">
+                    <caption class="is-sr-only">
+                        Incoming HAT-day swap requests — from, their HAT day, your HAT day, when requested, and available actions.
+                    </caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">From</th>
+                            <th scope="col">Their HAT Day</th>
+                            <th scope="col">Your HAT Day</th>
+                            <th scope="col">Requested</th>
+                            <th scope="col">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{range .Incoming}}
+                        <tr>
+                            <th scope="row">
+                                <span class="has-text-weight-semibold">
+                                    <i class="fas fa-user mr-1"></i>{{.RequesterName}}
+                                </span>
+                            </th>
+                            <td>
+                                <span class="tag is-link is-light">
+                                    <i class="fas fa-hat-wizard mr-1"></i>{{.RequesterDate}}
+                                </span>
+                            </td>
+                            <td>
+                                <span class="tag is-info is-light">
+                                    <i class="fas fa-hat-wizard mr-1"></i>{{.TargetDate}}
+                                </span>
+                            </td>
+                            <td><small class="has-text-grey">{{.CreatedAt.Format "Jan 2, 2006"}}</small></td>
+                            <td>
+                                <div class="buttons are-small">
+                                    <form method="POST" action="/swaps/{{.ID}}/accept" style="display:inline">
+                                        <button type="submit" class="button is-success">
+                                            <i class="fas fa-check mr-1"></i> Accept
+                                        </button>
+                                    </form>
+                                    <form method="POST" action="/swaps/{{.ID}}/reject" style="display:inline">
+                                        <button type="submit" class="button is-danger is-light">
+                                            <i class="fas fa-times mr-1"></i> Reject
+                                        </button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        {{end}}
+                    </tbody>
+                </table>
+            </div>
+        {{else}}
+            <div class="empty-state">
+                <i class="fas fa-inbox fa-2x has-text-grey mb-3"></i>
+                <p class="has-text-grey">No incoming swap requests.</p>
+                <p class="is-size-7 has-text-grey">When someone proposes a HAT-day swap with you, it will appear here.</p>
+            </div>
+        {{end}}
     </div>
 </div>
-{{end}}
 
 {{/* ── Request a swap form ── */}}
 {{if and .MyAssignments .TargetAssignments}}
@@ -153,77 +165,89 @@
 </div>
 {{end}}
 
-{{/* ── Swap history ── */}}
-{{if .Others}}
+{{/*
+    Swap history. Always renders the card header so users can see
+    their own past / pending outgoing requests — the inbox on its
+    own only shows incoming. The empty state makes it explicit
+    when there's no history yet.
+*/}}
 <div class="card">
     <header class="card-header">
         <p class="card-header-title">
-            <i class="fas fa-history mr-2"></i> Swap History
+            <i class="fas fa-history mr-2"></i> Your Outgoing & History
+            {{if .Others}}<span class="tag is-light ml-2">{{len .Others}}</span>{{end}}
         </p>
     </header>
     <div class="card-content">
-        <div class="table-container">
-            <table class="table is-fullwidth is-striped is-hoverable">
-                <caption class="is-sr-only">
-                    Other HAT-day swap requests — from, their HAT day, target member, target's HAT day, status, date, and admin actions.
-                </caption>
-                <thead>
-                    <tr>
-                        <th scope="col">From</th>
-                        <th scope="col">Their HAT Day</th>
-                        <th scope="col">Target</th>
-                        <th scope="col">Their HAT Day</th>
-                        <th scope="col">Status</th>
-                        <th scope="col">Date</th>
-                        <th scope="col"></th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {{range .Others}}
-                    <tr>
-                        <th scope="row">{{.RequesterName}}</th>
-                        <td><span class="tag is-link is-light">{{.RequesterDate}}</span></td>
-                        <td>{{.TargetName}}</td>
-                        <td><span class="tag is-info is-light">{{.TargetDate}}</span></td>
-                        <td>
-                            {{if eq .Status "pending"}}
-                                <span class="tag is-warning">pending</span>
-                            {{else if eq .Status "accepted"}}
-                                <span class="tag is-success">accepted</span>
-                            {{else if eq .Status "rejected"}}
-                                <span class="tag is-danger is-light">rejected</span>
-                            {{else if eq .Status "cancelled"}}
-                                <span class="tag is-light">cancelled</span>
-                            {{end}}
-                        </td>
-                        <td><small class="has-text-grey">{{.CreatedAt.Format "Jan 2, 2006"}}</small></td>
-                        <td>
-                            {{if eq .Status "pending"}}
-                                {{if eq .RequesterMemberID $.MemberID}}
-                                    <form method="POST" action="/swaps/{{.ID}}/cancel">
-                                        <button type="submit" class="button is-small is-light">
-                                            <i class="fas fa-ban mr-1"></i> Cancel
+        {{if .Others}}
+            <div class="table-container">
+                <table class="table is-fullwidth is-striped is-hoverable">
+                    <caption class="is-sr-only">
+                        Other HAT-day swap requests — from, their HAT day, target member, target's HAT day, status, date, and admin actions.
+                    </caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">From</th>
+                            <th scope="col">Their HAT Day</th>
+                            <th scope="col">Target</th>
+                            <th scope="col">Their HAT Day</th>
+                            <th scope="col">Status</th>
+                            <th scope="col">Date</th>
+                            <th scope="col"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{range .Others}}
+                        <tr>
+                            <th scope="row">{{.RequesterName}}</th>
+                            <td><span class="tag is-link is-light">{{.RequesterDate}}</span></td>
+                            <td>{{.TargetName}}</td>
+                            <td><span class="tag is-info is-light">{{.TargetDate}}</span></td>
+                            <td>
+                                {{if eq .Status "pending"}}
+                                    <span class="tag is-warning">pending</span>
+                                {{else if eq .Status "accepted"}}
+                                    <span class="tag is-success">accepted</span>
+                                {{else if eq .Status "rejected"}}
+                                    <span class="tag is-danger is-light">rejected</span>
+                                {{else if eq .Status "cancelled"}}
+                                    <span class="tag is-light">cancelled</span>
+                                {{end}}
+                            </td>
+                            <td><small class="has-text-grey">{{.CreatedAt.Format "Jan 2, 2006"}}</small></td>
+                            <td>
+                                {{if eq .Status "pending"}}
+                                    {{if eq .RequesterMemberID $.MemberID}}
+                                        <form method="POST" action="/swaps/{{.ID}}/cancel">
+                                            <button type="submit" class="button is-small is-light">
+                                                <i class="fas fa-ban mr-1"></i> Cancel
+                                            </button>
+                                        </form>
+                                    {{end}}
+                                {{end}}
+                                {{if $.IsAdmin}}
+                                    <form method="POST" action="/swaps/{{.ID}}/delete" style="display:inline"
+                                          data-confirm="Delete this swap record?">
+                                        <button type="submit" class="button is-small is-danger is-light">
+                                            <i class="fas fa-trash"></i>
                                         </button>
                                     </form>
                                 {{end}}
-                            {{end}}
-                            {{if $.IsAdmin}}
-                                <form method="POST" action="/swaps/{{.ID}}/delete" style="display:inline"
-                                      data-confirm="Delete this swap record?">
-                                    <button type="submit" class="button is-small is-danger is-light">
-                                        <i class="fas fa-trash"></i>
-                                    </button>
-                                </form>
-                            {{end}}
-                        </td>
-                    </tr>
-                    {{end}}
-                </tbody>
-            </table>
-        </div>
+                            </td>
+                        </tr>
+                        {{end}}
+                    </tbody>
+                </table>
+            </div>
+        {{else}}
+            <div class="empty-state">
+                <i class="fas fa-history fa-2x has-text-grey mb-3"></i>
+                <p class="has-text-grey">No outgoing swap requests yet.</p>
+                <p class="is-size-7 has-text-grey">Swaps you propose (and their outcome) will appear here.</p>
+            </div>
+        {{end}}
     </div>
 </div>
-{{end}}
 {{end}}
 
 {{define "swaps_styles"}}

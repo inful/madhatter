@@ -10,6 +10,12 @@ import (
 )
 
 func (h *Handler) registerRoutes() {
+	// Replace chi's plain-text default 404 with our styled page so
+	// mistyped URLs don't look like the server crashed. The
+	// MethodNotAllowedHandler still returns the bare 405 — there's no
+	// useful UX for that case beyond what chi already emits.
+	h.router.NotFound(h.handleNotFound)
+
 	// Auth routes (no authentication required) - only if auth is configured.
 	if h.authManager != nil {
 		// In development mode, skip registering the production login handler.
@@ -78,6 +84,18 @@ func (h *Handler) registerRoutes() {
 		r.Post("/swaps/{id}/reject", h.handleSwapReject)
 
 		r.HandleFunc("/wfh", h.handleWFHList)
+		// /wfh/list is a common typo for /wfh (the URL the Quick
+		// Actions menu links to). 301 redirect so a logged-in user
+		// who bookmarks the wrong path lands on the list page with
+		// the canonical URL in the address bar. Note that
+		// unauthenticated users land on /login via the auth
+		// middleware before this handler runs — that's the same
+		// destination they'd get from /wfh directly, so the
+		// redirect is effectively a no-op for them but a
+		// convenience for anyone with a bookmarked typo.
+		r.Get("/wfh/list", func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "/wfh", http.StatusMovedPermanently)
+		})
 		r.HandleFunc("/wfh/request", h.handleWFHRequest)
 		r.Post("/wfh/report-today", h.handleWFHReportToday)
 		r.Post("/wfh/{id}/cancel", h.handleWFHCancel)

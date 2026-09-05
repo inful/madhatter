@@ -235,14 +235,17 @@ func GetDevelopmentLoginHTMLWithUsers(users []DevelopmentLoginUser) string {
 	}
 
 	return `<!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Support Rota — development login.">
     <title>Development Login - MadHatter</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/bulma/bulma.min.css">
+    <link rel="stylesheet" href="/static/fontawesome/all.min.css">
     <style>
         body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; }
-        .hero { background: rgba(255, 255, 255, 0.95); border-radius: 12px; margin: 2rem auto; max-width: 600px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+        .hero { background: rgba(255, 255, 255, 0.95); border-radius: 12px; margin: 2rem auto; max-width: 600px; padding: 2rem; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
         .card { border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
         .dev-warning { background: #fff3cd; border: 2px solid #ffc107; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; }
         .dev-info { background: #e7f3ff; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; }

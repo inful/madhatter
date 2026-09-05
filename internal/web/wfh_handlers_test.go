@@ -662,9 +662,18 @@ func TestHandleWFHReportToday_QuotaExhausted_FlashesError(t *testing.T) {
 
 	// Burn the quota on two future-dated business days inside the
 	// same period as today. Today is the third.
-	today := time.Now().UTC()
+	//
+	// Saturday-flake fix: on a Saturday the only future-dated day in
+	// today's period is Sunday (which is in the period but not a
+	// business day) — there's no way to "burn" two business days in
+	// today's period from a Saturday anchor. Skip the test on
+	// Saturday; on weekdays this works because today is in the
+	// middle of the period with two future business days ahead.
+	if now := time.Now().UTC().Weekday(); now == time.Saturday || now == time.Sunday {
+		t.Skip("test scenario requires a weekday anchor (Sat/Sun have no future business days in the current period)")
+	}
 	for _, offset := range []int{1, 2} {
-		date := today.AddDate(0, 0, offset).Format("2006-01-02")
+		date := time.Now().UTC().AddDate(0, 0, offset).Format("2006-01-02")
 		req, cErr := db.CreateWFHRequest(ctx, aliceID, date)
 		require.NoError(t, cErr)
 		require.NoError(t, db.UpdateWFHRequestStatus(ctx, req.ID, database.WFHStatusApproved))
@@ -683,7 +692,7 @@ func TestHandleWFHReportToday_QuotaExhausted_FlashesError(t *testing.T) {
 		"the error flash must carry a human-readable reason")
 
 	// No row for today was created.
-	todayStr := today.Format("2006-01-02")
+	todayStr := time.Now().UTC().Format("2006-01-02")
 	rows, err := db.GetWFHRequestsByDate(ctx, todayStr)
 	require.NoError(t, err)
 	assert.Empty(t, rows, "quota-exhausted must not create a wfh_requests row for today")
@@ -787,7 +796,17 @@ func TestRenderWFHRequestForm_NextPeriodBannerActiveWhenQueryParamDateIsInNextPe
 	// must be in the FUTURE so CreateWFHRequest's date guard
 	// doesn't reject them. We pick the last two days of the
 	// current period.
+	//
+	// Saturday-flake fix: the last two days of the current period
+	// are Saturday and Sunday, and on a Saturday the Saturday is
+	// "today" (in the past at the time the test runs) and the
+	// Sunday is in the future. The Saturday gets rejected by
+	// validateRequestDate. Skip on Saturday; on a weekday this
+	// picks two valid future dates.
 	today := time.Now().UTC()
+	if today.Weekday() == time.Saturday || today.Weekday() == time.Sunday {
+		t.Skip("test scenario requires a weekday anchor (current period's last two days are weekend)")
+	}
 	_, currentEnd, err := h.wfhService.ComputePeriodBounds(today)
 	require.NoError(t, err)
 	_, err = db.CreateWFHRequest(ctx, memberID,
@@ -858,7 +877,14 @@ func TestRenderWFHRequestForm_SubmitStaysEnabledWhenCurrentPeriodExhausted(t *te
 	// Fill the current period to the max with future dates so
 	// CreateWFHRequest's date guard accepts the rows. Pick the
 	// last two days of the current period.
+	//
+	// Saturday-flake fix: same as NextPeriodBannerActiveWhenQuery…
+	// above — on a Saturday the period's last two days are weekend
+	// and can't both be future. Skip on weekend.
 	today := time.Now().UTC()
+	if today.Weekday() == time.Saturday || today.Weekday() == time.Sunday {
+		t.Skip("test scenario requires a weekday anchor (current period's last two days are weekend)")
+	}
 	_, currentEnd, err := h.wfhService.ComputePeriodBounds(today)
 	require.NoError(t, err)
 	_, err = db.CreateWFHRequest(ctx, memberID,
@@ -983,4 +1009,63 @@ func TestHandleWFHRequestPost_BeyondHorizon_PreservesSelectedDate(t *testing.T) 
 	assert.Contains(t, rr.Body.String(),
 		`value="`+farFuture.Format("2006-01-02")+`"`,
 		"the rejected date must be preserved in the input value so the user can correct without re-picking")
+}
+
+// TestWFHRequest_QuotaBannerHasSpacesBetweenValues pins the
+// contract that the quota banner renders the literal words "for",
+// "period", "to", "used", "remaining" with spaces between them and
+// the dynamic <strong> values. The earlier template put the values
+// inside <strong> tags and lost the leading/trailing whitespace, so
+// the banner rendered as "forthisperiod", "31to2026-09-06",
+// "0used", "2remaining". The fix is &nbsp; between the closing tag
+// and the literal word; this test fails if the regression returns.
+func TestWFHRequest_QuotaBannerHasSpacesBetweenValues(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupSwapTestDB(t)
+	defer cleanup()
+
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	svc := wfh.NewService(db, wfh.Config{
+		Enabled:             true,
+		MinOnsitePercentage: 50,
+		MinOnsiteAbsolute:   1,
+		MaxDaysPerPeriod:    2,
+		PeriodDays:          7,
+		PeriodAnchor:        "2026-01-05",
+		SettlementDays:      2,
+		RequestHorizonDays:  90,
+	})
+	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+	h.wfhService = svc
+
+	rec := httptest.NewRequestWithContext(ctx, http.MethodGet, "/wfh/request", nil)
+	rec = withUser(rec, "alice@example.com", "Alice", false)
+	rr := httptest.NewRecorder()
+	h.handleWFHRequest(rr, rec)
+
+	assert.Equal(t, http.StatusOK, rr.Code)
+	body := rr.Body.String()
+	// The banner must read as "WFH quota for <strong>this</strong> period",
+	// not "forthisperiod". The &nbsp; between the closing tag and the
+	// next word is what the test pins — without it, the HTML
+	// normaliser collapses the whitespace and the banner reads as one
+	// run-on word.
+	assert.Contains(t, body, "for&nbsp;<strong>this</strong>&nbsp;period",
+		"current-period banner must have spaces between 'for' and 'period'")
+	assert.Regexp(t, `<strong>\d{4}-\d{2}-\d{2}</strong>&nbsp;to&nbsp;<strong>\d{4}-\d{2}-\d{2}</strong>`,
+		body,
+		"current-period banner must have a space between period start and 'to'")
+	assert.Contains(t, body, "<strong>0</strong>&nbsp;used,",
+		"current-period banner must have a space before 'used'")
+	assert.Contains(t, body, "<strong>2</strong>&nbsp;remaining.",
+		"current-period banner must have a space before 'remaining'")
+
+	// The broken forms are the regressions we want to catch — guard
+	// against any revert to a template that emits no whitespace.
+	assert.NotContains(t, body, "forthisperiod")
+	assert.NotContains(t, body, ">0< used")
+	assert.NotContains(t, body, ">2< remaining")
 }

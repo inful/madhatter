@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/chromedp/chromedp"
+	"github.com/stretchr/testify/assert"
 )
 
 // TestLogout_ClearsSessionCookie walks the auth logout flow:
@@ -414,4 +415,45 @@ func postForm(target string, fields map[string]string, ctx context.Context) (*ht
 func readAll(r *http.Response) ([]byte, error) {
 	defer r.Body.Close()
 	return io.ReadAll(io.LimitReader(r.Body, 1<<16))
+}
+
+// TestWFHListRedirectsToWFH pins Bug #10: /wfh/list is a common
+// typo for the /wfh route (the URL every nav link points to).
+// Without the redirect, a user who bookmarks the wrong path lands
+// on the styled 404 page instead of the WFH list. The redirect
+// must be 301 (permanent) because the canonical URL is /wfh and
+// this isn't going to flip back.
+func TestWFHListRedirectsToWFH(t *testing.T) {
+	ctx, cancel := harness.browserContext(t)
+	defer cancel()
+
+	harness.loginAsFakeAdmin(t, ctx)
+
+	if err := chromedp.Run(ctx,
+		chromedp.Navigate(harness.BaseURL+"/wfh/list"),
+	); err != nil {
+		t.Fatalf("navigate /wfh/list: %v", err)
+	}
+
+	var landedAt string
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`window.location.pathname`, &landedAt),
+	); err != nil {
+		t.Fatalf("read landed-at: %v", err)
+	}
+	if landedAt != "/wfh" {
+		t.Errorf("expected /wfh/list to redirect to /wfh; landed at %q",
+			landedAt)
+	}
+
+	// And it should render the WFH page (i.e. the "Your WFH Quota"
+	// card), not the styled 404 or the login page.
+	var body string
+	if err := chromedp.Run(ctx,
+		chromedp.Evaluate(`document.body.innerText`, &body),
+	); err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	assert.Contains(t, body, "Your WFH Quota",
+		"the redirected page must be the WFH list, not a 404")
 }

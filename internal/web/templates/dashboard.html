@@ -241,6 +241,23 @@
                 </table>
             </div>
             </div>
+            {{/*
+                Status legend. The status chips in the matrix use
+                distinct background/border colours per status (green
+                On-site, blue WFH, purple-blue admin-marked WFH, orange
+                Away/On-leave, blue Away-Conference, grey No-data) but
+                without a key the reader has to guess what each colour
+                means. Render the same chip styling for each state as
+                a static key under the matrix.
+            */}}
+            <dl class="status-legend mt-3">
+                <dt><span class="status-chip status-onsite"><i class="fas fa-building mr-1"></i> On-site</span></dt>
+                <dt><span class="status-chip status-wfh"><i class="fas fa-home mr-1"></i> WFH</span></dt>
+                <dt><span class="status-chip status-wfh-admin"><i class="fas fa-home mr-1"></i> Admin WFH</span></dt>
+                <dt><span class="status-chip status-away"><i class="fas fa-plane-departure mr-1"></i> On leave</span></dt>
+                <dt><span class="status-chip status-away conference-leave"><i class="fas fa-people-group mr-1"></i> Conference</span></dt>
+                <dt><span class="status-chip status-none"><i class="fas fa-minus mr-1"></i> No data</span></dt>
+            </dl>
         {{else}}
             <div class="empty-state">
                 <p>Presence data unavailable</p>
@@ -519,6 +536,31 @@
         border-radius: 999px;
         border: 1px solid transparent;
         min-width: 82px;
+    }
+
+    /* Status legend under the matrix. The dt/dd layout puts each
+       chip on its own line on narrow screens and wraps cleanly on
+       wide ones. The chip styling itself comes from .status-onsite /
+       .status-wfh / etc., so the legend is visually identical to the
+       in-matrix chips. */
+    .status-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem 0.85rem;
+        margin: 0;
+        padding: 0.85rem 1rem 0;
+        border-top: 1px solid #e2e8f0;
+    }
+
+    .status-legend dt {
+        margin: 0;
+        display: inline-flex;
+        align-items: center;
+    }
+
+    .status-legend dt .status-chip {
+        min-width: 0;
+        cursor: default;
     }
 
     .status-onsite .status-chip {

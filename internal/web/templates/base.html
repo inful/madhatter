@@ -1,7 +1,10 @@
 {{define "base"}}
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Support Rota — schedule, leave, and on-call management for small teams.">
     <title>
         {{- if .Template -}}
             {{- render (printf "%s_title" .Template) . -}}
@@ -117,6 +120,29 @@
         .global-user-menu .menu-email {
             margin-top: 0.15rem;
             font-size: 0.8rem;
+            /* Bump from .has-text-grey (#7a7a7a) to .has-text-grey-dark
+               (#4a4a4a) for WCAG AA contrast on the small text. The
+               0.8rem size is below the threshold where #7a7a7a on
+               white falls under 4.5:1; #4a4a4a clears it. */
+            color: #4a4a4a;
+        }
+
+        /* Let the user-info column shrink below its content size so
+           the email truncates instead of pushing the action buttons
+           off-screen at 375px. Without min-width:0 the flex item
+           refuses to shrink and the row overflows the viewport. */
+        .global-user-menu .column:first-child {
+            min-width: 0;
+        }
+
+        .global-user-menu .menu-email {
+            /* Truncate the email with an ellipsis on narrow screens
+               rather than wrapping it. Long emails are visually
+               noisy when they wrap to multiple lines, and the
+               admin already knows their own email. */
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .global-user-menu .menu-actions {
@@ -181,9 +207,23 @@
         @media (max-width: 640px) {
             .global-user-menu .columns.is-mobile {
                 align-items: flex-start;
+                /* Bulma 0.9.4's .columns.is-mobile sets display:flex
+                   but no flex-wrap — so the two child columns always
+                   stay on one row, even when there's no room. Adding
+                   wrap here lets the actions column fall onto its
+                   own line when the user-info column needs the full
+                   width for the email/name. */
+                flex-wrap: wrap;
             }
 
-            .global-user-menu .menu-actions {
+            /* Stack the actions column below the user-info column
+               on narrow screens. The .column.is-narrow class on the
+               actions column sets `flex: none` (Bulma 0.9.4) which
+               we override here so the column can grow to its own
+               row width. */
+            .global-user-menu .columns.is-mobile>.column.is-narrow.menu-actions {
+                flex: 0 0 100%;
+                max-width: 100%;
                 width: 100%;
                 justify-content: flex-start;
                 margin-top: 0.45rem;
@@ -260,14 +300,16 @@
         {{template "login_styles" .}}
     {{end}}
 </head>
-<body class="has-gradient {{if not .Template}}is-login{{end}}">
+<body class="has-gradient {{if not .Template}}is-login{{end}}{{if .Tab}} tab-{{.Tab}}{{end}}">
     <section class="section">
         <div class="hero" {{if .Template}}{{renderAttrOptional (printf "%s_hero_attrs" .Template) .}}{{end}}>
             <div class="hero-body">
                 <div class="container">
                     {{if .Template}}
-                        {{template "global_user_menu" .}}
-                        {{render (printf "%s_content" .Template) .}}
+                        <main>
+                            {{template "global_user_menu" .}}
+                            {{render (printf "%s_content" .Template) .}}
+                        </main>
                     {{else}}
                         {{template "login_content" .}}
                     {{end}}
@@ -293,7 +335,7 @@
                 <p class="has-text-weight-semibold menu-name">
                     <i class="fas fa-user-circle mr-2"></i>{{.User.Name}}
                 </p>
-                <p class="has-text-grey menu-email">{{.User.Email}}</p>
+                <p class="has-text-grey-dark menu-email">{{.User.Email}}</p>
                 {{if .IsAdmin}}
                     <span class="tag is-danger is-light mt-1">
                         <i class="fas fa-shield-alt mr-1"></i> Admin

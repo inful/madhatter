@@ -259,6 +259,59 @@ func TestHandleHelp_Returns200(t *testing.T) {
 	assert.Contains(t, w.Body.String(), "How WFH Is Settled")
 }
 
+// TestHandleNotFound_RendersStyledPage pins the contract that any
+// unmatched route renders our styled 404 page (not chi's plain
+// "404 page not found" text). Without this, anyone who mistypes a
+// URL sees a page that looks like the server crashed.
+func TestHandleNotFound_RendersStyledPage(t *testing.T) {
+	mockDB := &database.DB{}
+	mockAuthManager := &auth.AuthManager{}
+	mockMiddleware := &auth.Middleware{}
+
+	handler, err := NewHandler(mockDB, mockAuthManager, mockMiddleware, false, nil)
+	require.NoError(t, err)
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/does-not-exist", nil)
+	w := httptest.NewRecorder()
+
+	handler.handleNotFound(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	body := w.Body.String()
+	assert.Contains(t, body, "Page Not Found",
+		"expected the styled 404 markup, got: %.200s", body)
+	assert.Contains(t, body, "Back to Dashboard")
+	// chi's default body is exactly "404 page not found\n" — guard
+	// against any regression that reverts to the plain text handler.
+	assert.NotEqual(t, "404 page not found\n", body)
+}
+
+// TestGlobalUserMenu_EmailUsesGreyDark pins the WCAG AA contrast
+// contract on the email line in the global user menu (Bug #11).
+// The earlier template used .has-text-grey (#7a7a7a on white,
+// fails AA at 0.8rem); the fix bumped to .has-text-grey-dark
+// (#4a4a4a). Without this test, a regression back to .has-text-grey
+// would slip through because the email is small and the contrast
+// issue is hard to spot in screenshots.
+func TestGlobalUserMenu_EmailUsesGreyDark(t *testing.T) {
+	mockDB := &database.DB{}
+	handler, err := NewHandler(mockDB, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/help", nil)
+	req = withUser(req, "alice@example.com", "Alice", false)
+	w := httptest.NewRecorder()
+	handler.handleHelp(w, req)
+
+	body := w.Body.String()
+	assert.Contains(t, body, "menu-email",
+		"the user-menu card must render the menu-email line")
+	assert.Contains(t, body, `class="has-text-grey-dark menu-email"`,
+		"menu-email must use has-text-grey-dark for AA contrast")
+	assert.NotContains(t, body, `class="has-text-grey menu-email"`,
+		"menu-email must not regress to has-text-grey")
+}
+
 // TestPageHeader_HeadingIsReasonablySized is the regression guard
 // for the page-header h1 size. The previous is-2 + 32-39px clamp
 // rendered at sizes appropriate for a marketing landing page; for
@@ -1501,7 +1554,7 @@ func TestWFHListPage_DenialReason_RendersUnderStatus(t *testing.T) {
 					MemberID:     "alice",
 					Date:         "2026-09-04",
 					Status:       database.WFHStatusDenied,
-					DenialReason: ptrString(reason),
+					DenialReason: new(reason),
 				},
 				CanWithdraw: false,
 			},
@@ -1544,7 +1597,7 @@ func TestWFHListPage_NoDenialReason_WhenApprovedOrPending(t *testing.T) {
 					// DenialReason intentionally set to a non-empty
 					// value to confirm the conditional still hides
 					// it when the status is not denied.
-					DenialReason: ptrString(reason),
+					DenialReason: new(reason),
 				},
 			},
 		},
@@ -1635,11 +1688,12 @@ func TestWFHListPage_RequestWFHDayButton_AlwaysVisible(t *testing.T) {
 	}
 }
 
-// ptrString is a small helper to make the test data read like
-// "the row's reason is X" without a one-off local var.
-//
-//go:fix inline
-func ptrString(s string) *string { return new(s) }
+// ptrString was an inline helper for test-data that read like
+// "the row's reason is X" without a one-off local var. The
+// gopls `//go:fix inline` directive reduced it to `new(s)` and
+// the helper had no callers left in the suite, so it was removed.
+// Kept as a comment so a future test that wants the same idiom
+// can copy the `new(string)` pattern.
 
 // TestDashboard_ChairsRow_RendersAtUnderAndOverCap is the
 // HTML-level regression test for the ass/chair ratio row on the

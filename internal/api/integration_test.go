@@ -598,6 +598,12 @@ func TestHUMAAPIIntegration(t *testing.T) {
 // The endpoint does NOT accept a member_id — the member is resolved
 // from the session (test@example.com via createTestContext).
 func TestReportWFHTodayEndpoint_Approves(t *testing.T) {
+	// Saturday-flake fix: ShouldSkipDate rejects weekends, so the
+	// endpoint can't be called on a Saturday or Sunday.
+	if now := time.Now().UTC().Weekday(); now == time.Saturday || now == time.Sunday {
+		t.Skip("report-today endpoint refuses weekends; test requires today to be a business day")
+	}
+
 	server, cleanup := setupTestServer(t)
 	defer cleanup()
 
@@ -629,6 +635,11 @@ func TestReportWFHTodayEndpoint_Approves(t *testing.T) {
 // status=denied (not a 4xx). The user opted in, the system enforced
 // the floor — the response surfaces that distinction.
 func TestReportWFHTodayEndpoint_DeniedAtFloor(t *testing.T) {
+	// Saturday-flake fix: see TestReportWFHTodayEndpoint_Approves.
+	if now := time.Now().UTC().Weekday(); now == time.Saturday || now == time.Sunday {
+		t.Skip("report-today endpoint refuses weekends; test requires today to be a business day")
+	}
+
 	server, cleanup := setupTestServer(t)
 	defer cleanup()
 
@@ -647,6 +658,11 @@ func TestReportWFHTodayEndpoint_DeniedAtFloor(t *testing.T) {
 // exists for today must return 409 (mapped from ErrWFHDuplicateRequest
 // via the shared WFHErrorFor table).
 func TestReportWFHTodayEndpoint_DuplicateReturns409(t *testing.T) {
+	// Saturday-flake fix: see TestReportWFHTodayEndpoint_Approves.
+	if now := time.Now().UTC().Weekday(); now == time.Saturday || now == time.Sunday {
+		t.Skip("report-today endpoint refuses weekends; test requires today to be a business day")
+	}
+
 	server, cleanup := setupTestServer(t)
 	defer cleanup()
 

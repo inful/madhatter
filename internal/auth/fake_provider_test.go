@@ -204,8 +204,10 @@ func TestGetDevelopmentLoginHTML(t *testing.T) {
 	assert.Contains(t, html, "bulma")
 	assert.Contains(t, html, "fa-flask")
 
-	// Should be valid HTML structure
-	assert.Contains(t, html, "<html>")
+	// Should be valid HTML structure. The <html> tag carries a lang
+	// attribute (a11y / screen-reader default) since Bug #6 — match
+	// the prefix rather than the bare opening tag.
+	assert.Contains(t, html, `<html lang="en">`)
 	assert.Contains(t, html, "<head>")
 	assert.Contains(t, html, "<body>")
 	assert.Contains(t, html, "</html>")
@@ -286,9 +288,13 @@ func TestDevelopmentLoginHTML_ContainsSecurityWarnings(t *testing.T) {
 func TestDevelopmentLoginHTML_UsesBulma(t *testing.T) {
 	html := GetDevelopmentLoginHTML()
 
-	// Should include Bulma CSS
+	// Should include the bundled Bulma CSS — the page is served from
+	// the same /static/ path the rest of the app uses, so the strict
+	// CSP can keep default-src 'self'. The CDN URLs were dropped
+	// because they were blocked by the CSP and the page rendered
+	// without Bulma styling.
 	assert.Contains(t, html, "bulma")
-	assert.Contains(t, html, "cdn.jsdelivr.net/npm/bulma")
+	assert.Contains(t, html, "/static/bulma/bulma.min.css")
 
 	// Should use Bulma classes
 	assert.Contains(t, html, "hero")
@@ -303,9 +309,11 @@ func TestDevelopmentLoginHTML_UsesBulma(t *testing.T) {
 func TestDevelopmentLoginHTML_UsesFontAwesome(t *testing.T) {
 	html := GetDevelopmentLoginHTML()
 
-	// Should include Font Awesome
-	assert.Contains(t, html, "font-awesome")
-	assert.Contains(t, html, "cdnjs.cloudflare.com")
+	// Should include the bundled Font Awesome CSS — same CSP reasoning
+	// as TestDevelopmentLoginHTML_UsesBulma: the CDN URL was blocked
+	// and icons rendered as broken glyphs.
+	assert.Contains(t, html, "fontawesome")
+	assert.Contains(t, html, "/static/fontawesome/all.min.css")
 	assert.Contains(t, html, "fa-")
 }
 

@@ -69,6 +69,21 @@ func (h *Handler) handleTeam(w http.ResponseWriter, r *http.Request) {
 		"Template": "team",
 	}
 
+	// Tabs: query-param driven. The default ("all") renders both
+	// the Rota Members and Login Accounts sections. ?tab=rota
+	// collapses to the rota side; ?tab=accounts collapses to the
+	// accounts side. The value is whitelisted so a typo'd query
+	// param falls back to "all" rather than rendering a broken
+	// template. The base template reads .Tab and adds a body
+	// class (tab-rota, tab-accounts, or tab-all) so CSS can hide
+	// the inactive sections without per-section {{if}} wrapping.
+	switch r.URL.Query().Get("tab") {
+	case "rota", "accounts", "all":
+		data["Tab"] = r.URL.Query().Get("tab")
+	default:
+		data["Tab"] = "all"
+	}
+
 	if user, ok := auth.GetUserFromContext(ctx); ok {
 		data["User"] = user
 		data["IsAdmin"] = auth.IsAdminSession(user)

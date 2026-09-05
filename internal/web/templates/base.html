@@ -300,7 +300,7 @@
         {{template "login_styles" .}}
     {{end}}
 </head>
-<body class="has-gradient {{if not .Template}}is-login{{end}}">
+<body class="has-gradient {{if not .Template}}is-login{{end}}{{if .Tab}} tab-{{.Tab}}{{end}}">
     <section class="section">
         <div class="hero" {{if .Template}}{{renderAttrOptional (printf "%s_hero_attrs" .Template) .}}{{end}}>
             <div class="hero-body">

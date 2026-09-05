@@ -246,6 +246,41 @@ func TestHandleTeam_Get_Returns200(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
+// TestHandleTeam_TabBodyClass pins Bug #12: the team page renders
+// a body.tab-* class so the template's CSS can hide the inactive
+// section. /team?tab=rota must emit tab-rota, /team?tab=accounts
+// must emit tab-accounts, and /team (no query param) must emit
+// tab-all so both sections render.
+func TestHandleTeam_TabBodyClass(t *testing.T) {
+	db, err := database.New(":memory:")
+	require.NoError(t, err)
+	defer func() { _ = db.Close() }()
+
+	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	cases := []struct {
+		query   string
+		wantTab string
+	}{
+		{"", "all"},
+		{"?tab=rota", "rota"},
+		{"?tab=accounts", "accounts"},
+		{"?tab=invalid", "all"}, // typo falls back to all
+	}
+	for _, tc := range cases {
+		req := httptest.NewRequestWithContext(context.Background(),
+			http.MethodGet, "/team"+tc.query, nil)
+		w := httptest.NewRecorder()
+		h.handleTeam(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code, "tab=%q", tc.query)
+		assert.Contains(t, w.Body.String(),
+			`tab-`+tc.wantTab,
+			"body must carry tab-%s class for query %q", tc.wantTab, tc.query)
+	}
+}
+
 func TestHandleTeam_Get_DevelopmentModeSyncsTeamMembersToApplicationUsers(t *testing.T) {
 	db, err := database.New(":memory:")
 	require.NoError(t, err)

@@ -220,6 +220,63 @@
         }
 
         @media (max-width: 640px) {
+            /* Shrink Bulma's default .section padding from 3rem to
+               0.75rem on mobile — the gradient body's full-bleed
+               background reads fine, but a 3rem top/bottom pad on
+               a phone pushes the user-menu card half a screen down
+               before any content is visible. */
+            .section {
+                padding: 0.75rem 0.75rem;
+            }
+
+            /* Bulma's .hero has margin: 2rem auto. On mobile that
+               2rem is double the .section's 0.75rem and just stacks
+               vertical whitespace. Zero the hero's margin on mobile
+               so the user-menu card sits closer to the page edge. */
+            .hero {
+                margin: 0;
+            }
+
+            /* Bulma's .hero-body defaults to 9rem vertical padding
+               (designed for marketing hero copy). On mobile that's
+               a quarter of the viewport above and below the user
+               menu. Cut it to 0.75rem so the user menu and the
+               dashboard heading stack tightly. */
+            .hero-body {
+                padding: 0.75rem;
+            }
+
+            /* Tighten the user-menu card. The desktop card uses
+               0.8rem vertical padding; on mobile we drop to 0.6rem
+               so the three rows (name + email + Admin tag / Quick
+               Actions / Help + Logout) take less than half what
+               they currently do. */
+            .global-user-menu .card-content {
+                padding: 0.6rem 0.75rem;
+            }
+
+            .global-user-menu .menu-name {
+                font-size: 1rem;
+            }
+
+            /* Move the Admin tag inline with the name on mobile so
+               the user-menu card is two rows (name+Admin / actions)
+               instead of three (name / email / Admin / actions).
+               Keeps the card height tight on narrow screens. */
+            .global-user-menu .menu-name {
+                display: flex;
+                align-items: center;
+                gap: 0.4rem;
+                flex-wrap: wrap;
+            }
+            .global-user-menu .menu-name .tag {
+                margin-top: 0 !important;
+                font-size: 0.65rem;
+                height: 1.4em;
+                padding-left: 0.4rem;
+                padding-right: 0.4rem;
+            }
+
             .global-user-menu .columns.is-mobile {
                 align-items: flex-start;
                 /* Bulma 0.9.4's .columns.is-mobile sets display:flex
@@ -241,16 +298,43 @@
                 max-width: 100%;
                 width: 100%;
                 justify-content: flex-start;
-                margin-top: 0.45rem;
+                margin-top: 0.55rem;
                 flex-wrap: wrap;
+                gap: 0.4rem;
+            }
+
+            /* Full-width primary action (Quick Actions dropdown) on
+               mobile. It's the most likely tap target — leave Help
+               and Logout as inline-sized secondary buttons beside
+               it. On a 390px viewport, the dropdown + Help used
+               to share a row with a lot of empty space; full-width
+               it now reads as a single, obvious primary action. */
+            .global-user-menu .menu-actions .dropdown {
+                flex: 1 1 100%;
+            }
+            .global-user-menu .menu-actions .dropdown .button {
+                width: 100%;
+                justify-content: center;
+            }
+
+            /* Drop the Logout button's icon-only presentation on
+               mobile — there's room for the word, and a bare
+               arrow icon next to a word-only "Help" reads as an
+               afterthought. Keep Help / Logout as compact inline
+               buttons on the row below the Quick Actions
+               dropdown. */
+            .global-user-menu .menu-actions>a.button {
+                flex: 0 0 auto;
             }
 
             .page-header {
-                margin-bottom: 0.7rem;
+                margin-bottom: 0.6rem;
+                padding-left: 0.25rem;
+                padding-right: 0.25rem;
             }
 
             .page-header .title.is-3 {
-                font-size: 1.15rem;
+                font-size: 1.1rem;
             }
 
             .user-pane .columns.is-mobile {

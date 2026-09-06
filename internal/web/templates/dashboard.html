@@ -567,13 +567,35 @@
         color: #4a5568;
     }
 
-    /* For the HAT banner header "No support today" variant — keep
-       the same layout as the active HAT banner but render the icon
-       and label in a muted tone to signal "no one is on call". */
+    /* "No support today" banner variant (weekend / holiday).
+
+       The active HAT banner uses the purple card-header gradient +
+       white text. That treatment signals "someone is on call" — the
+       opposite of what we want here. Override the entire card-header
+       background and inherited text colour via :has(), then set the
+       child spans to muted greys so "Weekend" and "Next business day"
+       read clearly against the soft background.
+
+       :has() is supported in Safari 15.4+, Chrome 105+, Firefox 121+,
+       all released by 2024. The dashboard targets recent browsers
+       (htmx, ES2020 modules); the alternative — restructuring the
+       template so the off-variant carries its own background — would
+       diverge from the active HAT banner's structure for no real
+       gain. */
+    .card-header:has(> .hat-banner-header-off) {
+        background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+        color: #4a5568;
+    }
     .hat-banner-header-off .hat-banner-header-icon {
         color: #a0aec0;
     }
     .hat-banner-header-off .hat-banner-header-label {
+        color: #718096;
+    }
+    .hat-banner-header-off .hat-banner-header-name {
+        color: #2d3748;
+    }
+    .hat-banner-header-off .hat-banner-header-status {
         color: #718096;
     }
 
@@ -864,6 +886,31 @@
     }
 
     @media (max-width: 768px) {
+        /* Status card is the dashboard's headline element on mobile —
+           tighten its padding so the three sections (status / coming
+           up / chairs) all fit in one viewport. The Bulma default
+           card-content padding is 1.5rem, which adds 3rem of vertical
+           whitespace around the card body. */
+        .status-card {
+            margin-bottom: 0.75rem;
+        }
+        .status-card .card-content {
+            padding: 0.7rem 0.85rem;
+        }
+
+        /* Generic card padding — Bulma's 1.5rem is too generous on a
+           390px viewport where every pixel counts. */
+        .card {
+            margin-bottom: 0.85rem;
+            box-shadow: 0 2px 8px rgba(25, 35, 70, 0.06);
+        }
+        .card-content {
+            padding: 0.75rem 0.85rem;
+        }
+        .card-header-content {
+            padding: 0.4rem 0.85rem;
+        }
+
         /* On narrow viewports the HAT banner keeps its three-zone
            layout but lets the action wrap below the info so the name
            and status aren't crushed by the "View schedule →" link. */
@@ -892,6 +939,20 @@
             padding: 0.7rem;
             background: #fff;
             box-shadow: 0 4px 10px rgba(33, 42, 79, 0.06);
+        }
+
+        /* On narrow screens the HAT banner status line
+           ("Next business day: Monday, Sep 7") would wrap
+           mid-line, splitting "Sep 7" onto its own row. Allow
+           it to break as a unit (after the colon) and shrink
+           the font slightly so the whole phrase stays on one
+           row at 320px (iPhone SE) without overflowing the
+           card. */
+        .hat-banner-header-off .hat-banner-header-status {
+            font-size: 0.7rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .mobile-day-card-today {

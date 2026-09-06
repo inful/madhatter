@@ -112,6 +112,13 @@ type Querier interface {
 	GetAPITokenByHash(ctx context.Context, tokenHash string) (ApiToken, error)
 	GetAPITokenByID(ctx context.Context, id string) (ApiToken, error)
 	GetAPITokensByUser(ctx context.Context, userID string) ([]ApiToken, error)
+	// Returns every swap whose status is 'accepted'. Used by the
+	// reconcile CLI to walk the historical swap rows whose member_id
+	// flips may have been lost (pre-v0.32.5 live-value flip semantics
+	// + pre-v0.32.3 cover-scheduler stomping). The reconciliation
+	// command then applies the captured pair to each side so the
+	// rota_assignments rows match the swap record.
+	GetAcceptedSwaps(ctx context.Context) ([]HatSwap, error)
 	GetActiveTeamMembers(ctx context.Context) ([]TeamMember, error)
 	GetAllSubscriptions(ctx context.Context) ([]CalendarSubscription, error)
 	GetAllWFHRequests(ctx context.Context) ([]GetAllWFHRequestsRow, error)
@@ -123,6 +130,7 @@ type Querier interface {
 	// sql.ErrNoRows if no state has been written yet (a fresh database
 	// has no row until the first cover is computed).
 	GetCoverRotationState(ctx context.Context) (GetCoverRotationStateRow, error)
+	GetCoveredOriginalIDsInRange(ctx context.Context, arg GetCoveredOriginalIDsInRangeParams) ([]sql.NullString, error)
 	GetFutureAssignments(ctx context.Context) ([]GetFutureAssignmentsRow, error)
 	GetFutureAssignmentsForMember(ctx context.Context, memberID string) ([]GetFutureAssignmentsForMemberRow, error)
 	GetHatSwapByID(ctx context.Context, id string) (HatSwap, error)

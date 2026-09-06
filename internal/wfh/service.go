@@ -821,13 +821,74 @@ func (s *Service) ReportToday(ctx context.Context, memberID string) (database.WF
 // for callers that don't have a row ID.
 func (s *Service) SignalOnSiteToday(ctx context.Context, memberID string) (database.WFHRequest, error) {
 	today := todayUTC().Format("2006-01-02")
+	return s.withdrawApprovedRowOnDate(ctx, memberID, today)
+}
+
+// SignalOnSiteOnDate is the forward-dated sibling of SignalOnSiteToday.
+// Phase 3 of the "I'm actually coming in" feature: a member who
+// knows today that they'll be in the office on a future WFH day
+// can pre-emptively withdraw that row, so the team sees the
+// updated projection before the day arrives.
+//
+// The behavior is identical to SignalOnSiteToday except:
+//
+//   - The target date is explicit (passed as YYYY-MM-DD), not
+//     implicitly today.
+//   - Past dates are rejected with database.ErrWFHDatePassed.
+//     SignalOnSiteToday uses todayUTC as a sentinel for "the
+//     date is not in the past" — that implicit invariant is
+//     made explicit here because the dashboard's future-dated
+//     control could otherwise be tricked by a tampered query
+//     string into overwriting a row from last week.
+//
+// Errors:
+//   - database.ErrWFHInvalidDate — date is not YYYY-MM-DD.
+//   - database.ErrWFHDatePassed  — date is strictly before
+//     today UTC. Same handler-side flash banner as the today-
+//     button's "This WFH day has already passed" message.
+//   - database.ErrWFHNotFound    — no approved row exists for
+//     (member, date). Surfaced as "No approved WFH on that day
+//     to override." so the user understands they need to pick a
+//     date they actually have a row for.
+//   - database.ErrWFHAssigned    — the row is system-assigned
+//     (cap-picker) or a swap target; the user must swap instead.
+//
+// Returns the withdrawn row on success, mirroring SignalOnSiteToday.
+func (s *Service) SignalOnSiteOnDate(ctx context.Context, memberID, date string) (database.WFHRequest, error) {
+	parsed, err := time.Parse("2006-01-02", date)
+	if err != nil {
+		return database.WFHRequest{}, database.ErrWFHInvalidDate
+	}
+
+	nowUTC := todayUTC()
+	today := time.Date(nowUTC.Year(), nowUTC.Month(), nowUTC.Day(), 0, 0, 0, 0, time.UTC)
+	target := time.Date(parsed.Year(), parsed.Month(), parsed.Day(), 0, 0, 0, 0, time.UTC)
+	if target.Before(today) {
+		return database.WFHRequest{}, database.ErrWFHDatePassed
+	}
+
+	return s.withdrawApprovedRowOnDate(ctx, memberID, date)
+}
+
+// withdrawApprovedRowOnDate finds an approved row for (member, date)
+// that the member is allowed to self-withdraw (ad-hoc or
+// recurring, not system-assigned or a swap target) and withdraws
+// it. Returns the withdrawn row, or one of:
+//
+//   - database.ErrWFHAssigned — row exists but is system-assigned
+//     or a swap target; the user must swap instead.
+//   - database.ErrWFHNotFound — no approved row matches.
+//
+// Shared between SignalOnSiteToday (the today button) and
+// SignalOnSiteOnDate (the Phase 3 forward-dated picker).
+func (s *Service) withdrawApprovedRowOnDate(ctx context.Context, memberID, date string) (database.WFHRequest, error) {
 	rows, err := s.db.GetWFHRequestsByMember(ctx, memberID)
 	if err != nil {
 		return database.WFHRequest{}, err
 	}
 	for i := range rows {
 		r := &rows[i]
-		if r.Date != today {
+		if r.Date != date {
 			continue
 		}
 		if r.Status != database.WFHStatusApproved {

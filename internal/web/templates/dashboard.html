@@ -29,16 +29,24 @@
 </div>
 {{end}}
 
-{{/* Signal-on-site flash banner (parallel to report-today). */}}
+{{/* Signal-on-site flash banner (parallel to report-today).
+     Renders for both FlashKindSignalOnSiteToday (implicit today)
+     and FlashKindSignalOnSiteFuture (forward-dated, with Date).
+     The success copy names the date when SignalOnSiteDate is set
+     so the user can confirm what was withdrawn. */}}
 {{if eq .SignalOnSiteOutcome "ok"}}
 <div class="notification is-success is-light mb-4">
     <i class="fas fa-building mr-2"></i>
+    {{if .SignalOnSiteDate}}
+    Marked as On-site for {{.SignalOnSiteDate}}. Your dashboard now reflects it.
+    {{else}}
     Marked as On-site today. Your dashboard now reflects it.
+    {{end}}
 </div>
 {{else if eq .SignalOnSiteOutcome "error"}}
 <div class="notification is-warning is-light mb-4">
     <i class="fas fa-exclamation-triangle mr-2"></i>
-    Could not mark as On-site: {{.SignalOnSiteReason}}
+    Could not mark as On-site{{if .SignalOnSiteDate}} for {{.SignalOnSiteDate}}{{end}}: {{.SignalOnSiteReason}}
 </div>
 {{end}}
 
@@ -141,6 +149,50 @@
                     <span class="icon"><i class="fas fa-building"></i></span>
                     <span>I'm actually coming in today</span>
                 </button>
+            </form>
+        </div>
+        {{end}}
+
+        {{/*
+            Phase 3: forward-dated "I'll be in on [date]" override.
+            Sibling of the today button above; surfaces only when
+            the user has at least one future approved WFH row in
+            the rolling settlement window that they could withdraw
+            (recurring or ad-hoc, not system-assigned). The picker
+            is constrained to dates the user actually has a row
+            for, so submitting a date with no row would surface a
+            flash banner — the constrained picker avoids the round
+            trip. Recurring rows are tagged "(recurring)" because
+            the underlying row carries a contractual pattern even
+            though the day-off effect is identical.
+        */}}
+        {{if .CanSignalOnSiteFuture}}
+        <div class="status-on-site-override-future mt-2">
+            <form method="post" action="/wfh/on-site" class="field has-addons mb-0"
+                  data-confirm="Mark yourself as on-site for the chosen day. Your quota slot is freed and the contractual pattern is unchanged.">
+                <div class="control">
+                    <span class="button is-small is-static">
+                        <span class="icon"><i class="fas fa-calendar-check"></i></span>
+                        <span>I'll be in on</span>
+                    </span>
+                </div>
+                <div class="control">
+                    <div class="select is-small">
+                        <select name="date" aria-label="Date you'll be in the office" required>
+                            {{range .SignalOnSiteFutureOptions}}
+                            <option value="{{.DateISO}}">
+                                {{.DateDisplay}}{{if .IsRecurring}} (recurring){{end}}
+                            </option>
+                            {{end}}
+                        </select>
+                    </div>
+                </div>
+                <div class="control">
+                    <button type="submit" class="button is-small is-success is-light">
+                        <span class="icon"><i class="fas fa-building"></i></span>
+                        <span>Mark on-site</span>
+                    </button>
+                </div>
             </form>
         </div>
         {{end}}

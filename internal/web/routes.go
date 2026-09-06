@@ -107,6 +107,14 @@ func (h *Handler) registerRoutes() {
 		// and withdraws it. No-op when there's nothing to
 		// override.
 		r.Post("/wfh/today/on-site", h.handleWFHTodayOnSite)
+		// /wfh/on-site is the Phase 3 forward-dated sibling of
+		// /wfh/today/on-site. The dashboard surfaces a "I'll be in
+		// on [date]" control when the member has at least one
+		// future approved WFH row in the rolling settlement
+		// window. The chosen date is posted as the `date` query
+		// parameter; the service validates the date and withdraws
+		// the matching row.
+		r.Post("/wfh/on-site", h.handleWFHOnSiteOnDate)
 		r.Post("/wfh/{id}/cancel", h.handleWFHCancel)
 		r.Post("/wfh/{id}/withdraw", h.handleWFHSelfWithdraw)
 		r.Get("/wfh/{id}/swap", h.handleWFHSwapForm)

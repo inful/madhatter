@@ -110,8 +110,13 @@ func (h *Handler) applyDashboardFlash(r *http.Request, data map[string]any) {
 	switch f.Kind {
 	case FlashKindReportWFHToday:
 		applyWFHReportTodayFlash(data, f)
-	case FlashKindSignalOnSiteToday:
+	case FlashKindSignalOnSiteToday, FlashKindSignalOnSiteFuture:
+		// Same banner surface — the today and forward-dated
+		// variants share SignalOnSiteOutcome / SignalOnSiteReason.
+		// The future-dated kind additionally carries a Date the
+		// template can render for confirmation.
 		applySignalOnSiteFlash(data, f)
+		applySignalOnSiteDateIfFuture(data, f)
 	case FlashKindReportMemberAdded:
 		applyMemberAddedFlash(data, f)
 	case FlashKindReportLeaveSubmitted:
@@ -145,6 +150,20 @@ func applySignalOnSiteFlash(data map[string]any, f *Flash) {
 	if f.Reason != "" {
 		data["SignalOnSiteReason"] = f.Reason
 	}
+}
+
+// applySignalOnSiteDateIfFuture attaches the future-dated flash
+// payload's Date to the data map, but only when the flash is the
+// future-dated variant. Split out so applyDashboardFlash stays
+// under the cyclomatic-complexity cap.
+func applySignalOnSiteDateIfFuture(data map[string]any, f *Flash) {
+	if f.Kind != FlashKindSignalOnSiteFuture {
+		return
+	}
+	if f.Date == "" {
+		return
+	}
+	data["SignalOnSiteDate"] = f.Date
 }
 
 func applyMemberAddedFlash(data map[string]any, _ *Flash) { data["MemberAddedOK"] = true }

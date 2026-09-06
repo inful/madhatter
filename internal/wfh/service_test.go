@@ -1966,3 +1966,151 @@ func TestSignalOnSiteToday_RejectsAssignedRow(t *testing.T) {
 	assert.Equal(t, database.WFHStatusApproved, rows[0].Status,
 		"the assigned row must not be flipped by SignalOnSiteToday")
 }
+
+// TestSignalOnSiteOnDate_WithdrawsFutureRow covers the Phase 3
+// happy path: a member with an approved recurring WFH row in 3
+// days calls SignalOnSiteOnDate and the row flips to withdrawn,
+// freeing the quota slot. The dashboard's "I'll be in on [date]"
+// control is the date-keyed counterpart of the today button.
+func TestSignalOnSiteOnDate_WithdrawsFutureRow(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	svc := NewService(db, testConfig())
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	today := time.Now().UTC()
+	target := today.AddDate(0, 0, 3)
+	targetStr := target.Format("2006-01-02")
+
+	require.NoError(t, db.CreateApprovedRecurringWFHRequest(ctx, aliceID, targetStr, today))
+
+	got, err := svc.SignalOnSiteOnDate(ctx, aliceID, targetStr)
+	require.NoError(t, err)
+	assert.Equal(t, database.WFHStatusWithdrawn, got.Status,
+		"future row must flip to withdrawn so the dashboard flips to On-site that day")
+	assert.Equal(t, targetStr, got.Date,
+		"withdrawn row's date must match the requested target")
+	assert.Nil(t, got.WithdrawnBy,
+		"self-withdraw leaves withdrawn_by nil (vs admin-withdraw which records the actor)")
+
+	// Quota counter must reflect the freed slot.
+	status, err := svc.GetQuotaStatus(ctx, aliceID)
+	require.NoError(t, err)
+	assert.Equal(t, 0, status.Used,
+		"withdrawn row must drop out of the voluntary quota counter")
+}
+
+// TestSignalOnSiteOnDate_PastDate_Errors pins the past-date guard:
+// Phase 3's date picker is constrained to future rows, but the
+// service must still refuse a tampered query string that targets a
+// date in the past. ErrWFHDatePassed maps to the existing
+// "This WFH day has already passed" flash banner.
+func TestSignalOnSiteOnDate_PastDate_Errors(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	svc := NewService(db, testConfig())
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	yesterday := time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
+	got, err := svc.SignalOnSiteOnDate(ctx, aliceID, yesterday)
+	require.ErrorIs(t, err, database.ErrWFHDatePassed,
+		"past dates are rejected even if a row exists (defense against tampered query strings)")
+	assert.Empty(t, got.ID)
+}
+
+// TestSignalOnSiteOnDate_TodayDate_Allowed verifies the service
+// treats today as withdrawable (same as SignalOnSiteToday). The
+// handler routes today to the dedicated today-button path; this
+// test pins the service-level invariant for completeness.
+func TestSignalOnSiteOnDate_TodayDate_Allowed(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	svc := NewService(db, testConfig())
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	today := time.Now().UTC().Format("2006-01-02")
+	require.NoError(t, db.CreateApprovedRecurringWFHRequest(ctx, aliceID, today, time.Now().UTC()))
+
+	got, err := svc.SignalOnSiteOnDate(ctx, aliceID, today)
+	require.NoError(t, err)
+	assert.Equal(t, database.WFHStatusWithdrawn, got.Status)
+}
+
+// TestSignalOnSiteOnDate_NoApprovedRow_Errors pins the "nothing to
+// override" case for an arbitrary date. The handler maps the
+// sentinel to a flash banner; the dashboard's constrained picker
+// means this is mostly a defense-in-depth check.
+func TestSignalOnSiteOnDate_NoApprovedRow_Errors(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	svc := NewService(db, testConfig())
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	future := time.Now().UTC().AddDate(0, 0, 5).Format("2006-01-02")
+	got, err := svc.SignalOnSiteOnDate(ctx, aliceID, future)
+	require.ErrorIs(t, err, database.ErrWFHNotFound,
+		"no approved row on the requested date → ErrWFHNotFound")
+	assert.Empty(t, got.ID)
+}
+
+// TestSignalOnSiteOnDate_RejectsInvalidDate pins the input-format
+// guard. A tampered query string with a malformed date must
+// surface ErrWFHInvalidDate, not silently fall through to a parse
+// error.
+func TestSignalOnSiteOnDate_RejectsInvalidDate(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	svc := NewService(db, testConfig())
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	got, err := svc.SignalOnSiteOnDate(ctx, aliceID, "not-a-date")
+	require.ErrorIs(t, err, database.ErrWFHInvalidDate)
+	assert.Empty(t, got.ID)
+}
+
+// TestSignalOnSiteOnDate_RejectsAssignedRow pins the safety guard
+// for the forward-dated path: a system-assigned WFH can't be
+// self-overridden to On-site because that would unbalance the
+// seat cap. The user must swap instead.
+func TestSignalOnSiteOnDate_RejectsAssignedRow(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupWFHTestDB(t)
+	defer cleanup()
+
+	svc := NewService(db, testConfig())
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	today := time.Now().UTC()
+	target := today.AddDate(0, 0, 4)
+	targetStr := target.Format("2006-01-02")
+
+	require.NoError(t, db.CreateApprovedAssignedWFHRequest(ctx, aliceID, targetStr, today))
+
+	got, err := svc.SignalOnSiteOnDate(ctx, aliceID, targetStr)
+	require.ErrorIs(t, err, database.ErrWFHAssigned,
+		"system-assigned rows are guarded even on the forward-dated path")
+	assert.Empty(t, got.ID)
+
+	// Row must remain approved.
+	rows, err := db.GetWFHRequestsByMember(ctx, aliceID)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.Equal(t, database.WFHStatusApproved, rows[0].Status,
+		"the assigned row must not be flipped by SignalOnSiteOnDate")
+}

@@ -620,6 +620,190 @@ func TestHandleWFHTodayOnSite_NoRow_FlashesError(t *testing.T) {
 		"the error flash must carry a human-readable reason")
 }
 
+// TestHandleWFHOnSiteOnDate_RedirectsToDashboardFlash covers the
+// Phase 3 happy path: a member with an approved recurring WFH row
+// in 3 days POSTs /wfh/on-site?date=YYYY-MM-DD, the row is
+// withdrawn, and the redirect lands on / with the future-dated
+// success flash banner (including the date so the user can
+// confirm what they withdrew). The dashboard's "I'll be in on
+// [date]" picker is the date-keyed counterpart of the today
+// button — the constrained picker means clicking submit on a
+// chosen date always has a row to withdraw.
+func TestHandleWFHOnSiteOnDate_RedirectsToDashboardFlash(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupSwapTestDB(t)
+	defer cleanup()
+
+	svc := wfh.NewService(db, wfh.Config{
+		Enabled:             true,
+		MinOnsitePercentage: 50,
+		MinOnsiteAbsolute:   1,
+		MaxDaysPerPeriod:    2,
+		PeriodDays:          7,
+		PeriodAnchor:        "2026-01-05",
+		SettlementDays:      14,
+		RequestHorizonDays:  90,
+	})
+	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+	h.wfhService = svc
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	today := time.Now().UTC()
+	targetStr := today.AddDate(0, 0, 3).Format("2006-01-02")
+	require.NoError(t, db.CreateApprovedRecurringWFHRequest(ctx, aliceID, targetStr, today))
+
+	req := httptest.NewRequestWithContext(ctx,
+		http.MethodPost,
+		"/wfh/on-site?date="+targetStr,
+		nil)
+	req = withUser(req, "alice@example.com", "Alice", false)
+	rr := httptest.NewRecorder()
+	h.handleWFHOnSiteOnDate(rr, req)
+
+	require.Equal(t, http.StatusSeeOther, rr.Code, "body=%s", rr.Body.String())
+	loc := rr.Header().Get("Location")
+	assert.True(t, strings.HasPrefix(loc, "/?"),
+		"must redirect back to the dashboard, got %q", loc)
+	assert.Contains(t, loc, "wfh_signal_on_site_future=ok",
+		"success flash must surface in the URL, got %q", loc)
+	assert.Contains(t, loc, "date="+targetStr,
+		"success flash must carry the target date so the user can confirm")
+
+	// Row on disk must be withdrawn.
+	rows, err := db.GetWFHRequestsByMember(ctx, aliceID)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	assert.Equal(t, database.WFHStatusWithdrawn, rows[0].Status,
+		"the row must be flipped to withdrawn so the dashboard shows On-site that day")
+}
+
+// TestHandleWFHOnSiteOnDate_NoRow_FlashesError pins the "nothing
+// to override" case for an arbitrary future date. The dashboard's
+// constrained picker should never produce this in practice, but
+// a tampered query string must surface an error flash rather
+// than silently succeed.
+func TestHandleWFHOnSiteOnDate_NoRow_FlashesError(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupSwapTestDB(t)
+	defer cleanup()
+
+	svc := wfh.NewService(db, wfh.Config{
+		Enabled:             true,
+		MinOnsitePercentage: 50,
+		MinOnsiteAbsolute:   1,
+		MaxDaysPerPeriod:    2,
+		PeriodDays:          7,
+		PeriodAnchor:        "2026-01-05",
+		SettlementDays:      14,
+		RequestHorizonDays:  90,
+	})
+	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+	h.wfhService = svc
+
+	_, err = db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	targetStr := time.Now().UTC().AddDate(0, 0, 5).Format("2006-01-02")
+	req := httptest.NewRequestWithContext(ctx,
+		http.MethodPost,
+		"/wfh/on-site?date="+targetStr,
+		nil)
+	req = withUser(req, "alice@example.com", "Alice", false)
+	rr := httptest.NewRecorder()
+	h.handleWFHOnSiteOnDate(rr, req)
+
+	require.Equal(t, http.StatusSeeOther, rr.Code)
+	loc := rr.Header().Get("Location")
+	assert.Contains(t, loc, "wfh_signal_on_site_future=error",
+		"no-row case must surface the error flash, got %q", loc)
+	assert.Contains(t, loc, "date="+targetStr,
+		"the error flash must carry the attempted date")
+}
+
+// TestHandleWFHOnSiteOnDate_PastDate_FlashesError pins the
+// past-date guard at the handler level. Service-level coverage
+// lives in internal/wfh/service_test.go; this pins the redirect
+// shape so a tampered query string that targets yesterday still
+// lands on the dashboard with an error banner rather than a 500.
+func TestHandleWFHOnSiteOnDate_PastDate_FlashesError(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupSwapTestDB(t)
+	defer cleanup()
+
+	svc := wfh.NewService(db, wfh.Config{
+		Enabled:             true,
+		MinOnsitePercentage: 50,
+		MinOnsiteAbsolute:   1,
+		MaxDaysPerPeriod:    2,
+		PeriodDays:          7,
+		PeriodAnchor:        "2026-01-05",
+		SettlementDays:      14,
+		RequestHorizonDays:  90,
+	})
+	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+	h.wfhService = svc
+
+	_, err = db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	yesterday := time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
+	req := httptest.NewRequestWithContext(ctx,
+		http.MethodPost,
+		"/wfh/on-site?date="+yesterday,
+		nil)
+	req = withUser(req, "alice@example.com", "Alice", false)
+	rr := httptest.NewRecorder()
+	h.handleWFHOnSiteOnDate(rr, req)
+
+	require.Equal(t, http.StatusSeeOther, rr.Code)
+	loc := rr.Header().Get("Location")
+	assert.Contains(t, loc, "wfh_signal_on_site_future=error",
+		"past date must surface the error flash, got %q", loc)
+	assert.Contains(t, loc, "date="+yesterday,
+		"the error flash must carry the attempted date")
+}
+
+// TestHandleWFHOnSiteOnDate_MissingDate_FlashesError pins the
+// "date=..." param absent case. The dashboard always supplies it,
+// but a tampered /wfh/on-site POST without the param must not 500
+// — flash an error and redirect to the dashboard.
+func TestHandleWFHOnSiteOnDate_MissingDate_FlashesError(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupSwapTestDB(t)
+	defer cleanup()
+
+	svc := wfh.NewService(db, wfh.Config{
+		Enabled:             true,
+		MinOnsitePercentage: 50,
+		MinOnsiteAbsolute:   1,
+		MaxDaysPerPeriod:    2,
+		PeriodDays:          7,
+		PeriodAnchor:        "2026-01-05",
+		SettlementDays:      14,
+		RequestHorizonDays:  90,
+	})
+	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+	h.wfhService = svc
+
+	_, err = db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/wfh/on-site", nil)
+	req = withUser(req, "alice@example.com", "Alice", false)
+	rr := httptest.NewRecorder()
+	h.handleWFHOnSiteOnDate(rr, req)
+
+	require.Equal(t, http.StatusSeeOther, rr.Code)
+	loc := rr.Header().Get("Location")
+	assert.Contains(t, loc, "wfh_signal_on_site_future=error",
+		"missing date must surface the error flash, got %q", loc)
+}
+
 // TestHandleWFHReportToday_Denied_AtFloor pins the policy decision:
 // when the floor is full, ReportToday still creates a row but
 // settles it to denied, and the dashboard reads it as On-site

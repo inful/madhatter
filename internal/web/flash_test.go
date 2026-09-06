@@ -185,6 +185,7 @@ func TestPopFlash_RoundTrip(t *testing.T) {
 					case FlashKindReportWFHToday:
 						expectedStatus = "approved"
 					case FlashKindSignalOnSiteToday,
+						FlashKindSignalOnSiteFuture,
 						FlashKindMarkAdminWFH,
 						FlashKindReportMemberAdded,
 						FlashKindReportLeaveSubmitted,
@@ -243,6 +244,7 @@ func TestAllFlashKindsCompile(t *testing.T) {
 	declared := map[FlashKind]bool{
 		FlashKindReportWFHToday:          true,
 		FlashKindSignalOnSiteToday:       true,
+		FlashKindSignalOnSiteFuture:      true,
 		FlashKindPurgeWFHPeriods:         true,
 		FlashKindMarkAdminWFH:            true,
 		FlashKindReportMemberAdded:       true,

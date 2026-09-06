@@ -67,6 +67,15 @@ const (
 	// /wfh/request POST (submit a WFH request) on the WFH list page.
 	// StartDate carries the requested date (display only).
 	FlashKindReportWFHRequested FlashKind = "wfh_requested"
+
+	// FlashKindSignalOnSiteFuture surfaces the outcome of the
+	// forward-dated "I'll be in on [date]" control on the
+	// dashboard (Phase 3 of the on-site override feature). The
+	// Date field carries the target date — set on success and on
+	// error so the banner can name what was attempted. Mirrors
+	// FlashKindSignalOnSiteToday but with a date payload rather
+	// than an implicit "today".
+	FlashKindSignalOnSiteFuture FlashKind = "wfh_signal_on_site_future"
 )
 
 // Flash is the typed payload carried in the post-redirect query
@@ -93,6 +102,13 @@ type Flash struct {
 	Cutoff    string
 	StartDate string
 	EndDate   string
+	// Date is the generic single-date payload carried by the
+	// forward-dated on-site override flash. Distinct from
+	// StartDate (which carries the start of a date range for
+	// leave reports) so each kind renders unambiguously. Set on
+	// both success and error so the banner can name the date
+	// the user attempted.
+	Date string
 }
 
 // SetFlash redirects to basePath with the flash payload encoded
@@ -139,6 +155,7 @@ func kindValueFor(f Flash) string {
 	case FlashKindReportWFHToday:
 		return "approved"
 	case FlashKindSignalOnSiteToday,
+		FlashKindSignalOnSiteFuture,
 		FlashKindMarkAdminWFH,
 		FlashKindReportMemberAdded,
 		FlashKindReportLeaveSubmitted,
@@ -176,6 +193,9 @@ func encodeExtras(q *url.Values, f Flash) {
 	if f.EndDate != "" {
 		q.Set("end_date", f.EndDate)
 	}
+	if f.Date != "" {
+		q.Set("date", f.Date)
+	}
 }
 
 // PopFlash reads and returns the first known flash in the request's
@@ -203,6 +223,7 @@ func PopFlash(r *http.Request) *Flash {
 			Cutoff:    q.Get("cutoff"),
 			StartDate: q.Get("start_date"),
 			EndDate:   q.Get("end_date"),
+			Date:      q.Get("date"),
 		}
 		if kind == FlashKindPurgeWFHPeriods {
 			if n, err := strconv.ParseInt(raw, 10, 64); err == nil {
@@ -223,6 +244,7 @@ func allFlashKinds() []FlashKind {
 	return []FlashKind{
 		FlashKindReportWFHToday,
 		FlashKindSignalOnSiteToday,
+		FlashKindSignalOnSiteFuture,
 		FlashKindPurgeWFHPeriods,
 		FlashKindMarkAdminWFH,
 		FlashKindReportMemberAdded,

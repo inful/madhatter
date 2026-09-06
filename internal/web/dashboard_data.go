@@ -20,7 +20,40 @@ const (
 	currentUserStatusConference = "@conference"
 	currentUserStatusWFH        = "WFH"
 	currentUserStatusOnSite     = "On-site"
+
+	// signalOnSiteFutureWindowDays bounds the forward-dated
+	// "I'll be in on [date]" picker. Matches the WFH feature's
+	// rolling settlement horizon (WFH_SETTLEMENT_DAYS, default 7)
+	// so the picker can never offer a date outside the window the
+	// scheduler is actually maintaining rows for. The value is a
+	// hard cap; rendering is gated on whether any row exists in
+	// the window — typical usage renders fewer.
+	signalOnSiteFutureWindowDays = 14
 )
+
+// signalOnSiteFutureOption is one entry in the dashboard's
+// forward-dated on-site picker. DateISO is the wire value posted
+// to /wfh/on-site; DateDisplay is the user-facing label. The
+// IsRecurring flag is surfaced in the label so a member can tell
+// at a glance whether they're withdrawing a contractual pattern
+// or a one-off ad-hoc row (the underlying effect is identical —
+// the row flips to withdrawn and the quota slot is freed — but
+// the affordance should be honest about which kind of row it is).
+type signalOnSiteFutureOption struct {
+	DateISO     string
+	DateDisplay string
+	IsRecurring bool
+}
+
+// sortSignalOnSiteOptions sorts options by DateISO ascending.
+// Cheap insertion sort; the list is at most a handful of entries.
+func sortSignalOnSiteOptions(opts []signalOnSiteFutureOption) {
+	for i := 1; i < len(opts); i++ {
+		for j := i; j > 0 && opts[j-1].DateISO > opts[j].DateISO; j-- {
+			opts[j-1], opts[j] = opts[j], opts[j-1]
+		}
+	}
+}
 
 // loadPendingSwapCount fills data["PendingSwapCount"] with the count
 // of pending swaps for the logged-in user. Surfaced on the dashboard
@@ -96,23 +129,16 @@ func (h *Handler) loadCurrentUserPresenceStatus(ctx context.Context, data map[st
 	// click). Ad-hoc and recurring rows both qualify; system-
 	// assigned rows don't (they need a swap, which the handler
 	// rejects with ErrWFHAssigned).
-	wfhRows, wfhErr := h.db.GetWFHRequestsByMember(ctx, member.ID)
-	if wfhErr == nil {
-		for i := range wfhRows {
-			r := &wfhRows[i]
-			if r.Date != today {
-				continue
-			}
-			if r.Status != database.WFHStatusApproved {
-				continue
-			}
-			if r.Origin == "assigned" || r.Origin == "swap" {
-				continue
-			}
-			data["CanSignalOnSiteToday"] = true
-			break
-		}
-	}
+	//
+	// CanSignalOnSiteFuture: Phase 3 sibling for the forward-dated
+	// "I'll be in on [date]" control. Lists future approved WFH
+	// rows within the rolling settlement window so the dashboard
+	// can render a date-picker constrained to dates the user
+	// actually has a row for — submitting a date with no row would
+	// surface a flash banner, but a constrained picker avoids the
+	// round trip. Rows from system-assigned origins are excluded
+	// for the same reason as CanSignalOnSiteToday.
+	h.loadSignalOnSiteOptions(ctx, data, member.ID, today)
 
 	h.loadCurrentUserUpcomingDates(ctx, data, member.ID, today, leaveDates)
 
@@ -248,6 +274,90 @@ func (h *Handler) loadCurrentUserUpcomingDates(ctx context.Context, data map[str
 			data["CurrentUserNextLeaveDay"] = nextLeaveDay
 		}
 	}
+}
+
+// loadSignalOnSiteOptions populates the data map with the
+// dashboard's on-site override affordances:
+//
+//   - CanSignalOnSiteToday       bool — today-button visibility
+//   - CanSignalOnSiteFuture      bool — future-dated picker visibility
+//   - SignalOnSiteFutureOptions  []signalOnSiteFutureOption — picker choices
+//
+// The today button is shown when the user has an approved WFH row
+// today that they could self-withdraw (recurring or ad-hoc; not
+// system-assigned). The future-dated picker is shown when the user
+// has at least one future approved WFH row in the rolling settlement
+// window (signalOnSiteFutureWindowDays). Both visibility flags are
+// hidden when nothing is overridable so a click can never surface a
+// flash error.
+//
+// System-assigned and swap-origin rows are excluded from both
+// affordances — those need a swap, which the on-site override
+// path explicitly rejects with ErrWFHAssigned. See
+// internal/wfh/service.go SignalOnSiteToday for the rejection
+// reason; the dashboard's exclusion keeps the click affordance
+// honest about what the user can do.
+func (h *Handler) loadSignalOnSiteOptions(ctx context.Context, data map[string]any, memberID, today string) {
+	rows, err := h.db.GetWFHRequestsByMember(ctx, memberID)
+	if err != nil {
+		return
+	}
+
+	cutoff := time.Now().UTC().AddDate(0, 0, signalOnSiteFutureWindowDays).Format("2006-01-02")
+	futureOptions := make([]signalOnSiteFutureOption, 0, len(rows))
+	for i := range rows {
+		opt, include := signalOnSiteOptionForRow(&rows[i], today, cutoff)
+		if !include {
+			continue
+		}
+		if opt == nil {
+			// Today match — the per-row helper flagged the today
+			// button visibility; nothing to add to futureOptions.
+			data["CanSignalOnSiteToday"] = true
+			continue
+		}
+		futureOptions = append(futureOptions, *opt)
+	}
+	// Stable order: nearest first. Cheap insertion sort; the list
+	// is at most a handful of entries.
+	sortSignalOnSiteOptions(futureOptions)
+	if len(futureOptions) > 0 {
+		data["CanSignalOnSiteFuture"] = true
+		data["SignalOnSiteFutureOptions"] = futureOptions
+	}
+}
+
+// signalOnSiteOptionForRow classifies one WFH row into either:
+//   - (nil, true) — the row matches today and the today-button should render
+//   - (option, true) — the row is a future-dated candidate for the picker
+//   - (nil, false) — the row should be skipped (wrong origin/status/date
+//     or unparseable)
+//
+// Extracted from loadSignalOnSiteOptions so the orchestrator stays
+// under the cyclomatic-complexity cap.
+func signalOnSiteOptionForRow(r *database.WFHRequest, today, cutoff string) (*signalOnSiteFutureOption, bool) {
+	if r.Origin == "assigned" || r.Origin == "swap" {
+		return nil, false
+	}
+	if r.Status != database.WFHStatusApproved {
+		return nil, false
+	}
+	if r.Date == today {
+		// Today match — caller flips the today-button flag.
+		return nil, true
+	}
+	if r.Date < today || r.Date > cutoff {
+		return nil, false
+	}
+	parsed, parseErr := time.Parse("2006-01-02", r.Date)
+	if parseErr != nil {
+		return nil, false
+	}
+	return &signalOnSiteFutureOption{
+		DateISO:     r.Date,
+		DateDisplay: parsed.Format("Mon, Jan 2"),
+		IsRecurring: r.IsRecurring,
+	}, true
 }
 
 // loadDashboardData populates the dashboard with today's and week's

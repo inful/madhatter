@@ -402,6 +402,66 @@ func (h *Handler) handleWFHTodayOnSite(w http.ResponseWriter, r *http.Request) {
 	SetFlash(w, r, "/", Flash{Kind: FlashKindSignalOnSiteToday})
 }
 
+// handleWFHOnSiteOnDate is the Phase 3 forward-dated sibling of
+// handleWFHTodayOnSite. The dashboard surfaces a "I'll be in on
+// [date]" control when the member has at least one future WFH
+// row in the rolling settlement window that they could withdraw
+// (recurring or ad-hoc, not system-assigned). The chosen date is
+// posted as a query string parameter; the service validates the
+// date and withdraws the matching row.
+//
+// Errors mapped via the WFH error table:
+//   - ErrWFHInvalidDate — tampered query string.
+//   - ErrWFHDatePassed  — date is strictly before today UTC.
+//   - ErrWFHNotFound    — no approved row for (member, date).
+//   - ErrWFHAssigned    — row is system-assigned or a swap target.
+//
+// On success the flash banner carries the target date so the
+// user can confirm what was withdrawn.
+func (h *Handler) handleWFHOnSiteOnDate(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	user := mustGetUser(ctx)
+	memberID := h.resolveMemberID(ctx, user.Email)
+	if memberID == "" {
+		http.Error(w, "Not a team member", http.StatusForbidden)
+		return
+	}
+	if h.wfhService == nil {
+		http.Error(w, "WFH service is not enabled", http.StatusServiceUnavailable)
+		return
+	}
+
+	date := r.URL.Query().Get("date")
+	if date == "" {
+		SetFlash(w, r, "/", Flash{
+			Kind:   FlashKindSignalOnSiteFuture,
+			Status: "error",
+			Reason: "Missing date — please pick a date from the dropdown.",
+		})
+		return
+	}
+
+	withdrawn, err := h.wfhService.SignalOnSiteOnDate(ctx, memberID, date)
+	if err != nil {
+		if info, ok := database.WFHErrorFor(err); ok {
+			SetFlash(w, r, "/", Flash{
+				Kind:   FlashKindSignalOnSiteFuture,
+				Status: "error",
+				Reason: info.Message,
+				Date:   date,
+			})
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	SetFlash(w, r, "/", Flash{
+		Kind: FlashKindSignalOnSiteFuture,
+		Date: withdrawn.Date,
+	})
+}
+
 // enrichedWFHRequest wraps a WFHRequest with a CanWithdraw flag for admin display.
 type enrichedWFHRequest struct {
 	database.WFHRequest

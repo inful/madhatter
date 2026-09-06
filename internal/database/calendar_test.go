@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -169,4 +170,99 @@ func TestGetUpcomingAssignments_BeyondRange(t *testing.T) {
 	// Assert
 	require.NoError(t, err)
 	require.Empty(t, assignments) // Should not include 15-day future assignment
+}
+
+// TestGetCoveredOriginalIDsInRange covers the SQL helper backing
+// issue #54's calendar cover-suppression. The query returns the
+// set of original (is_cover=0) assignment IDs that have at least
+// one cover row in the given date range. Used by the calendar
+// generators to suppress the redundant "HAT day (original)" event
+// from the rendered feed on a day the original was covered.
+func TestGetCoveredOriginalIDsInRange(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	// Pick a future weekday so the cover is unambiguously inside
+	// the date range under test (no weekend-skipping noise).
+	date := time.Now().AddDate(0, 0, 5)
+	for date.Weekday() == time.Saturday || date.Weekday() == time.Sunday {
+		date = date.AddDate(0, 0, 1)
+	}
+	dateStr := date.Format("2006-01-02")
+
+	// Original covered by Bob.
+	originalID, err := db.CreateRotaAssignment(ctx, dateStr, aliceID, false, nil)
+	require.NoError(t, err)
+	_, err = db.CreateRotaAssignment(ctx, dateStr, bobID, true, &originalID)
+	require.NoError(t, err)
+
+	// Uncovered original further out.
+	uncoveredDate := date.AddDate(0, 0, 5).Format("2006-01-02")
+	for {
+		parsed, _ := time.Parse("2006-01-02", uncoveredDate)
+		if parsed.Weekday() != time.Saturday && parsed.Weekday() != time.Sunday {
+			break
+		}
+		uncoveredDate = parsed.AddDate(0, 0, 1).Format("2006-01-02")
+	}
+	uncoveredID, err := db.CreateRotaAssignment(ctx, uncoveredDate, aliceID, false, nil)
+	require.NoError(t, err)
+
+	start := time.Now().Format("2006-01-02")
+	end := time.Now().AddDate(0, 0, 30).Format("2006-01-02")
+
+	got, err := db.GetCoveredOriginalIDsInRange(ctx, start, end)
+	require.NoError(t, err)
+
+	_, hasCovered := got[originalID]
+	assert.True(t, hasCovered,
+		"covered original ID must appear in the result set (calendar will use this to suppress it)")
+	_, hasUncovered := got[uncoveredID]
+	assert.False(t, hasUncovered,
+		"uncovered original ID must not appear — only IDs with a cover row in the range are returned")
+}
+
+// TestGetCoveredOriginalIDsInRange_OutsideRange pins the date-range
+// filter: a cover whose date is outside the [start, end] window must
+// not cause its original to surface. Otherwise the calendar
+// generator would suppress an original whose cover sits outside the
+// lookahead horizon (and the user would have NO event at all for
+// that day in the upcoming-feed case).
+func TestGetCoveredOriginalIDsInRange_OutsideRange(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	// Cover sits 60 days out; the query window is the next 30
+	// days.
+	farDate := time.Now().AddDate(0, 0, 60).Format("2006-01-02")
+	for {
+		parsed, _ := time.Parse("2006-01-02", farDate)
+		if parsed.Weekday() != time.Saturday && parsed.Weekday() != time.Sunday {
+			break
+		}
+		farDate = parsed.AddDate(0, 0, 1).Format("2006-01-02")
+	}
+	originalID, err := db.CreateRotaAssignment(ctx, farDate, aliceID, false, nil)
+	require.NoError(t, err)
+	_, err = db.CreateRotaAssignment(ctx, farDate, bobID, true, &originalID)
+	require.NoError(t, err)
+
+	start := time.Now().Format("2006-01-02")
+	end := time.Now().AddDate(0, 0, 30).Format("2006-01-02")
+
+	got, err := db.GetCoveredOriginalIDsInRange(ctx, start, end)
+	require.NoError(t, err)
+	assert.Empty(t, got, "a cover outside the range must not cause its original to be suppressed")
 }

@@ -275,6 +275,43 @@ func (db *DB) GetAssignmentByID(ctx context.Context, id string) (*RotaAssignment
 	}, nil
 }
 
+// GetCoveredOriginalIDsInRange returns the set of original (is_cover=0)
+// rota assignment IDs that have at least one cover row referencing
+// them in the given date range. Used by the calendar generators to
+// suppress covered originals from the rendered feed — the dashboard
+// hides covered originals via its presence snapshot, but the
+// calendar walks the assignment list directly. Issue #54.
+//
+// Bounded by date range to keep the result set small even for a
+// large team: typical use is the next 7-30 days, which produces a
+// handful of covered originals in normal operation.
+func (db *DB) GetCoveredOriginalIDsInRange(ctx context.Context, startDate, endDate string) (map[string]struct{}, error) {
+	startDateTime, err := time.Parse("2006-01-02", startDate)
+	if err != nil {
+		return nil, err
+	}
+	endDateTime, err := time.Parse("2006-01-02", endDate)
+	if err != nil {
+		return nil, err
+	}
+
+	rows, err := db.queries.GetCoveredOriginalIDsInRange(ctx, sqlc.GetCoveredOriginalIDsInRangeParams{
+		Date:   startDateTime,
+		Date_2: endDateTime,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	out := make(map[string]struct{}, len(rows))
+	for _, r := range rows {
+		if r.Valid {
+			out[r.String] = struct{}{}
+		}
+	}
+	return out, nil
+}
+
 // GetFutureAssignmentsForMember returns all upcoming (today onwards) assignments for one member.
 func (db *DB) GetFutureAssignmentsForMember(ctx context.Context, memberID string) ([]RotaAssignment, error) {
 	rows, err := db.queries.GetFutureAssignmentsForMember(ctx, memberID)

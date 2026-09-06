@@ -206,3 +206,144 @@ func TestGenerateICalForTokenWithOptions_ExcludesPendingWFH(t *testing.T) {
 	assert.NotContains(t, icsStr, "WFH: Alice",
 		"summary should not appear for a pending-only WFH row")
 }
+
+// TestGenerateICalForTokenWithOptions_SuppressesCoveredOriginal pins
+// issue #54 — the RED test that reproduces the bug.
+//
+// Setup: Alice has a HAT day assignment on a future weekday. Bob
+// covers for Alice (a cover row with original_assignment_id =
+// Alice's row id and member_id = Bob).
+//
+// Failure mode: when Alice's personal calendar feed is generated, the
+// generator walks GetUpcomingAssignments(Alice) and renders every
+// row owned by Alice. The cover row has member_id = Bob so it
+// doesn't appear in Alice's query at all. But Alice's original
+// row is STILL THERE with is_cover=0, so the generator renders a
+// "HAT day (Alice)" VEVENT on the day Bob covered for her.
+//
+// Expected: the covered original must NOT render on Alice's feed.
+// Only the cover (which lives on Bob's feed) should surface the
+// "HAT day (Bob) (COVER)" event. The dashboard already handles
+// this via the presence snapshot's cover-prioritization; the
+// calendar generator needs the same treatment.
+//
+// This test pins the desired behavior and currently fails
+// (RED). When the fix lands, this test must pass (GREEN).
+func TestGenerateICalForTokenWithTokenWithOptions_SuppressesCoveredOriginal(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	require.True(t, ok)
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	t.Setenv("MIGRATIONS_PATH", filepath.Join(repoRoot, "migrations"))
+
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	db, err := database.New(filepath.Join(tmpDir, "test.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	// Pick a future weekday so the assignment is unambiguously
+	// inside the lookahead window.
+	date := time.Now().UTC().AddDate(0, 0, 5)
+	for date.Weekday() == time.Saturday || date.Weekday() == time.Sunday {
+		date = date.AddDate(0, 0, 1)
+	}
+	dateStr := date.Format("2006-01-02")
+
+	// Alice's original HAT day.
+	originalID, err := db.CreateRotaAssignment(ctx, dateStr, aliceID, false, nil)
+	require.NoError(t, err)
+	// Bob covers for Alice. The cover row references the original
+	// via original_assignment_id so the relationship is queryable.
+	_, err = db.CreateRotaAssignment(ctx, dateStr, bobID, true, &originalID)
+	require.NoError(t, err)
+
+	aliceToken, err := db.CreateCalendarSubscription(ctx, aliceID)
+	require.NoError(t, err)
+
+	aliceICS, err := GenerateICalForTokenWithOptions(ctx, db, aliceToken, 14, SupportCalendarOptions{})
+	require.NoError(t, err)
+
+	// The bug: Alice's feed renders the covered original.
+	assert.NotContains(t, aliceICS, "HAT day (Alice)",
+		"a HAT day that has been covered by Bob must not render on Alice's calendar feed")
+	// Specifically, no VEVENT dated compactDate should name Alice.
+	// We assert at the level of "the covered day has no Alice-named
+	// event" rather than "no event at all" because the assertion
+	// would still pass if we accidentally dropped ALL events for the
+	// day (a different bug).
+	assert.NotContains(t, aliceICS,
+		"SUMMARY:HAT day (Alice)",
+		"Alice's covered HAT day must not appear in her feed as a HAT event")
+	_ = date.Format("20060102") // retained for the docstring's reference
+
+	// Sanity: the cover should still render on Bob's feed (it lives
+	// in GetUpcomingAssignments(Bob), not the suppressed list).
+	bobToken, err := db.CreateCalendarSubscription(ctx, bobID)
+	require.NoError(t, err)
+	bobICS, err := GenerateICalForTokenWithOptions(ctx, db, bobToken, 14, SupportCalendarOptions{})
+	require.NoError(t, err)
+	assert.Contains(t, bobICS, "HAT day (Bob)",
+		"Bob's cover should still render on his own feed — covers must surface, not vanish")
+}
+
+// TestGenerateOthersICalForToken_SuppressesCoveredOriginal pins the
+// matching behavior on the "others" feed: when Alice's HAT day is
+// covered by Bob, Member A's "others" feed must show only Bob's
+// cover entry — not both Alice's original AND Bob's cover.
+//
+// Currently the bug also affects this feed: GetAssignmentsByDateRange
+// returns both rows (Alice's original and Bob's cover), the filter
+// `assignment.MemberID == member.ID` only excludes Alice's row from
+// Alice's own feed, and the remaining rows include both
+// Alice-original (when another member views) and Bob-cover. We
+// expect the others feed for Member C to show only Bob's cover.
+func TestGenerateOthersICalForToken_SuppressesCoveredOriginal(t *testing.T) {
+	_, filename, _, ok := runtime.Caller(0)
+	require.True(t, ok)
+	repoRoot := filepath.Clean(filepath.Join(filepath.Dir(filename), "..", ".."))
+	t.Setenv("MIGRATIONS_PATH", filepath.Join(repoRoot, "migrations"))
+
+	ctx := context.Background()
+	tmpDir := t.TempDir()
+	db, err := database.New(filepath.Join(tmpDir, "test.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+	carolID, err := db.AddTeamMember(ctx, "Carol", "carol@example.com")
+	require.NoError(t, err)
+
+	date := time.Now().UTC().AddDate(0, 0, 5)
+	for date.Weekday() == time.Saturday || date.Weekday() == time.Sunday {
+		date = date.AddDate(0, 0, 1)
+	}
+	dateStr := date.Format("2006-01-02")
+
+	originalID, err := db.CreateRotaAssignment(ctx, dateStr, aliceID, false, nil)
+	require.NoError(t, err)
+	_, err = db.CreateRotaAssignment(ctx, dateStr, bobID, true, &originalID)
+	require.NoError(t, err)
+
+	carolToken, err := db.CreateCalendarSubscription(ctx, carolID)
+	require.NoError(t, err)
+
+	carolOthersICS, err := GenerateOthersICalForToken(ctx, db, carolToken, 14)
+	require.NoError(t, err)
+
+	// The covered original (Alice's HAT row) must NOT render on
+	// Carol's "others" feed even though Alice is a different member
+	// from Carol. The cover by Bob is the only assignment that
+	// matters — it carries the actual "who is on HAT" information.
+	assert.NotContains(t, carolOthersICS, "HAT day (Alice)",
+		"a covered original must not render on any 'others' feed; only the cover should")
+	assert.Contains(t, carolOthersICS, "HAT day (Bob)",
+		"Bob's cover should render on Carol's 'others' feed — covers must surface, not vanish")
+}

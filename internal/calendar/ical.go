@@ -660,10 +660,11 @@ func GenerateICalFromAssignments(assignments []database.RotaAssignment, memberNa
 func GenerateICalForTokenWithOptions(ctx context.Context, db *database.DB, token string, lookaheadDays int, opts SupportCalendarOptions) (string, error) {
 	// Resolve the member + their upcoming data in one call so the
 	// orchestrator stays below the cyclop limit. loadCalendarData
-	// returns the member, the upcoming assignments, and the
-	// upcoming WFH days; any of the three failing is fatal for the
-	// whole feed.
-	member, assignments, wfhDays, err := loadCalendarData(ctx, db, token, lookaheadDays)
+	// returns the member, the upcoming assignments, the set of
+	// covered-original IDs in the same window (used by the
+	// suppressCoveredOriginals filter), and the upcoming WFH
+	// days; any of those failing is fatal for the whole feed.
+	member, assignments, coveredOriginals, wfhDays, err := loadCalendarData(ctx, db, token, lookaheadDays)
 	if err != nil {
 		return "", err
 	}
@@ -689,6 +690,15 @@ func GenerateICalForTokenWithOptions(ctx context.Context, db *database.DB, token
 		return s, nil
 	}
 
+	// Drop covered originals so the subscriber doesn't see "HAT day
+	// (Alice)" on a day Bob covered for her. The cover row itself
+	// is filtered out by loadCalendarData's member_id scope (Bob's
+	// row has member_id = Bob, not Alice), so Alice's feed ends up
+	// empty for the covered day — which is correct: she's not on
+	// duty, and the team calendar will surface Bob's cover on the
+	// "others" feed. Issue #54.
+	assignments = suppressCoveredOriginals(assignments, coveredOriginals)
+
 	for _, assignment := range assignments {
 		snap, sErr := snapshotFor(assignment.Date)
 		if sErr != nil {
@@ -713,27 +723,115 @@ func GenerateICalForTokenWithOptions(ctx context.Context, db *database.DB, token
 
 // loadCalendarData resolves a subscription token to the
 // corresponding member, then loads the member's upcoming HAT
-// assignments and approved WFH days in a single window. The three
-// queries are independent so combining them under one helper
-// keeps the public orchestrator's cyclop count down without
-// tangling error handling.
-func loadCalendarData(ctx context.Context, db *database.DB, token string, lookaheadDays int) (*database.TeamMember, []database.RotaAssignment, []database.WFHRequest, error) {
+// assignments, the set of original-assignment IDs that have a cover
+// in the same window (for issue #54), and the member's approved WFH
+// days. The three queries are independent so combining them under
+// one helper keeps the public orchestrator's cyclop count down
+// without tangling error handling.
+//
+// The coveredOriginals map is shared so the personal-feed and
+// others-feed paths both suppress the same set of originals; it's
+// empty when the query returns no rows (no covers in the window),
+// and the filter helper short-circuits on that case.
+func loadCalendarData(ctx context.Context, db *database.DB, token string, lookaheadDays int) (*database.TeamMember, []database.RotaAssignment, map[string]struct{}, []database.WFHRequest, error) {
 	member, err := db.GetMemberByToken(ctx, token)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("invalid token: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("invalid token: %w", err)
 	}
 
 	assignments, err := db.GetUpcomingAssignments(ctx, member.ID, lookaheadDays)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to get assignments: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("failed to get assignments: %w", err)
+	}
+
+	startDate := time.Now().UTC().Format("2006-01-02")
+	endDate := time.Now().UTC().AddDate(0, 0, lookaheadDays).Format("2006-01-02")
+	coveredOriginals, err := db.GetCoveredOriginalIDsInRange(ctx, startDate, endDate)
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("failed to get covered originals: %w", err)
 	}
 
 	wfhDays, err := db.GetUpcomingWFHForMember(ctx, member.ID, lookaheadDays)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to get wfh days: %w", err)
+		return nil, nil, nil, nil, fmt.Errorf("failed to get wfh days: %w", err)
 	}
 
-	return member, assignments, wfhDays, nil
+	return member, assignments, coveredOriginals, wfhDays, nil
+}
+
+// suppressCoveredOriginals returns the subset of assignments whose
+// role is still "active" on the calendar — that is, originals that
+// have NOT been replaced by a cover, plus the cover rows themselves.
+//
+// The rota_assignments table keeps the original row in place when a
+// cover row is inserted (the cover row's original_assignment_id
+// points at it); the engine treats the original as still owed (e.g.
+// for daily reconciliation). The calendar feed, however, should
+// reflect who is ACTUALLY on duty: the cover, not the original. The
+// dashboard gets this for free via its per-day presence snapshot
+// (the matrix picks the cover row when both exist), but the
+// calendar generators walk assignments directly and would otherwise
+// render both. Filtering here at the calendar layer keeps the SQL
+// contract unchanged for every other caller.
+//
+// coveredOriginals is the explicit set of original-assignment IDs
+// that have a cover somewhere in the date range — the caller pre-
+// loads it via database.GetCoveredOriginalIDsInRange because the
+// assignments slice itself may be scoped to a single member (e.g.
+// the per-member feed) and the cover row won't be in there. Issue
+// #54.
+//
+// As an extra defense-in-depth, suppressCoveredOriginals also drops
+// any original whose ID appears in the slice's own cover rows —
+// that's the "both rows in the same slice" case the others feed
+// hits when the cover and original are both present and visible to
+// the filter.
+func suppressCoveredOriginals(assignments []database.RotaAssignment, coveredOriginals map[string]struct{}) []database.RotaAssignment {
+	if len(assignments) == 0 {
+		return assignments
+	}
+
+	coveredOriginals = unionWithSliceCovers(assignments, coveredOriginals)
+	if len(coveredOriginals) == 0 {
+		return assignments
+	}
+
+	kept := make([]database.RotaAssignment, 0, len(assignments))
+	for i := range assignments {
+		if !assignments[i].IsCover {
+			if _, isCovered := coveredOriginals[assignments[i].ID]; isCovered {
+				// Original that has been replaced by a cover;
+				// skip — the cover row will render instead.
+				continue
+			}
+		}
+		kept = append(kept, assignments[i])
+	}
+	return kept
+}
+
+// unionWithSliceCovers returns coveredOriginals augmented with any
+// original IDs that appear as the original_assignment_id of a
+// cover row in the slice itself. The caller (a calendar generator)
+// passes the pre-loaded set from database.GetCoveredOriginalIDsInRange
+// — covers outside the slice but in the same window. The slice may
+// also contain cover rows (the "others" feed case); this helper
+// captures those so the suppression is consistent regardless of
+// which feed is rendering.
+//
+// Extracted from suppressCoveredOriginals to keep the orchestrator
+// under the cyclomatic-complexity cap.
+func unionWithSliceCovers(assignments []database.RotaAssignment, coveredOriginals map[string]struct{}) map[string]struct{} {
+	for i := range assignments {
+		if !assignments[i].IsCover || assignments[i].OriginalAssignmentID == nil {
+			continue
+		}
+		if coveredOriginals == nil {
+			coveredOriginals = make(map[string]struct{}, len(assignments))
+		}
+		coveredOriginals[*assignments[i].OriginalAssignmentID] = struct{}{}
+	}
+	return coveredOriginals
 }
 
 // addUpcomingWFHEvents renders the member's future approved WFH days
@@ -784,6 +882,18 @@ func GenerateOthersICalForTokenWithOptions(ctx context.Context, db *database.DB,
 		return "", fmt.Errorf("failed to get assignments: %w", err)
 	}
 
+	// Load the set of original IDs that have a cover in the same
+	// window. The filter below uses this to suppress the redundant
+	// "HAT day (Alice)" event from the "others" feed on a day Bob
+	// covered for her. The pre-loaded set is needed because the
+	// in-scope assignment list may not contain the cover row (it's
+	// keyed by original_assignment_id only, not by the cover's
+	// member_id). Issue #54.
+	coveredOriginals, err := db.GetCoveredOriginalIDsInRange(ctx, startDate, endDate)
+	if err != nil {
+		return "", fmt.Errorf("failed to get covered originals: %w", err)
+	}
+
 	memberNames := make(map[string]string)
 	members, err := db.GetActiveTeamMembers(ctx)
 	if err != nil {
@@ -800,6 +910,12 @@ func GenerateOthersICalForTokenWithOptions(ctx context.Context, db *database.DB,
 		}
 		others = append(others, assignment)
 	}
+
+	// Drop covered originals so the "others" feed doesn't double-
+	// render the day with both Alice (covered) and Bob (the cover).
+	// Only the cover carries the truthful "who is on duty" signal.
+	// Issue #54.
+	others = suppressCoveredOriginals(others, coveredOriginals)
 
 	icalContent, err := GenerateTeamCalendarWithOptions(ctx, db, others, memberNames, opts)
 	if err != nil {

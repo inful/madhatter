@@ -835,3 +835,80 @@ func TestAddWFHEvent_UidIsStablePerDay(t *testing.T) {
 	assert.Regexp(t, `UID:wfh-alice-\d+`, out,
 		"WFH events should use a wfh-<member>-<unix> UID scheme")
 }
+
+// TestSuppressCoveredOriginals_KeepsUncovered pins the helper's
+// baseline behavior: assignments with no cover row pass through
+// unchanged. Without this guard, the helper could over-filter and
+// drop legitimate events.
+func TestSuppressCoveredOriginals_KeepsUncovered(t *testing.T) {
+	assignments := []database.RotaAssignment{
+		{ID: "a1", Date: "2026-09-01", MemberID: "alice", IsCover: false},
+		{ID: "a2", Date: "2026-09-02", MemberID: "bob", IsCover: false},
+	}
+	got := suppressCoveredOriginals(assignments, nil)
+	assert.Equal(t, assignments, got, "no covers → output equals input")
+}
+
+// TestSuppressCoveredOriginals_DropsCovered covers the bug: when
+// an original has a cover on its ID, the original is dropped and
+// the cover is kept. Issue #54.
+func TestSuppressCoveredOriginals_DropsCovered(t *testing.T) {
+	originalID := "original-1"
+	assignments := []database.RotaAssignment{
+		{ID: originalID, Date: "2026-09-01", MemberID: "alice", IsCover: false},
+		{ID: "cover-1", Date: "2026-09-01", MemberID: "bob", IsCover: true, OriginalAssignmentID: &originalID},
+	}
+	got := suppressCoveredOriginals(assignments, nil)
+	require.Len(t, got, 1)
+	assert.Equal(t, "cover-1", got[0].ID, "the covered original must be dropped; only the cover remains")
+	assert.True(t, got[0].IsCover)
+}
+
+// TestSuppressCoveredOriginals_RespectsExternalCoveredSet pins the
+// helper's "pre-loaded covered-originals" path. When the caller
+// passes an explicit set (e.g. loaded via
+// database.GetCoveredOriginalIDsInRange because the cover row is
+// not in the same slice — the per-member feed case), the helper
+// uses that set to suppress the original. Without this branch,
+// Alice's personal feed would still render her covered HAT day.
+func TestSuppressCoveredOriginals_RespectsExternalCoveredSet(t *testing.T) {
+	originalID := "original-1"
+	assignments := []database.RotaAssignment{
+		{ID: originalID, Date: "2026-09-01", MemberID: "alice", IsCover: false},
+	}
+	got := suppressCoveredOriginals(assignments, map[string]struct{}{originalID: {}})
+	assert.Empty(t, got, "external covered-original set must suppress even when the cover is not in the slice")
+}
+
+// TestSuppressCoveredOriginals_KeepsUncoveredWhenSetEmpty covers
+// the edge case where the caller passes an explicit empty map
+// (loadCalendarData returns an empty map when no covers exist in
+// the date range). The helper must not panic and must pass through
+// every assignment.
+func TestSuppressCoveredOriginals_KeepsUncoveredWhenSetEmpty(t *testing.T) {
+	assignments := []database.RotaAssignment{
+		{ID: "a1", Date: "2026-09-01", MemberID: "alice", IsCover: false},
+	}
+	got := suppressCoveredOriginals(assignments, map[string]struct{}{})
+	assert.Equal(t, assignments, got)
+}
+
+// TestSuppressCoveredOriginals_PreservesOrder checks that the
+// helper is stable on input order — important for the calendar
+// generator which iterates the result. The cover and the surviving
+// originals should appear in their original sequence.
+func TestSuppressCoveredOriginals_PreservesOrder(t *testing.T) {
+	originalA := "original-a"
+	originalB := "original-b"
+	assignments := []database.RotaAssignment{
+		{ID: originalA, Date: "2026-09-01", MemberID: "alice", IsCover: false},
+		{ID: originalB, Date: "2026-09-02", MemberID: "bob", IsCover: false},
+		{ID: "cover-a", Date: "2026-09-01", MemberID: "carol", IsCover: true, OriginalAssignmentID: &originalA},
+	}
+	got := suppressCoveredOriginals(assignments, nil)
+	require.Len(t, got, 2)
+	// input order is [originalA, originalB, coverA]; suppressed
+	// order is [originalB, coverA].
+	assert.Equal(t, "original-b", got[0].ID)
+	assert.Equal(t, "cover-a", got[1].ID)
+}

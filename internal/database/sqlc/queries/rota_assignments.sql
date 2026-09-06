@@ -73,3 +73,11 @@ WHERE date = ? AND is_cover = 1;
 UPDATE rota_assignments
 SET is_swapped = 1
 WHERE id = ?;
+
+-- name: GetCoveredOriginalIDsInRange :many
+SELECT DISTINCT original_assignment_id AS original_id
+FROM rota_assignments
+WHERE is_cover = 1
+  AND original_assignment_id IS NOT NULL
+  AND date >= ?
+  AND date <= ?;

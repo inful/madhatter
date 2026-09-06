@@ -223,6 +223,43 @@ func (q *Queries) GetCoverAssignmentByDate(ctx context.Context, date time.Time) 
 	return i, err
 }
 
+const getCoveredOriginalIDsInRange = `-- name: GetCoveredOriginalIDsInRange :many
+SELECT DISTINCT original_assignment_id AS original_id
+FROM rota_assignments
+WHERE is_cover = 1
+  AND original_assignment_id IS NOT NULL
+  AND date >= ?
+  AND date <= ?
+`
+
+type GetCoveredOriginalIDsInRangeParams struct {
+	Date   time.Time `json:"date"`
+	Date_2 time.Time `json:"date_2"`
+}
+
+func (q *Queries) GetCoveredOriginalIDsInRange(ctx context.Context, arg GetCoveredOriginalIDsInRangeParams) ([]sql.NullString, error) {
+	rows, err := q.db.QueryContext(ctx, getCoveredOriginalIDsInRange, arg.Date, arg.Date_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []sql.NullString{}
+	for rows.Next() {
+		var original_id sql.NullString
+		if err := rows.Scan(&original_id); err != nil {
+			return nil, err
+		}
+		items = append(items, original_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getFutureAssignments = `-- name: GetFutureAssignments :many
 SELECT ra.id, ra.date, ra.member_id, ra.is_cover, ra.original_assignment_id, ra.is_swapped,
        tm.name AS member_name, tm.email AS member_email

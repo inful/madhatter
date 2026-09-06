@@ -34,7 +34,13 @@ func TestLogin_AndDashboardRender(t *testing.T) {
 		chromedp.Title(&title),
 		chromedp.Evaluate(`window.location.href`, &currentURL),
 		chromedp.Evaluate(
+			// The status card header reads "Today" on a business day,
+			// "Weekend" on Sat/Sun, and "Holiday: <name>" on a holiday.
+			// Any of those is a successful landing render — the page
+			// has loaded and the dashboard chrome is in place.
 			`document.body.innerText.indexOf('Today') !== -1 || `+
+				`document.body.innerText.indexOf('Weekend') !== -1 || `+
+				`document.body.innerText.indexOf('Holiday') !== -1 || `+
 				`document.body.innerText.indexOf('No team members found') !== -1`,
 			&bodyHasHATMarker,
 		),
@@ -42,15 +48,16 @@ func TestLogin_AndDashboardRender(t *testing.T) {
 		t.Fatalf("dashboard post-login render failed (title=%q): %v", title, err)
 	}
 
-	// All currently-rendered dashboards include "Today" (the Today
-	// card heading) or the no-team-members flash. Either is a
-	// successful landing render.
+	// All currently-rendered dashboards include one of: "Today"
+	// (business day), "Weekend", "Holiday: <name>", or the
+	// no-team-members flash. Any of those is a successful landing
+	// render.
 	if !bodyHasHATMarker {
 		var bodyText string
 		_ = chromedp.Evaluate(`document.body.innerText`, &bodyText)
 		t.Errorf("dashboard body did not contain the expected "+
-			"'Today' / 'No team members' marker; url=%s title=%q "+
-			"first-300-chars-of-body=%q",
+			"'Today' / 'Weekend' / 'Holiday' / 'No team members' marker; "+
+			"url=%s title=%q first-300-chars-of-body=%q",
 			currentURL, title, truncate(bodyText, 300))
 	}
 }

@@ -38,6 +38,9 @@
                 <li><strong>@conference</strong> &mdash; you're away for a conference (a leave variant).</li>
             </ul>
 
+            <h4 class="title is-6 mb-2 mt-4">Weekends and holidays</h4>
+            <p>On a weekend or configured holiday the card header swaps the <em>Today</em> label for <strong>Weekend</strong> or <strong>Holiday: &lt;name&gt;</strong>, the status badge becomes a muted <strong>Off</strong> tag, and the WFH override buttons are hidden (there's no row to withdraw on a non-business day). The Schedule card's HAT banner renders a <strong>No support today</strong> header with the next business day underneath, so the gap between HAT banners on adjacent days isn't a silent fall-back to "Schedule". A <em>Next business day: Mon, Sep 7</em> line under the status card explains why the override buttons are absent. The schedule matrix itself still skips weekends and holidays, so the day grid starts on the next business day.</p>
+
             <h4 class="title is-6 mb-2 mt-4">I'm actually coming in today</h4>
             <p>If your projection is WFH (recurring weekday, permanent-WFH, or an approved ad-hoc request) and you're actually in the office, the <strong>Coming in instead</strong> button on the <em>Today</em> card withdraws today's row for you. The badge flips to <strong>On-site</strong> that day and your quota slot is freed. The contractual pattern is unchanged: the next occurrence of the same weekday is still projected as WFH unless you withdraw that row too.</p>
             <p>Permanent-WFH members (every weekday set as recurring WFH) have a row for every business day in the current period; withdrawing today's row is the way to signal an in-office day. The button is hidden when there's nothing to override, so a stale bookmarked URL produces a typed-error flash rather than a silent success.</p>

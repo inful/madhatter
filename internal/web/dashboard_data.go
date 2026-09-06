@@ -363,8 +363,57 @@ func signalOnSiteOptionForRow(r *database.WFHRequest, today, cutoff string) (*si
 // loadDashboardData populates the dashboard with today's and week's
 // assignments. The orchestrator (handleDashboard) calls this after
 // the schedule is ensured so presence snapshots are stable.
+// loadTodayContext populates the dashboard's "today" classification:
+// whether today is a weekend, a holiday, or a normal business day, the
+// holiday name (if any), and the next business day on the rota. The
+// dashboard uses this to surface weekend / holiday status instead of
+// pretending today is a normal weekday (the earlier behavior — a
+// plain "Today / On-site" badge on a Sunday — confused operators).
+//
+// Extracted from loadDashboardData so the orchestrator stays under
+// the cyclomatic-complexity cap.
+func (h *Handler) loadTodayContext(now time.Time, data map[string]any) {
+	isWeekend := now.Weekday() == time.Saturday || now.Weekday() == time.Sunday
+	isHoliday := h.holidayChecker != nil && h.holidayChecker(now)
+
+	data["TodayIsWeekend"] = isWeekend
+	data["TodayIsHoliday"] = isHoliday
+	data["TodayIsBusinessDay"] = !isWeekend && !isHoliday
+
+	if isHoliday && h.holidayLookup != nil {
+		if name, ok := h.holidayLookup.GetHoliday(now.Format("2006-01-02")); ok {
+			data["TodayHolidayName"] = name
+		}
+	}
+
+	if isWeekend || isHoliday {
+		if next := nextBusinessDayFrom(now, h.isBusinessDay); !next.IsZero() {
+			data["NextBusinessDayDisplay"] = next.Format("Monday, Jan 2")
+			data["NextBusinessDayISO"] = next.Format("2006-01-02")
+		}
+	}
+}
+
+// nextBusinessDayFrom walks forward day-by-day from start until
+// isBusinessDay returns true. Returns the zero time if the walker
+// can't find one within the safety cap (1 year). Pure function —
+// takes the gate as a parameter — so the helper stays testable
+// without wiring a Handler.
+func nextBusinessDayFrom(start time.Time, isBusinessDay func(time.Time) bool) time.Time {
+	const safetyCap = 366
+	d := start.AddDate(0, 0, 1)
+	for range safetyCap {
+		if isBusinessDay(d) {
+			return d
+		}
+		d = d.AddDate(0, 0, 1)
+	}
+	return time.Time{}
+}
+
 func (h *Handler) loadDashboardData(ctx context.Context, data map[string]any) {
-	today := time.Now().Format("2006-01-02")
+	now := time.Now()
+	today := now.Format("2006-01-02")
 	assignments, err := h.db.GetAssignmentsByDate(ctx, today)
 	if err == nil && len(assignments) > 0 {
 		data["TodayAssignment"] = assignments[0]
@@ -386,6 +435,12 @@ func (h *Handler) loadDashboardData(ctx context.Context, data map[string]any) {
 	}
 
 	h.loadMeetingsToken(ctx, data)
+
+	// Today classification (weekend / holiday / next business day).
+	// Computed last so it sees the same "now" the rest of the
+	// dashboard uses; the safety-cap'd forward walker handles the
+	// edge case where the holiday config is broken.
+	h.loadTodayContext(now, data)
 
 	// The chairs row is conditional on the cap being set; when
 	// the picker is a no-op (cap <= 0 or service unconfigured) the

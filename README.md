@@ -11,7 +11,7 @@ A comprehensive support duty management system with automatic scheduling, leave 
 - **Automatic cover assignment**: System automatically assigns covers when team members are on leave
 - **Calendar subscriptions**: Personal ICS calendar URLs for any calendar app. Each member's per-user feed renders their HAT-day assignments as VEVENTs and their own approved WFH days as separate all-day VEVENTs titled `<member> - WFH` so the calendar stays accurate without consulting the dashboard. Admin-marked WFH days carry a "(marked by admin)" note in the event description. Only approved WFH rows surface on the calendar — pending, denied, and withdrawn rows do not. The event text and HTML are overridable per event kind via the standard template-override env vars (`CALENDAR_TEMPLATE_*`). HAT days that have been covered (a `cover` row with `original_assignment_id` pointing at the original) are suppressed from both the per-member feed and the "others" feed so subscribers only see who is actually on duty that day; the cover renders with its `(COVER)` suffix so the truth is still visible.
 - **Holiday support**: Automatic exclusion of holidays from scheduling (via iCal feeds)
-
+- **Weekend/holiday awareness on the dashboard**: The status card header reads **Weekend** or **Holiday: &lt;name&gt;** instead of "Today" when today is non-business, the status badge becomes a muted **Off** tag, the WFH override buttons are hidden with an explanatory "Next business day" line, and the Schedule card's HAT banner renders **No support today** with the next business day instead of silently falling back to a plain "Schedule" title.
 ### User Interface
 - **Web dashboard**: HTMX-based responsive user interface
 - **REST API**: HUMA-based API with automatic OpenAPI documentation

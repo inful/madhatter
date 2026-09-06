@@ -802,3 +802,362 @@ func TestDashboard_StatusLegendRendersAllSixStates(t *testing.T) {
 			"legend must include the %q label", label)
 	}
 }
+
+// TestLoadTodayContext_Weekday pins the dashboard's "today"
+// classification on a plain business day: not a weekend, not a
+// holiday, no next-business-day line.
+func TestLoadTodayContext_Weekday(t *testing.T) {
+	_, h, cleanup := setupDashboardTestDB(t)
+	defer cleanup()
+
+	data := map[string]any{}
+	monday := time.Date(2026, 9, 7, 10, 0, 0, 0, time.UTC) // Monday
+	h.loadTodayContext(monday, data)
+
+	assert.False(t, data["TodayIsWeekend"].(bool), "Monday must not be a weekend")
+	assert.False(t, data["TodayIsHoliday"].(bool), "Monday must not be a holiday when no checker")
+	assert.True(t, data["TodayIsBusinessDay"].(bool), "Monday must be a business day")
+	_, hasName := data["TodayHolidayName"]
+	assert.False(t, hasName, "no holiday name when checker is nil")
+	_, hasNext := data["NextBusinessDayDisplay"]
+	assert.False(t, hasNext, "no next-business-day line on a business day")
+}
+
+// TestLoadTodayContext_Weekend pins the dashboard's "today"
+// classification on a weekend: weekend flag set, business day
+// false, next business day computed (Mon → Tue if Sun).
+func TestLoadTodayContext_Weekend(t *testing.T) {
+	_, h, cleanup := setupDashboardTestDB(t)
+	defer cleanup()
+
+	data := map[string]any{}
+	sunday := time.Date(2026, 9, 6, 10, 0, 0, 0, time.UTC) // Sunday
+	h.loadTodayContext(sunday, data)
+
+	assert.True(t, data["TodayIsWeekend"].(bool), "Sunday must be a weekend")
+	assert.False(t, data["TodayIsHoliday"].(bool))
+	assert.False(t, data["TodayIsBusinessDay"].(bool), "Sunday must NOT be a business day")
+
+	next := data["NextBusinessDayDisplay"].(string)
+	nextISO := data["NextBusinessDayISO"].(string)
+	assert.Equal(t, "Monday, Sep 7", next, "Sunday's next business day must be Monday Sep 7")
+	assert.Equal(t, "2026-09-07", nextISO)
+}
+
+// TestLoadTodayContext_Saturday skips both weekend days and
+// confirms the next-business-day walker lands on Monday.
+func TestLoadTodayContext_Saturday(t *testing.T) {
+	_, h, cleanup := setupDashboardTestDB(t)
+	defer cleanup()
+
+	data := map[string]any{}
+	saturday := time.Date(2026, 9, 5, 10, 0, 0, 0, time.UTC)
+	h.loadTodayContext(saturday, data)
+
+	assert.True(t, data["TodayIsWeekend"].(bool))
+	assert.False(t, data["TodayIsBusinessDay"].(bool))
+	assert.Equal(t, "Monday, Sep 7", data["NextBusinessDayDisplay"].(string))
+}
+
+// TestLoadTodayContext_Holiday wires a holiday checker that fires
+// on a Wednesday — the dashboard should classify it as a holiday
+// (not weekend), set the holiday name from the lookup, and compute
+// the next business day.
+func TestLoadTodayContext_Holiday(t *testing.T) {
+	db, h, cleanup := setupDashboardTestDB(t)
+	defer cleanup()
+
+	// Realistic checker: only 2026-09-09 is a holiday. The walker
+	// needs days after it to be genuine business days so the test
+	// can assert on the result.
+	h.holidayChecker = func(d time.Time) bool {
+		return d.Format("2006-01-02") == "2026-09-09"
+	}
+	h.holidayLookup = &stubHolidayLookup{
+		holidays: map[string]string{"2026-09-09": "Team Offsite"},
+	}
+	_ = db
+
+	data := map[string]any{}
+	wednesday := time.Date(2026, 9, 9, 10, 0, 0, 0, time.UTC)
+	h.loadTodayContext(wednesday, data)
+
+	assert.False(t, data["TodayIsWeekend"].(bool), "Wednesday isn't a weekend")
+	assert.True(t, data["TodayIsHoliday"].(bool), "Wednesday is a holiday when checker returns true")
+	assert.False(t, data["TodayIsBusinessDay"].(bool))
+	assert.Equal(t, "Team Offsite", data["TodayHolidayName"], "holiday name comes from lookup")
+	assert.Equal(t, "Thursday, Sep 10", data["NextBusinessDayDisplay"].(string))
+}
+
+// TestLoadTodayContext_HolidayNameAbsent covers the path where the
+// checker says "this is a holiday" but the lookup hasn't been
+// configured (or doesn't have a name). The dashboard should still
+// treat the day as a holiday, just without a name to display.
+func TestLoadTodayContext_HolidayNameAbsent(t *testing.T) {
+	_, h, cleanup := setupDashboardTestDB(t)
+	defer cleanup()
+
+	h.holidayChecker = func(d time.Time) bool {
+		return d.Format("2006-01-02") == "2026-09-09"
+	}
+	// No holidayLookup wired.
+
+	data := map[string]any{}
+	wednesday := time.Date(2026, 9, 9, 10, 0, 0, 0, time.UTC)
+	h.loadTodayContext(wednesday, data)
+
+	assert.True(t, data["TodayIsHoliday"].(bool))
+	_, hasName := data["TodayHolidayName"]
+	assert.False(t, hasName, "no name when lookup is nil")
+	assert.Equal(t, "Thursday, Sep 10", data["NextBusinessDayDisplay"].(string))
+}
+
+// stubHolidayLookup is a tiny test double for calendar.HolidayLookup.
+// The dashboard's loader only needs GetHoliday; we keep the import
+// surface minimal by using a structural type here.
+type stubHolidayLookup struct {
+	holidays map[string]string
+}
+
+func (s *stubHolidayLookup) GetHoliday(dateStr string) (string, bool) {
+	name, ok := s.holidays[dateStr]
+	return name, ok
+}
+
+// TestNextBusinessDayFrom verifies the walker semantics directly:
+// skips Sat/Sun and lands on the next weekday, returns zero time
+// only when the safety cap is exhausted.
+func TestNextBusinessDayFrom(t *testing.T) {
+	alwaysBusiness := func(time.Time) bool { return true }
+	neverBusiness := func(time.Time) bool { return false }
+
+	t.Run("plain forward step", func(t *testing.T) {
+		got := nextBusinessDayFrom(time.Date(2026, 9, 6, 0, 0, 0, 0, time.UTC), alwaysBusiness)
+		assert.Equal(t, "2026-09-07", got.Format("2006-01-02"))
+	})
+
+	t.Run("skips weekend", func(t *testing.T) {
+		// Skip Saturday/Sunday, accept everything else.
+		gate := func(d time.Time) bool {
+			return d.Weekday() != time.Saturday && d.Weekday() != time.Sunday
+		}
+		got := nextBusinessDayFrom(time.Date(2026, 9, 4, 0, 0, 0, 0, time.UTC), gate) // Friday
+		assert.Equal(t, "2026-09-07", got.Format("2006-01-02"))
+	})
+
+	t.Run("skips weekend AND holiday", func(t *testing.T) {
+		holidays := map[string]bool{"2026-09-07": true}
+		gate := func(d time.Time) bool {
+			if d.Weekday() == time.Saturday || d.Weekday() == time.Sunday {
+				return false
+			}
+			return !holidays[d.Format("2006-01-02")]
+		}
+		// Friday Sep 4 → Sat 5 → Sun 6 → Mon 7 (holiday) → Tue 8.
+		got := nextBusinessDayFrom(time.Date(2026, 9, 4, 0, 0, 0, 0, time.UTC), gate)
+		assert.Equal(t, "2026-09-08", got.Format("2006-01-02"))
+	})
+
+	t.Run("safety cap returns zero", func(t *testing.T) {
+		got := nextBusinessDayFrom(time.Date(2026, 9, 6, 0, 0, 0, 0, time.UTC), neverBusiness)
+		assert.True(t, got.IsZero(), "must return zero time when nothing is a business day")
+	})
+}
+
+// TestDashboard_StatusCardWeekend renders the dashboard template with
+// a non-business-day data map and asserts the status card replaces
+// "Today / On-site" with "Weekend / Off" and surfaces the
+// next-business-day line.
+func TestDashboard_StatusCardWeekend(t *testing.T) {
+	mockDB := &database.DB{}
+	handler, err := NewHandler(mockDB, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	data := map[string]any{
+		"User":                      map[string]any{"Email": "alice@example.com", "Name": "Alice"},
+		"IsAdmin":                   false,
+		"Template":                  "dashboard",
+		"Today":                     "Sunday, Sep 6, 2026",
+		"TodayIsWeekend":            true,
+		"TodayIsHoliday":            false,
+		"TodayIsBusinessDay":        false,
+		"NextBusinessDayDisplay":    "Monday, Sep 7",
+		"NextBusinessDayISO":        "2026-09-07",
+		"CurrentUserHasHATDay":      false,
+		"CurrentUserPresenceStatus": "On-site",
+	}
+
+	w := httptest.NewRecorder()
+	require.NoError(t, handler.tmpl.ExecuteTemplate(w, "dashboard.html", data))
+	body := w.Body.String()
+
+	// The header label must read "Weekend", not "Today".
+	assert.Contains(t, body, "Weekend",
+		"status card must label the section 'Weekend' instead of 'Today' on a weekend")
+	assert.NotContains(t, body, `<i class="fas fa-location-dot mr-1"></i> Today`,
+		"the Today location-dot icon must NOT render on a weekend")
+
+	// The status badge must read "Off" rather than the misleading
+	// "On-site" / "WFH" / "On leave" / "@conference" badges.
+	assert.Contains(t, body, `is-light-day-off`,
+		"the muted 'Off' tag class must render on a weekend")
+	assert.Contains(t, body, "> Off<",
+		"the muted 'Off' label must render on a weekend")
+	assert.NotContains(t, body, `> On-site<`,
+		"On-site must NOT render on a weekend — it's misleading")
+	assert.NotContains(t, body, `> WFH<`,
+		"the WFH badge must NOT render on a weekend — there's no row")
+
+	// The HAT day badge in the status card top must NOT render.
+	assert.NotContains(t, body, "HAT day",
+		"HAT day badge must NOT render on a weekend — there's no assignment")
+
+	// The next-business-day line must surface the explanation.
+	assert.Contains(t, body, "Next business day:",
+		"a 'Next business day:' line must render when today is non-business")
+	assert.Contains(t, body, "Monday, Sep 7",
+		"the line must show the actual next business day")
+}
+
+// TestDashboard_StatusCardHoliday mirrors the weekend test but for a
+// holiday: status card label becomes "Holiday: <name>", the Off tag
+// still renders, and the next-business-day line still surfaces.
+func TestDashboard_StatusCardHoliday(t *testing.T) {
+	mockDB := &database.DB{}
+	handler, err := NewHandler(mockDB, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	data := map[string]any{
+		"User":                      map[string]any{"Email": "alice@example.com", "Name": "Alice"},
+		"IsAdmin":                   false,
+		"Template":                  "dashboard",
+		"Today":                     "Wednesday, Sep 9, 2026",
+		"TodayIsWeekend":            false,
+		"TodayIsHoliday":            true,
+		"TodayHolidayName":          "Team Offsite",
+		"TodayIsBusinessDay":        false,
+		"NextBusinessDayDisplay":    "Thursday, Sep 10",
+		"NextBusinessDayISO":        "2026-09-10",
+		"CurrentUserHasHATDay":      false,
+		"CurrentUserPresenceStatus": "On-site",
+	}
+
+	w := httptest.NewRecorder()
+	require.NoError(t, handler.tmpl.ExecuteTemplate(w, "dashboard.html", data))
+	body := w.Body.String()
+
+	assert.Contains(t, body, "Team Offsite",
+		"the holiday name must surface in the status card label")
+	assert.Contains(t, body, "Holiday: Team Offsite",
+		"the status card header must read 'Holiday: <name>'")
+	assert.Contains(t, body, `is-light-day-off`,
+		"the Off tag must still render on a holiday")
+	assert.Contains(t, body, "Thursday, Sep 10",
+		"the next business day must surface for the holiday too")
+}
+
+// TestDashboard_StatusCardBusinessDayUnchanged is a regression
+// guard for the weekday path: the status card still says "Today",
+// still shows the WFH/On-site/On-leave badge, and does NOT show
+// the Off tag or the next-business-day line.
+func TestDashboard_StatusCardBusinessDayUnchanged(t *testing.T) {
+	mockDB := &database.DB{}
+	handler, err := NewHandler(mockDB, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	data := map[string]any{
+		"User":                      map[string]any{"Email": "alice@example.com", "Name": "Alice"},
+		"IsAdmin":                   false,
+		"Template":                  "dashboard",
+		"Today":                     "Monday, Sep 7, 2026",
+		"TodayIsWeekend":            false,
+		"TodayIsHoliday":            false,
+		"TodayIsBusinessDay":        true,
+		"CurrentUserHasHATDay":      false,
+		"CurrentUserPresenceStatus": "On-site",
+	}
+
+	w := httptest.NewRecorder()
+	require.NoError(t, handler.tmpl.ExecuteTemplate(w, "dashboard.html", data))
+	body := w.Body.String()
+
+	assert.Contains(t, body, `<i class="fas fa-location-dot mr-1"></i> Today`,
+		"the Today location-dot icon must still render on a business day")
+	assert.Contains(t, body, "> On-site<",
+		"On-site badge must still render on a business day")
+	assert.NotContains(t, body, "Weekend",
+		"Weekend label must not appear on a business day")
+	assert.NotContains(t, body, "Next business day:",
+		"the next-business-day line must not appear on a business day")
+	assert.NotContains(t, body, `class="tag is-light is-light-day-off"`,
+		"the muted Off tag must not appear on a business day (look for the tag, not the CSS rule)")
+	assert.NotContains(t, body, "> Off<",
+		"the 'Off' label must not appear on a business day")
+}
+
+// TestDashboard_HATBanner_Weekend extends the existing banner tests
+// to cover the non-business-day fallback. The schedule card's header
+// must show "No support today", the day-classification label, and
+// the next business day — instead of silently falling back to the
+// plain "Schedule" title.
+func TestDashboard_HATBanner_Weekend(t *testing.T) {
+	mockDB := &database.DB{}
+	handler, err := NewHandler(mockDB, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	data := map[string]any{
+		"User":                   map[string]any{"Email": "alice@example.com", "Name": "Alice"},
+		"IsAdmin":                false,
+		"Template":               "dashboard",
+		"TodayIsWeekend":         true,
+		"TodayIsHoliday":         false,
+		"TodayIsBusinessDay":     false,
+		"NextBusinessDayDisplay": "Monday, Sep 7",
+		// CurrentHATName intentionally left out: the weekend
+		// variant is what renders in that gap.
+	}
+
+	w := httptest.NewRecorder()
+	require.NoError(t, handler.tmpl.ExecuteTemplate(w, "dashboard.html", data))
+	body := w.Body.String()
+
+	assert.Contains(t, body, "No support today",
+		"the HAT banner header must read 'No support today' on a weekend")
+	assert.Contains(t, body, "Weekend",
+		"the HAT banner header must show the day classification")
+	assert.Contains(t, body, "Monday, Sep 7",
+		"the HAT banner header must show the next business day")
+	assert.NotContains(t, body, `class="card-header-title"`,
+		"the plain 'Schedule' fallback must NOT render when weekend/holiday — we want the explicit banner")
+}
+
+// TestDashboard_HATBanner_Holiday mirrors the weekend banner test
+// for the holiday variant: header reads "No support today" with
+// the holiday name in the secondary line.
+func TestDashboard_HATBanner_Holiday(t *testing.T) {
+	mockDB := &database.DB{}
+	handler, err := NewHandler(mockDB, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	data := map[string]any{
+		"User":                   map[string]any{"Email": "alice@example.com", "Name": "Alice"},
+		"IsAdmin":                false,
+		"Template":               "dashboard",
+		"TodayIsWeekend":         false,
+		"TodayIsHoliday":         true,
+		"TodayHolidayName":       "Team Offsite",
+		"TodayIsBusinessDay":     false,
+		"NextBusinessDayDisplay": "Thursday, Sep 10",
+	}
+
+	w := httptest.NewRecorder()
+	require.NoError(t, handler.tmpl.ExecuteTemplate(w, "dashboard.html", data))
+	body := w.Body.String()
+
+	assert.Contains(t, body, "No support today",
+		"the HAT banner header must read 'No support today' on a holiday")
+	assert.Contains(t, body, "Team Offsite",
+		"the HAT banner header must show the holiday name")
+	assert.Contains(t, body, "Thursday, Sep 10",
+		"the HAT banner header must show the next business day")
+}

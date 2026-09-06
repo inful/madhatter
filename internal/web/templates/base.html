@@ -204,6 +204,21 @@
             margin-right: 0.3rem;
         }
 
+        /* Build-identity footer. Rendered on every page so users
+           can see exactly which build they are looking at when
+           filing a bug. Rendered as a small, low-contrast line so
+           it does not compete with the page content for attention.
+           The 'v' prefix is intentional and human-friendly; the
+           template prints version.Current() which is just the
+           release tag (e.g. v0.32.3+abc1234). */
+        .app-version-footer {
+            text-align: center;
+            color: rgba(255, 255, 255, 0.65);
+            font-size: 0.75rem;
+            margin: 0.5rem 0 1rem 0;
+            font-variant-numeric: tabular-nums;
+        }
+
         @media (max-width: 640px) {
             .global-user-menu .columns.is-mobile {
                 align-items: flex-start;
@@ -322,9 +337,21 @@
 {{else}}
     {{template "login_scripts" .}}
 {{end}}
+<footer class="app-version-footer" aria-label="Build identity">
+    <span>{{version}}</span>
+</footer>
 </body>
 </html>
 {{end}}
+
+{{/*
+    version_footer_test is a minimal template that exercises the
+    {{version}} FuncMap. The web/version_test.go renders this
+    template directly to verify the FuncMap resolves without
+    needing a full HTTP test fixture. Not rendered by the live
+    application — the live footer is the inline block above.
+*/}}
+{{define "version_footer_test"}}{{version}}{{end}}
 
 {{define "global_user_menu"}}
 {{if .User}}

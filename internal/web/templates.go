@@ -5,6 +5,8 @@ import (
 	"embed"
 	"errors"
 	"html/template"
+
+	"github.com/inful/madhatter/internal/version"
 )
 
 //go:embed templates/*.html
@@ -14,6 +16,13 @@ func parseTemplates() (*template.Template, error) {
 	var tmpl *template.Template
 
 	funcMap := template.FuncMap{
+		// version returns the build identity of the running
+		// binary as set via ldflags at link time. Falls back
+		// to "dev" when unset so test fixtures and dev builds
+		// render without crashing. Surfaced in the footer of
+		// every page so users can see exactly which build they
+		// are looking at when filing a bug.
+		"version": version.Current,
 		"dict": func(values ...any) map[string]any {
 			if len(values)%dictKeyValuePairs != 0 {
 				panic("dict requires an even number of arguments")

@@ -24,7 +24,7 @@ builds:
       - -s -w
       - -X github.com/inful/madhatter/internal/version.Version={{.Version}}
       - -X github.com/inful/madhatter/internal/version.Commit={{.Commit}}
-      - -X github.com/inful/madhatter/internal/version.Date={{.Date}}
+      - -X github.com/inful/madhatter/internal/version.BuildTime={{.Date}}
 
 archives:
   - id: default

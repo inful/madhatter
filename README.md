@@ -46,12 +46,25 @@ A comprehensive support duty management system with automatic scheduling, leave 
 # Clone or download the project
 cd madhatter
 
-# Build the application
-go build -o support-rota
+# Build the application. The ldflags inject the build identity
+# into the running binary so the version reported in the footer
+# of every page matches what goreleaser / your release pipeline
+# shipped. Without ldflags the binary prints "dev" in the footer.
+go build -ldflags "\
+  -X github.com/inful/madhatter/internal/version.Version=v0.32.3 \
+  -X github.com/inful/madhatter/internal/version.Commit=$(git rev-parse --short HEAD) \
+  -X github.com/inful/madhatter/internal/version.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  -o support-rota
 
 # Run tests
 go test ./...
 ```
+
+The footer at the bottom of every page renders `{{version}}` as
+`v0.32.3` (or `v0.32.3+abc1234` when a Commit is set), so users can
+see at a glance which build they are looking at when filing a bug.
+GoReleaser is already wired in `.goreleaser.yaml` to inject these
+on tag builds.
 
 ### Basic Usage
 

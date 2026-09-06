@@ -379,7 +379,7 @@ func (db *DB) ExecuteSwap(ctx context.Context, swapID string) (retErr error) {
 		}
 	}()
 
-	if retErr = db.executeSwapTx(ctx, db.queries.WithTx(tx), reqAssignment, tgtAssignment, swapID); retErr != nil {
+	if retErr = db.executeSwapTx(ctx, db.queries.WithTx(tx), reqAssignment, tgtAssignment, swap); retErr != nil {
 		return retErr
 	}
 
@@ -389,16 +389,39 @@ func (db *DB) ExecuteSwap(ctx context.Context, swapID string) (retErr error) {
 }
 
 // executeSwapTx performs the transactional assignment swap and status update.
-func (db *DB) executeSwapTx(ctx context.Context, qtx *sqlc.Queries, reqAssignment, tgtAssignment sqlc.GetAssignmentByIDRow, swapID string) error {
+//
+// The flip uses the swap row's CAPTURED requester_member_id and
+// target_member_id, NOT the live assignment owners. This is the
+// user-facing contract: the dashboard's "Jone ↔ Alexey" arrow
+// shows the captured pair, and the flip must land the same way
+// regardless of any mid-flight mutations to either assignment's
+// owner (e.g. a cover-scheduler overwrite of a leave-related row
+// that happened to be one side of the swap). See issue #57.
+//
+// Pre-flight validation:
+//   - loadSwapAssignmentsForExecution already rejected self-swaps
+//     (both via the captured pair and via the live pair) and
+//     past-dated assignments.
+//   - CreateHatSwap already validated that the captured member_ids
+//     matched the live assignment owners AT INSERT TIME. If
+//     something changed since then, we honor the captured pair
+//     anyway — that is what the user agreed to.
+func (db *DB) executeSwapTx(ctx context.Context, qtx *sqlc.Queries, reqAssignment, tgtAssignment sqlc.GetAssignmentByIDRow, swap *HatSwap) error {
+	// reqAssignment's new owner = the swap's recorded target
+	// member. Jone agrees to take Alexey's day, so the requester
+	// assignment ends up with the target_member_id (Alexey).
 	if err := qtx.UpdateAssignmentMember(ctx, sqlc.UpdateAssignmentMemberParams{
-		MemberID: tgtAssignment.MemberID,
+		MemberID: swap.TargetMemberID,
 		ID:       reqAssignment.ID,
 	}); err != nil {
 		return err
 	}
 
+	// tgtAssignment's new owner = the swap's recorded requester
+	// member. Alexey agrees to take Jone's day, so the target
+	// assignment ends up with the requester_member_id (Jone).
 	if err := qtx.UpdateAssignmentMember(ctx, sqlc.UpdateAssignmentMemberParams{
-		MemberID: reqAssignment.MemberID,
+		MemberID: swap.RequesterMemberID,
 		ID:       tgtAssignment.ID,
 	}); err != nil {
 		return err
@@ -414,7 +437,7 @@ func (db *DB) executeSwapTx(ctx context.Context, qtx *sqlc.Queries, reqAssignmen
 
 	result, err := qtx.UpdateHatSwapStatus(ctx, sqlc.UpdateHatSwapStatusParams{
 		Status: SwapStatusAccepted,
-		ID:     swapID,
+		ID:     swap.ID,
 	})
 	if err != nil {
 		return err
@@ -443,15 +466,28 @@ func (db *DB) loadSwapAssignmentsForExecution(ctx context.Context, swap *HatSwap
 		return sqlc.GetAssignmentByIDRow{}, sqlc.GetAssignmentByIDRow{}, err
 	}
 
-	// Re-validate the self-swap invariant. The DB-level CHECK
-	// constraint added in migration 000028 prevents future INSERTs of
-	// self-swap rows, but a row inserted before that migration (or via
-	// a path that bypassed the constraint) could still exist. Without
-	// this re-check, ExecuteSwap would silently no-op: it would
-	// "swap" each row to the same member_id it already has and mark
-	// the rows as swapped, leaving the dashboard showing a false
-	// swap badge. Treat self-swap as a hard error here so the
-	// caller can surface the anomaly.
+	// Re-validate the self-swap invariant at execute time. The
+	// DB-level CHECK constraint added in migration 000028 prevents
+	// future INSERTs of self-swap rows, but a row inserted before
+	// that migration (or via a path that bypassed the constraint)
+	// could still exist. Two checks cover the same surface from
+	// different angles:
+	//
+	//   1. CAPTURED pair — matches the swap row's
+	//      requester_member_id / target_member_id. This catches
+	//      legacy bad data that survived past migration 000028.
+	//
+	//   2. LIVE pair — matches the CURRENT owners of the two
+	//      assignments. This catches the case where the captured
+	//      pair is fine but mid-flight mutations have left both
+	//      rows owned by the same member (e.g. someone reassigned
+	//      both via the cover scheduler). Without this guard,
+	//      executeSwapTx would write the same member_id to both
+	//      sides — a no-op swap with is_swapped=1 set, which
+	//      leaves the dashboard showing a false swap badge.
+	if swap.RequesterMemberID == swap.TargetMemberID {
+		return sqlc.GetAssignmentByIDRow{}, sqlc.GetAssignmentByIDRow{}, ErrSwapTargetSelf
+	}
 	if reqAssignment.MemberID == tgtAssignment.MemberID {
 		return sqlc.GetAssignmentByIDRow{}, sqlc.GetAssignmentByIDRow{}, ErrSwapTargetSelf
 	}

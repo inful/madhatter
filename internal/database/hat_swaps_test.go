@@ -553,3 +553,154 @@ func TestCreateHatSwap_SelfSwapRejectedAtAPI(t *testing.T) {
 	_, err = db.CreateHatSwap(ctx, a1, a2, aliceID, aliceID)
 	require.ErrorIs(t, err, ErrSwapTargetSelf)
 }
+
+// TestExecuteSwap_UsesCapturedPairNotLiveOwners pins the fix for
+// issue #57. Before the fix, executeSwapTx read the live member_id
+// from each assignment and used THOSE for the flip. That meant if
+// either assignment's owner changed between swap creation and
+// acceptance (e.g. a cover-scheduler overwrite on a leave-related
+// row that happened to be one side of the swap), the user saw a
+// swap they did NOT make. The production backup showed a Jone ↔
+// Alexey swap landing as Aashish ↔ Alexey because of exactly this
+// mid-flight mutation.
+//
+// The fix is to use the swap row's CAPTURED requester_member_id and
+// target_member_id for the flip. The swap row is the user-facing
+// contract: the dashboard's "Jone ↔ Alexey" arrow shows the
+// captured pair, and the flip must land that way regardless of any
+// mid-flight mutations to the assignments themselves.
+//
+// This test exercises the production scenario directly:
+//
+//  1. Alice and Bob create a swap with the API path
+//     (captured pair = Alice ↔ Bob, matches live owners).
+//  2. Mid-flight: someone (here, the test) reassigns Alice's day
+//     to Carol via direct SQL — simulating the cover scheduler
+//     overwriting a leave-related row that happened to be one
+//     side of the swap.
+//  3. Bob accepts the swap. Pre-fix: live flip would set
+//     aliceAssignment.member_id = Carol (live) and
+//     bobAssignment.member_id = Alice (live) — i.e. Bob's day
+//     would land at Alice but Alice's day would NOT be the swap
+//     target. Post-fix: the captured pair wins, so
+//     aliceAssignment.member_id = Bob and bobAssignment.member_id
+//     = Alice — the swap the user actually agreed to.
+func TestExecuteSwap_UsesCapturedPairNotLiveOwners(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+	carolID, err := db.AddTeamMember(ctx, "Carol", "carol@example.com")
+	require.NoError(t, err)
+
+	baseDate := time.Now().AddDate(0, 0, 7)
+	aliceAssignmentID, err := db.CreateRotaAssignment(ctx, baseDate.Format("2006-01-02"), aliceID, false, nil)
+	require.NoError(t, err)
+	bobAssignmentID, err := db.CreateRotaAssignment(ctx, baseDate.AddDate(0, 0, 1).Format("2006-01-02"), bobID, false, nil)
+	require.NoError(t, err)
+
+	// Captured pair at creation: Alice ↔ Bob. Live owners match.
+	swapID, err := db.CreateHatSwap(ctx, aliceAssignmentID, bobAssignmentID, aliceID, bobID)
+	require.NoError(t, err)
+
+	// Mid-flight: cover-scheduler-style overwrite reassigns Alice's
+	// day to Carol. Captured pair is still Alice ↔ Bob.
+	_, err = db.ExecContext(ctx,
+		`UPDATE rota_assignments SET member_id = ? WHERE id = ?`,
+		carolID, aliceAssignmentID)
+	require.NoError(t, err)
+
+	// Sanity: live owner is now Carol, but the swap row still
+	// records Alice as the requester member.
+	got, err := db.GetAssignmentByID(ctx, aliceAssignmentID)
+	require.NoError(t, err)
+	require.Equal(t, carolID, got.MemberID, "precondition: live owner is Carol after mid-flight mutation")
+
+	// Execute the swap. Pre-fix this would land the wrong way
+	// (aliceAssignment → Bob via swap.TargetMemberID but with
+	// old logic Bob goes where Alice's day is now Carol-owned).
+	// Post-fix the captured pair wins.
+	require.NoError(t, db.ExecuteSwap(ctx, swapID))
+
+	// Captured pair wins: aliceAssignment ends up with Bob, NOT
+	// Carol.
+	got, err = db.GetAssignmentByID(ctx, aliceAssignmentID)
+	require.NoError(t, err)
+	assert.Equal(t, bobID, got.MemberID,
+		"captured pair must win over live owner (aliceAssignment should now be Bob, not Carol)")
+	assert.True(t, got.IsSwapped, "aliceAssignment must be marked swapped after ExecuteSwap")
+
+	// bobAssignment ends up with Alice, the captured swap partner.
+	got, err = db.GetAssignmentByID(ctx, bobAssignmentID)
+	require.NoError(t, err)
+	assert.Equal(t, aliceID, got.MemberID,
+		"captured pair must win over live owner (bobAssignment should now be Alice)")
+	assert.True(t, got.IsSwapped, "bobAssignment must be marked swapped after ExecuteSwap")
+
+	// Swap record accepted.
+	swap, err := db.GetHatSwapByID(ctx, swapID)
+	require.NoError(t, err)
+	assert.Equal(t, SwapStatusAccepted, swap.Status)
+}
+
+// TestExecuteSwap_LivePairSelfSwapAtExecuteTime pins the
+// defense-in-depth live-pair self-swap check. The captured pair is
+// Alice ↔ Bob (valid), but mid-flight someone reassigned both
+// assignments to Alice. With the captured-pair flip semantics,
+// this would silently write aliceID to both rows — a no-op swap
+// with is_swapped=1 set, leaving the dashboard showing a false
+// swap badge. The live-pair check in loadSwapAssignmentsForExecution
+// catches this and rejects with ErrSwapTargetSelf so the caller
+// can surface the anomaly.
+//
+// (The captured-pair self-swap case is guarded by migration 000028
+// and TestExecuteSwap_RejectsSelfSwapAtExecutionTime; this test
+// guards the live-pair case specifically.)
+func TestExecuteSwap_LivePairSelfSwapAtExecuteTime(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	baseDate := time.Now().AddDate(0, 0, 7)
+	aliceAssignmentID, err := db.CreateRotaAssignment(ctx, baseDate.Format("2006-01-02"), aliceID, false, nil)
+	require.NoError(t, err)
+	bobAssignmentID, err := db.CreateRotaAssignment(ctx, baseDate.AddDate(0, 0, 1).Format("2006-01-02"), bobID, false, nil)
+	require.NoError(t, err)
+
+	// Captured pair: Alice ↔ Bob.
+	swapID, err := db.CreateHatSwap(ctx, aliceAssignmentID, bobAssignmentID, aliceID, bobID)
+	require.NoError(t, err)
+
+	// Mid-flight: someone reassigned Bob's day to Alice too. Live
+	// pair is now Alice/Alice — a self-swap.
+	_, err = db.ExecContext(ctx,
+		`UPDATE rota_assignments SET member_id = ? WHERE id = ?`,
+		aliceID, bobAssignmentID)
+	require.NoError(t, err)
+
+	// ExecuteSwap must refuse rather than commit a no-op swap.
+	err = db.ExecuteSwap(ctx, swapID)
+	require.ErrorIs(t, err, ErrSwapTargetSelf,
+		"ExecuteSwap must reject when live pair is a self-swap, even if captured pair is fine")
+
+	// Confirm neither row was touched: no is_swapped=1, member_ids
+	// unchanged from the mid-flight state.
+	gotA, err := db.GetAssignmentByID(ctx, aliceAssignmentID)
+	require.NoError(t, err)
+	assert.False(t, gotA.IsSwapped, "aliceAssignment must not be marked swapped on a rejected self-swap")
+	assert.Equal(t, aliceID, gotA.MemberID)
+
+	gotB, err := db.GetAssignmentByID(ctx, bobAssignmentID)
+	require.NoError(t, err)
+	assert.False(t, gotB.IsSwapped, "bobAssignment must not be marked swapped on a rejected self-swap")
+	assert.Equal(t, aliceID, gotB.MemberID)
+}

@@ -474,6 +474,26 @@ This uses a fake OAuth provider that automatically creates an admin user.
 ```
 The cutoff defaults to the start of the previous quota period (computed from `WFH_PERIOD_ANCHOR` and `WFH_PERIOD_DAYS`). The same operation is exposed at `GET /admin/wfh/purge` for a preview and `POST /admin/wfh/purge` to commit from the web UI. Errors with `WFH feature is disabled` when `WFH_ENABLED=false`.
 
+### HAT Swap Repair
+
+`swap reconcile` is the historical-repair path for swaps accepted before v0.32.5 (which used the captured swap pair) and v0.32.3 (which protected swap-set rows from the cover scheduler). It rewrites `rota_assignments.member_id` and `is_swapped` on both sides of an accepted swap so the assignments match the swap record. Future swaps already use the new code paths; this command is for repairing the historical state.
+
+```bash
+# Dry-run a single swap by ID — reports drift without mutating.
+./support-rota swap reconcile --id=<swap-id>
+
+# Commit the reconciliation.
+./support-rota swap reconcile --id=<swap-id> --apply
+
+# Walk every accepted swap in the database (dry-run by default).
+./support-rota swap reconcile --all
+
+# Commit every drifted swap in one pass.
+./support-rota swap reconcile --all --apply
+```
+
+The output lists each swap with a per-side drift report (`member_id: old → new`, `is_swapped: old → new`, or `<none>` if the row already matches). The command is idempotent — re-running on an already-reconciled swap produces no drift. `--id` and `--all` are mutually exclusive.
+
 ## Development
 
 ### Code Quality Standards

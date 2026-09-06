@@ -704,3 +704,268 @@ func TestExecuteSwap_LivePairSelfSwapAtExecuteTime(t *testing.T) {
 	assert.False(t, gotB.IsSwapped, "bobAssignment must not be marked swapped on a rejected self-swap")
 	assert.Equal(t, aliceID, gotB.MemberID)
 }
+
+// TestReconcileAcceptedSwap_DryRun pins the dry-run semantics:
+// ReconcileAcceptedSwap with apply=false reports drift without
+// touching the rows. The captures-pair / live-pair semantic change
+// in v0.32.5 only affects FUTURE swaps; this command is the
+// historical-repair path for production swaps whose member_ids
+// drifted (e.g. a cover-scheduler stomp before v0.32.3).
+func TestReconcileAcceptedSwap_DryRun(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	baseDate := time.Now().AddDate(0, 0, 7)
+	aliceAssignmentID, err := db.CreateRotaAssignment(ctx, baseDate.Format("2006-01-02"), aliceID, false, nil)
+	require.NoError(t, err)
+	bobAssignmentID, err := db.CreateRotaAssignment(ctx, baseDate.AddDate(0, 0, 1).Format("2006-01-02"), bobID, false, nil)
+	require.NoError(t, err)
+
+	swapID, err := db.CreateHatSwap(ctx, aliceAssignmentID, bobAssignmentID, aliceID, bobID)
+	require.NoError(t, err)
+	require.NoError(t, db.ExecuteSwap(ctx, swapID))
+
+	// Simulate production drift: a cover-scheduler stomp reverted
+	// Bob's row to Bob. The swap record still says Alice ↔ Bob.
+	_, err = db.ExecContext(ctx,
+		`UPDATE rota_assignments SET member_id = ?, is_swapped = 0 WHERE id = ?`,
+		bobID, bobAssignmentID)
+	require.NoError(t, err)
+
+	res, err := db.ReconcileAcceptedSwap(ctx, swapID, false)
+	require.NoError(t, err)
+
+	// Both sides drift: target's member_id is back to Bob (should be
+	// Alice per the captured pair), and both rows have is_swapped=0
+	// cleared (only the target row here, since the requester is
+	// untouched by the simulated stomp). The drift list surfaces
+	// exactly what the apply pass will fix.
+	require.NotEmpty(t, res.TargetDrift, "stomp on target row must surface as drift in dry-run")
+
+	// Verify the rows are STILL drifted — dry-run must not mutate.
+	got, err := db.GetAssignmentByID(ctx, bobAssignmentID)
+	require.NoError(t, err)
+	assert.Equal(t, bobID, got.MemberID, "dry-run must not flip member_id back to captured pair")
+	assert.False(t, got.IsSwapped, "dry-run must not set is_swapped")
+}
+
+// TestReconcileAcceptedSwap_AppliesCapturedPair pins the apply
+// path: after ReconcileAcceptedSwap(apply=true), both rows match
+// the captured swap pair and both have is_swapped=1. Reproduces
+// the production recovery flow: a swap exists in the database,
+// the assignment rows drifted, the operator runs the CLI command
+// to repair.
+func TestReconcileAcceptedSwap_AppliesCapturedPair(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	baseDate := time.Now().AddDate(0, 0, 7)
+	aliceAssignmentID, err := db.CreateRotaAssignment(ctx, baseDate.Format("2006-01-02"), aliceID, false, nil)
+	require.NoError(t, err)
+	bobAssignmentID, err := db.CreateRotaAssignment(ctx, baseDate.AddDate(0, 0, 1).Format("2006-01-02"), bobID, false, nil)
+	require.NoError(t, err)
+
+	swapID, err := db.CreateHatSwap(ctx, aliceAssignmentID, bobAssignmentID, aliceID, bobID)
+	require.NoError(t, err)
+	require.NoError(t, db.ExecuteSwap(ctx, swapID))
+
+	// Drift simulation: stomp Bob's row back to Bob (the captured
+	// pair wants Alice there) and clear is_swapped on both rows.
+	_, err = db.ExecContext(ctx,
+		`UPDATE rota_assignments SET member_id = ?, is_swapped = 0 WHERE id = ?`,
+		bobID, bobAssignmentID)
+	require.NoError(t, err)
+	_, err = db.ExecContext(ctx,
+		`UPDATE rota_assignments SET is_swapped = 0 WHERE id = ?`,
+		aliceAssignmentID)
+	require.NoError(t, err)
+
+	res, err := db.ReconcileAcceptedSwap(ctx, swapID, true)
+	require.NoError(t, err)
+	assert.NotEmpty(t, res.TargetDrift, "stomp must produce drift report")
+
+	// After apply: both rows match the captured pair, both have
+	// is_swapped=1.
+	gotA, err := db.GetAssignmentByID(ctx, aliceAssignmentID)
+	require.NoError(t, err)
+	assert.Equal(t, bobID, gotA.MemberID, "Alice's row should now be Bob (target_member_id)")
+	assert.True(t, gotA.IsSwapped)
+
+	gotB, err := db.GetAssignmentByID(ctx, bobAssignmentID)
+	require.NoError(t, err)
+	assert.Equal(t, aliceID, gotB.MemberID, "Bob's row should now be Alice (requester_member_id)")
+	assert.True(t, gotB.IsSwapped)
+}
+
+// TestReconcileAcceptedSwap_Idempotent pins the idempotency
+// invariant: re-running on an already-reconciled swap produces an
+// empty drift list (every column already matches). Without this,
+// the CLI's `--all` flag would be unsafe to re-run.
+func TestReconcileAcceptedSwap_Idempotent(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	baseDate := time.Now().AddDate(0, 0, 7)
+	aliceAssignmentID, err := db.CreateRotaAssignment(ctx, baseDate.Format("2006-01-02"), aliceID, false, nil)
+	require.NoError(t, err)
+	bobAssignmentID, err := db.CreateRotaAssignment(ctx, baseDate.AddDate(0, 0, 1).Format("2006-01-02"), bobID, false, nil)
+	require.NoError(t, err)
+
+	swapID, err := db.CreateHatSwap(ctx, aliceAssignmentID, bobAssignmentID, aliceID, bobID)
+	require.NoError(t, err)
+	require.NoError(t, db.ExecuteSwap(ctx, swapID))
+
+	// First apply succeeds.
+	res1, err := db.ReconcileAcceptedSwap(ctx, swapID, true)
+	require.NoError(t, err)
+	assert.Empty(t, res1.RequesterDrift, "first apply on a non-drifted swap is a no-op (drift already empty)")
+	assert.Empty(t, res1.TargetDrift)
+
+	// Second apply on the same swap is also a no-op (idempotent).
+	res2, err := db.ReconcileAcceptedSwap(ctx, swapID, true)
+	require.NoError(t, err)
+	assert.Empty(t, res2.RequesterDrift)
+	assert.Empty(t, res2.TargetDrift)
+}
+
+// TestReconcileAcceptedSwap_NonAcceptedRefuses pins the status
+// guard. A pending swap has not been executed yet — reconciling
+// it would prematurely apply the captured pair before the user
+// accepts. The function must refuse.
+func TestReconcileAcceptedSwap_NonAcceptedRefuses(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	baseDate := time.Now().AddDate(0, 0, 7)
+	aliceAssignmentID, err := db.CreateRotaAssignment(ctx, baseDate.Format("2006-01-02"), aliceID, false, nil)
+	require.NoError(t, err)
+	bobAssignmentID, err := db.CreateRotaAssignment(ctx, baseDate.AddDate(0, 0, 1).Format("2006-01-02"), bobID, false, nil)
+	require.NoError(t, err)
+
+	swapID, err := db.CreateHatSwap(ctx, aliceAssignmentID, bobAssignmentID, aliceID, bobID)
+	require.NoError(t, err)
+
+	_, err = db.ReconcileAcceptedSwap(ctx, swapID, false)
+	require.ErrorIs(t, err, ErrSwapNotPending, "only accepted swaps can be reconciled")
+}
+
+// TestReconcileAcceptedSwap_NotFound pins the missing-swap case.
+// The CLI surfaces a clear error rather than silently no-op'ing.
+func TestReconcileAcceptedSwap_NotFound(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	_, err := db.ReconcileAcceptedSwap(ctx, "no-such-swap", false)
+	require.ErrorIs(t, err, ErrSwapNotFound)
+}
+
+// TestReconcileAllAcceptedSwaps_WalksAndReports pins the bulk
+// shape: the function returns one result per accepted swap in
+// created_at order. Two drifts across two swaps produce two
+// results; the healthy swap produces an empty drift.
+func TestReconcileAllAcceptedSwaps_WalksAndReports(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+	ctx := context.Background()
+
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	require.NoError(t, err)
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	require.NoError(t, err)
+
+	baseDate := time.Now().AddDate(0, 0, 7)
+	// Swap 1 (drifted): Alice ↔ Bob.
+	aliceAssignmentID1, err := db.CreateRotaAssignment(ctx, baseDate.Format("2006-01-02"), aliceID, false, nil)
+	require.NoError(t, err)
+	bobAssignmentID1, err := db.CreateRotaAssignment(ctx, baseDate.AddDate(0, 0, 1).Format("2006-01-02"), bobID, false, nil)
+	require.NoError(t, err)
+	swapID1, err := db.CreateHatSwap(ctx, aliceAssignmentID1, bobAssignmentID1, aliceID, bobID)
+	require.NoError(t, err)
+	require.NoError(t, db.ExecuteSwap(ctx, swapID1))
+
+	// Drift swap 1: stomp Bob's row back to Bob.
+	_, err = db.ExecContext(ctx,
+		`UPDATE rota_assignments SET member_id = ? WHERE id = ?`,
+		bobID, bobAssignmentID1)
+	require.NoError(t, err)
+
+	// Swap 2 (clean): Carol ↔ Dave — set up after a tick so the
+	// created_at order is deterministic.
+	carolID, err := db.AddTeamMember(ctx, "Carol", "carol@example.com")
+	require.NoError(t, err)
+	daveID, err := db.AddTeamMember(ctx, "Dave", "dave@example.com")
+	require.NoError(t, err)
+	time.Sleep(10 * time.Millisecond)
+	carolAssignmentID, err := db.CreateRotaAssignment(ctx, baseDate.AddDate(0, 0, 2).Format("2006-01-02"), carolID, false, nil)
+	require.NoError(t, err)
+	daveAssignmentID, err := db.CreateRotaAssignment(ctx, baseDate.AddDate(0, 0, 3).Format("2006-01-02"), daveID, false, nil)
+	require.NoError(t, err)
+	swapID2, err := db.CreateHatSwap(ctx, carolAssignmentID, daveAssignmentID, carolID, daveID)
+	require.NoError(t, err)
+	require.NoError(t, db.ExecuteSwap(ctx, swapID2))
+
+	results, err := db.ReconcileAllAcceptedSwaps(ctx, false)
+	require.NoError(t, err)
+	require.Len(t, results, 2)
+	assert.Equal(t, swapID1, results[0].SwapID, "results must be ordered by created_at")
+	assert.NotEmpty(t, results[0].TargetDrift, "drifted swap must report drift")
+	assert.Equal(t, swapID2, results[1].SwapID)
+	assert.Empty(t, results[1].RequesterDrift, "clean swap must produce empty drift lists")
+	assert.Empty(t, results[1].TargetDrift)
+
+	// Apply the bulk reconcile. The drift list on each result now
+	// describes what WAS applied (the same shape as the dry-run
+	// report — the list is the planned change set, and apply=true
+	// confirms it landed).
+	applied, err := db.ReconcileAllAcceptedSwaps(ctx, true)
+	require.NoError(t, err)
+	require.Len(t, applied, 2)
+	assert.NotEmpty(t, applied[0].TargetDrift, "swap 1 was drifted before apply; the report describes what was just applied")
+	assert.Empty(t, applied[1].RequesterDrift)
+	assert.Empty(t, applied[1].TargetDrift)
+
+	// Re-running reconcile on the now-applied swaps reports no
+	// drift (idempotency invariant). Without this, the CLI's
+	// `--all` flag would be unsafe to re-run.
+	postApply, err := db.ReconcileAllAcceptedSwaps(ctx, false)
+	require.NoError(t, err)
+	for _, r := range postApply {
+		assert.Empty(t, r.RequesterDrift, "idempotency: re-running reconcile after apply must report zero drift")
+		assert.Empty(t, r.TargetDrift)
+	}
+
+	// Verify swap 1's rows are repaired on disk.
+	got1Req, err := db.GetAssignmentByID(ctx, aliceAssignmentID1)
+	require.NoError(t, err)
+	assert.Equal(t, bobID, got1Req.MemberID, "swap 1 requester row should be Bob after apply")
+	assert.True(t, got1Req.IsSwapped)
+	got1Tgt, err := db.GetAssignmentByID(ctx, bobAssignmentID1)
+	require.NoError(t, err)
+	assert.Equal(t, aliceID, got1Tgt.MemberID, "swap 1 target row should be Alice after apply")
+	assert.True(t, got1Tgt.IsSwapped)
+}

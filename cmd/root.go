@@ -2,9 +2,11 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/alecthomas/kong"
@@ -72,6 +74,14 @@ var CLI struct {
 
 	ReassignCovers struct{} `cmd:"" help:"Re-run the cover-assignment algorithm against all leaves (idempotent on stable data — safe to run at any time)"`
 
+	Swap struct {
+		Reconcile struct {
+			ID    string `help:"Reconcile a single swap by ID. Mutually exclusive with --all."`
+			All   bool   `help:"Reconcile every accepted swap in the database. Default: dry-run only."`
+			Apply bool   `help:"Commit the reconciliation. Without this flag the command runs in dry-run mode and prints what WOULD change."`
+		} `cmd:"" help:"Repair drift between accepted hat_swaps and rota_assignments (historical-only — future swaps use the new v0.32.5 captured-pair semantics)"`
+	} `cmd:"" help:"HAT swap inspection and repair"`
+
 	WFH struct {
 		Purge struct {
 			Apply  bool   `help:"Actually delete. Without this, prints a dry-run summary."`
@@ -108,6 +118,7 @@ func Execute() {
 		"calendar subscribe <email>":       calendarSubscribeCommand,
 		"calendar export <email> <output>": calendarExportCommand,
 		"reassign-covers":                  reassignCoversCommand,
+		"swap reconcile":                   swapReconcileCommand,
 		"wfh purge":                        wfhPurgeCommand,
 		"wfh report <member-id>":           wfhReportTodayCommand,
 	}
@@ -406,6 +417,138 @@ func isNoOpHolidayStopErr(err error) bool {
 }
 
 // wfhPurgeCommand purges wfh_requests rows older than the start of the
+// swapReconcileCommand repairs the historical drift between
+// hat_swaps (captured swap records) and rota_assignments (the
+// member_id rows the dashboard and calendar render). Before
+// v0.32.5 the swap execution path read live assignment owners
+// instead of the captured pair, and before v0.32.3 the cover
+// scheduler stomped is_swapped=1 rows on every re-run. Production
+// swaps executed under either bug retained their hat_swaps row
+// (status='accepted') but had member_ids that didn't match the
+// user-facing intent. This command rewrites the assignments to
+// match the captured pair — historical repair, not a behavioral
+// change for future swaps.
+//
+// Usage:
+//
+//	support-rota swap reconcile --id=<swap-id>          # dry-run single
+//	support-rota swap reconcile --id=<swap-id> --apply  # commit single
+//	support-rota swap reconcile --all                  # dry-run every accepted swap
+//	support-rota swap reconcile --all --apply          # commit every accepted swap
+//
+// Without --id or --all the command prints usage and exits 2
+// (the Kong-default for missing required arg). The dry-run path
+// is the default; pass --apply to commit.
+func swapReconcileCommand(ctx context.Context, db *database.DB) {
+	results, err := runSwapReconcile(ctx, db, CLI.Swap.Reconcile.ID, CLI.Swap.Reconcile.All, CLI.Swap.Reconcile.Apply)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "swap reconcile: %v\n", err)
+		os.Exit(1)
+	}
+	printSwapReconcileReport(results, CLI.Swap.Reconcile.Apply)
+}
+
+// runSwapReconcile is the testable inner half of swapReconcileCommand:
+// it parses the (id, all, apply) flag triple and returns the
+// per-swap results. Returning the results slice (rather than
+// printing) lets the cmd-level test assert on drift shape and
+// apply-mutation effects without having to capture log output.
+//
+// Returns an error for the two CLI usage failures (id+all set,
+// neither id nor all set) — the CLI layer maps those to exit 2
+// and a stderr message.
+func runSwapReconcile(ctx context.Context, db *database.DB, id string, all, apply bool) ([]database.HatSwapReconcileResult, error) {
+	switch {
+	case id != "" && all:
+		return nil, errSwapReconcileMutuallyExclusive
+	case id == "" && !all:
+		return nil, errSwapReconcileMissingTarget
+	}
+
+	if all {
+		return db.ReconcileAllAcceptedSwaps(ctx, apply)
+	}
+	res, err := db.ReconcileAcceptedSwap(ctx, id, apply)
+	if err != nil {
+		return nil, err
+	}
+	return []database.HatSwapReconcileResult{res}, nil
+}
+
+// errSwapReconcileMutuallyExclusive and errSwapReconcileMissingTarget
+// are the CLI-usage errors. They map to exit 2 with a stderr
+// message; tests assert on the error identity rather than the
+// exit code so they don't need to intercept os.Exit.
+var (
+	errSwapReconcileMutuallyExclusive = errors.New("--id and --all are mutually exclusive")
+	errSwapReconcileMissingTarget     = errors.New("pass --id=<swap-id> to reconcile a single swap, or --all to walk every accepted swap")
+)
+
+// printSwapReconcileReport writes a per-swap drift summary. The
+// shape is the same for dry-run and apply — in dry-run mode the
+// list describes what WOULD change; in apply mode it describes
+// what just changed. One line per swap keeps the output scannable
+// for operators triaging a long list. Per-side empty drift is
+// printed as "<none>" so the absence-of-drift case is visible.
+func printSwapReconcileReport(results []database.HatSwapReconcileResult, apply bool) {
+	if len(results) == 0 {
+		log.Println("swap reconcile: no accepted swaps found in the database.")
+		return
+	}
+	mode := "dry-run"
+	if apply {
+		mode = "apply"
+	}
+	log.Printf("swap reconcile (%s): %d accepted swap(s) scanned\n", mode, len(results))
+
+	for _, r := range results {
+		// Surface per-swap fatal errors as a single-line summary
+		// so the operator can see which swaps need manual
+		// attention without reading multi-line stack traces.
+		if len(r.RequesterDrift) > 0 && r.RequesterDrift[0].Field == "error" {
+			log.Printf("  swap %s: ERROR — %s\n", r.SwapID, r.RequesterDrift[0].NewValue)
+			continue
+		}
+		if r.AssignmentMissing {
+			log.Printf("  swap %s: skipped — one or both assignments no longer exist (see logs)\n", r.SwapID)
+			continue
+		}
+		log.Printf("  swap %s:\n", r.SwapID)
+		log.Printf("    requester side: %s\n", formatDriftList(r.RequesterDrift))
+		log.Printf("    target side:    %s\n", formatDriftList(r.TargetDrift))
+	}
+}
+
+// formatDriftList renders the per-side drift as "field: old →
+// new, field: old → new" or "<none>" when empty. Empty drift
+// means the row already matches the captured pair (idempotent
+// re-run case).
+func formatDriftList(drifts []database.FieldChange) string {
+	if len(drifts) == 0 {
+		return "<none>"
+	}
+	parts := make([]string, 0, len(drifts))
+	for _, d := range drifts {
+		parts = append(parts, fmt.Sprintf("%s: %s → %s", d.Field, d.OldValue, d.NewValue))
+	}
+	return joinComma(parts)
+}
+
+// joinComma renders a slice as "a, b, c". Uses strings.Builder to
+// avoid quadratic concatenation.
+func joinComma(s []string) string {
+	if len(s) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(s[0])
+	for _, p := range s[1:] {
+		b.WriteString(", ")
+		b.WriteString(p)
+	}
+	return b.String()
+}
+
 // previous quota period. Dry-run by default; pass --apply to commit.
 // --before YYYY-MM-DD overrides the period-derived cutoff for one-off
 // catch-up cleans.

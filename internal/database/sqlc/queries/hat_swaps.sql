@@ -49,3 +49,16 @@ WHERE id = ?;
 SELECT COUNT(*) AS count
 FROM hat_swaps
 WHERE target_member_id = ? AND status = 'pending';
+
+-- name: GetAcceptedSwaps :many
+-- Returns every swap whose status is 'accepted'. Used by the
+-- reconcile CLI to walk the historical swap rows whose member_id
+-- flips may have been lost (pre-v0.32.5 live-value flip semantics
+-- + pre-v0.32.3 cover-scheduler stomping). The reconciliation
+-- command then applies the captured pair to each side so the
+-- rota_assignments rows match the swap record.
+SELECT id, requester_assignment_id, target_assignment_id,
+       requester_member_id, target_member_id, status, created_at, updated_at
+FROM hat_swaps
+WHERE status = 'accepted'
+ORDER BY created_at ASC;

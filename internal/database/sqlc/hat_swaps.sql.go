@@ -62,6 +62,52 @@ func (q *Queries) DeleteHatSwap(ctx context.Context, id string) error {
 	return err
 }
 
+const getAcceptedSwaps = `-- name: GetAcceptedSwaps :many
+SELECT id, requester_assignment_id, target_assignment_id,
+       requester_member_id, target_member_id, status, created_at, updated_at
+FROM hat_swaps
+WHERE status = 'accepted'
+ORDER BY created_at ASC
+`
+
+// Returns every swap whose status is 'accepted'. Used by the
+// reconcile CLI to walk the historical swap rows whose member_id
+// flips may have been lost (pre-v0.32.5 live-value flip semantics
+// + pre-v0.32.3 cover-scheduler stomping). The reconciliation
+// command then applies the captured pair to each side so the
+// rota_assignments rows match the swap record.
+func (q *Queries) GetAcceptedSwaps(ctx context.Context) ([]HatSwap, error) {
+	rows, err := q.db.QueryContext(ctx, getAcceptedSwaps)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []HatSwap{}
+	for rows.Next() {
+		var i HatSwap
+		if err := rows.Scan(
+			&i.ID,
+			&i.RequesterAssignmentID,
+			&i.TargetAssignmentID,
+			&i.RequesterMemberID,
+			&i.TargetMemberID,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getHatSwapByID = `-- name: GetHatSwapByID :one
 SELECT id, requester_assignment_id, target_assignment_id,
        requester_member_id, target_member_id, status, created_at, updated_at

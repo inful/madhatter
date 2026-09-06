@@ -600,3 +600,264 @@ func hatSwapsFromRows(rows []sqlc.HatSwap) []HatSwap {
 
 	return result
 }
+
+// HatSwapReconcileResult describes what (if anything) changed on
+// the two assignment rows when reconciling one accepted swap. The
+// CLI prints this per swap so the operator sees exactly which
+// rows drifted from the swap record. Drift is reported as a
+// per-side slice of {Field, OldValue, NewValue} so the CLI can
+// render a tidy table; the empty slice means "no change".
+type HatSwapReconcileResult struct {
+	SwapID            string
+	RequesterDrift    []FieldChange
+	TargetDrift       []FieldChange
+	AssignmentMissing bool // true if either side's assignment no longer exists
+}
+
+// FieldChange is one column-level drift report: the row's field
+// changed from OldValue to NewValue. Empty OldValue means "row
+// didn't have this field set before" (insertion); empty NewValue
+// means "row no longer has this field" (deletion — not currently
+// produced by reconciliation but reserved for symmetry).
+type FieldChange struct {
+	Field    string
+	OldValue string
+	NewValue string
+}
+
+// GetAcceptedSwaps returns every swap whose status is 'accepted',
+// ordered by created_at ascending. Used by the reconcile CLI to
+// walk the historical swap rows whose member_id flips may have
+// been lost to pre-v0.32.5 / pre-v0.32.3 bugs (see issue #54 and
+// the production-anomaly investigation that produced the fix).
+func (db *DB) GetAcceptedSwaps(ctx context.Context) ([]HatSwap, error) {
+	rows, err := db.queries.GetAcceptedSwaps(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return hatSwapsFromRows(rows), nil
+}
+
+// ReconcileAcceptedSwap applies the swap's CAPTURED pair to the
+// underlying rota_assignments rows. This is the historical-repair
+// counterpart to executeSwapTx: where executeSwapTx flips a fresh
+// swap on acceptance, this one repairs an existing accepted swap
+// whose member_ids drifted from the swap record (typically because
+// a cover-scheduler re-run stomped the cover row before v0.32.3,
+// or because the swap was executed under the pre-v0.32.5 live-
+// value semantics and a subsequent operation reverted one or
+// both sides).
+//
+// The captured pair is the user-facing contract: requester_member_id
+// ends up where target_assignment currently is, and vice versa.
+// The function also ensures both rows have is_swapped=1 set so the
+// dashboard's swap-rendering cue (the green swap icon) appears.
+//
+// Dry-run by default; commit on Apply=true. The CLI uses both
+// modes to mirror the WFHPastPeriods dry-run/apply split.
+//
+// Idempotent: re-running on an already-reconciled swap produces
+// an empty drift list (every column already matches the captured
+// pair, is_swapped already set).
+func (db *DB) ReconcileAcceptedSwap(ctx context.Context, swapID string, apply bool) (HatSwapReconcileResult, error) {
+	result := HatSwapReconcileResult{SwapID: swapID}
+
+	swap, err := db.loadAcceptedSwapForReconcile(ctx, swapID)
+	if err != nil {
+		return result, err
+	}
+
+	reqAssignment, err := db.loadAssignmentForReconcile(ctx, swap.RequesterAssignmentID, &result)
+	if err != nil {
+		return result, err
+	}
+	tgtAssignment, err := db.loadAssignmentForReconcile(ctx, swap.TargetAssignmentID, &result)
+	if err != nil {
+		return result, err
+	}
+
+	computeReconcileDrift(&result, swap, reqAssignment, tgtAssignment)
+
+	if !apply || (len(result.RequesterDrift) == 0 && len(result.TargetDrift) == 0) {
+		return result, nil
+	}
+
+	if err := db.applyReconciliation(ctx, swap); err != nil {
+		return result, err
+	}
+	return result, nil
+}
+
+// loadAcceptedSwapForReconcile returns the swap if it exists and
+// is in a state reconciliation can apply to. Extracted from
+// ReconcileAcceptedSwap so the orchestrator stays under the
+// cyclomatic-complexity cap.
+func (db *DB) loadAcceptedSwapForReconcile(ctx context.Context, swapID string) (*HatSwap, error) {
+	swap, err := db.GetHatSwapByID(ctx, swapID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrSwapNotFound
+		}
+		return nil, err
+	}
+	if swap == nil {
+		return nil, ErrSwapNotFound
+	}
+	if swap.Status != SwapStatusAccepted {
+		return nil, ErrSwapNotPending
+	}
+	return swap, nil
+}
+
+// loadAssignmentForReconcile returns the assignment by ID, or
+// sets AssignmentMissing=true on the result and returns an error
+// when the row no longer exists. Reconcile needs both rows
+// present; missing-data is a config-level issue the operator
+// should know about rather than a silent skip.
+func (db *DB) loadAssignmentForReconcile(ctx context.Context, assignmentID string, result *HatSwapReconcileResult) (sqlc.GetAssignmentByIDRow, error) {
+	a, err := db.queries.GetAssignmentByID(ctx, assignmentID)
+	if err != nil {
+		result.AssignmentMissing = true
+		return sqlc.GetAssignmentByIDRow{}, fmt.Errorf("load assignment %s: %w", assignmentID, err)
+	}
+	return a, nil
+}
+
+// computeReconcileDrift populates result.RequesterDrift /
+// result.TargetDrift with the per-column drift list comparing the
+// live rota_assignments state to the swap's captured pair. The
+// captured pair is the user-facing contract: requester_member_id
+// ends up where target_assignment is, and vice versa.
+//
+// Pure function — no DB calls, no error returns — so it stays
+// under the cyclomatic cap.
+func computeReconcileDrift(result *HatSwapReconcileResult, swap *HatSwap, reqAssignment, tgtAssignment sqlc.GetAssignmentByIDRow) {
+	expectedReqMember := swap.TargetMemberID
+	expectedTgtMember := swap.RequesterMemberID
+
+	if reqAssignment.MemberID != expectedReqMember {
+		result.RequesterDrift = append(result.RequesterDrift, FieldChange{
+			Field:    "member_id",
+			OldValue: reqAssignment.MemberID,
+			NewValue: expectedReqMember,
+		})
+	}
+	if !isSwappedFlagSet(reqAssignment.IsSwapped) {
+		result.RequesterDrift = append(result.RequesterDrift, FieldChange{
+			Field:    "is_swapped",
+			OldValue: boolToZeroOne(reqAssignment.IsSwapped),
+			NewValue: "1",
+		})
+	}
+
+	if tgtAssignment.MemberID != expectedTgtMember {
+		result.TargetDrift = append(result.TargetDrift, FieldChange{
+			Field:    "member_id",
+			OldValue: tgtAssignment.MemberID,
+			NewValue: expectedTgtMember,
+		})
+	}
+	if !isSwappedFlagSet(tgtAssignment.IsSwapped) {
+		result.TargetDrift = append(result.TargetDrift, FieldChange{
+			Field:    "is_swapped",
+			OldValue: boolToZeroOne(tgtAssignment.IsSwapped),
+			NewValue: "1",
+		})
+	}
+}
+
+// applyReconciliation commits the two side updates in a single
+// transaction. Atomicity matters: partial reconciliation would
+// leave the swap in a worse state than the dry-run revealed (one
+// side flipped, the other still drifted).
+func (db *DB) applyReconciliation(ctx context.Context, swap *HatSwap) error {
+	tx, err := db.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+
+	qtx := db.queries.WithTx(tx)
+	if err := qtx.UpdateAssignmentMember(ctx, sqlc.UpdateAssignmentMemberParams{
+		MemberID: swap.TargetMemberID,
+		ID:       swap.RequesterAssignmentID,
+	}); err != nil {
+		return fmt.Errorf("update requester assignment member: %w", err)
+	}
+	if err := qtx.MarkAssignmentSwapped(ctx, swap.RequesterAssignmentID); err != nil {
+		return fmt.Errorf("mark requester assignment swapped: %w", err)
+	}
+	if err := qtx.UpdateAssignmentMember(ctx, sqlc.UpdateAssignmentMemberParams{
+		MemberID: swap.RequesterMemberID,
+		ID:       swap.TargetAssignmentID,
+	}); err != nil {
+		return fmt.Errorf("update target assignment member: %w", err)
+	}
+	if err := qtx.MarkAssignmentSwapped(ctx, swap.TargetAssignmentID); err != nil {
+		return fmt.Errorf("mark target assignment swapped: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit reconciliation: %w", err)
+	}
+	committed = true
+	return nil
+}
+
+// ReconcileAllAcceptedSwaps walks every status='accepted' swap and
+// applies ReconcileAcceptedSwap with apply=true (or false for
+// dry-run). Returns the per-swap results in input order. Used by
+// the bulk form of the CLI command (`swap reconcile --all`). The
+// CLI prints one line per swap so the operator can scan for which
+// positions actually drifted.
+func (db *DB) ReconcileAllAcceptedSwaps(ctx context.Context, apply bool) ([]HatSwapReconcileResult, error) {
+	swaps, err := db.GetAcceptedSwaps(ctx)
+	if err != nil {
+		return nil, err
+	}
+	results := make([]HatSwapReconcileResult, 0, len(swaps))
+	for i := range swaps {
+		r, err := db.ReconcileAcceptedSwap(ctx, swaps[i].ID, apply)
+		if err != nil {
+			// Don't abort the whole bulk run on one bad row —
+			// the operator wants to see all drift in one pass
+			// and decide which to fix. Surface the error on
+			// the per-swap result so it lands in the CLI
+			// output alongside the drift reports.
+			results = append(results, HatSwapReconcileResult{
+				SwapID: swaps[i].ID,
+			})
+			// Use the last appended slot for the error message
+			// by storing it as an extra drift on the requester
+			// side; the CLI's renderer treats non-empty
+			// RequesterDrift[].Field == "error" as a fatal.
+			results[len(results)-1].RequesterDrift = []FieldChange{{
+				Field:    "error",
+				OldValue: "",
+				NewValue: err.Error(),
+			}}
+			continue
+		}
+		results = append(results, r)
+	}
+	return results, nil
+}
+
+// isSwappedFlagSet reports whether the sqlc is_swapped column
+// (returned as int64 by sqlc) is set to 1.
+func isSwappedFlagSet(v int64) bool {
+	return v == 1
+}
+
+// boolToZeroOne renders a swap flag as "0" or "1" so the CLI's
+// dry-run output reads naturally without quoting booleans.
+func boolToZeroOne(v int64) string {
+	if v == 1 {
+		return "1"
+	}
+	return "0"
+}

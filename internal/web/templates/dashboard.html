@@ -346,7 +346,7 @@
                                             {{$cell.Label}}
                                         </span>
                                         {{if $cell.Assigned}}
-                                            <span class="assignment-chip{{if $cell.Swapped}} swapped-assignment-tag{{end}}">
+                                            <span class="assignment-chip{{if $cell.Swapped}} swapped-assignment-tag{{end}}"{{if $cell.Swapped}} title="{{if $cell.SwapInfo}}{{$cell.SwapInfo}}{{else}}This assignment was swapped.{{end}}"{{end}}>
                                                 <i class="fas fa-hat-wizard mr-1"></i>
                                                 HAT
                                                 {{if $cell.Swapped}}<i class="fas fa-exchange-alt ml-1 swap-icon"></i>{{end}}
@@ -403,7 +403,7 @@
                                             {{.Label}}
                                         </span>
                                         {{if .Assigned}}
-                                            <span class="assignment-chip{{if .Swapped}} swapped-assignment-tag{{end}}">
+                                            <span class="assignment-chip{{if .Swapped}} swapped-assignment-tag{{end}}"{{if .Swapped}} title="{{if .SwapInfo}}{{.SwapInfo}}{{else}}This assignment was swapped.{{end}}"{{end}}>
                                                 <i class="fas fa-hat-wizard mr-1"></i>
                                                 HAT
                                                 {{if .Swapped}}<i class="fas fa-exchange-alt ml-1 swap-icon"></i>{{end}}

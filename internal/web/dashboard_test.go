@@ -1161,3 +1161,105 @@ func TestDashboard_HATBanner_Holiday(t *testing.T) {
 	assert.Contains(t, body, "Thursday, Sep 10",
 		"the HAT banner header must show the next business day")
 }
+
+// TestDashboard_ScheduleMatrix_SwapChipTooltip pins the swap-chip
+// tooltip on the dashboard schedule matrix. When a member's HAT
+// day was swapped with another member, the HAT chip carries:
+//   - the .swapped-assignment-tag class (cursor: help),
+//   - a title="" attribute whose value names both partners and
+//     their original dates.
+//
+// Regression coverage: a previous refactor dropped the title=
+// attribute from the chip span, leaving the cursor:help styling
+// pointing at an empty tooltip. The data side (cell.SwapInfo)
+// was already populated by getAssignedSwapInfo; only the
+// template binding was missing.
+func TestDashboard_ScheduleMatrix_SwapChipTooltip(t *testing.T) {
+	mockDB := &database.DB{}
+	handler, err := NewHandler(mockDB, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	const swapInfo = "Accepted swap: Alice (2026-09-07) ↔ Bob (2026-09-08)"
+
+	// Minimal matrix: one day, one row, one cell that is HAT-assigned
+	// and swapped. The template only reads .Member.Name,
+	// .ScheduleMatrix.{Days,Rows}, and the per-cell fields, so a
+	// hand-built struct is enough — no database fixture needed.
+	matrix := scheduleMatrix{
+		Days: []scheduleMatrixDay{
+			{DateISO: "2026-09-07", DateDisplay: "Mon 7 Sep"},
+		},
+		Rows: []scheduleMatrixRow{
+			{
+				Member: database.TeamMember{Name: "Alice"},
+				Cells: []scheduleMatrixCell{
+					{
+						Status:   "onsite",
+						Label:    "On-site",
+						Assigned: true,
+						Swapped:  true,
+						SwapInfo: swapInfo,
+					},
+				},
+			},
+		},
+	}
+
+	data := map[string]any{
+		"User":               map[string]any{"Email": "alice@example.com", "Name": "Alice"},
+		"IsAdmin":            false,
+		"Template":           "dashboard",
+		"ScheduleMatrix":     matrix,
+		"TodayIsWeekend":     false,
+		"TodayIsHoliday":     false,
+		"TodayIsBusinessDay": true,
+	}
+
+	w := httptest.NewRecorder()
+	require.NoError(t, handler.tmpl.ExecuteTemplate(w, "dashboard.html", data))
+	body := w.Body.String()
+
+	// The chip span must carry the swap-info title in its title= attribute.
+	// We look for the chip-class plus the title together to avoid matching
+	// any unrelated title= on the same page.
+	assert.Contains(t, body,
+		`class="assignment-chip swapped-assignment-tag" title="`+swapInfo+`"`,
+		"the swapped HAT chip must render the swap-info tooltip on its title attribute")
+
+	// And, defense in depth: the chip must still carry the swap icon.
+	assert.Contains(t, body, `swap-icon`,
+		"the swapped chip must still carry the swap icon (fa-exchange-alt)")
+
+	// And: a non-swapped HAT chip in the same render must NOT carry the
+	// swap-tooltip text on its title attribute.
+	nonSwappedMatrix := scheduleMatrix{
+		Days: []scheduleMatrixDay{
+			{DateISO: "2026-09-07", DateDisplay: "Mon 7 Sep"},
+		},
+		Rows: []scheduleMatrixRow{
+			{
+				Member: database.TeamMember{Name: "Alice"},
+				Cells: []scheduleMatrixCell{
+					{
+						Status:   "onsite",
+						Label:    "On-site",
+						Assigned: true,
+						Swapped:  false,
+					},
+				},
+			},
+		},
+	}
+	nonSwappedData := map[string]any{
+		"User":               map[string]any{"Email": "alice@example.com", "Name": "Alice"},
+		"IsAdmin":            false,
+		"Template":           "dashboard",
+		"ScheduleMatrix":     nonSwappedMatrix,
+		"TodayIsBusinessDay": true,
+	}
+	w2 := httptest.NewRecorder()
+	require.NoError(t, handler.tmpl.ExecuteTemplate(w2, "dashboard.html", nonSwappedData))
+	body2 := w2.Body.String()
+	assert.NotContains(t, body2, "Accepted swap:",
+		"a non-swapped HAT chip must not surface the swap tooltip text")
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -1262,4 +1263,141 @@ func TestDashboard_ScheduleMatrix_SwapChipTooltip(t *testing.T) {
 	body2 := w2.Body.String()
 	assert.NotContains(t, body2, "Accepted swap:",
 		"a non-swapped HAT chip must not surface the swap tooltip text")
+}
+
+// TestDashboard_FullTeamOnSite_BannerAndMatrixBadge pins the
+// "everyone is in" celebration surfaces:
+//   - the matrix column header carries the .full-team-badge chip
+//     with the 🎉 emoji and "Full team" label,
+//   - the dashboard banner above the status card reads
+//     "Full team on-site today!" with the celebratory gradient,
+//   - and the banner suppresses on weekends / holidays even when
+//     the matrix would otherwise flag FullTeamOnSite.
+//
+// Regression coverage for the celebration surfaces added in
+// v0.33.7. The data layer (FullTeamOnSite flag) is pinned in
+// schedule_matrix_test.go; this test pins the rendered HTML.
+func TestDashboard_FullTeamOnSite_BannerAndMatrixBadge(t *testing.T) {
+	mockDB := &database.DB{}
+	handler, err := NewHandler(mockDB, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	// Two-column matrix: today is full team, tomorrow is not.
+	matrix := scheduleMatrix{
+		Days: []scheduleMatrixDay{
+			{
+				DateISO:        "2026-09-07",
+				DateDisplay:    "Mon 7 Sep",
+				IsToday:        true,
+				AtWorkCount:    3,
+				FullTeamOnSite: true,
+			},
+			{
+				DateISO:     "2026-09-08",
+				DateDisplay: "Tue 8 Sep",
+				AtWorkCount: 2,
+				WFHCount:    1,
+			},
+		},
+		Rows: []scheduleMatrixRow{
+			{Member: database.TeamMember{Name: "Alice"}, Cells: []scheduleMatrixCell{
+				{Status: "onsite", Label: "On-site", Assigned: true},
+				{Status: "onsite", Label: "On-site", Assigned: true},
+			}},
+		},
+	}
+
+	data := map[string]any{
+		"User":                map[string]any{"Email": "alice@example.com", "Name": "Alice"},
+		"IsAdmin":             false,
+		"Template":            "dashboard",
+		"ScheduleMatrix":      matrix,
+		"TodayIsWeekend":      false,
+		"TodayIsHoliday":      false,
+		"TodayIsBusinessDay":  true,
+		"TodayFullTeamOnSite": true,
+	}
+
+	w := httptest.NewRecorder()
+	require.NoError(t, handler.tmpl.ExecuteTemplate(w, "dashboard.html", data))
+	body := w.Body.String()
+
+	// Banner: the loudest celebratory surface.
+	assert.Contains(t, body, "Full team on-site today!",
+		"the dashboard banner must show its title when today is a full-team day")
+	assert.Contains(t, body, "Everyone&#39;s in the office",
+		"the dashboard banner must show the subtitle (apostrophe is HTML-escaped by html/template)")
+	assert.Contains(t, body, "full-team-banner",
+		"the dashboard banner must carry the .full-team-banner class for the gradient styling")
+
+	// Matrix column header: the column with FullTeamOnSite=true
+	// carries the .full-team-badge chip. We match class+label on
+	// a single contiguous span to avoid false positives elsewhere.
+	assert.Contains(t, body, `full-team-col`,
+		"the today column must carry the .full-team-col class for the soft gold tint")
+	assert.Contains(t, body, `class="full-team-badge"`,
+		"the today column header must render the .full-team-badge chip")
+
+	// Mobile variant: the day card carries the chip in the
+	// topline; pin both class names so a future refactor that
+	// drops one would fail.
+	assert.Contains(t, body, "mobile-day-card-full-team",
+		"the mobile day card must carry the .mobile-day-card-full-team border class")
+	assert.Contains(t, body, "mobile-full-team-badge",
+		"the mobile day card must carry the .mobile-full-team-badge chip")
+
+	// And the non-full-team column must NOT carry the badge
+	// (today is full team, tomorrow is not — only today's
+	// column should have the chip, exactly once).
+	chipCount := strings.Count(body, `class="full-team-badge"`)
+	assert.Equal(t, 1, chipCount,
+		"the full-team badge must appear on exactly one column (today only)")
+}
+
+// TestDashboard_FullTeamOnSite_BannerSuppressedOnWeekend pins
+// the guard: even if the matrix somehow flags FullTeamOnSite on
+// a weekend (e.g. an empty-matrix edge case before the AtWorkCount
+// guard), the banner must NOT render. The TodayIsBusinessDay
+// gate is the only thing standing between a Sunday "everyone's
+// in!" false positive and the user.
+func TestDashboard_FullTeamOnSite_BannerSuppressedOnWeekend(t *testing.T) {
+	mockDB := &database.DB{}
+	handler, err := NewHandler(mockDB, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+
+	matrix := scheduleMatrix{
+		Days: []scheduleMatrixDay{
+			{
+				DateISO:        "2026-09-07",
+				DateDisplay:    "Mon 7 Sep",
+				IsToday:        true,
+				AtWorkCount:    3,
+				FullTeamOnSite: true,
+			},
+		},
+	}
+
+	data := map[string]any{
+		"User":                map[string]any{"Email": "alice@example.com", "Name": "Alice"},
+		"IsAdmin":             false,
+		"Template":            "dashboard",
+		"ScheduleMatrix":      matrix,
+		"TodayIsWeekend":      true,
+		"TodayIsHoliday":      false,
+		"TodayIsBusinessDay":  false,
+		"TodayFullTeamOnSite": true,
+	}
+
+	w := httptest.NewRecorder()
+	require.NoError(t, handler.tmpl.ExecuteTemplate(w, "dashboard.html", data))
+	body := w.Body.String()
+
+	assert.NotContains(t, body, "Full team on-site today!",
+		"the dashboard banner must not appear on a weekend even if the matrix flags FullTeamOnSite")
+	// The .full-team-banner CSS rule is always in the inline <style>
+	// block, so we can't use the class name as a sentinel. The title
+	// text is the user-visible signal — its absence means the banner
+	// div was suppressed by the TodayIsBusinessDay gate.
+	assert.NotContains(t, body, "notification full-team-banner"+"\"",
+		"the banner <div> with class 'notification full-team-banner' must not render on a weekend")
 }

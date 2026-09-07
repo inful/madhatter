@@ -28,6 +28,73 @@ func TestBuildScheduleMatrix(t *testing.T) {
 		assert.Empty(t, got.Rows)
 	})
 
+	t.Run("FullTeamOnSite when every present member is on-site", func(t *testing.T) {
+		t.Parallel()
+
+		got := buildScheduleMatrix([]presenceDay{
+			{DateISO: "2026-05-20", DateDisplay: "Wed 20 May", Present: []database.TeamMember{alice, bob, carol}},
+		}, 0)
+		require.Len(t, got.Days, 1)
+		assert.True(t, got.Days[0].FullTeamOnSite,
+			"three present members with zero WFH/leave rows must flag FullTeamOnSite")
+	})
+
+	t.Run("FullTeamOnSite false when one member is WFH", func(t *testing.T) {
+		t.Parallel()
+
+		got := buildScheduleMatrix([]presenceDay{
+			{DateISO: "2026-05-20", DateDisplay: "Wed 20 May", Present: []database.TeamMember{alice, bob}, WFH: []database.TeamMember{carol}},
+		}, 0)
+		assert.False(t, got.Days[0].FullTeamOnSite,
+			"any WFH row must clear the FullTeamOnSite flag")
+	})
+
+	t.Run("FullTeamOnSite false when one member is on leave", func(t *testing.T) {
+		t.Parallel()
+
+		got := buildScheduleMatrix([]presenceDay{
+			{
+				DateISO: "2026-05-20", DateDisplay: "Wed 20 May",
+				Present: []database.TeamMember{alice, bob},
+				Away:    []presenceLeave{{Member: carol}},
+			},
+		}, 0)
+		assert.False(t, got.Days[0].FullTeamOnSite,
+			"any leave row must clear the FullTeamOnSite flag")
+	})
+
+	t.Run("FullTeamOnSite false on a holiday with no rows", func(t *testing.T) {
+		t.Parallel()
+
+		// Empty presence / WFH / Away for a column is the holiday /
+		// weekend case. The >0 AtWorkCount guard keeps the flag
+		// false here so the dashboard banner doesn't fire on a
+		// day nobody's working in the first place.
+		got := buildScheduleMatrix([]presenceDay{
+			{DateISO: "2026-05-20", DateDisplay: "Wed 20 May"},
+		}, 0)
+		assert.False(t, got.Days[0].FullTeamOnSite,
+			"empty day must not count as a full team on-site")
+	})
+
+	t.Run("FullTeamOnSite computed per-column", func(t *testing.T) {
+		t.Parallel()
+
+		got := buildScheduleMatrix([]presenceDay{
+			{
+				DateISO: "2026-05-20", DateDisplay: "Wed 20 May",
+				Present: []database.TeamMember{alice, bob},
+			},
+			{
+				DateISO: "2026-05-21", DateDisplay: "Thu 21 May",
+				Present: []database.TeamMember{alice}, WFH: []database.TeamMember{bob},
+			},
+		}, 0)
+		require.Len(t, got.Days, 2)
+		assert.True(t, got.Days[0].FullTeamOnSite, "day 1 has no WFH or leave")
+		assert.False(t, got.Days[1].FullTeamOnSite, "day 2 has a WFH row")
+	})
+
 	t.Run("single day single onsite member", func(t *testing.T) {
 		t.Parallel()
 

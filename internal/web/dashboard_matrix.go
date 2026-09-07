@@ -57,6 +57,14 @@ func buildScheduleMatrix(presence []presenceDay, floor int) scheduleMatrix {
 			// over-WFH case (which shouldn't happen but is a
 			// strong signal worth flagging).
 			AtWFHFloor: floor > 0 && atWork <= floor,
+			// Celebrate when everybody tracked in the matrix is
+			// physically on-site: zero WFH rows and zero leave rows
+			// combined with at least one present row. The AtWorkCount
+			// guard keeps an empty team from rendering as
+			// "full team on-site" — holiday/weekend columns in
+			// particular carry no rows at all and would otherwise
+			// trip this on the wrong day.
+			FullTeamOnSite: atWork > 0 && len(day.WFH) == 0 && len(day.Away) == 0,
 		})
 	}
 

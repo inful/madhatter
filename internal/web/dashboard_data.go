@@ -360,6 +360,28 @@ func signalOnSiteOptionForRow(r *database.WFHRequest, today, cutoff string) (*si
 	}, true
 }
 
+// todayFullTeamOnSite probes the data map's ScheduleMatrix for a
+// today-flagged column whose FullTeamOnSite is true. Returns false
+// when the matrix is missing or has no today column. The matrix is
+// built in loadDashboardData before loadTodayContext runs, so the
+// read here is always against the freshly-built structure.
+//
+// The reflection-free type assertion keeps loadTodayContext free of
+// a scheduleMatrix import cycle (the helper lives in the same
+// package as the matrix builder, so a plain type assertion is fine).
+func todayFullTeamOnSite(data map[string]any) bool {
+	matrix, ok := data["ScheduleMatrix"].(scheduleMatrix)
+	if !ok {
+		return false
+	}
+	for i := range matrix.Days {
+		if matrix.Days[i].IsToday && matrix.Days[i].FullTeamOnSite {
+			return true
+		}
+	}
+	return false
+}
+
 // loadDashboardData populates the dashboard with today's and week's
 // assignments. The orchestrator (handleDashboard) calls this after
 // the schedule is ensured so presence snapshots are stable.
@@ -392,6 +414,14 @@ func (h *Handler) loadTodayContext(now time.Time, data map[string]any) {
 			data["NextBusinessDayISO"] = next.Format("2006-01-02")
 		}
 	}
+
+	// Probe the schedule matrix for today's FullTeamOnSite flag.
+	// buildScheduleMatrix runs in loadDashboardData before this
+	// function fires, so the matrix is already in the data map
+	// when we look. The presence probe is a defensive default —
+	// when the matrix didn't load (db error or empty presence),
+	// the banner stays hidden rather than guessing.
+	data["TodayFullTeamOnSite"] = todayFullTeamOnSite(data)
 }
 
 // nextBusinessDayFrom walks forward day-by-day from start until

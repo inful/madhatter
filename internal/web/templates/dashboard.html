@@ -7,6 +7,33 @@
 {{define "dashboard_content"}}
 {{template "page_header" (dict "Title" "Dashboard" "Icon" "fas fa-calendar-check")}}
 
+{{/*
+    Full-team-on-site celebration banner. Renders only when
+    TODAY is a business day AND every member tracked in the
+    schedule matrix is on-site (no WFH, no leave, at least one
+    present row). The matrix.data-side flag is also surfaced
+    in the column header for the corresponding day, but the
+    banner is the single, eye-catching entry point on the page
+    when the user logs in.
+
+    The TodayIsBusinessDay guard suppresses the banner on
+    weekends and holidays — both of which carry an empty
+    matrix (no WFH/leave rows because nobody's working) and
+    would otherwise trip the FullTeamOnSite flag for the wrong
+    reason. Reuses the same `or .TodayIsWeekend .TodayIsHoliday`
+    pattern the HAT banner uses for its suppression cases.
+*/}}
+{{if and .TodayFullTeamOnSite .TodayIsBusinessDay}}
+<div class="notification full-team-banner mb-4" role="status" aria-live="polite">
+    <span class="full-team-banner-emoji" aria-hidden="true">🎉🎊</span>
+    <div class="full-team-banner-body">
+        <div class="full-team-banner-title">Full team on-site today!</div>
+        <div class="full-team-banner-subtitle">Everyone&#39;s in the office. Enjoy the energy. ✨</div>
+    </div>
+    <span class="full-team-banner-emoji full-team-banner-emoji-trailing" aria-hidden="true">🎊🎉</span>
+</div>
+{{end}}
+
 {{if .User}}
 {{if .CurrentUserPresenceStatus}}
 
@@ -318,11 +345,12 @@
         {{if .ScheduleMatrix}}
             <div class="mobile-schedule-cards">
                 {{range $dayIndex, $day := .ScheduleMatrix.Days}}
-                    <div class="mobile-day-card{{if $day.IsToday}} mobile-day-card-today{{end}}">
+                    <div class="mobile-day-card{{if $day.IsToday}} mobile-day-card-today{{end}}{{if $day.FullTeamOnSite}} mobile-day-card-full-team{{end}}">
                         <div class="mobile-day-head">
                             <div class="mobile-day-topline">
                                 <div class="mobile-day-title">{{$day.DateDisplay}}</div>
                                 {{if $day.IsToday}}<span class="mobile-today-badge">Today</span>{{end}}
+                                {{if $day.FullTeamOnSite}}<span class="mobile-full-team-badge" title="Everyone is on-site 🎉" aria-label="Everyone is on-site">🎉 Full team</span>{{end}}
                             </div>
                             <div class="mobile-day-totals">
                                 <span class="mobile-total-chip total-onsite" title="At work"><i class="fas fa-building"></i> {{$day.AtWorkCount}}</span>
@@ -370,13 +398,19 @@
                         <tr>
                             <th class="member-col" scope="col"></th>
                             {{range .ScheduleMatrix.Days}}
-                                <th class="day-col{{if .IsToday}} today-col{{end}}" scope="col">
+                                <th class="day-col{{if .IsToday}} today-col{{end}}{{if .FullTeamOnSite}} full-team-col{{end}}" scope="col">
                                     {{if $.MeetingsToken}}
                                     <a class="day-head-link" href="/calendar/{{$.MeetingsToken}}/meetings/{{.DateISO}}.html" title="View meetings for {{.DateDisplay}}">
                                         <div class="day-head">{{.DateDisplay}}</div>
                                     </a>
                                     {{else}}
                                     <div class="day-head">{{.DateDisplay}}</div>
+                                    {{end}}
+                                    {{if .FullTeamOnSite}}
+                                        <div class="full-team-badge" title="Everyone is on-site today 🎉" aria-label="Everyone is on-site today">
+                                            <span class="full-team-emoji" aria-hidden="true">🎉</span>
+                                            <span class="full-team-label">Full team</span>
+                                        </div>
                                     {{end}}
                                     <div class="day-totals">
                                         <span title="At work"><i class="fas fa-building"></i> {{.AtWorkCount}}</span>
@@ -605,6 +639,114 @@
     .holiday-badge { background: #c4b5fd; color: #5b21b6; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.85rem; font-weight: bold; }
     .swapped-assignment-tag { cursor: help; }
     .swap-icon { font-size: 0.8rem; opacity: 0.85; }
+
+    /* Full-team-on-site celebration: the matrix column header and
+       the dashboard banner share the same warm-gold cue so the
+       user reads the connection at a glance. The badge sits under
+       the date label and stays out of the totals row's way; the
+       column itself gets a soft tint via .full-team-col. */
+    .full-team-col {
+        background: linear-gradient(180deg, rgba(255, 224, 138, 0.28) 0%, rgba(255, 224, 138, 0.08) 100%);
+    }
+    .full-team-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        margin: 0.15rem 0 0.4rem;
+        padding: 0.15rem 0.5rem;
+        font-size: 0.7rem;
+        font-weight: 700;
+        color: #92400e;
+        background: linear-gradient(135deg, #fde68a 0%, #fbbf24 100%);
+        border-radius: 999px;
+        box-shadow: 0 1px 2px rgba(146, 64, 14, 0.18);
+        animation: full-team-pop 0.6s ease-out 1;
+    }
+    .full-team-emoji {
+        display: inline-block;
+        animation: full-team-wave 1.4s ease-in-out 1;
+    }
+    @keyframes full-team-pop {
+        0%   { transform: scale(0.6); opacity: 0; }
+        60%  { transform: scale(1.08); opacity: 1; }
+        100% { transform: scale(1); opacity: 1; }
+    }
+    @keyframes full-team-wave {
+        0%, 100% { transform: rotate(0deg); }
+        25%      { transform: rotate(-12deg); }
+        75%      { transform: rotate(12deg); }
+    }
+
+    /* Mobile variant — same celebratory chip, inline with the
+       day-title topline so it doesn't fight the totals row. */
+    .mobile-day-card-full-team {
+        border-left: 4px solid #fbbf24;
+    }
+    .mobile-full-team-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.2rem;
+        margin-left: 0.4rem;
+        padding: 0.1rem 0.45rem;
+        font-size: 0.65rem;
+        font-weight: 700;
+        color: #92400e;
+        background: linear-gradient(135deg, #fde68a 0%, #fbbf24 100%);
+        border-radius: 999px;
+        box-shadow: 0 1px 2px rgba(146, 64, 14, 0.18);
+    }
+
+    /* Dashboard banner — the loudest of the three cues. Sits
+       above the status card so it's the first thing the user
+       sees after logging in on a celebratory day. The keyframe
+       animation fires once on first render; subsequent visits
+       re-trigger it because the page re-renders fresh. */
+    .full-team-banner {
+        display: flex;
+        align-items: center;
+        gap: 0.85rem;
+        padding: 0.95rem 1.1rem;
+        background: linear-gradient(135deg, #fde68a 0%, #fbbf24 55%, #34d399 100%);
+        color: #78350f;
+        border: 1px solid rgba(146, 64, 14, 0.22);
+        border-radius: 10px;
+        box-shadow: 0 4px 14px rgba(251, 191, 36, 0.32);
+        font-weight: 600;
+        animation: full-team-banner-in 0.55s cubic-bezier(0.16, 1, 0.3, 1) 1;
+    }
+    .full-team-banner-emoji {
+        font-size: 1.6rem;
+        line-height: 1;
+    }
+    .full-team-banner-emoji-trailing {
+        margin-left: auto;
+    }
+    .full-team-banner-body {
+        flex: 1 1 auto;
+    }
+    .full-team-banner-title {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: #7c2d12;
+    }
+    .full-team-banner-subtitle {
+        font-size: 0.85rem;
+        font-weight: 500;
+        opacity: 0.85;
+        margin-top: 0.1rem;
+    }
+    @keyframes full-team-banner-in {
+        0%   { transform: translateY(-12px) scale(0.97); opacity: 0; }
+        100% { transform: translateY(0)     scale(1);    opacity: 1; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+        .full-team-banner,
+        .full-team-badge,
+        .full-team-emoji {
+            animation: none;
+        }
+    }
+
     .schedule-matrix-wrap {
         border: 1px solid rgba(102, 126, 234, 0.18);
         border-radius: 10px;

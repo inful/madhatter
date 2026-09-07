@@ -117,6 +117,12 @@ type scheduleMatrixDay struct {
 	// in the column header is rendered in an orange tone to flag
 	// it visually.
 	AtWFHFloor bool
+	// FullTeamOnSite is true when the day has zero WFH and zero
+	// leave rows AND at least one on-site row — i.e. everyone the
+	// matrix tracks is physically in the office. The dashboard
+	// surfaces a celebratory badge in the column header and a
+	// banner at the top of the page when this is true for today.
+	FullTeamOnSite bool
 }
 
 type scheduleMatrixRow struct {

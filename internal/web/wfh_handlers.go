@@ -431,7 +431,7 @@ func (h *Handler) handleWFHOnSiteOnDate(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	date := r.URL.Query().Get("date")
+	date := r.FormValue("date")
 	if date == "" {
 		SetFlash(w, r, "/", Flash{
 			Kind:   FlashKindSignalOnSiteFuture,

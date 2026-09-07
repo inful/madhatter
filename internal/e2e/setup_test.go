@@ -2,10 +2,10 @@
 
 // Package e2e exercises the running server through a real headless
 // Chromium browser. The intent is to catch the regressions a
-// pure-handler unit test misses: a template that 500s on the
-// first render, an HTMX wiring that stops swapping, a redirect
-// chain that breaks when one link changes, a CSS selector the
-// dashboard relies on, etc.
+// pure-handler unit test misses: a template that 500s on the first
+// render, an HTMX wiring that stops swapping, a redirect chain
+// that breaks when one link changes, a CSS selector the dashboard
+// relies on, etc.
 //
 // Run with:
 //
@@ -27,6 +27,7 @@ package e2e
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -41,6 +42,8 @@ import (
 	"time"
 
 	"github.com/chromedp/chromedp"
+
+	"github.com/inful/madhatter/internal/database"
 )
 
 const (
@@ -372,6 +375,97 @@ func (h *Harness) loginAsFakeAdmin(t *testing.T, ctx context.Context) {
 	); err != nil {
 		t.Fatalf("post-login navigation to /: %v", err)
 	}
+}
+
+// openDBForSeeding opens a second sqlite connection to the same
+// support_rota.db the server is using, so tests can seed WFH rows
+// without driving the request + settlement flow. The connection is
+// closed when the returned cleanup func fires.
+//
+// We use database.New (which re-runs the idempotent migration
+// check) rather than raw sql.Open so any future migration-level
+// change automatically keeps the seed path consistent.
+func (h *Harness) openDBForSeeding(t *testing.T) (*database.DB, func()) {
+	t.Helper()
+	dbPath := filepath.Join(h.workDir, "support_rota.db")
+	db, err := database.New(dbPath)
+	if err != nil {
+		t.Fatalf("open seed db at %s: %v", dbPath, err)
+	}
+	return db, func() { _ = db.Close() }
+}
+
+// seedDevRecurringWFH inserts an auto-approved recurring WFH row
+// for dev@example.com on the given date. Used by the signal-on-site
+// tests to set up the dashboard's today-button or forward-dated
+// picker affordances without going through the request flow.
+//
+// Idempotent: if a row already exists for (member, date) — whether
+// approved (carried over from a prior test) or withdrawn (left by
+// a prior test that exercised the withdraw path) — the helper
+// flips it back to approved so the next test sees a clean
+// "would render the affordance" state. This matters because the
+// e2e binary keeps one DB across the whole suite (TestMain starts
+// the harness once) and tests share the dev user.
+//
+// Returns the seeded row's id so the test can reference it on
+// later assertions.
+func (h *Harness) seedDevRecurringWFH(t *testing.T, db *database.DB, date string) string {
+	t.Helper()
+	ctx := context.Background()
+	member, err := db.GetMemberByEmail(ctx, "dev@example.com")
+	if err != nil {
+		t.Fatalf("look up dev member: %v", err)
+	}
+
+	// Insert path: succeeds the first time the suite runs for
+	// this date. ErrWFHDuplicateRequest is the expected signal
+	// that a row already exists from a prior test — fall through
+	// to the reset path.
+	insertErr := db.CreateApprovedRecurringWFHRequest(ctx, member.ID, date, time.Now().UTC())
+	if insertErr != nil && !errors.Is(insertErr, database.ErrWFHDuplicateRequest) {
+		t.Fatalf("seed recurring WFH %s for %s: %v", date, member.ID, insertErr)
+	}
+
+	rows, err := db.GetWFHRequestsByMember(ctx, member.ID)
+	if err != nil {
+		t.Fatalf("reload WFH rows: %v", err)
+	}
+	for i := range rows {
+		if rows[i].Date != date {
+			continue
+		}
+		if rows[i].Status != database.WFHStatusApproved {
+			if resetErr := db.UpdateWFHRequestStatus(ctx, rows[i].ID, database.WFHStatusApproved); resetErr != nil {
+				t.Fatalf("reset WFH row %s to approved: %v", rows[i].ID, resetErr)
+			}
+		}
+		return rows[i].ID
+	}
+	t.Fatalf("seeded row for %s not found in member WFH list", date)
+	return ""
+}
+
+// lookupDevWFHByDate returns the WFH request for dev@example.com
+// on the given date, or nil if no row exists. Used by tests to
+// verify post-action row state.
+func (h *Harness) lookupDevWFHByDate(t *testing.T, db *database.DB, date string) *database.WFHRequest {
+	t.Helper()
+	ctx := context.Background()
+	member, err := db.GetMemberByEmail(ctx, "dev@example.com")
+	if err != nil {
+		t.Fatalf("look up dev member: %v", err)
+	}
+	rows, err := db.GetWFHRequestsByMember(ctx, member.ID)
+	if err != nil {
+		t.Fatalf("reload WFH rows: %v", err)
+	}
+	for i := range rows {
+		if rows[i].Date == date {
+			return &rows[i]
+		}
+	}
+	return nil
 }
 
 // Strings import alias used by chromiumPath.

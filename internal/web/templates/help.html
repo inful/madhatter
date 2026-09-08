@@ -222,8 +222,11 @@
             <h4 class="title is-6 mb-2 mt-4">December snow</h4>
             <p>Throughout December the dashboard runs a 45-second gently-falling snow storm using the library's particle physics (the upstream <code>snow()</code> recipe &mdash; one particle per animation frame with low gravity and a small horizontal drift). The storm runs once per dashboard visit and stops on its own.</p>
 
+            <h4 class="title is-6 mb-2 mt-4">Autumnal equinox leaves</h4>
+            <p>On the autumnal equinox (September 23) — the first day of autumn — the dashboard runs a 45-second storm of falling leaf emojis when the entire team is on-site on a business day. The four emojis cycle randomly per particle: 🌿 herb, 🍁 maple leaf, 🍂 fallen leaf, and 🍃 leaf fluttering in the wind. The leaves use the library's <code>confetti.shapeFromText</code> helper to rasterise the emojis into particle sprites; gravity sits a notch above the snow recipe so the leaves fall faster than the snowflakes, and the wider drift (-0.7..0.7 vs -0.4..0.4) lets each leaf sway as it descends. The effect piggybacks on the same full-team-on-site + business-day gate as the confetti, so a September 23 with the team all in the office fires both effects together.</p>
+
             <h4 class="title is-6 mb-2 mt-4">Accessibility &amp; overrides</h4>
-            <p>Both effects respect the OS-level <code>prefers-reduced-motion: reduce</code> preference &mdash; confetti uses the library's built-in <code>disableForReducedMotion</code> flag, and the snow loop short-circuits before the first animation frame. Operators who want to disable either effect can set <code>CONFETTI_ENABLED=false</code> or <code>SNOW_ENABLED=false</code> at startup; the env var defaults to <code>true</code> for both. The two flags are independent &mdash; setting one to <code>false</code> leaves the other firing as usual.</p>
+            <p>All three effects respect the OS-level <code>prefers-reduced-motion: reduce</code> preference &mdash; confetti uses the library's built-in <code>disableForReducedMotion</code> flag, and the snow and leaves loops short-circuit before the first animation frame. Operators who want to disable any effect can set <code>CONFETTI_ENABLED=false</code>, <code>SNOW_ENABLED=false</code>, or <code>LEAVES_ENABLED=false</code> at startup; each env var defaults to <code>true</code>. The three flags are independent &mdash; setting any one to <code>false</code> leaves the others firing as usual.</p>
         </div>
     </div>
 </div>

@@ -382,9 +382,19 @@ func todayFullTeamOnSite(data map[string]any) bool {
 	return false
 }
 
+// autumnalEquinoxDay is the calendar day the dashboard treats as
+// the first day of autumn in the Northern Hemisphere. The exact
+// astronomical equinox drifts between September 22 and 23 year to
+// year; September 23 is the conventional "first day of autumn"
+// date in the user-facing calendar and is fixed here so the
+// effect is reproducible rather than ephemeris-driven. Users in
+// the Southern Hemisphere get the wrong season but the effect
+// still fires — a deliberate scope cut documented in the README.
+const autumnalEquinoxDay = 23
+
 // funEffectsFor resolves the trigger flags for the dashboard's
-// optional fun effects. Returns (confetti, snow) booleans that
-// drive the vendored canvas-confetti bundle:
+// optional fun effects. Returns (confetti, snow, leaves) booleans
+// that drive the vendored canvas-confetti bundle:
 //
 //   - Confetti fires on a business day when the entire team is
 //     on-site (the same condition that drives the existing
@@ -397,13 +407,22 @@ func todayFullTeamOnSite(data map[string]any) bool {
 //     construction (see NewHandler); this helper is the per-request
 //     "should this fire on this date" decision only.
 //
-// The signature is intentionally pure (takes all four inputs as
+//   - Leaves fire on September 23rd (the first day of autumn)
+//     when the full team is on-site on a business day. The
+//     business-day gate is what excludes a Sept 23 that lands on
+//     a weekend — the matrix would have no rows for a weekend
+//     day, so the FullTeamOnSite flag is structurally false and
+//     the effect wouldn't fire anyway, but the explicit
+//     isBusinessDay guard makes the contract readable.
+//
+// The signature is intentionally pure (takes all six inputs as
 // parameters) so the test cases can pin every branch without
 // faking a Handler or a database connection.
-func funEffectsFor(now time.Time, fullTeamOnSite, isBusinessDay, confettiEnabled, snowEnabled bool) (confetti, snow bool) {
+func funEffectsFor(now time.Time, fullTeamOnSite, isBusinessDay, confettiEnabled, snowEnabled, leavesEnabled bool) (confetti, snow, leaves bool) {
 	confetti = confettiEnabled && fullTeamOnSite && isBusinessDay
 	snow = snowEnabled && now.Month() == time.December
-	return confetti, snow
+	leaves = leavesEnabled && now.Month() == time.September && now.Day() == autumnalEquinoxDay && fullTeamOnSite && isBusinessDay
+	return confetti, snow, leaves
 }
 
 // loadDashboardData populates the dashboard with today's and week's
@@ -426,17 +445,26 @@ func (h *Handler) loadTodayContext(now time.Time, data map[string]any) {
 	data["TodayIsHoliday"] = isHoliday
 	data["TodayIsBusinessDay"] = !isWeekend && !isHoliday
 
-	// Fun effects (issue #59). confettiEnabled / snowEnabled were
-	// resolved once at Handler construction from CONFETTI_ENABLED /
-	// SNOW_ENABLED (defaults true). The per-request work here is
-	// just the date-and-context check — fullTeamOnSite probes the
-	// already-built ScheduleMatrix, and the snow test is a single
-	// month comparison. The dashboard template turns the booleans
-	// into a hidden <div> with data-confetti / data-snow attributes
-	// that fun-effects.js reads.
-	confetti, snow := funEffectsFor(now, todayFullTeamOnSite(data), data["TodayIsBusinessDay"].(bool), h.confettiEnabled, h.snowEnabled)
+	// Fun effects (issue #59). confettiEnabled / snowEnabled /
+	// leavesEnabled were resolved once at Handler construction from
+	// CONFETTI_ENABLED / SNOW_ENABLED / LEAVES_ENABLED (defaults
+	// true). The per-request work here is just the date-and-context
+	// check — fullTeamOnSite probes the already-built
+	// ScheduleMatrix, and the snow / leaves tests are single month
+	// comparisons. The dashboard template turns the booleans into a
+	// hidden <div> with data-confetti / data-snow / data-leaves
+	// attributes that fun-effects.js reads.
+	confetti, snow, leaves := funEffectsFor(
+		now,
+		todayFullTeamOnSite(data),
+		data["TodayIsBusinessDay"].(bool),
+		h.confettiEnabled,
+		h.snowEnabled,
+		h.leavesEnabled,
+	)
 	data["FunEffectsConfetti"] = confetti
 	data["FunEffectsSnow"] = snow
+	data["FunEffectsLeaves"] = leaves
 
 	if isHoliday && h.holidayLookup != nil {
 		if name, ok := h.holidayLookup.GetHoliday(now.Format("2006-01-02")); ok {

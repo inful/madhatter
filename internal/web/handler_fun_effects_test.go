@@ -57,39 +57,99 @@ func TestNewHandler_SnowEnabledFalseExplicit(t *testing.T) {
 	assert.False(t, h.snowEnabled, "SNOW_ENABLED=false must reach h.snowEnabled")
 }
 
-// TestNewHandler_FunEffectsGatesIndependent pins that the two
+// TestNewHandler_LeavesEnabledDefaultsTrue pins the leaves
+// default: LEAVES_ENABLED unset leaves the flag true so
+// September 23 with the full team on-site triggers the falling-
+// leaves storm. The effect piggybacks on the same full-team-on-
+// site + business-day gate as confetti, but its calendar axis
+// (autumnal equinox, day 23 of September) is what distinguishes
+// it from the always-on confetti.
+func TestNewHandler_LeavesEnabledDefaultsTrue(t *testing.T) {
+	t.Setenv("LEAVES_ENABLED", "")
+
+	h, err := NewHandler(nil, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+	assert.True(t, h.leavesEnabled, "LEAVES_ENABLED unset must default to true")
+}
+
+// TestNewHandler_LeavesEnabledFalseExplicit pins the
+// LEAVES_ENABLED=false opt-out: the equinox-day falling-leaves
+// storm is the most narrowly-scoped of the three effects (one
+// day a year) so the operator-level disable matters even more
+// than for the always-running snow storm — one flag flips the
+// equinox celebration off without touching the other two effects.
+func TestNewHandler_LeavesEnabledFalseExplicit(t *testing.T) {
+	t.Setenv("LEAVES_ENABLED", "false")
+
+	h, err := NewHandler(nil, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+	require.NoError(t, err)
+	assert.False(t, h.leavesEnabled, "LEAVES_ENABLED=false must reach h.leavesEnabled")
+}
+
+// TestNewHandler_FunEffectsGatesIndependent pins that the three
 // flags are wired independently: setting CONFETTI_ENABLED=false
-// must not affect h.snowEnabled, and vice versa. The dashboard
-// surfaces the two effects as orthogonal features, so a config
-// typo on one axis must not silently flip the other.
+// must not affect h.snowEnabled or h.leavesEnabled, and vice
+// versa. The dashboard surfaces the three effects as orthogonal
+// features, so a config typo on one axis must not silently flip
+// either of the others.
 func TestNewHandler_FunEffectsGatesIndependent(t *testing.T) {
-	t.Run("confetti off, snow on", func(t *testing.T) {
-		t.Setenv("CONFETTI_ENABLED", "false")
-		t.Setenv("SNOW_ENABLED", "")
-
-		h, err := NewHandler(nil, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
-		require.NoError(t, err)
-		assert.False(t, h.confettiEnabled)
-		assert.True(t, h.snowEnabled)
-	})
-
-	t.Run("confetti on, snow off", func(t *testing.T) {
+	t.Run("only confetti on", func(t *testing.T) {
 		t.Setenv("CONFETTI_ENABLED", "")
 		t.Setenv("SNOW_ENABLED", "false")
+		t.Setenv("LEAVES_ENABLED", "false")
 
 		h, err := NewHandler(nil, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
 		require.NoError(t, err)
 		assert.True(t, h.confettiEnabled)
 		assert.False(t, h.snowEnabled)
+		assert.False(t, h.leavesEnabled)
 	})
 
-	t.Run("both off", func(t *testing.T) {
+	t.Run("only snow on", func(t *testing.T) {
+		t.Setenv("CONFETTI_ENABLED", "false")
+		t.Setenv("SNOW_ENABLED", "")
+		t.Setenv("LEAVES_ENABLED", "false")
+
+		h, err := NewHandler(nil, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+		require.NoError(t, err)
+		assert.False(t, h.confettiEnabled)
+		assert.True(t, h.snowEnabled)
+		assert.False(t, h.leavesEnabled)
+	})
+
+	t.Run("only leaves on", func(t *testing.T) {
 		t.Setenv("CONFETTI_ENABLED", "false")
 		t.Setenv("SNOW_ENABLED", "false")
+		t.Setenv("LEAVES_ENABLED", "")
 
 		h, err := NewHandler(nil, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
 		require.NoError(t, err)
 		assert.False(t, h.confettiEnabled)
 		assert.False(t, h.snowEnabled)
+		assert.True(t, h.leavesEnabled)
+	})
+
+	t.Run("all on", func(t *testing.T) {
+		t.Setenv("CONFETTI_ENABLED", "")
+		t.Setenv("SNOW_ENABLED", "")
+		t.Setenv("LEAVES_ENABLED", "")
+
+		h, err := NewHandler(nil, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+		require.NoError(t, err)
+		assert.True(t, h.confettiEnabled)
+		assert.True(t, h.snowEnabled)
+		assert.True(t, h.leavesEnabled)
+	})
+
+	t.Run("all off", func(t *testing.T) {
+		t.Setenv("CONFETTI_ENABLED", "false")
+		t.Setenv("SNOW_ENABLED", "false")
+		t.Setenv("LEAVES_ENABLED", "false")
+
+		h, err := NewHandler(nil, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
+		require.NoError(t, err)
+		assert.False(t, h.confettiEnabled)
+		assert.False(t, h.snowEnabled)
+		assert.False(t, h.leavesEnabled)
 	})
 }

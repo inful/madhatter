@@ -9,19 +9,24 @@
 
 {{/*
     Fun effects config (issue #59). The dashboard template resolves
-    FunEffectsConfetti / FunEffectsSnow via the loadTodayContext
-    loader (which calls funEffectsFor) and we surface them here as
-    data-* attributes on a hidden div. fun-effects.js reads them
-    once on DOMContentLoaded and fires the vendored canvas-confetti
-    bundle accordingly — confetti when the team is all on-site,
-    falling snow throughout December. The div is aria-hidden and
-    not visible to screen readers; it carries no text content, just
-    attribute flags. Confetti / snow are independent — a December
-    day with the full team on-site fires both.
+    FunEffectsConfetti / FunEffectsSnow / FunEffectsLeaves via the
+    loadTodayContext loader (which calls funEffectsFor) and we
+    surface them here as data-* attributes on a hidden div.
+    fun-effects.js reads them once on DOMContentLoaded and fires
+    the vendored canvas-confetti bundle accordingly — confetti
+    when the team is all on-site, falling snow throughout December,
+    and falling leaves on the autumnal equinox (September 23)
+    when the team is all on-site. The div is aria-hidden and not
+    visible to screen readers; it carries no text content, just
+    attribute flags. The three effects are independent — a
+    December day with the full team on-site fires both confetti
+    and snow; a September 23 with the full team on-site fires
+    both confetti and leaves.
 */}}
 <div id="fun-effects-config"
      data-confetti="{{if .FunEffectsConfetti}}true{{else}}false{{end}}"
      data-snow="{{if .FunEffectsSnow}}true{{else}}false{{end}}"
+     data-leaves="{{if .FunEffectsLeaves}}true{{else}}false{{end}}"
      aria-hidden="true" style="display:none"></div>
 
 {{/*

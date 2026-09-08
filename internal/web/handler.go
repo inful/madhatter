@@ -71,13 +71,15 @@ type Handler struct {
 	unsubscribeURLFn  func(memberID string) string
 
 	// Fun-effects toggles. Resolved once at construction from the
-	// CONFETTI_ENABLED / SNOW_ENABLED env vars (default true)
-	// so a per-request read isn't needed. The dashboard template
-	// renders these into the FunEffectsConfetti / FunEffectsSnow
-	// data map values, which the dashboard_scripts block turns
-	// into a hidden <div> attribute that fun-effects.js reads.
+	// CONFETTI_ENABLED / SNOW_ENABLED / LEAVES_ENABLED env vars
+	// (default true) so a per-request read isn't needed. The
+	// dashboard template renders these into the FunEffectsConfetti
+	// / FunEffectsSnow / FunEffectsLeaves data map values, which
+	// the dashboard_scripts block turns into a hidden <div>
+	// attribute that fun-effects.js reads.
 	confettiEnabled bool
 	snowEnabled     bool
+	leavesEnabled   bool
 }
 
 type pendingRestoreItem struct {
@@ -291,6 +293,7 @@ func NewHandler(db *database.DB, authManager *auth.AuthManager, authMiddleware *
 		authRateLimiter: ratelimit.New(defaultAuthRateLimit, defaultAuthRateRefill),
 		confettiEnabled: envutil.Bool("CONFETTI_ENABLED", true),
 		snowEnabled:     envutil.Bool("SNOW_ENABLED", true),
+		leavesEnabled:   envutil.Bool("LEAVES_ENABLED", true),
 	}
 
 	h.registerRoutes()

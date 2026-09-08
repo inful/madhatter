@@ -32,13 +32,14 @@
         }
         var wantConfetti = cfg.getAttribute('data-confetti') === 'true';
         var wantSnow = cfg.getAttribute('data-snow') === 'true';
+        var wantLeaves = cfg.getAttribute('data-leaves') === 'true';
 
         if (typeof window.confetti !== 'function') {
             // The vendored bundle failed to load (offline deploy,
             // blocked by an upstream CSP mistake, etc.). Fail
             // closed: the dashboard still renders, just without
             // the celebration. Logged so an operator notices.
-            if (wantConfetti || wantSnow) {
+            if (wantConfetti || wantSnow || wantLeaves) {
                 console.warn('fun-effects: canvas-confetti global not available; effects skipped');
             }
             return;
@@ -49,6 +50,9 @@
         }
         if (wantSnow && !prefersReducedMotion()) {
             startDecemberSnow();
+        }
+        if (wantLeaves && !prefersReducedMotion()) {
+            startAutumnLeaves();
         }
     }
 
@@ -141,6 +145,73 @@
                 gravity: randomInRange(0.4, 0.6),
                 scalar: randomInRange(0.4, 1),
                 drift: randomInRange(-0.4, 0.4)
+            });
+
+            if (timeLeft > 0) {
+                requestAnimationFrame(frame);
+            }
+        }());
+    }
+
+    // startAutumnLeaves fires the equinox-day falling-leaves
+    // storm. The four leaf emojis are baked into confetti shapes
+    // once at startup via confetti.shapeFromText (the library's
+    // built-in emoji-to-particle helper), then picked at random
+    // per animation frame so the storm looks varied rather than
+    // uniform. Gravity sits a notch above the snow recipe
+    // (0.7-1.0 vs 0.4-0.6) because leaves fall faster than
+    // snowflakes; drift is wider (-0.7..0.7 vs -0.4..0.4) so
+    // each leaf sways more on the way down.
+    //
+    // Total runtime mirrors startDecemberSnow — 45 seconds,
+    // long enough to feel like a seasonal moment, short enough
+    // not to drain CPU on a backgrounded tab. The
+    // prefersReducedMotion guard at the call site keeps users
+    // with the OS-level reduced-motion preference from seeing
+    // the storm at all.
+    function startAutumnLeaves() {
+        var duration = 45 * 1000;
+        var animationEnd = Date.now() + duration;
+
+        // Bake the four leaf emojis into confetti shapes once.
+        // shapeFromText rasterises the text into a sprite the
+        // library can stamp — calling it per-frame would defeat
+        // the purpose. The scalar bump (1.6) keeps the emoji
+        // legible at the typical particle size.
+        var scalar = 1.6;
+        var leaves = [
+            window.confetti.shapeFromText({ text: '🌿', scalar: scalar }),
+            window.confetti.shapeFromText({ text: '🍁', scalar: scalar }),
+            window.confetti.shapeFromText({ text: '🍂', scalar: scalar }),
+            window.confetti.shapeFromText({ text: '🍃', scalar: scalar })
+        ];
+
+        function randomInRange(min, max) {
+            return Math.random() * (max - min) + min;
+        }
+
+        function pickShape() {
+            return leaves[Math.floor(Math.random() * leaves.length)];
+        }
+
+        (function frame() {
+            var timeLeft = animationEnd - Date.now();
+            var ticks = Math.max(200, 500 * (timeLeft / duration));
+
+            window.confetti({
+                particleCount: 1,
+                startVelocity: 0,
+                ticks: ticks,
+                origin: {
+                    x: Math.random(),
+                    // start the leaves above the viewport so they
+                    // fall through rather than appear mid-air
+                    y: -0.1
+                },
+                shapes: [pickShape()],
+                gravity: randomInRange(0.7, 1.0),
+                scalar: randomInRange(0.7, 1.2),
+                drift: randomInRange(-0.7, 0.7)
             });
 
             if (timeLeft > 0) {

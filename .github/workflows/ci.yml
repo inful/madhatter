@@ -25,7 +25,10 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: '1.25.5'
+          go-version: '1.26.0'
+          # Allow setup-go to fetch the matching toolchain
+          # when the runner's pre-installed Go lags behind.
+          check-latest: true
 
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@v9
@@ -42,7 +45,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: '1.25.5'
+          go-version: '1.26.0'
+          check-latest: true
 
       - name: Run tests
         run: go test -v -race -coverprofile=coverage.out -covermode=atomic ./...
@@ -70,7 +74,8 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: '1.25.5'
+          go-version: '1.26.0'
+          check-latest: true
 
       - name: Build
         run: go build -v .

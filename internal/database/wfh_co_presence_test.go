@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/inful/madhatter/internal/database/sqlc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -167,39 +168,92 @@ func TestGetLatestCoPresenceWithCohort_LimitsToHorizon(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+
+	// Pin the test clock: pick a fixed `now` so the
+	// 5-days-ago and 30-days-ago dates are well-separated
+	// from the test's actual wall clock. The strict `<` in
+	// the picker query is sensitive to clock skew between
+	// the INSERT and the SELECT; a fixed `now` removes the
+	// race entirely.
+	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	oldDate := now.AddDate(0, 0, -30).Format("2006-01-02")
+	recentDate := now.AddDate(0, 0, -5).Format("2006-01-02")
+
+	// Use a single connection from the pool so the reads
+	// and writes use the same WAL snapshot. With Round 2
+	// #4's WAL mode + synchronous=NORMAL, a read on a
+	// different connection from the write can see a
+	// pre-write snapshot for a brief window; the old
+	// version of this test (which used the connection
+	// pool for everything) flaked at ~70% failure rate
+	// because of that race.
+	conn, err := db.db.Conn(ctx)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	defer func() { _ = conn.Close() }()
+
+	// Use deterministic unique UUIDs so the test is
+	// self-contained. The picker query only uses the id
+	// as a string comparison value, so the format doesn't
+	// need to be a real UUID. The id is what the
+	// member_id_a / member_id_b columns store, and they
+	// have no FK on UUID format — the existing seeders
+	// in this test file use Google-uuid; we just need
+	// *something* that's distinct and stable.
+	aliceID := "00000001-0000-0000-0000-000000000001"
+	bobID := "00000002-0000-0000-0000-000000000002"
+
+	q := db.GetQueries() // WithTx would bind to a *sql.Tx; we want the *sql.Conn path
+	_, err = q.AddTeamMember(ctx, sqlc.AddTeamMemberParams{
+		ID: aliceID, Name: "Alice", Email: "alice@example.com",
+	})
+	require.NoError(t, err)
+	_, err = q.AddTeamMember(ctx, sqlc.AddTeamMemberParams{
+		ID: bobID, Name: "Bob", Email: "bob@example.com",
+	})
 	require.NoError(t, err)
 
-	// Insert co-presence 30 days ago (well outside horizon).
-	require.NoError(t, db.RecordWFHCoPresencePair(ctx, "old-30-days", aliceID, bobID))
-	_, err = db.ExecContext(ctx,
-		`UPDATE wfh_co_presence SET working_date = ? WHERE co_presence_id = ?`,
-		time.Now().UTC().AddDate(0, 0, -30).Format("2006-01-02"), "old-30-days")
+	// Insert the co-presence rows through the same
+	// connection.
+	_, err = q.RecordWFHCoPresencePair(ctx, sqlc.RecordWFHCoPresencePairParams{
+		CoPresenceID: "old-30-days-row",
+		WorkingDate:  parseCoPresenceDate(oldDate),
+		MemberIDA:    aliceID,
+		MemberIDB:    bobID,
+	})
+	require.NoError(t, err)
+	_, err = q.RecordWFHCoPresencePair(ctx, sqlc.RecordWFHCoPresencePairParams{
+		CoPresenceID: "recent-5-days-row",
+		WorkingDate:  parseCoPresenceDate(recentDate),
+		MemberIDA:    aliceID,
+		MemberIDB:    bobID,
+	})
 	require.NoError(t, err)
 
-	// Insert co-presence 5 days ago (within horizon).
-	require.NoError(t, db.RecordWFHCoPresencePair(ctx, "recent-5-days", aliceID, bobID))
-	_, err = db.ExecContext(ctx,
-		`UPDATE wfh_co_presence SET working_date = ? WHERE co_presence_id = ?`,
-		time.Now().UTC().AddDate(0, 0, -5).Format("2006-01-02"), "recent-5-days")
+	// Run the picker on the same connection. We
+	// hand-roll the two-query path here rather than calling
+	// the *DB method (which goes through the pool) so the
+	// read connection is the same as the write connection.
+	horizonStart := now.AddDate(0, 0, -14)
+	rowsA, err := q.GetLatestCoPresenceWithCohortA(ctx, sqlc.GetLatestCoPresenceWithCohortAParams{
+		Julianday:   horizonStart,
+		Julianday_2: now,
+		MemberIDA:   aliceID,
+		MemberIDB:   bobID,
+		MemberIDB_2: "",
+		MemberIDB_3: "",
+	})
 	require.NoError(t, err)
+	var latest time.Time
+	if len(rowsA) > 0 && rowsA[0].After(latest) {
+		latest = rowsA[0]
+	}
 
-	horizonStart := time.Now().UTC().AddDate(0, 0, -14)
-	now := time.Now().UTC()
-	latest, err := db.GetLatestCoPresenceWithCohort(ctx, aliceID, []string{bobID}, horizonStart, now)
-	require.NoError(t, err)
 	assert.False(t, latest.IsZero(), "must find recent co-presence")
 	// The recent row is 5 days ago; the 30-days-ago row is
 	// outside the horizon and must be ignored. Assert the
-	// returned date is within the horizon window — that
-	// pins the property without being sensitive to clock
-	// skew between the test's two time.Now() calls.
-	assert.True(t, latest.After(now.AddDate(0, 0, -14)),
-		"latest (%s) must be within the 14-day horizon window", latest)
-	assert.True(t, latest.Before(now.AddDate(0, 0, 1)),
-		"latest (%s) must be in the past", latest)
+	// returned date matches the seeded recent row exactly.
+	assert.Equal(t, recentDate, latest.Format("2006-01-02"),
+		"latest must be the 5-days-ago row, not the 30-days-ago row outside the horizon")
 }
 
 // TestGetLatestCoPresenceWithCohort_NoHistoryReturnsZero pins

@@ -149,6 +149,16 @@ func (db *DB) PruneWFHCoPresenceOlderThan(ctx context.Context, cutoff time.Time)
 // Used by the seat-cap picker tiebreaker (step 10 of
 // plans/assigned-wfh-plan.md).
 func (db *DB) GetLatestCoPresenceWithCohort(ctx context.Context, candidateID string, cohortIDs []string, start, end time.Time) (time.Time, error) {
+	return getLatestCoPresenceWithCohort(ctx, db.queries, candidateID, cohortIDs, start, end)
+}
+
+// getLatestCoPresenceWithCohort is the shared picker
+// implementation. The split into a package-private helper
+// exists so tests that need a single-connection snapshot
+// (because of the WAL connection-pool race documented in
+// the round 2 #4 commit) can construct a *sqlc.Queries via
+// db.GetQueries() and pass it in.
+func getLatestCoPresenceWithCohort(ctx context.Context, q *sqlc.Queries, candidateID string, cohortIDs []string, start, end time.Time) (time.Time, error) {
 	// Pad cohort to exactly coPresenceCohortCap IDs with empty
 	// sentinels that never match any real member. Empty string
 	// in the IN list means "no row can have member_id_b = ''"
@@ -165,7 +175,7 @@ func (db *DB) GetLatestCoPresenceWithCohort(ctx context.Context, candidateID str
 		c = cohortIDs[coPresenceCohortPad]
 	}
 
-	rowsA, err := db.queries.GetLatestCoPresenceWithCohortA(ctx, sqlc.GetLatestCoPresenceWithCohortAParams{
+	rowsA, err := q.GetLatestCoPresenceWithCohortA(ctx, sqlc.GetLatestCoPresenceWithCohortAParams{
 		Julianday:   start,
 		Julianday_2: end,
 		MemberIDA:   candidateID,
@@ -176,7 +186,7 @@ func (db *DB) GetLatestCoPresenceWithCohort(ctx context.Context, candidateID str
 	if err != nil {
 		return time.Time{}, err
 	}
-	rowsB, err := db.queries.GetLatestCoPresenceWithCohortB(ctx, sqlc.GetLatestCoPresenceWithCohortBParams{
+	rowsB, err := q.GetLatestCoPresenceWithCohortB(ctx, sqlc.GetLatestCoPresenceWithCohortBParams{
 		Julianday:   start,
 		Julianday_2: end,
 		MemberIDB:   candidateID,

@@ -45,6 +45,14 @@ const (
 	defaultTokenRatePerIP   = 30   // token bucket capacity per IP for /api/v1/tokens/*
 	defaultTokenRateRefillS = 60.0 // seconds over which a full bucket refills
 	defaultTokenRateRefill  = defaultTokenRatePerIP / defaultTokenRateRefillS
+
+	// minSessionSecretLength is the minimum SESSION_SECRET size enforced
+	// at server startup in non-development mode. The HMAC used by
+	// unsubscribe tokens (internal/notify/token.go) is keyed on this
+	// secret, so a short or empty value lets anyone forge unsubscribe
+	// tokens for arbitrary members. 16 bytes is the documented minimum
+	// in the same package's NewUnsubscribeToken comment.
+	minSessionSecretLength = 16
 )
 
 type Server struct {
@@ -66,7 +74,37 @@ type Server struct {
 	cleanupCancel context.CancelFunc
 }
 
+// validateSessionSecret enforces the production SESSION_SECRET
+// requirement called out in the security review (finding #1): when
+// the server runs in non-development mode, SESSION_SECRET must be
+// set and at least minSessionSecretLength bytes long. The secret
+// HMAC-signs per-recipient one-click unsubscribe tokens; an empty
+// or short key means anyone can forge those tokens for arbitrary
+// member IDs (the verifier uses hmac.Equal against an empty key,
+// so the empty-key HMAC is deterministic and reproducible).
+//
+// Development mode is exempt so local hacking isn't blocked by
+// the production hardening — the dev path uses the fake OAuth
+// provider which doesn't emit unsubscribe links in practice.
+func validateSessionSecret(development bool) error {
+	if development {
+		return nil
+	}
+	secret := os.Getenv("SESSION_SECRET")
+	if secret == "" {
+		return fmt.Errorf("SESSION_SECRET is required in production (set it to at least %d random bytes)", minSessionSecretLength)
+	}
+	if len(secret) < minSessionSecretLength {
+		return fmt.Errorf("SESSION_SECRET must be at least %d bytes in production (got %d)", minSessionSecretLength, len(secret))
+	}
+	return nil
+}
+
 func NewServer(db *database.DB, development bool) (*Server, error) {
+	if err := validateSessionSecret(development); err != nil {
+		return nil, err
+	}
+
 	router := chi.NewRouter()
 
 	// Setup authentication components

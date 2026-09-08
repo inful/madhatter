@@ -21,8 +21,10 @@ import (
 type UnsubscribeToken string
 
 // NewUnsubscribeToken returns a signed token for the given member ID.
-// secret must be at least 16 bytes; in production it is derived from
-// SESSION_SECRET, which is enforced at server startup.
+// The security review requires the secret to be at least 16 bytes;
+// SESSION_SECRET is enforced to that minimum at server startup by
+// api.validateSessionSecret, and the secret is wired in via the
+// UnsubscribeSecret field on api.ServerConfig.
 func NewUnsubscribeToken(memberID, secret string) UnsubscribeToken {
 	mac := hmac.New(sha256.New, []byte(secret))
 	_, _ = mac.Write([]byte(memberID))

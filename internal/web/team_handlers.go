@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/mail"
 	"strings"
@@ -228,6 +229,43 @@ func validateTeamMemberInput(name, email string) error {
 	// Validate email format.
 	if _, err := mail.ParseAddress(email); err != nil {
 		return errors.New("invalid email format")
+	}
+	// Security review finding #7: reject C0/C1 control characters
+	// in the name and the email local-part. A CRLF or NUL byte
+	// in either field would let a malicious admin inject
+	// structure into the ICS calendar feed (the ical.go path
+	// concatenates memberName into event.SUMMARY via
+	// fmt.Sprintf, and the library's line-folding/escape logic
+	// is not a substitute for input validation). The form layer
+	// is the right place to reject — the ICS generator is then
+	// free to assume the input is structurally clean.
+	if err := rejectControlCharacters("name", name); err != nil {
+		return err
+	}
+	if err := rejectControlCharacters("email", email); err != nil {
+		return err
+	}
+	return nil
+}
+
+// rejectControlCharacters returns an error if value contains
+// any C0 (0x00-0x1F) or C1 (0x80-0x9F) control code point.
+// Whitespace ASCII chars like space and tab are themselves C0
+// (0x09, 0x20) — we treat space as legitimate and only reject
+// the 30 control characters that are syntactically meaningless
+// in human names. Tab and newline are also rejected: tabs
+// don't belong in display names, and newlines are the
+// CRLF-injection vector.
+func rejectControlCharacters(field, value string) error {
+	for _, r := range value {
+		switch {
+		case r == '\t' || r == '\n' || r == '\r':
+			return fmt.Errorf("%s contains a disallowed control character (tab/newline/CR)", field)
+		case r < 0x20: //nolint:mnd // explicit literal makes the C0 boundary obvious
+			return fmt.Errorf("%s contains a disallowed control character (0x%02X)", field, r)
+		case r >= 0x7F && r <= 0x9F:
+			return fmt.Errorf("%s contains a disallowed C1 control character (U+%04X)", field, r)
+		}
 	}
 	return nil
 }

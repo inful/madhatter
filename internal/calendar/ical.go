@@ -38,6 +38,59 @@ func titleCase(s string) string {
 	return strings.Join(words, " ")
 }
 
+// sanitizeICalText strips characters that could be used to
+// forge a new ICS line when the input is concatenated into a
+// SUMMARY / DESCRIPTION field. The two threats are:
+//
+//   - CRLF injection: a member name like "Alice\r\nSUMMARY:
+//     forged" would otherwise produce two ICS lines. Calendar
+//     clients that don't strictly validate the ICS grammar
+//     could render the forged line as a separate event.
+//   - NUL byte truncation: some legacy calendar clients stop
+//     rendering at the first NUL byte, which lets a payload
+//     hide trailing content.
+//
+// The fix has two parts. Line-break characters (\r, \n, \t)
+// are replaced with single spaces so the multi-line input
+// becomes a single-line string. NUL is removed entirely (not
+// replaced with a space) since it carries no displayable
+// content and would otherwise visually merge surrounding
+// characters. The result is then collapsed to remove
+// double-spaces left by the replacement.
+//
+// Security review finding #7: this is the defense-in-depth
+// side of the form-layer control-character check in
+// web/team_handlers.go. Even if a CRLF reaches the generator
+// (via direct DB write, future API, etc.), it cannot produce
+// a new ICS line.
+func sanitizeICalText(s string) string {
+	if s == "" {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		switch r {
+		case '\r', '\n', '\t':
+			b.WriteByte(' ')
+		case '\x00':
+			// Drop the byte entirely; merging two
+			// displayable characters around a NUL would
+			// change the visual content.
+		default:
+			b.WriteRune(r)
+		}
+	}
+	out := b.String()
+	for {
+		collapsed := strings.ReplaceAll(out, "  ", " ")
+		if collapsed == out {
+			return collapsed
+		}
+		out = collapsed
+	}
+}
+
 // ICalGenerator handles iCalendar (.ics) file generation using golang-ical library.
 type ICalGenerator struct {
 	calendar *ics.Calendar
@@ -327,8 +380,10 @@ func (g *ICalGenerator) AddAssignmentWithSnapshot(assignment database.RotaAssign
 	event.SetAllDayStartAt(startDate)
 	event.SetAllDayEndAt(startDate.Add(hoursPerDay * time.Hour))
 
-	// Set summary.
-	summary := fmt.Sprintf("HAT day (%s)", memberName)
+	// Set summary. The memberName is sanitized to strip any
+	// control characters that would otherwise inject a new
+	// ICS line — see sanitizeICalText for the threat model.
+	summary := fmt.Sprintf("HAT day (%s)", sanitizeICalText(memberName))
 	if assignment.IsCover {
 		summary += " (COVER)"
 	}
@@ -409,8 +464,8 @@ func (g *ICalGenerator) AddLeaveEventWithSnapshot(memberName string, leaveType s
 	event.SetAllDayStartAt(startDate)
 	event.SetAllDayEndAt(endDate.Add(hoursPerDay * time.Hour)) // End date is exclusive in iCalendar
 
-	summary := fmt.Sprintf("%s - %s", memberName, titleCase(leaveType))
-	baseText := fmt.Sprintf("%s leave for %s", titleCase(leaveType), memberName)
+	summary := fmt.Sprintf("%s - %s", sanitizeICalText(memberName), titleCase(sanitizeICalText(leaveType)))
+	baseText := fmt.Sprintf("%s leave for %s", titleCase(sanitizeICalText(leaveType)), sanitizeICalText(memberName))
 	event.SetSummary(summary)
 
 	if snap == nil {

@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
@@ -148,7 +149,7 @@ func (am *AuthManager) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	queryState := r.URL.Query().Get("state")
-	if queryState != stateCookie.Value {
+	if !validateState(stateCookie.Value, queryState) {
 		http.Error(w, "State mismatch", http.StatusBadRequest)
 		return
 	}
@@ -302,6 +303,28 @@ func (am *AuthManager) clearOAuthStateCookie(w http.ResponseWriter, r *http.Requ
 		Secure:   scheme == "https",
 		SameSite: http.SameSiteLaxMode,
 	})
+}
+
+// validateState reports whether the OAuth callback's state
+// query parameter matches the state cookie. The comparison uses
+// crypto/subtle.ConstantTimeCompare so an attacker can't
+// recover the cookie value byte-by-byte from response timing.
+//
+// Security review finding #5: the previous inline `!=` compare
+// short-circuited on the first differing byte, leaking the
+// position of the first mismatch in network timing. The
+// constant-time fix wraps the comparison in subtle, but the
+// helper also has to handle the length-mismatch case before
+// reaching the compare — subtle.ConstantTimeCompare returns 0
+// for different-length inputs (a length-based timing leak of
+// its own), so we check the lengths first and only then run the
+// content compare. Both checks together close the timing
+// channel.
+func validateState(cookie, query string) bool {
+	if len(cookie) != len(query) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(cookie), []byte(query)) == 1
 }
 
 // baseURL derives the request's base URL (scheme + host) for use

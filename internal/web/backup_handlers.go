@@ -33,7 +33,7 @@ func (h *Handler) handleDatabaseBackup(w http.ResponseWriter, r *http.Request) {
 
 	backupBytes, err := h.db.CreateBackup(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Failed to create backup.", err)
 		return
 	}
 
@@ -65,7 +65,7 @@ func (h *Handler) handleDatabaseRestore(w http.ResponseWriter, r *http.Request) 
 func (h *Handler) handleDatabaseRestorePost(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxRestoreUploadBytes)
 	if err := r.ParseMultipartForm(maxMultipartMemoryLimit); err != nil { //nolint:gosec // bounded by MaxBytesReader above
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		httpError(w, r, http.StatusBadRequest, "Invalid restore upload.", err)
 		return
 	}
 
@@ -95,7 +95,7 @@ func (h *Handler) handleDatabaseRestorePost(w http.ResponseWriter, r *http.Reque
 
 	validatedToken, err = h.storePendingRestore(content)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Failed to stage restore.", err)
 		return
 	}
 
@@ -129,7 +129,7 @@ func (h *Handler) readRestoreUpload(w http.ResponseWriter, r *http.Request) ([]b
 
 	content, err := io.ReadAll(io.LimitReader(file, maxRestoreUploadBytes+1))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		httpError(w, r, http.StatusBadRequest, "Failed to read restore upload.", err)
 		return nil, err
 	}
 
@@ -191,7 +191,7 @@ func (h *Handler) renderDatabaseRestore(w http.ResponseWriter, r *http.Request, 
 	}
 
 	if err := h.tmpl.ExecuteTemplate(w, "database_restore.html", data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Failed to render restore page.", err)
 	}
 }
 

@@ -34,7 +34,7 @@ func (h *Handler) handleTeamPost(w http.ResponseWriter, r *http.Request) {
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxTeamFormBytes)
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		httpError(w, r, http.StatusBadRequest, "Invalid request.", err)
 		return
 	}
 
@@ -45,18 +45,18 @@ func (h *Handler) handleTeamPost(w http.ResponseWriter, r *http.Request) {
 	// name (or any other non-address) into the email field gets
 	// immediate feedback, not a 30-minute outbox retry loop.
 	if err := validateTeamMemberInput(name, email); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		httpError(w, r, http.StatusBadRequest, "Invalid request.", err)
 		return
 	}
 
 	_, err := h.db.AddTeamMember(ctx, name, email)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
 	if err := h.maintenance.HandleTeamChange(ctx); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
@@ -97,7 +97,7 @@ func (h *Handler) handleTeam(w http.ResponseWriter, r *http.Request) {
 
 	members, err := h.db.GetActiveTeamMembers(ctx)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
@@ -110,22 +110,22 @@ func (h *Handler) handleTeam(w http.ResponseWriter, r *http.Request) {
 
 	users, err := h.db.GetQueries().ListActiveUsers(ctx)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 	adminCount, err := h.db.GetQueries().CountAdmins(ctx)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 	pendingUsers, err := h.db.GetQueries().ListPendingUsers(ctx)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 	deactivatedUsers, err := h.db.GetQueries().ListDeactivatedUsers(ctx)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
@@ -142,14 +142,14 @@ func (h *Handler) handleTeam(w http.ResponseWriter, r *http.Request) {
 	since := time.Now().AddDate(0, 0, -activeSubscriptionDays)
 	activity, err := h.db.GetSubscriptionActivityByMember(ctx, since)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
 	data["SubscriptionActivity"] = activity
 
 	if err := h.tmpl.ExecuteTemplate(w, "team.html", data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 	}
 }
 
@@ -281,7 +281,7 @@ func (h *Handler) handleTeamMemberEdit(w http.ResponseWriter, r *http.Request) {
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxTeamFormBytes)
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		httpError(w, r, http.StatusBadRequest, "Invalid request.", err)
 		return
 	}
 
@@ -290,12 +290,12 @@ func (h *Handler) handleTeamMemberEdit(w http.ResponseWriter, r *http.Request) {
 
 	// Validate input at handler level.
 	if err := validateTeamMemberInput(name, email); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		httpError(w, r, http.StatusBadRequest, "Invalid request.", err)
 		return
 	}
 
 	if err := h.db.UpdateTeamMember(ctx, memberID, name, email); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
@@ -313,7 +313,7 @@ func (h *Handler) handleTeamMemberPermanentWFHUpdate(w http.ResponseWriter, r *h
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxTeamFormBytes)
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		httpError(w, r, http.StatusBadRequest, "Invalid request.", err)
 		return
 	}
 
@@ -331,12 +331,12 @@ func (h *Handler) handleTeamMemberPermanentWFHUpdate(w http.ResponseWriter, r *h
 		return
 	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
 	if err := h.db.SetTeamMemberRecurringWFHDays(ctx, memberID, days); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
@@ -365,7 +365,7 @@ func (h *Handler) handleTeamMemberExemptUpdate(w http.ResponseWriter, r *http.Re
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxTeamFormBytes)
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		httpError(w, r, http.StatusBadRequest, "Invalid request.", err)
 		return
 	}
 
@@ -375,13 +375,13 @@ func (h *Handler) handleTeamMemberExemptUpdate(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
 	exempt := parseCheckboxBool(r.PostForm.Get("is_exempt_from_assignment"))
 	if err := h.db.SetTeamMemberExemptFromAssignment(ctx, memberID, exempt); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
@@ -421,7 +421,7 @@ func (h *Handler) handleUserAdminUpdate(w http.ResponseWriter, r *http.Request) 
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, maxTeamFormBytes)
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		httpError(w, r, http.StatusBadRequest, "Invalid request.", err)
 		return
 	}
 
@@ -433,7 +433,7 @@ func (h *Handler) handleUserAdminUpdate(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
@@ -449,7 +449,7 @@ func (h *Handler) handleUserAdminUpdate(w http.ResponseWriter, r *http.Request) 
 		IsActive: user.IsActive,
 		ID:       user.ID,
 	}); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
@@ -473,13 +473,13 @@ func (h *Handler) handleTeamMemberDelete(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := h.db.DeleteTeamMember(ctx, memberID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
 	// Handle team change - update schedule.
 	if err := h.maintenance.HandleTeamChange(ctx); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 

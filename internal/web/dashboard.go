@@ -38,7 +38,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 
 	members, err := h.db.GetActiveTeamMembers(ctx)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
@@ -47,7 +47,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if _, err = h.maintenance.EnsureSchedule(ctx); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
@@ -77,7 +77,7 @@ func (h *Handler) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	data["HatLinkURL"] = os.Getenv("HAT_LINK_URL")
 
 	if err := h.tmpl.ExecuteTemplate(w, "dashboard.html", data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 	}
 }
 

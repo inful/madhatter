@@ -31,7 +31,7 @@ func (h *Handler) handleUserApprove(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "user not found", http.StatusNotFound)
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
@@ -58,12 +58,12 @@ func (h *Handler) handleUserDeny(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
 	if err := h.denyPendingUser(ctx, user); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
@@ -117,7 +117,7 @@ func (h *Handler) handleUserDeactivate(w http.ResponseWriter, r *http.Request) {
 
 	user, err := h.db.GetQueries().GetUserByID(ctx, userID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
@@ -128,7 +128,7 @@ func (h *Handler) handleUserDeactivate(w http.ResponseWriter, r *http.Request) {
 	if auth.IsAdmin(user.IsAdmin) {
 		adminCount, err := h.db.GetQueries().CountAdmins(ctx)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 			return
 		}
 		if adminCount <= 1 {
@@ -138,7 +138,7 @@ func (h *Handler) handleUserDeactivate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if _, err := h.db.GetQueries().DeactivateUser(ctx, userID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
@@ -161,7 +161,7 @@ func (h *Handler) handleUserReactivate(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "id")
 
 	if _, err := h.db.GetQueries().ReactivateUser(ctx, userID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 

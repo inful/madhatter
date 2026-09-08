@@ -76,7 +76,7 @@ func (h *Handler) handleSwaps(w http.ResponseWriter, r *http.Request) {
 		delete(data, "MemberID")
 		data["Error"] = errNotTeamMember
 		if err := h.tmpl.ExecuteTemplate(w, "swaps.html", data); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		}
 		return
 	}
@@ -93,7 +93,7 @@ func (h *Handler) handleSwapRequestPost(w http.ResponseWriter, r *http.Request, 
 	ctx := r.Context()
 
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		httpError(w, r, http.StatusBadRequest, "Invalid request.", err)
 		return
 	}
 
@@ -199,7 +199,7 @@ func (h *Handler) handleSwapCancel(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
@@ -249,7 +249,7 @@ func (h *Handler) handleSwapAccept(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
@@ -298,7 +298,7 @@ func (h *Handler) handleSwapReject(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
@@ -330,7 +330,7 @@ func (h *Handler) handleSwapAdminDelete(w http.ResponseWriter, r *http.Request) 
 	swapID := chi.URLParam(r, "id")
 
 	if err := h.db.DeleteHatSwap(ctx, swapID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
@@ -346,12 +346,12 @@ func (h *Handler) renderSwapsPage(w http.ResponseWriter, r *http.Request, data m
 	}
 
 	if err := h.loadSwapsData(ctx, data, memberID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
 	if err := h.tmpl.ExecuteTemplate(w, "swaps.html", data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 	}
 }
 

@@ -26,7 +26,7 @@ func (h *Handler) handleWFHAdminReassign(w http.ResponseWriter, r *http.Request)
 	id := chi.URLParam(r, "id")
 
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		httpError(w, r, http.StatusBadRequest, "Invalid request.", err)
 		return
 	}
 	replacementID := r.FormValue("replacement_member_id")
@@ -118,7 +118,7 @@ func (h *Handler) handleWFHSwapForm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.tmpl.ExecuteTemplate(w, "wfh_swap.html", data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 	}
 }
 
@@ -140,7 +140,7 @@ func (h *Handler) handleWFHSwapCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		httpError(w, r, http.StatusBadRequest, "Invalid request.", err)
 		return
 	}
 	targetID := r.FormValue("target_member_id")
@@ -303,7 +303,7 @@ func (h *Handler) handleWFHSwapInbox(w http.ResponseWriter, r *http.Request) {
 	data["PendingSwaps"] = enriched
 
 	if err := h.tmpl.ExecuteTemplate(w, "wfh_swap_inbox.html", data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 	}
 }
 

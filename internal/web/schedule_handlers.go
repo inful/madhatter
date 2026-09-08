@@ -21,12 +21,12 @@ func (h *Handler) handleScheduleGenerate(w http.ResponseWriter, r *http.Request)
 func (h *Handler) handleScheduleGeneratePost(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		httpError(w, r, http.StatusBadRequest, "Invalid request.", err)
 		return
 	}
 
 	// Validate team members.
-	if !h.validateTeamMembers(ctx, w) {
+	if !h.validateTeamMembers(ctx, w, r) {
 		return
 	}
 
@@ -46,7 +46,7 @@ func (h *Handler) handleScheduleGeneratePost(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
@@ -85,7 +85,7 @@ func inclusiveWeekdayCount(from, to time.Time) int {
 
 func (h *Handler) handleScheduleGenerateGet(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	if !h.validateTeamMembers(ctx, w) {
+	if !h.validateTeamMembers(ctx, w, r) {
 		return
 	}
 
@@ -104,14 +104,14 @@ func (h *Handler) handleScheduleGenerateGet(w http.ResponseWriter, r *http.Reque
 	data["DefaultEnd"] = now.AddDate(0, 1, 0).Format("2006-01-02")
 
 	if err := h.tmpl.ExecuteTemplate(w, "schedule_generate.html", data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 	}
 }
 
-func (h *Handler) validateTeamMembers(ctx context.Context, w http.ResponseWriter) bool {
+func (h *Handler) validateTeamMembers(ctx context.Context, w http.ResponseWriter, r *http.Request) bool {
 	members, err := h.db.GetActiveTeamMembers(ctx)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return false
 	}
 	if len(members) == 0 {

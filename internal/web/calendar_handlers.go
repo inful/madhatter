@@ -37,13 +37,13 @@ func setSubscriptionURLs(r *http.Request, token string, data map[string]any) {
 func (h *Handler) handleCalendarAdminPost(w http.ResponseWriter, r *http.Request, data map[string]any) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxCalendarFormBytes)
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		httpError(w, r, http.StatusBadRequest, "Invalid request.", err)
 		return
 	}
 
 	token, err := h.db.CreateCalendarSubscription(r.Context(), r.PostForm.Get("member_id"))
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
@@ -52,14 +52,14 @@ func (h *Handler) handleCalendarAdminPost(w http.ResponseWriter, r *http.Request
 
 	members, err := h.db.GetActiveTeamMembers(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
 	data["Members"] = members
 
 	if err := h.tmpl.ExecuteTemplate(w, "calendar.html", data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 	}
 }
 
@@ -115,7 +115,7 @@ func (h *Handler) handleCalendar(w http.ResponseWriter, r *http.Request) {
 	if isAdmin {
 		members, err := h.db.GetActiveTeamMembers(ctx)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 			return
 		}
 
@@ -123,7 +123,7 @@ func (h *Handler) handleCalendar(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.tmpl.ExecuteTemplate(w, "calendar.html", data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 	}
 }
 
@@ -221,7 +221,7 @@ func (h *Handler) handleCalendarICS(w http.ResponseWriter, r *http.Request) {
 		opts,
 	)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		httpError(w, r, http.StatusNotFound, "Not found.", err)
 		return
 	}
 
@@ -291,7 +291,7 @@ func (h *Handler) handleMeetingsCalendarICS(w http.ResponseWriter, r *http.Reque
 		h.isBusinessDay,
 	)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		httpError(w, r, http.StatusNotFound, "Not found.", err)
 		return
 	}
 
@@ -339,7 +339,7 @@ func (h *Handler) handleMeetingsDayHTML(w http.ResponseWriter, r *http.Request) 
 		h.isBusinessDay,
 	)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
@@ -355,7 +355,7 @@ func (h *Handler) handleMeetingsDayHTML(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := h.tmpl.ExecuteTemplate(w, "calendar_meetings_day.html", data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 	}
 }
 
@@ -374,7 +374,7 @@ func (h *Handler) handleTeamCalendarICS(w http.ResponseWriter, r *http.Request) 
 		h.buildSupportCalendarOptions(),
 	)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
+		httpError(w, r, http.StatusNotFound, "Not found.", err)
 		return
 	}
 
@@ -487,14 +487,14 @@ func (h *Handler) renderCalendarSubscriptionsPage(w http.ResponseWriter, r *http
 
 	subs, err := h.db.GetAllSubscriptions(ctx)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
 	data["Subscriptions"] = subs
 
 	if err := h.tmpl.ExecuteTemplate(w, "calendar_subscriptions.html", data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 	}
 }
 
@@ -512,7 +512,7 @@ func (h *Handler) handleCalendarSubscriptionsCleanup(w http.ResponseWriter, r *h
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxCalendarFormBytes)
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		httpError(w, r, http.StatusBadRequest, "Invalid request.", err)
 		return
 	}
 
@@ -526,7 +526,7 @@ func (h *Handler) handleCalendarSubscriptionsCleanup(w http.ResponseWriter, r *h
 	cutoff := time.Now().AddDate(0, 0, -days)
 	deleted, err := h.db.DeleteStaleSubscriptions(ctx, cutoff)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 

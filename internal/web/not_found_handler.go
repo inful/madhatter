@@ -21,6 +21,6 @@ func (h *Handler) handleNotFound(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusNotFound)
 	if err := h.tmpl.ExecuteTemplate(w, "not_found.html", data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 	}
 }

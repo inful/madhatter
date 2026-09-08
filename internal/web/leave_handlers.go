@@ -52,7 +52,7 @@ func (h *Handler) handleLeaveReportPost(w http.ResponseWriter, r *http.Request, 
 	r.Body = http.MaxBytesReader(w, r.Body, maxLeaveFormBytes)
 
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		httpError(w, r, http.StatusBadRequest, "Invalid request.", err)
 		return
 	}
 
@@ -102,7 +102,7 @@ func (h *Handler) handleLeaveReportPost(w http.ResponseWriter, r *http.Request, 
 	}
 
 	if err := h.maintenance.HandleLeaveChange(ctx, leaveID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
@@ -118,7 +118,7 @@ func (h *Handler) renderLeaveReportForm(w http.ResponseWriter, r *http.Request, 
 
 	members, err := h.db.GetActiveTeamMembers(ctx)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
@@ -138,7 +138,7 @@ func (h *Handler) renderLeaveReportForm(w http.ResponseWriter, r *http.Request, 
 	}
 
 	if err := h.tmpl.ExecuteTemplate(w, "leave_report.html", data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 	}
 }
 
@@ -187,7 +187,7 @@ func (h *Handler) handleLeaveManagement(w http.ResponseWriter, r *http.Request) 
 			data["Members"] = []database.TeamMember{}
 			data["SelfMemberID"] = ""
 			if err := h.tmpl.ExecuteTemplate(w, "leave_management.html", data); err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 			}
 			return
 		}
@@ -196,7 +196,7 @@ func (h *Handler) handleLeaveManagement(w http.ResponseWriter, r *http.Request) 
 
 	leaves, err := h.loadLeaveRowsForScope(ctx, scopeMemberID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
@@ -207,7 +207,7 @@ func (h *Handler) handleLeaveManagement(w http.ResponseWriter, r *http.Request) 
 	data["Leaves"] = h.enrichLeavesWithNames(ctx, leaves, members)
 
 	if err := h.tmpl.ExecuteTemplate(w, "leave_management.html", data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 	}
 }
 
@@ -270,7 +270,7 @@ func (h *Handler) handleLeaveEdit(w http.ResponseWriter, r *http.Request) {
 	selfMemberID := h.resolveMemberID(ctx, user.Email)
 	existing, err := h.db.GetLeaveByID(ctx, leaveID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 	if !canMutateLeave(selfMemberID, existing.MemberID, isAdmin) {
@@ -288,13 +288,13 @@ func (h *Handler) handleLeaveEdit(w http.ResponseWriter, r *http.Request) {
 	// status, which is managed by the scheduling engine and must be
 	// preserved across an edit.
 	if err := h.db.UpdateLeaveRecord(ctx, leaveID, memberID, startDate, endDate, existing.Status, leaveType); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
 	// Handle leave change using maintenance service.
 	if err := h.maintenance.HandleLeaveChange(ctx, leaveID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
@@ -314,7 +314,7 @@ func (h *Handler) handleLeaveEdit(w http.ResponseWriter, r *http.Request) {
 func parseLeaveEditForm(w http.ResponseWriter, r *http.Request, isAdmin bool, selfMemberID, existingLeaveType string) (memberID, startDate, endDate, leaveType string, ok bool) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxLeaveFormBytes)
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		httpError(w, r, http.StatusBadRequest, "Invalid request.", err)
 		return "", "", "", "", false
 	}
 
@@ -345,7 +345,7 @@ func parseLeaveEditForm(w http.ResponseWriter, r *http.Request, isAdmin bool, se
 	}
 
 	if err := validateLeaveDates(startDate, endDate); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		httpError(w, r, http.StatusBadRequest, "Invalid request.", err)
 		return "", "", "", "", false
 	}
 
@@ -367,7 +367,7 @@ func (h *Handler) handleLeaveDelete(w http.ResponseWriter, r *http.Request) {
 	selfMemberID := h.resolveMemberID(ctx, user.Email)
 	existing, err := h.db.GetLeaveByID(ctx, leaveID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 	if !canMutateLeave(selfMemberID, existing.MemberID, isAdmin) {
@@ -376,7 +376,7 @@ func (h *Handler) handleLeaveDelete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.maintenance.HandleLeaveDelete(ctx, leaveID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
@@ -481,7 +481,7 @@ func (h *Handler) handleLeaveReportSickPost(w http.ResponseWriter, r *http.Reque
 	}
 
 	if err := h.maintenance.HandleLeaveChange(ctx, leaveID); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
@@ -558,7 +558,7 @@ type sickLeaveFormValues struct {
 func parseSickLeaveForm(w http.ResponseWriter, r *http.Request) (memberID string, ok bool) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxLeaveFormBytes)
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		httpError(w, r, http.StatusBadRequest, "Invalid request.", err)
 		return "", false
 	}
 	return strings.TrimSpace(r.PostForm.Get("member_id")), true
@@ -612,7 +612,7 @@ func (h *Handler) renderLeaveReportSickForm(w http.ResponseWriter, r *http.Reque
 
 	members, err := h.db.GetActiveTeamMembers(ctx)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
@@ -627,6 +627,6 @@ func (h *Handler) renderLeaveReportSickForm(w http.ResponseWriter, r *http.Reque
 	data["EndDate"] = vals.Today
 
 	if err := h.tmpl.ExecuteTemplate(w, "leave_report_sick.html", data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 	}
 }

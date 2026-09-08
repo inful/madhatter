@@ -42,7 +42,7 @@ func (h *Handler) handleWFHList(w http.ResponseWriter, r *http.Request) {
 	if memberID == "" {
 		data["Error"] = errNotTeamMember
 		if err := h.tmpl.ExecuteTemplate(w, "wfh_list.html", data); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		}
 		return
 	}
@@ -63,7 +63,7 @@ func (h *Handler) handleWFHList(w http.ResponseWriter, r *http.Request) {
 
 	requests, err := h.db.GetWFHRequestsByMember(ctx, memberID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
@@ -78,7 +78,7 @@ func (h *Handler) handleWFHList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.tmpl.ExecuteTemplate(w, "wfh_list.html", data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 	}
 }
 
@@ -92,7 +92,7 @@ func (h *Handler) handleWFHRequest(w http.ResponseWriter, r *http.Request) {
 	if memberID == "" {
 		data["Error"] = errNotTeamMember
 		if err := h.tmpl.ExecuteTemplate(w, "wfh_request.html", data); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		}
 		return
 	}
@@ -112,7 +112,7 @@ func (h *Handler) handleWFHRequestPost(w http.ResponseWriter, r *http.Request, d
 	r.Body = http.MaxBytesReader(w, r.Body, maxWFHFormBytes)
 
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		httpError(w, r, http.StatusBadRequest, "Invalid request.", err)
 		return
 	}
 
@@ -191,7 +191,7 @@ func (h *Handler) renderWFHRequestFormAt(w http.ResponseWriter, r *http.Request,
 	}
 
 	if err := h.tmpl.ExecuteTemplate(w, "wfh_request.html", data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 	}
 }
 
@@ -324,7 +324,7 @@ func (h *Handler) handleWFHReportToday(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
@@ -395,7 +395,7 @@ func (h *Handler) handleWFHTodayOnSite(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
@@ -452,7 +452,7 @@ func (h *Handler) handleWFHOnSiteOnDate(w http.ResponseWriter, r *http.Request) 
 			})
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
@@ -500,7 +500,7 @@ func (h *Handler) handleWFHAdminPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.tmpl.ExecuteTemplate(w, "wfh_manage.html", data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 	}
 }
 
@@ -623,7 +623,7 @@ func (h *Handler) handleWFHAdminSettle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.wfhService.SettlePendingRequests(ctx); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
@@ -645,7 +645,7 @@ func (h *Handler) handleAdminMarkWFHPage(w http.ResponseWriter, r *http.Request)
 
 	members, err := h.db.GetActiveTeamMembers(ctx)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 	type memberOption struct {
@@ -663,7 +663,7 @@ func (h *Handler) handleAdminMarkWFHPage(w http.ResponseWriter, r *http.Request)
 	data["Today"] = time.Now().UTC().Format("2006-01-02")
 
 	if err := h.tmpl.ExecuteTemplate(w, "wfh_mark.html", data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 	}
 }
 
@@ -741,7 +741,7 @@ func (h *Handler) handleAdminMarkWFH(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 
@@ -826,7 +826,7 @@ func (h *Handler) handleWFHPurge(w http.ResponseWriter, r *http.Request) {
 
 	cutoff, wouldDelete, err := h.wfhService.PurgePastPeriodsDryRun(ctx)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}
 	data["Cutoff"] = cutoff
@@ -834,7 +834,7 @@ func (h *Handler) handleWFHPurge(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method == http.MethodPost {
 		if err := r.ParseForm(); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			httpError(w, r, http.StatusBadRequest, "Invalid request.", err)
 			return
 		}
 		if r.FormValue("confirm") != "true" {
@@ -847,7 +847,7 @@ func (h *Handler) handleWFHPurge(w http.ResponseWriter, r *http.Request) {
 		// the count we delete to match the value we just showed.
 		cutoff, deleted, err := h.wfhService.PurgePastPeriods(ctx)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 			return
 		}
 		SetFlash(w, r, "/admin/wfh", Flash{
@@ -863,9 +863,9 @@ func (h *Handler) handleWFHPurge(w http.ResponseWriter, r *http.Request) {
 
 // renderWFHPurge executes the purge template. The data map is expected
 // to contain either Error (when disabled) or Cutoff + WouldDelete.
-func (h *Handler) renderWFHPurge(w http.ResponseWriter, _ *http.Request, data map[string]any) {
+func (h *Handler) renderWFHPurge(w http.ResponseWriter, r *http.Request, data map[string]any) {
 	if err := h.tmpl.ExecuteTemplate(w, "wfh_purge.html", data); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 	}
 }
 

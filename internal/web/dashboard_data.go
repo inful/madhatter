@@ -382,6 +382,30 @@ func todayFullTeamOnSite(data map[string]any) bool {
 	return false
 }
 
+// funEffectsFor resolves the trigger flags for the dashboard's
+// optional fun effects. Returns (confetti, snow) booleans that
+// drive the vendored canvas-confetti bundle:
+//
+//   - Confetti fires on a business day when the entire team is
+//     on-site (the same condition that drives the existing
+//     .full-team-banner). Suppressing it on weekends and holidays
+//     mirrors the banner's TodayIsBusinessDay gate — neither
+//     effect should run on a day with no team in the office.
+//
+//   - Snow fires whenever the date's month is December. The
+//     operator-level SNOW_ENABLED gate is read at Handler
+//     construction (see NewHandler); this helper is the per-request
+//     "should this fire on this date" decision only.
+//
+// The signature is intentionally pure (takes all four inputs as
+// parameters) so the test cases can pin every branch without
+// faking a Handler or a database connection.
+func funEffectsFor(now time.Time, fullTeamOnSite, isBusinessDay, confettiEnabled, snowEnabled bool) (confetti, snow bool) {
+	confetti = confettiEnabled && fullTeamOnSite && isBusinessDay
+	snow = snowEnabled && now.Month() == time.December
+	return confetti, snow
+}
+
 // loadDashboardData populates the dashboard with today's and week's
 // assignments. The orchestrator (handleDashboard) calls this after
 // the schedule is ensured so presence snapshots are stable.
@@ -401,6 +425,18 @@ func (h *Handler) loadTodayContext(now time.Time, data map[string]any) {
 	data["TodayIsWeekend"] = isWeekend
 	data["TodayIsHoliday"] = isHoliday
 	data["TodayIsBusinessDay"] = !isWeekend && !isHoliday
+
+	// Fun effects (issue #59). confettiEnabled / snowEnabled were
+	// resolved once at Handler construction from CONFETTI_ENABLED /
+	// SNOW_ENABLED (defaults true). The per-request work here is
+	// just the date-and-context check — fullTeamOnSite probes the
+	// already-built ScheduleMatrix, and the snow test is a single
+	// month comparison. The dashboard template turns the booleans
+	// into a hidden <div> with data-confetti / data-snow attributes
+	// that fun-effects.js reads.
+	confetti, snow := funEffectsFor(now, todayFullTeamOnSite(data), data["TodayIsBusinessDay"].(bool), h.confettiEnabled, h.snowEnabled)
+	data["FunEffectsConfetti"] = confetti
+	data["FunEffectsSnow"] = snow
 
 	if isHoliday && h.holidayLookup != nil {
 		if name, ok := h.holidayLookup.GetHoliday(now.Format("2006-01-02")); ok {

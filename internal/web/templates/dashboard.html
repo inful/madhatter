@@ -8,6 +8,23 @@
 {{template "page_header" (dict "Title" "Dashboard" "Icon" "fas fa-calendar-check")}}
 
 {{/*
+    Fun effects config (issue #59). The dashboard template resolves
+    FunEffectsConfetti / FunEffectsSnow via the loadTodayContext
+    loader (which calls funEffectsFor) and we surface them here as
+    data-* attributes on a hidden div. fun-effects.js reads them
+    once on DOMContentLoaded and fires the vendored canvas-confetti
+    bundle accordingly — confetti when the team is all on-site,
+    falling snow throughout December. The div is aria-hidden and
+    not visible to screen readers; it carries no text content, just
+    attribute flags. Confetti / snow are independent — a December
+    day with the full team on-site fires both.
+*/}}
+<div id="fun-effects-config"
+     data-confetti="{{if .FunEffectsConfetti}}true{{else}}false{{end}}"
+     data-snow="{{if .FunEffectsSnow}}true{{else}}false{{end}}"
+     aria-hidden="true" style="display:none"></div>
+
+{{/*
     Full-team-on-site celebration banner. Renders only when
     TODAY is a business day AND every member tracked in the
     schedule matrix is on-site (no WFH, no leave, at least one
@@ -1227,4 +1244,25 @@
 {{end}}
 
 {{define "dashboard_scripts"}}
+{{/*
+    Fun effects (issue #59). The first script tag loads the
+    vendored canvas-confetti bundle (Kiril Vatev, ISC license —
+    see assets/js/canvas-confetti.LICENSE). The second tag is
+    our thin wrapper that reads the #fun-effects-config div
+    above and fires either a celebratory confetti burst (when the
+    team is all on-site) or a gently falling snow storm (during
+    December) using recipes adapted from the upstream
+    kirilv.com/canvas-confetti/ demos.
+
+    The bundle and the wrapper are loaded from base.html-style
+    /static/ paths so the strict CSP keeps `script-src 'self'`
+    without exception — no inline scripts, no CDN allows.
+
+    The two scripts are loaded only on the dashboard because the
+    effects are dashboard-only (issue says "celebrate" and "make
+    it snow"; both fire on the page the user opens after
+    logging in, not on every authenticated page).
+*/}}
+<script src="/static/js/canvas-confetti.browser.min.js"></script>
+<script src="/static/js/fun-effects.js"></script>
 {{end}}

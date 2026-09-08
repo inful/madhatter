@@ -13,12 +13,16 @@ import (
 // middleware keep its strict default-src 'self' without exception
 // (the previous CDN-allow whack-a-mole shipped with v0.19.0 and
 // v0.19.2 broke the page layout twice as new dependencies were
-// discovered). The three upstream sources are:
+// discovered). The upstream sources are:
 //
 //   - HTMX 1.9.10  (https://unpkg.com/htmx.org@1.9.10) — script
 //   - Bulma 0.9.4   (https://cdn.jsdelivr.net/npm/bulma@0.9.4) — CSS
 //   - FontAwesome 6.4.0 (https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0)
 //     — CSS + 7 webfonts (brands/regular/solid/v4compatibility × ttf/woff2)
+//   - canvas-confetti 1.9.3 (https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3)
+//     — script, used by the dashboard's full-team-on-site celebration
+//     (see issues/59). Vendored so the strict CSP stays at 'self'
+//     and the confetti can't be silently broken by an upstream outage.
 //
 // Update this set in lockstep with base.html: any new <script> or
 // <link> tag in the base template needs a corresponding file here.

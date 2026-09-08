@@ -11,6 +11,7 @@ import (
 	"github.com/inful/madhatter/internal/auth"
 	"github.com/inful/madhatter/internal/calendar"
 	"github.com/inful/madhatter/internal/database"
+	"github.com/inful/madhatter/internal/envutil"
 	"github.com/inful/madhatter/internal/notify"
 	"github.com/inful/madhatter/internal/ratelimit"
 	"github.com/inful/madhatter/internal/rota"
@@ -68,6 +69,15 @@ type Handler struct {
 	unsubscribeSecret string
 	publicBaseURL     string
 	unsubscribeURLFn  func(memberID string) string
+
+	// Fun-effects toggles. Resolved once at construction from the
+	// CONFETTI_ENABLED / SNOW_ENABLED env vars (default true)
+	// so a per-request read isn't needed. The dashboard template
+	// renders these into the FunEffectsConfetti / FunEffectsSnow
+	// data map values, which the dashboard_scripts block turns
+	// into a hidden <div> attribute that fun-effects.js reads.
+	confettiEnabled bool
+	snowEnabled     bool
 }
 
 type pendingRestoreItem struct {
@@ -279,6 +289,8 @@ func NewHandler(db *database.DB, authManager *auth.AuthManager, authMiddleware *
 		development:     development,
 		pendingRestore:  make(map[string]pendingRestoreItem),
 		authRateLimiter: ratelimit.New(defaultAuthRateLimit, defaultAuthRateRefill),
+		confettiEnabled: envutil.Bool("CONFETTI_ENABLED", true),
+		snowEnabled:     envutil.Bool("SNOW_ENABLED", true),
 	}
 
 	h.registerRoutes()

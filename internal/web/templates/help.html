@@ -209,6 +209,28 @@
 <div class="card">
     <header class="card-header">
         <p class="card-header-title">
+            <i class="fas fa-party-horn mr-2"></i> Fun Effects
+        </p>
+    </header>
+    <div class="card-content">
+        <div class="content">
+            <p>The dashboard ships with two small visual rewards so the team gets a little delight when something out-of-the-ordinary happens.</p>
+
+            <h4 class="title is-6 mb-2 mt-4">Full-team confetti</h4>
+            <p>When the <strong>entire team</strong> is on-site on a business day &mdash; no one working from home, no one on leave &mdash; the dashboard fires a celebratory confetti burst from both sides of the page. The burst uses the <a href="https://github.com/catdad/canvas-confetti">canvas-confetti</a> library, which is vendored under <code>/static/</code> alongside the other third-party assets (HTMX, Bulma, FontAwesome) so the strict <code>script-src 'self'</code> CSP stays tight. The burst is the same <code>realistic()</code> recipe from the upstream demo &mdash; five staggered sub-bursts with varied spreads and scalars so it reads as a natural celebration rather than a single flat cone.</p>
+
+            <h4 class="title is-6 mb-2 mt-4">December snow</h4>
+            <p>Throughout December the dashboard runs a 45-second gently-falling snow storm using the library's particle physics (the upstream <code>snow()</code> recipe &mdash; one particle per animation frame with low gravity and a small horizontal drift). The storm runs once per dashboard visit and stops on its own.</p>
+
+            <h4 class="title is-6 mb-2 mt-4">Accessibility &amp; overrides</h4>
+            <p>Both effects respect the OS-level <code>prefers-reduced-motion: reduce</code> preference &mdash; confetti uses the library's built-in <code>disableForReducedMotion</code> flag, and the snow loop short-circuits before the first animation frame. Operators who want to disable either effect can set <code>CONFETTI_ENABLED=false</code> or <code>SNOW_ENABLED=false</code> at startup; the env var defaults to <code>true</code> for both. The two flags are independent &mdash; setting one to <code>false</code> leaves the other firing as usual.</p>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <header class="card-header">
+        <p class="card-header-title">
             <i class="fas fa-shuffle mr-2"></i> How HAT Days Are Assigned
         </p>
     </header>

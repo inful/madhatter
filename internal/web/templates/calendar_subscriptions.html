@@ -27,6 +27,7 @@
             Subscriptions that have never been used are treated as stale based on their creation date.
         </p>
         <form method="POST" action="/calendar/subscriptions/cleanup">
+        <input type="hidden" name="csrf_token" value="{{ csrfToken }}">
             <div class="field is-grouped is-grouped-multiline">
                 <div class="control">
                     <label class="label">Inactive for at least</label>

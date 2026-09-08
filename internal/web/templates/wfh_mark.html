@@ -32,6 +32,7 @@
 </div>
 
 <form method="post" action="/admin/wfh/mark" data-confirm="Mark this member as WFH for today? The dashboard will show a purple-blue WFH chip and the row is recorded as an admin override.">
+            <input type="hidden" name="csrf_token" value="{{ csrfToken }}">
     <div class="field">
         <label class="label" for="member_id">Member</label>
         <div class="control">

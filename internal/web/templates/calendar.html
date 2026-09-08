@@ -110,6 +110,7 @@
         <p class="mb-3 has-text-success"><i class="fas fa-check-circle mr-1"></i> Subscription shown above.</p>
         {{end}}
         <form method="POST" action="/calendar">
+        <input type="hidden" name="csrf_token" value="{{ csrfToken }}">
             <div class="field has-addons">
                 <div class="control is-expanded has-icons-left">
                     <div class="select is-fullwidth">

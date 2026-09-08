@@ -22,6 +22,7 @@
         {{end}}
 
         <form method="POST" action="/leave/report-sick">
+        <input type="hidden" name="csrf_token" value="{{ csrfToken }}">
             <div class="field">
                 <label class="label">Team Member</label>
                 <div class="control has-icons-left">

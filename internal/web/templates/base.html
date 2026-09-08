@@ -522,6 +522,7 @@
                             */}}
                             {{if and .CanReportWFHToday (eq .CurrentUserPresenceStatus "On-site")}}
                             <form method="post" action="/wfh/report-today" class="dropdown-item quick-action-form">
+                            <input type="hidden" name="csrf_token" value="{{ csrfToken }}">
                                 <button type="submit" class="quick-action-form-btn">
                                     <i class="fas fa-home mr-2"></i> WFH today
                                 </button>

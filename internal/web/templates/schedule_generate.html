@@ -38,6 +38,7 @@
     </header>
     <div class="card-content">
         <form method="POST" action="/schedule/generate">
+        <input type="hidden" name="csrf_token" value="{{ csrfToken }}">
             <div class="field">
                 <label class="label">Start Date</label>
                 <div class="control has-icons-left">

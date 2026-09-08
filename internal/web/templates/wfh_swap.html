@@ -29,6 +29,7 @@
             this assigned day with a willing on-site teammate.
         </div>
         <form method="POST" action="/wfh/{{.WFHRequestID}}/swap">
+        <input type="hidden" name="csrf_token" value="{{ csrfToken }}">
             <div class="field">
                 <label class="label" for="target_member_id">On-site teammate to swap with</label>
                 <div class="control has-icons-left">

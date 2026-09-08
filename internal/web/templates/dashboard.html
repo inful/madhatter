@@ -256,6 +256,7 @@
         <div class="status-on-site-override mt-3">
             <form method="post" action="/wfh/today/on-site" style="display:inline"
                   data-confirm="Mark yourself as on-site today. Your quota slot is freed and the contractual pattern is unchanged.">
+            <input type="hidden" name="csrf_token" value="{{ csrfToken }}">
                 <button type="submit" class="button is-small is-success is-light">
                     <span class="icon"><i class="fas fa-building"></i></span>
                     <span>I'm actually coming in today</span>
@@ -281,6 +282,7 @@
         <div class="status-on-site-override-future mt-2">
             <form method="post" action="/wfh/on-site" class="field has-addons mb-0"
                   data-confirm="Mark yourself as on-site for the chosen day. Your quota slot is freed and the contractual pattern is unchanged.">
+            <input type="hidden" name="csrf_token" value="{{ csrfToken }}">
                 <div class="control">
                     <span class="button is-small is-static">
                         <span class="icon"><i class="fas fa-calendar-check"></i></span>

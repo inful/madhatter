@@ -23,6 +23,19 @@ func parseTemplates() (*template.Template, error) {
 		// every page so users can see exactly which build they
 		// are looking at when filing a bug.
 		"version": version.Current,
+		// csrfToken is the template helper that injects the
+		// current request's CSRF cookie value as a hidden
+		// form field. Form templates use it as
+		// `<input type="hidden" name="csrf_token" value="{{ csrfToken }}">`
+		// to participate in the double-submit CSRF pattern
+		// enforced by csrfMiddleware. Reads the cookie from
+		// csrfCurrentRequest (set by the middleware just
+		// before the handler runs). Returns the empty
+		// string outside a request scope (tests, background
+		// tasks) so a form rendered without a valid cookie
+		// fails the CSRF POST check rather than passing it
+		// with a default value.
+		"csrfToken": csrfToken,
 		"dict": func(values ...any) map[string]any {
 			if len(values)%dictKeyValuePairs != 0 {
 				panic("dict requires an even number of arguments")

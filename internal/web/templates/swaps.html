@@ -66,11 +66,13 @@
                             <td>
                                 <div class="buttons are-small">
                                     <form method="POST" action="/swaps/{{.ID}}/accept" style="display:inline">
+                                    <input type="hidden" name="csrf_token" value="{{ csrfToken }}">
                                         <button type="submit" class="button is-success">
                                             <i class="fas fa-check mr-1"></i> Accept
                                         </button>
                                     </form>
                                     <form method="POST" action="/swaps/{{.ID}}/reject" style="display:inline">
+                                    <input type="hidden" name="csrf_token" value="{{ csrfToken }}">
                                         <button type="submit" class="button is-danger is-light">
                                             <i class="fas fa-times mr-1"></i> Reject
                                         </button>
@@ -102,6 +104,7 @@
     </header>
     <div class="card-content">
         <form method="POST" action="/swaps">
+        <input type="hidden" name="csrf_token" value="{{ csrfToken }}">
             <div class="columns">
                 <div class="column">
                     <div class="field">
@@ -219,6 +222,7 @@
                                 {{if eq .Status "pending"}}
                                     {{if eq .RequesterMemberID $.MemberID}}
                                         <form method="POST" action="/swaps/{{.ID}}/cancel">
+                                        <input type="hidden" name="csrf_token" value="{{ csrfToken }}">
                                             <button type="submit" class="button is-small is-light">
                                                 <i class="fas fa-ban mr-1"></i> Cancel
                                             </button>
@@ -228,6 +232,7 @@
                                 {{if $.IsAdmin}}
                                     <form method="POST" action="/swaps/{{.ID}}/delete" style="display:inline"
                                           data-confirm="Delete this swap record?">
+                                    <input type="hidden" name="csrf_token" value="{{ csrfToken }}">
                                         <button type="submit" class="button is-small is-danger is-light">
                                             <i class="fas fa-trash"></i>
                                         </button>

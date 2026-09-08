@@ -62,6 +62,7 @@
     {{end}}
     <form method="post" action="/admin/wfh/settle"
           data-confirm="Run settlement now? This will approve or deny all pending requests.">
+    <input type="hidden" name="csrf_token" value="{{ csrfToken }}">
         <button type="submit" class="button is-primary">
             <span class="icon"><i class="fas fa-gavel"></i></span>
             <span>Settle Pending Requests</span>
@@ -146,6 +147,7 @@
                             {{if and .IsAdminMarked (eq .Status "approved")}}
                             <form method="post" action="/admin/wfh/{{.ID}}/unmark" style="display:inline"
                                   data-confirm="Unmark this admin-marked WFH? The row will be deleted and the quota slot freed.">
+                            <input type="hidden" name="csrf_token" value="{{ csrfToken }}">
                                 <button type="submit" class="button is-small is-link is-light">
                                     <span class="icon"><i class="fas fa-user-shield"></i></span>
                                     <span>Unmark</span>
@@ -154,6 +156,7 @@
                             {{else if .CanWithdraw}}
                             <form method="post" action="/admin/wfh/{{.ID}}/withdraw" style="display:inline"
                                   data-confirm="Withdraw this approved WFH request?">
+                            <input type="hidden" name="csrf_token" value="{{ csrfToken }}">
                                 <button type="submit" class="button is-small is-warning is-light">
                                     <span class="icon"><i class="fas fa-undo"></i></span>
                                     <span>Withdraw</span>

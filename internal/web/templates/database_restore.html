@@ -34,6 +34,7 @@
     </header>
     <div class="card-content">
         <form method="POST" action="/admin/database/restore" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrfToken }}">
             {{if .ValidatedRestoreToken}}
                 <input type="hidden" name="validated_token" value="{{.ValidatedRestoreToken}}">
             {{end}}

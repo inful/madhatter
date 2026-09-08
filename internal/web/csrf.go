@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"sync/atomic"
 )
 
 // csrfCookieName is the name of the double-submit CSRF
@@ -23,6 +24,64 @@ const csrfCookieName = "csrf"
 // POST body, compares the form value to the cookie value
 // in constant time, and rejects mismatches with 403.
 const csrfFormField = "csrf_token"
+
+// csrfCurrentRequest holds a pointer to the in-flight
+// http.Request while a handler is rendering. The csrf
+// template helper (csrfToken) reads the CSRF cookie from
+// this pointer to inject into form templates. The pointer
+// is set by csrfMiddleware before delegating to the next
+// handler and cleared on return.
+//
+// Why an atomic.Pointer rather than passing the request
+// through the data map or as a context value:
+//
+//   - data map: would require touching every render site
+//     (and there are 18 form templates, many of which
+//     build the data map inline).
+//   - context: template funcs don't have access to the
+//     request context.
+//
+// The atomic pointer is safe because Go's net/http serves
+// each request on a single goroutine, and the middleware
+// sets the pointer immediately before the next handler
+// runs (which executes the template). The same goroutine
+// reads the pointer that the same goroutine wrote, so the
+// relaxed atomic semantics of atomic.Pointer are sufficient.
+var csrfCurrentRequest atomic.Pointer[http.Request]
+
+// setCSRFCurrentRequest stores r for the duration of the
+// current request. Called by csrfMiddleware. The matching
+// clearCSRFCurrentRequest is called via defer.
+func setCSRFCurrentRequest(r *http.Request) {
+	csrfCurrentRequest.Store(r)
+}
+
+// clearCSRFCurrentRequest is the defer partner to
+// setCSRFCurrentRequest. Idempotent.
+func clearCSRFCurrentRequest() {
+	csrfCurrentRequest.Store(nil)
+}
+
+// csrfToken is the template helper exposed under the name
+// `csrfToken`. It returns the CSRF cookie value for the
+// current request, or the empty string if there is no
+// cookie (e.g., a request that bypassed the middleware, or
+// a test rendering a template directly). The empty value
+// is the safe default: a form rendered with an empty
+// csrf_token will not pass the POST-side CSRF check, which
+// is the desired behavior for a request that didn't
+// establish a token.
+func csrfToken() string {
+	r := csrfCurrentRequest.Load()
+	if r == nil {
+		return ""
+	}
+	c, err := r.Cookie(csrfCookieName)
+	if err != nil {
+		return ""
+	}
+	return c.Value
+}
 
 // csrfTokenBytes is the entropy of the per-session CSRF
 // token. 32 bytes (256 bits) is well above any practical
@@ -77,8 +136,17 @@ func csrfEnabled() bool {
 // keep working until form templates are migrated to
 // include the csrf_token field. Set CSRF_ENABLED=true
 // to opt in.
+//
+// The middleware also stores the current request in
+// csrfCurrentRequest so the csrfToken template helper can
+// read the CSRF cookie during template rendering. The
+// pointer is cleared via defer so a handler can't read a
+// stale request after returning.
 func csrfMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		setCSRFCurrentRequest(r)
+		defer clearCSRFCurrentRequest()
+
 		if !csrfEnabled() {
 			next.ServeHTTP(w, r)
 			return

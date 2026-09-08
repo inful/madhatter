@@ -58,6 +58,7 @@
 
     <form method="post" action="/admin/wfh/purge" class="mt-5"
           data-confirm="Permanently delete {{.WouldDelete}} WFH request(s) with date < {{.Cutoff}}? This cannot be undone.">
+    <input type="hidden" name="csrf_token" value="{{ csrfToken }}">
         <input type="hidden" name="confirm" value="true">
         <div class="buttons is-justify-content-flex-end">
             <a href="/admin/wfh" class="button is-light">Cancel</a>

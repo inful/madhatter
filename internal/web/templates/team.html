@@ -17,6 +17,7 @@
     </header>
     <div class="card-content">
         <form method="POST" action="/team">
+        <input type="hidden" name="csrf_token" value="{{ csrfToken }}">
             <div class="field">
                 <label class="label">Name</label>
                 <div class="control has-icons-left">
@@ -155,6 +156,7 @@
                             {{if $.IsAdmin}}
                                 <div class="member-admin-row">
                                     <form method="POST" action="/team/{{.ID}}/recurring-wfh" class="recurring-days-form">
+                                    <input type="hidden" name="csrf_token" value="{{ csrfToken }}">
                                         {{/*
                                             Bug #14. The Mon/Tue/Wed/Thu/Fri
                                             checkboxes set the member's
@@ -189,6 +191,7 @@
                                         per-weekday state.
                                     */}}
                                     <form method="POST" action="/team/{{.ID}}/exempt" class="exempt-toggle-form">
+                                    <input type="hidden" name="csrf_token" value="{{ csrfToken }}">
                                         <label class="checkbox" title="Picker never selects this member as an involuntary Assigned WFH. Voluntary WFHs still count against capacity.">
                                             <input type="checkbox" name="is_exempt_from_assignment" value="1" {{if .IsExemptFromAssignment}}checked{{end}}>
                                             Exempt from picker
@@ -203,6 +206,7 @@
                                             <i class="fas fa-edit"></i>
                                         </button>
                                         <form method="POST" action="/team/{{.ID}}/delete" data-confirm="Are you sure you want to delete {{.Name}}? This will also remove all associated assignments.">
+                                        <input type="hidden" name="csrf_token" value="{{ csrfToken }}">
                                             <button type="submit" class="button is-small is-danger is-light" aria-label="Delete team member">
                                                 <i class="fas fa-trash"></i>
                                             </button>
@@ -245,6 +249,7 @@
                                         <i class="fas fa-shield-alt mr-1"></i> Admin
                                     </span>
                                     <form method="POST" action="/team/users/{{.ID}}/admin" style="display: inline;">
+                                    <input type="hidden" name="csrf_token" value="{{ csrfToken }}">
                                         <input type="hidden" name="is_admin" value="0">
                                         <button type="submit" class="button is-small is-warning is-light" {{if le $.AdminCount 1}}disabled title="Cannot remove the last admin"{{end}}>
                                             <i class="fas fa-user-minus mr-1"></i> Remove Admin
@@ -255,6 +260,7 @@
                                         <i class="fas fa-user mr-1"></i> User
                                     </span>
                                     <form method="POST" action="/team/users/{{.ID}}/admin" style="display: inline;">
+                                    <input type="hidden" name="csrf_token" value="{{ csrfToken }}">
                                         <input type="hidden" name="is_admin" value="1">
                                         <button type="submit" class="button is-small is-primary is-light">
                                             <i class="fas fa-user-shield mr-1"></i> Make Admin
@@ -262,6 +268,7 @@
                                     </form>
                                 {{end}}
                                 <form method="POST" action="/team/users/{{.ID}}/deactivate" style="display: inline;">
+                                <input type="hidden" name="csrf_token" value="{{ csrfToken }}">
                                     <button type="submit" class="button is-small is-light" title="Deactivate this user. They can be reactivated later.">
                                         <i class="fas fa-user-slash mr-1"></i> Deactivate
                                     </button>
@@ -304,11 +311,13 @@
                         </div>
                         <div class="column is-narrow">
                             <form method="POST" action="/team/users/{{.ID}}/approve" style="display: inline;">
+                            <input type="hidden" name="csrf_token" value="{{ csrfToken }}">
                                 <button type="submit" class="button is-small is-primary">
                                     <i class="fas fa-check mr-1"></i> Approve
                                 </button>
                             </form>
                             <form method="POST" action="/team/users/{{.ID}}/deny" style="display: inline;">
+                            <input type="hidden" name="csrf_token" value="{{ csrfToken }}">
                                 <button type="submit" class="button is-small is-danger is-light">
                                     <i class="fas fa-times mr-1"></i> Deny
                                 </button>
@@ -344,6 +353,7 @@
                         </div>
                         <div class="column is-narrow">
                             <form method="POST" action="/team/users/{{.ID}}/reactivate" style="display: inline;">
+                            <input type="hidden" name="csrf_token" value="{{ csrfToken }}">
                                 <button type="submit" class="button is-small is-primary is-light">
                                     <i class="fas fa-user-check mr-1"></i> Reactivate
                                 </button>
@@ -367,6 +377,7 @@
             <button class="delete" aria-label="close" data-close-modal></button>
         </header>
         <form id="editForm" method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrfToken }}">
             <section class="modal-card-body">
                 <div class="field">
                     <label class="label">Name</label>

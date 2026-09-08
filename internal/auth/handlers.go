@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -174,21 +175,36 @@ func (am *AuthManager) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	token, err := provider.ExchangeCode(ctx, code)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Token exchange failed: %v", err), http.StatusInternalServerError)
+		// Security review finding #6: the upstream OAuth provider's
+		// error message can include URLs, internal state, or stack
+		// details an attacker can fingerprint. Log the full error
+		// server-side and respond with a generic message; the
+		// 502 status reflects "upstream service failed".
+		slog.ErrorContext(ctx, "OAuth token exchange failed",
+			"provider", providerName, "error", err)
+		http.Error(w, "Authentication failed. Please try again later.", http.StatusBadGateway)
 		return
 	}
 
 	// Get user info
 	userInfo, err := provider.GetUserInfo(ctx, token)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to get user info: %v", err), http.StatusInternalServerError)
+		// Same hardening as ExchangeCode: log full, return generic.
+		slog.ErrorContext(ctx, "OAuth user-info fetch failed",
+			"provider", providerName, "error", err)
+		http.Error(w, "Authentication failed. Please try again later.", http.StatusBadGateway)
 		return
 	}
 
 	// Get or create user
 	user, err := am.userService.GetOrCreateUser(ctx, userInfo, providerName)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to create user: %v", err), http.StatusInternalServerError)
+		// DB errors: log full, return generic 500. Same principle
+		// as the upstream-error branches — don't let schema names,
+		// constraint names, or query fragments leak.
+		slog.ErrorContext(ctx, "OAuth callback: failed to upsert user",
+			"provider", providerName, "error", err)
+		http.Error(w, "Internal server error.", http.StatusInternalServerError)
 		return
 	}
 
@@ -202,7 +218,9 @@ func (am *AuthManager) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	// skipped for pending users.
 	if !IsUserActive(user) {
 		if ensureErr := am.userService.EnsureTeamMember(ctx, userInfo, false); ensureErr != nil {
-			http.Error(w, fmt.Sprintf("Failed to create team member: %v", ensureErr), http.StatusInternalServerError)
+			slog.ErrorContext(ctx, "OAuth callback: failed to ensure team member for pending user",
+				"provider", providerName, "error", ensureErr)
+			http.Error(w, "Internal server error.", http.StatusInternalServerError)
 			return
 		}
 		am.clearOAuthStateCookie(w, r)
@@ -212,7 +230,9 @@ func (am *AuthManager) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if ensureErr := am.userService.EnsureTeamMember(ctx, userInfo, true); ensureErr != nil {
-		http.Error(w, fmt.Sprintf("Failed to create team member: %v", ensureErr), http.StatusInternalServerError)
+		slog.ErrorContext(ctx, "OAuth callback: failed to ensure team member",
+			"provider", providerName, "error", ensureErr)
+		http.Error(w, "Internal server error.", http.StatusInternalServerError)
 		return
 	}
 
@@ -228,7 +248,9 @@ func (am *AuthManager) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	// Create session
 	sessionToken, err := am.sessionManager.CreateSession(ctx, user.ID)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to create session: %v", err), http.StatusInternalServerError)
+		slog.ErrorContext(ctx, "OAuth callback: failed to create session",
+			"provider", providerName, "user_id", user.ID, "error", err)
+		http.Error(w, "Internal server error.", http.StatusInternalServerError)
 		return
 	}
 

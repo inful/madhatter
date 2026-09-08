@@ -169,6 +169,13 @@ func (h *FakeCallbackHandler) HandleLogin(w http.ResponseWriter, r *http.Request
 	// This better simulates real OAuth flow and helps catch state validation issues
 	randomState := fmt.Sprintf("dev-state-%d", time.Now().UnixNano())
 
+	// Detect HTTPS — either direct (r.TLS != nil) or via a
+	// reverse proxy that set X-Forwarded-Proto. Mirrors the
+	// production AuthManager.HandleLogin so a dev login
+	// behind a TLS proxy gets the same Secure-attribute
+	// protection as a real OAuth initiation.
+	secure := r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+
 	// Set state cookie (required for callback validation)
 	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124 false positive: cookie has all required security attributes (HttpOnly, Secure, SameSite); gosec source analysis cannot see through AddCookie call site
 		Name:     "oauth_state",
@@ -176,7 +183,7 @@ func (h *FakeCallbackHandler) HandleLogin(w http.ResponseWriter, r *http.Request
 		Path:     "/auth/callback",
 		MaxAge:   StateCookieExpiry,
 		HttpOnly: true,
-		Secure:   false,
+		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 	})
 

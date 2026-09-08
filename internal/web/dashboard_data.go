@@ -382,6 +382,41 @@ func todayFullTeamOnSite(data map[string]any) bool {
 	return false
 }
 
+// todayNoOneWFH probes the data map's ScheduleMatrix for a
+// today-flagged column whose WFHCount is zero AND AtWorkCount
+// is non-zero. The two-count test is the contract: WFHCount == 0
+// alone is the "no one is WFH" condition, but AtWorkCount > 0
+// is the "someone is actually at work" guard that prevents
+// the marker from firing on an empty-matrix day (where both
+// counts are trivially zero) or a day where every active
+// member is on leave (where AtWorkCount is also zero and
+// "no one is WFH" doesn't imply "everyone at work is in the
+// office" — there IS no one at work).
+//
+// Conceptually this is the "good day for in-person meetings"
+// state: nobody is remote, so anyone who turns up at the
+// office today is physically present. The marker is a sibling
+// of TodayFullTeamOnSite but stricter-axis-orthogonal — a full-
+// team day is also a no-one-WFH day, but a day with people on
+// leave (and therefore WFHCount == 0 + AtWorkCount >= 1) is
+// a no-one-WFH day without being a full-team day. The template
+// renders the full-team banner in preference to this one when
+// both apply.
+func todayNoOneWFH(data map[string]any) bool {
+	matrix, ok := data["ScheduleMatrix"].(scheduleMatrix)
+	if !ok {
+		return false
+	}
+	for i := range matrix.Days {
+		if matrix.Days[i].IsToday &&
+			matrix.Days[i].WFHCount == 0 &&
+			matrix.Days[i].AtWorkCount > 0 {
+			return true
+		}
+	}
+	return false
+}
+
 // autumnalEquinoxDay is the calendar day the dashboard treats as
 // the first day of autumn in the Northern Hemisphere. The exact
 // astronomical equinox drifts between September 22 and 23 year to
@@ -486,6 +521,16 @@ func (h *Handler) loadTodayContext(now time.Time, data map[string]any) {
 	// when the matrix didn't load (db error or empty presence),
 	// the banner stays hidden rather than guessing.
 	data["TodayFullTeamOnSite"] = todayFullTeamOnSite(data)
+
+	// Sibling probe: today has zero WFH rows AND at least one
+	// person actually at work. The dashboard renders this as
+	// "No one is WFH today" — the practical cue that today is
+	// a good day for an in-person meeting (the people who are
+	// working today are all in the office). Mutually exclusive
+	// with TodayFullTeamOnSite in the template (the full-team
+	// banner wins when both apply), so the visual hierarchy
+	// stays clean.
+	data["TodayNoOneWFH"] = todayNoOneWFH(data)
 }
 
 // nextBusinessDayFrom walks forward day-by-day from start until

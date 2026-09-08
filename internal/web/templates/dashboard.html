@@ -54,6 +54,30 @@
     </div>
     <span class="full-team-banner-emoji full-team-banner-emoji-trailing" aria-hidden="true">🎊🎉</span>
 </div>
+{{/*
+    "No one is WFH today" informational banner. Renders when
+    TODAY is a business day AND no team member is working
+    remotely (WFHCount == 0) AND at least one person is
+    actually at work (AtWorkCount > 0). The full-team banner
+    above is a stricter case (no leave AND no WFH); the no-WFH
+    banner covers the case where some members are on leave but
+    everyone who's working is in the office — the practical
+    "good day for an in-person meeting" cue.
+
+    Mutually exclusive with the full-team banner: when both
+    conditions hold, only the full-team banner renders. The
+    `else if` chain keeps the visual hierarchy clean — the
+    louder gold celebration takes precedence over the calmer
+    blue informational marker.
+*/}}
+{{else if and .TodayNoOneWFH .TodayIsBusinessDay}}
+<div class="notification no-wfh-banner mb-4" role="status" aria-live="polite">
+    <span class="no-wfh-banner-emoji" aria-hidden="true">🏢</span>
+    <div class="no-wfh-banner-body">
+        <div class="no-wfh-banner-title">No one is WFH today</div>
+        <div class="no-wfh-banner-subtitle">Everyone who&#39;s at work is in the office &mdash; perfect for an in-person meeting.</div>
+    </div>
+</div>
 {{end}}
 
 {{if .User}}
@@ -366,13 +390,13 @@
 
         {{if .ScheduleMatrix}}
             <div class="mobile-schedule-cards">
-                {{range $dayIndex, $day := .ScheduleMatrix.Days}}
-                    <div class="mobile-day-card{{if $day.IsToday}} mobile-day-card-today{{end}}{{if $day.FullTeamOnSite}} mobile-day-card-full-team{{end}}">
+                            {{range $dayIndex, $day := .ScheduleMatrix.Days}}
+                    <div class="mobile-day-card{{if $day.IsToday}} mobile-day-card-today{{end}}{{if $day.FullTeamOnSite}} mobile-day-card-full-team{{else if and (eq $day.WFHCount 0) (gt $day.AtWorkCount 0)}} mobile-day-card-no-wfh{{end}}">
                         <div class="mobile-day-head">
                             <div class="mobile-day-topline">
                                 <div class="mobile-day-title">{{$day.DateDisplay}}</div>
                                 {{if $day.IsToday}}<span class="mobile-today-badge">Today</span>{{end}}
-                                {{if $day.FullTeamOnSite}}<span class="mobile-full-team-badge" title="Everyone is on-site 🎉" aria-label="Everyone is on-site">🎉 Full team</span>{{end}}
+                                {{if $day.FullTeamOnSite}}<span class="mobile-full-team-badge" title="Everyone is on-site 🎉" aria-label="Everyone is on-site">🎉 Full team</span>{{else if and (eq $day.WFHCount 0) (gt $day.AtWorkCount 0)}}<span class="mobile-no-wfh-badge" title="No one is WFH today — everyone at work is in the office" aria-label="No one is WFH today">🏢 All in</span>{{end}}
                             </div>
                             <div class="mobile-day-totals">
                                 <span class="mobile-total-chip total-onsite" title="At work"><i class="fas fa-building"></i> {{$day.AtWorkCount}}</span>
@@ -420,7 +444,7 @@
                         <tr>
                             <th class="member-col" scope="col"></th>
                             {{range .ScheduleMatrix.Days}}
-                                <th class="day-col{{if .IsToday}} today-col{{end}}{{if .FullTeamOnSite}} full-team-col{{end}}" scope="col">
+                                <th class="day-col{{if .IsToday}} today-col{{end}}{{if .FullTeamOnSite}} full-team-col{{else if and (eq .WFHCount 0) (gt .AtWorkCount 0)}} no-wfh-col{{end}}" scope="col">
                                     {{if $.MeetingsToken}}
                                     <a class="day-head-link" href="/calendar/{{$.MeetingsToken}}/meetings/{{.DateISO}}.html" title="View meetings for {{.DateDisplay}}">
                                         <div class="day-head">{{.DateDisplay}}</div>
@@ -432,6 +456,22 @@
                                         <div class="full-team-badge" title="Everyone is on-site today 🎉" aria-label="Everyone is on-site today">
                                             <span class="full-team-emoji" aria-hidden="true">🎉</span>
                                             <span class="full-team-label">Full team</span>
+                                        </div>
+                                    {{else if and (eq .WFHCount 0) (gt .AtWorkCount 0)}}
+                                        {{/*
+                                            "No one is WFH today" marker on days that aren't
+                                            also full-team (the full-team banner wins when
+                                            both apply). Same mutual-exclusion rule as the
+                                            mobile card below and the dashboard banner above:
+                                            the celebratory gold always wins over the calm
+                                            blue. The AtWorkCount > 0 guard is what stops the
+                                            badge on an empty-matrix day where WFHCount is
+                                            trivially zero — same condition the data-side
+                                            helper pins.
+                                        */}}
+                                        <div class="no-wfh-badge" title="No one is WFH today — everyone at work is in the office" aria-label="No one is WFH today">
+                                            <span class="no-wfh-emoji" aria-hidden="true">🏢</span>
+                                            <span class="no-wfh-label">All in</span>
                                         </div>
                                     {{end}}
                                     <div class="day-totals">
@@ -761,6 +801,93 @@
         0%   { transform: translateY(-12px) scale(0.97); opacity: 0; }
         100% { transform: translateY(0)     scale(1);    opacity: 1; }
     }
+
+    /* "No one is WFH today" informational marker. Sibling of the
+       full-team celebration but visually calmer — blue/indigo
+       instead of warm gold, no emoji flourish on the banner.
+       The marker is informational ("good day for in-person
+       meetings") rather than celebratory, so the styling
+       stays muted: a softer gradient, no entrance animation,
+       and a building icon in the column badge instead of a
+       party emoji. The full-team banner takes precedence in
+       the dashboard template, so on a day when both flags
+       hold only the gold celebration renders. */
+    .no-wfh-col {
+        background: linear-gradient(180deg, rgba(191, 219, 254, 0.28) 0%, rgba(191, 219, 254, 0.08) 100%);
+    }
+    .no-wfh-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        margin: 0.15rem 0 0.4rem;
+        padding: 0.15rem 0.5rem;
+        font-size: 0.7rem;
+        font-weight: 700;
+        color: #1e3a8a;
+        background: linear-gradient(135deg, #dbeafe 0%, #93c5fd 100%);
+        border-radius: 999px;
+        box-shadow: 0 1px 2px rgba(30, 58, 138, 0.18);
+    }
+    .no-wfh-emoji {
+        display: inline-block;
+    }
+
+    /* Mobile variant — same informational chip, inline with the
+       day-title topline so it doesn't fight the totals row. */
+    .mobile-day-card-no-wfh {
+        border-left: 4px solid #93c5fd;
+    }
+    .mobile-no-wfh-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.2rem;
+        margin-left: 0.4rem;
+        padding: 0.1rem 0.45rem;
+        font-size: 0.65rem;
+        font-weight: 700;
+        color: #1e3a8a;
+        background: linear-gradient(135deg, #dbeafe 0%, #93c5fd 100%);
+        border-radius: 999px;
+        box-shadow: 0 1px 2px rgba(30, 58, 138, 0.18);
+    }
+
+    /* Dashboard banner — sits above the status card so it's the
+       first thing the user sees after logging in. The blue-
+       indigo gradient is intentionally less emphatic than the
+       gold full-team banner: the marker is informational, not
+       celebratory. No entrance animation either — the calmer
+       treatment extends to motion. */
+    .no-wfh-banner {
+        display: flex;
+        align-items: center;
+        gap: 0.85rem;
+        padding: 0.85rem 1.1rem;
+        background: linear-gradient(135deg, #dbeafe 0%, #93c5fd 55%, #a5b4fc 100%);
+        color: #1e3a8a;
+        border: 1px solid rgba(30, 58, 138, 0.22);
+        border-radius: 10px;
+        box-shadow: 0 4px 14px rgba(147, 197, 253, 0.32);
+        font-weight: 600;
+    }
+    .no-wfh-banner-emoji {
+        font-size: 1.6rem;
+        line-height: 1;
+    }
+    .no-wfh-banner-body {
+        flex: 1 1 auto;
+    }
+    .no-wfh-banner-title {
+        font-size: 1.05rem;
+        font-weight: 700;
+        color: #1e40af;
+    }
+    .no-wfh-banner-subtitle {
+        font-size: 0.85rem;
+        font-weight: 500;
+        opacity: 0.92;
+        margin-top: 0.1rem;
+    }
+
     @media (prefers-reduced-motion: reduce) {
         .full-team-banner,
         .full-team-badge,

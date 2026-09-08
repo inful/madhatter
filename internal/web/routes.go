@@ -130,22 +130,41 @@ func (h *Handler) registerRoutes() {
 		r.Use(h.safeRequireAuth)
 		r.Use(h.safeRequireAdmin)
 
-		r.HandleFunc("/team", h.handleTeam)
-		r.HandleFunc("/team/{id}/edit", h.handleTeamMemberEdit)
-		r.HandleFunc("/team/{id}/recurring-wfh", h.handleTeamMemberPermanentWFHUpdate)
-		r.HandleFunc("/team/{id}/permanent-wfh", h.handleTeamMemberPermanentWFHUpdate)
-		r.HandleFunc("/team/{id}/exempt", h.handleTeamMemberExemptUpdate)
-		r.HandleFunc("/team/{id}/delete", h.handleTeamMemberDelete)
-		r.HandleFunc("/team/users/{id}/admin", h.handleUserAdminUpdate)
-		r.HandleFunc("/team/users/{id}/approve", h.handleUserApprove)
-		r.HandleFunc("/team/users/{id}/deny", h.handleUserDeny)
-		r.HandleFunc("/team/users/{id}/deactivate", h.handleUserDeactivate)
-		r.HandleFunc("/team/users/{id}/reactivate", h.handleUserReactivate)
-		r.HandleFunc("/schedule/generate", h.handleScheduleGenerate)
-		r.HandleFunc("/admin/database/backup", h.handleDatabaseBackup)
-		r.HandleFunc("/admin/database/restore", h.handleDatabaseRestore)
-		r.HandleFunc("/calendar/subscriptions", h.handleCalendarSubscriptions)
-		r.HandleFunc("/calendar/subscriptions/cleanup", h.handleCalendarSubscriptionsCleanup)
+		// /team is GET (list members) + POST (create new member).
+		// The two methods are split into separate r.HandleFunc
+		// calls so a future code change can't accidentally add
+		// a mutation path on GET.
+		r.Get("/team", h.handleTeam)
+		r.Post("/team", h.handleTeamPost)
+		r.Post("/team/{id}/edit", h.handleTeamMemberEdit)
+		r.Post("/team/{id}/recurring-wfh", h.handleTeamMemberPermanentWFHUpdate)
+		r.Post("/team/{id}/permanent-wfh", h.handleTeamMemberPermanentWFHUpdate)
+		r.Post("/team/{id}/exempt", h.handleTeamMemberExemptUpdate)
+		r.Post("/team/{id}/delete", h.handleTeamMemberDelete)
+		// Security review follow-up: every user-management
+		// mutation is r.Post so a phishing link or a stray
+		// `<img src="/team/users/X/approve">` from a logged-in
+		// admin's browser cannot silently approve / deny /
+		// deactivate / reactivate a user. Each handler still
+		// has an internal method check as defense-in-depth, but
+		// the route table now refuses the wrong method before
+		// the handler runs.
+		r.Post("/team/users/{id}/admin", h.handleUserAdminUpdate)
+		r.Post("/team/users/{id}/approve", h.handleUserApprove)
+		r.Post("/team/users/{id}/deny", h.handleUserDeny)
+		r.Post("/team/users/{id}/deactivate", h.handleUserDeactivate)
+		r.Post("/team/users/{id}/reactivate", h.handleUserReactivate)
+		// /schedule/generate is a heavy DB mutation; the GET
+		// path on this route used to be an unauthenticated
+		// mutation vector (any GET would trigger a regen).
+		r.Get("/schedule/generate", h.handleScheduleGenerate)
+		r.Post("/schedule/generate", h.handleScheduleGenerate)
+		r.Get("/admin/database/backup", h.handleDatabaseBackup)
+		r.Get("/admin/database/restore", h.handleDatabaseRestore)
+		r.Post("/admin/database/restore", h.handleDatabaseRestorePost)
+		r.Get("/calendar/subscriptions", h.handleCalendarSubscriptions)
+		r.Post("/calendar/subscriptions", h.handleCalendarSubscriptions)
+		r.Post("/calendar/subscriptions/cleanup", h.handleCalendarSubscriptionsCleanup)
 		r.Post("/swaps/{id}/delete", h.handleSwapAdminDelete)
 		r.Get("/admin/wfh", h.handleWFHAdminPage)
 		r.Post("/admin/wfh/{id}/withdraw", h.handleWFHAdminWithdraw)

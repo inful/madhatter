@@ -271,6 +271,13 @@ func NewHandler(db *database.DB, authManager *auth.AuthManager, authMiddleware *
 	// so it covers auth routes, the API mount, and the static asset
 	// handlers alike.
 	router.Use(securityHeadersMiddleware)
+	// CSRF protection (security review finding #3). The middleware
+	// is a no-op when CSRF_ENABLED is unset / false, so existing
+	// flows (dev login, e2e harness, pre-migration form templates)
+	// keep working. Set CSRF_ENABLED=true to opt in; a follow-up
+	// commit migrates each form template to include the csrf_token
+	// hidden field.
+	router.Use(csrfMiddleware)
 	// Vendored third-party assets (HTMX, Bulma, FontAwesome). Local
 	// URLs let the strict CSP keep default-src 'self' without
 	// exception; see internal/web/static.go and security_headers.go.

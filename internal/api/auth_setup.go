@@ -33,7 +33,7 @@ func setupAuth(db *database.DB, development bool) (*auth.AuthManager, *auth.Midd
 func setupDevelopmentAuth(db *database.DB) (*auth.AuthManager, *auth.Middleware, *auth.SessionManager, error) {
 	slog.Info("development mode: using fake OAuth provider")
 
-	encryptor, err := auth.NewTokenEncryptor()
+	encryptor, err := auth.NewTokenEncryptor(false)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to create token encryptor: %w", err)
 	}
@@ -218,7 +218,7 @@ func setupProductionAuth(db *database.DB) (*auth.AuthManager, *auth.Middleware, 
 		return nil, nil, nil, nil
 	}
 
-	encryptor, err := auth.NewTokenEncryptor()
+	encryptor, err := auth.NewTokenEncryptor(true)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to create token encryptor: %w", err)
 	}

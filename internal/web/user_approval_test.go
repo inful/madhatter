@@ -36,7 +36,7 @@ func setupApprovalTestDB(t *testing.T) (*database.DB, func()) {
 // notifications from this code path.
 func newApprovalHandler(t *testing.T, db *database.DB) (*Handler, *auth.SessionManager) {
 	t.Helper()
-	encryptor, err := auth.NewTokenEncryptor()
+	encryptor, err := auth.NewTokenEncryptor(false)
 	require.NoError(t, err)
 	sessionManager := auth.NewSessionManager(db.GetQueries(), 24*time.Hour)
 	authManager := auth.NewAuthManager(nil, auth.NewUserService(db.GetQueries(), encryptor), sessionManager)

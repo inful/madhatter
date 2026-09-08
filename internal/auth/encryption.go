@@ -26,14 +26,29 @@ type TokenEncryptor struct {
 }
 
 // NewTokenEncryptor creates a new token encryptor.
-// It loads the encryption key from environment variable TOKEN_ENCRYPTION_KEY.
-// If not set, it generates a random key (WARNING: tokens won't survive restarts).
-func NewTokenEncryptor() (*TokenEncryptor, error) {
+// It loads the encryption key from the TOKEN_ENCRYPTION_KEY
+// environment variable.
+//
+// When production=true and the env var is unset, the constructor
+// fails loud: the dev-mode fallback to a random key is convenient
+// for local hacking but loses every stored OAuth refresh token on
+// restart, which is silent data loss in production. The security
+// review (finding #2) flagged this; the API takes an explicit
+// production flag rather than probing the environment so callers
+// — typically api/setupAuth, which already knows whether the
+// server is in dev mode — are forced to opt in to the strict
+// behavior.
+//
+// In dev mode (production=false) the random-key fallback is
+// preserved with its existing warning so local hacking isn't
+// blocked by an env-var requirement.
+func NewTokenEncryptor(production bool) (*TokenEncryptor, error) {
 	// Try to get encryption key from environment
 	keyStr := os.Getenv("TOKEN_ENCRYPTION_KEY")
 
 	var key []byte
-	if keyStr != "" {
+	switch {
+	case keyStr != "":
 		// Decode base64-encoded key
 		var err error
 		key, err = base64.StdEncoding.DecodeString(keyStr)
@@ -43,8 +58,16 @@ func NewTokenEncryptor() (*TokenEncryptor, error) {
 		if len(key) != KeySize {
 			return nil, fmt.Errorf("encryption key must be %d bytes, got %d", KeySize, len(key))
 		}
-	} else {
-		// Generate a random key (WARNING: tokens won't survive restarts)
+	case production:
+		// Security review finding #2: refuse the random-key fallback
+		// in production. The fallback loses all stored OAuth tokens
+		// on the first restart — silent data loss for the most
+		// security-sensitive field the app stores.
+		return nil, fmt.Errorf("TOKEN_ENCRYPTION_KEY is required in production (set it to a base64-encoded %d-byte key)", KeySize)
+	default:
+		// Dev mode: random key is fine; local sessions don't need
+		// to survive restarts and the warning keeps the
+		// consequence visible in the logs.
 		slog.Warn("TOKEN_ENCRYPTION_KEY not set, using randomly generated key (tokens won't survive restarts)")
 		key = make([]byte, KeySize)
 		if _, err := rand.Read(key); err != nil {

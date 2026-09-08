@@ -31,7 +31,7 @@ func TestUserService_GetOrCreateUser(t *testing.T) {
 	db := setupTestDB(t)
 	t.Setenv("TOKEN_ENCRYPTION_KEY", "MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTI=")
 
-	encryptor, err := NewTokenEncryptor()
+	encryptor, err := NewTokenEncryptor(false)
 	require.NoError(t, err)
 
 	userService := NewUserService(db.GetQueries(), encryptor)
@@ -111,7 +111,7 @@ func TestUserService_EnsureTeamMember_PreservesExistingName(t *testing.T) {
 	db := setupTestDB(t)
 	t.Setenv("TOKEN_ENCRYPTION_KEY", "MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTI=")
 
-	encryptor, err := NewTokenEncryptor()
+	encryptor, err := NewTokenEncryptor(false)
 	require.NoError(t, err)
 
 	userService := NewUserService(db.GetQueries(), encryptor)
@@ -137,7 +137,7 @@ func TestUserService_OAuthTokens(t *testing.T) {
 	db := setupTestDB(t)
 	t.Setenv("TOKEN_ENCRYPTION_KEY", "MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTI=")
 
-	encryptor, err := NewTokenEncryptor()
+	encryptor, err := NewTokenEncryptor(false)
 	require.NoError(t, err)
 
 	userService := NewUserService(db.GetQueries(), encryptor)
@@ -201,7 +201,7 @@ func TestSessionManager_Integration(t *testing.T) {
 	db := setupTestDB(t)
 	t.Setenv("TOKEN_ENCRYPTION_KEY", "MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTI=")
 
-	encryptor, err := NewTokenEncryptor()
+	encryptor, err := NewTokenEncryptor(false)
 	require.NoError(t, err)
 
 	userService := NewUserService(db.GetQueries(), encryptor)
@@ -275,7 +275,7 @@ func TestUserService_IsAdmin(t *testing.T) {
 	db := setupTestDB(t)
 	t.Setenv("TOKEN_ENCRYPTION_KEY", "MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTI=")
 
-	encryptor, err := NewTokenEncryptor()
+	encryptor, err := NewTokenEncryptor(false)
 	require.NoError(t, err)
 
 	userService := NewUserService(db.GetQueries(), encryptor)

@@ -12,7 +12,7 @@ func TestTokenEncryptor(t *testing.T) {
 		// Set a test encryption key (base64 of 32 bytes)
 		t.Setenv("TOKEN_ENCRYPTION_KEY", "MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTI=")
 
-		encryptor, err := NewTokenEncryptor()
+		encryptor, err := NewTokenEncryptor(false)
 		require.NoError(t, err)
 
 		plaintext := "my-secret-token-12345"
@@ -32,7 +32,7 @@ func TestTokenEncryptor(t *testing.T) {
 	t.Run("Empty String", func(t *testing.T) {
 		t.Setenv("TOKEN_ENCRYPTION_KEY", "MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTI=")
 
-		encryptor, err := NewTokenEncryptor()
+		encryptor, err := NewTokenEncryptor(false)
 		require.NoError(t, err)
 
 		// Encrypt empty string
@@ -49,7 +49,7 @@ func TestTokenEncryptor(t *testing.T) {
 	t.Run("Invalid Ciphertext", func(t *testing.T) {
 		t.Setenv("TOKEN_ENCRYPTION_KEY", "MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTI=")
 
-		encryptor, err := NewTokenEncryptor()
+		encryptor, err := NewTokenEncryptor(false)
 		require.NoError(t, err)
 
 		// Try to decrypt invalid data
@@ -64,7 +64,7 @@ func TestTokenEncryptor(t *testing.T) {
 	t.Run("Multiple Encryptions Produce Different Ciphertexts", func(t *testing.T) {
 		t.Setenv("TOKEN_ENCRYPTION_KEY", "MTIzNDU2Nzg5MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTI=")
 
-		encryptor, err := NewTokenEncryptor()
+		encryptor, err := NewTokenEncryptor(false)
 		require.NoError(t, err)
 
 		plaintext := "same-plaintext"
@@ -91,14 +91,14 @@ func TestTokenEncryptor(t *testing.T) {
 	t.Run("Invalid Key Length", func(t *testing.T) {
 		t.Setenv("TOKEN_ENCRYPTION_KEY", "dG9vLXNob3J0") // base64 of "too-short"
 
-		_, err := NewTokenEncryptor()
+		_, err := NewTokenEncryptor(false)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "encryption key must be 32 bytes")
 	})
 
 	t.Run("No Key Set - Generates Random Key", func(t *testing.T) {
 		// Don't set TOKEN_ENCRYPTION_KEY
-		encryptor, err := NewTokenEncryptor()
+		encryptor, err := NewTokenEncryptor(false)
 		require.NoError(t, err)
 
 		// Should still work with randomly generated key

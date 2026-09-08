@@ -22,7 +22,7 @@ func TestAuthManager_NewAuthManager(t *testing.T) {
 	db := setupTestDB(t)
 	queries := db.GetQueries()
 
-	encryptor, err := NewTokenEncryptor()
+	encryptor, err := NewTokenEncryptor(false)
 	require.NoError(t, err)
 
 	providerFactory := NewProviderFactory(make(map[string]ProviderConfig))
@@ -46,7 +46,7 @@ func TestAuthManager_RegisterProvider(t *testing.T) {
 	db := setupTestDB(t)
 	queries := db.GetQueries()
 
-	encryptor, err := NewTokenEncryptor()
+	encryptor, err := NewTokenEncryptor(false)
 	require.NoError(t, err)
 
 	providerFactory := NewProviderFactory(make(map[string]ProviderConfig))
@@ -71,7 +71,7 @@ func TestAuthManager_GetProvider_NotFound(t *testing.T) {
 	db := setupTestDB(t)
 	queries := db.GetQueries()
 
-	encryptor, err := NewTokenEncryptor()
+	encryptor, err := NewTokenEncryptor(false)
 	require.NoError(t, err)
 
 	providerFactory := NewProviderFactory(make(map[string]ProviderConfig))
@@ -92,7 +92,7 @@ func TestAuthManager_HandleLogin(t *testing.T) {
 	db := setupTestDB(t)
 	queries := db.GetQueries()
 
-	encryptor, err := NewTokenEncryptor()
+	encryptor, err := NewTokenEncryptor(false)
 	require.NoError(t, err)
 
 	// Create provider factory with fake config
@@ -143,7 +143,7 @@ func TestAuthManager_HandleLogin_MissingProvider(t *testing.T) {
 	db := setupTestDB(t)
 	queries := db.GetQueries()
 
-	encryptor, err := NewTokenEncryptor()
+	encryptor, err := NewTokenEncryptor(false)
 	require.NoError(t, err)
 
 	providerFactory := NewProviderFactory(make(map[string]ProviderConfig))
@@ -169,7 +169,7 @@ func TestAuthManager_HandleLogin_InvalidProvider(t *testing.T) {
 	db := setupTestDB(t)
 	queries := db.GetQueries()
 
-	encryptor, err := NewTokenEncryptor()
+	encryptor, err := NewTokenEncryptor(false)
 	require.NoError(t, err)
 
 	providerFactory := NewProviderFactory(make(map[string]ProviderConfig))
@@ -195,7 +195,7 @@ func TestAuthManager_HandleCallback(t *testing.T) {
 	db := setupTestDB(t)
 	queries := db.GetQueries()
 
-	encryptor, err := NewTokenEncryptor()
+	encryptor, err := NewTokenEncryptor(false)
 	require.NoError(t, err)
 
 	providerFactory := NewProviderFactory(map[string]ProviderConfig{
@@ -259,7 +259,7 @@ func TestAuthManager_HandleCallback_MissingState(t *testing.T) {
 	db := setupTestDB(t)
 	queries := db.GetQueries()
 
-	encryptor, err := NewTokenEncryptor()
+	encryptor, err := NewTokenEncryptor(false)
 	require.NoError(t, err)
 
 	providerFactory := NewProviderFactory(make(map[string]ProviderConfig))
@@ -285,7 +285,7 @@ func TestAuthManager_HandleCallback_StateMismatch(t *testing.T) {
 	db := setupTestDB(t)
 	queries := db.GetQueries()
 
-	encryptor, err := NewTokenEncryptor()
+	encryptor, err := NewTokenEncryptor(false)
 	require.NoError(t, err)
 
 	providerFactory := NewProviderFactory(make(map[string]ProviderConfig))
@@ -319,7 +319,7 @@ func TestAuthManager_HandleCallback_MissingProvider(t *testing.T) {
 	db := setupTestDB(t)
 	queries := db.GetQueries()
 
-	encryptor, err := NewTokenEncryptor()
+	encryptor, err := NewTokenEncryptor(false)
 	require.NoError(t, err)
 
 	providerFactory := NewProviderFactory(make(map[string]ProviderConfig))
@@ -353,7 +353,7 @@ func TestAuthManager_HandleCallback_MissingCode(t *testing.T) {
 	db := setupTestDB(t)
 	queries := db.GetQueries()
 
-	encryptor, err := NewTokenEncryptor()
+	encryptor, err := NewTokenEncryptor(false)
 	require.NoError(t, err)
 
 	providerFactory := NewProviderFactory(map[string]ProviderConfig{
@@ -393,7 +393,7 @@ func TestAuthManager_HandleLogout(t *testing.T) {
 	db := setupTestDB(t)
 	queries := db.GetQueries()
 
-	encryptor, err := NewTokenEncryptor()
+	encryptor, err := NewTokenEncryptor(false)
 	require.NoError(t, err)
 
 	providerFactory := NewProviderFactory(make(map[string]ProviderConfig))
@@ -451,7 +451,7 @@ func TestAuthManager_HandleLoginView(t *testing.T) {
 	db := setupTestDB(t)
 	queries := db.GetQueries()
 
-	encryptor, err := NewTokenEncryptor()
+	encryptor, err := NewTokenEncryptor(false)
 	require.NoError(t, err)
 
 	// Create provider factory with forgejo and gitlab configs
@@ -484,7 +484,7 @@ func TestAuthManager_HandleLoginView_AlreadyLoggedIn(t *testing.T) {
 	db := setupTestDB(t)
 	queries := db.GetQueries()
 
-	encryptor, err := NewTokenEncryptor()
+	encryptor, err := NewTokenEncryptor(false)
 	require.NoError(t, err)
 
 	providerFactory := NewProviderFactory(make(map[string]ProviderConfig))
@@ -532,7 +532,7 @@ func TestAuthManager_HandleGenerateAPIToken(t *testing.T) {
 	db := setupTestDB(t)
 	queries := db.GetQueries()
 
-	encryptor, err := NewTokenEncryptor()
+	encryptor, err := NewTokenEncryptor(false)
 	require.NoError(t, err)
 
 	providerFactory := NewProviderFactory(make(map[string]ProviderConfig))
@@ -590,7 +590,7 @@ func TestAuthManager_HandleGenerateAPIToken_Unauthenticated(t *testing.T) {
 	db := setupTestDB(t)
 	queries := db.GetQueries()
 
-	encryptor, err := NewTokenEncryptor()
+	encryptor, err := NewTokenEncryptor(false)
 	require.NoError(t, err)
 
 	providerFactory := NewProviderFactory(make(map[string]ProviderConfig))
@@ -616,7 +616,7 @@ func TestAuthManager_HandleListAPITokens(t *testing.T) {
 	db := setupTestDB(t)
 	queries := db.GetQueries()
 
-	encryptor, err := NewTokenEncryptor()
+	encryptor, err := NewTokenEncryptor(false)
 	require.NoError(t, err)
 
 	providerFactory := NewProviderFactory(make(map[string]ProviderConfig))
@@ -691,7 +691,7 @@ func TestAuthManager_HandleListAPITokens_Unauthenticated(t *testing.T) {
 	db := setupTestDB(t)
 	queries := db.GetQueries()
 
-	encryptor, err := NewTokenEncryptor()
+	encryptor, err := NewTokenEncryptor(false)
 	require.NoError(t, err)
 
 	providerFactory := NewProviderFactory(make(map[string]ProviderConfig))
@@ -717,7 +717,7 @@ func TestAuthManager_HandleRevokeAPIToken(t *testing.T) {
 	db := setupTestDB(t)
 	queries := db.GetQueries()
 
-	encryptor, err := NewTokenEncryptor()
+	encryptor, err := NewTokenEncryptor(false)
 	require.NoError(t, err)
 
 	providerFactory := NewProviderFactory(make(map[string]ProviderConfig))
@@ -784,7 +784,7 @@ func TestAuthManager_HandleRevokeAPIToken_Unauthorized(t *testing.T) {
 	db := setupTestDB(t)
 	queries := db.GetQueries()
 
-	encryptor, err := NewTokenEncryptor()
+	encryptor, err := NewTokenEncryptor(false)
 	require.NoError(t, err)
 
 	providerFactory := NewProviderFactory(make(map[string]ProviderConfig))
@@ -861,7 +861,7 @@ func TestAuthManager_HandleCleanupExpiredTokens(t *testing.T) {
 	db := setupTestDB(t)
 	queries := db.GetQueries()
 
-	encryptor, err := NewTokenEncryptor()
+	encryptor, err := NewTokenEncryptor(false)
 	require.NoError(t, err)
 
 	providerFactory := NewProviderFactory(make(map[string]ProviderConfig))
@@ -920,7 +920,7 @@ func TestAuthManager_HandleCleanupExpiredTokens_NotAdmin(t *testing.T) {
 	db := setupTestDB(t)
 	queries := db.GetQueries()
 
-	encryptor, err := NewTokenEncryptor()
+	encryptor, err := NewTokenEncryptor(false)
 	require.NoError(t, err)
 
 	providerFactory := NewProviderFactory(make(map[string]ProviderConfig))
@@ -968,7 +968,7 @@ func TestAuthManager_HandleCleanupExpiredTokens_Unauthenticated(t *testing.T) {
 	db := setupTestDB(t)
 	queries := db.GetQueries()
 
-	encryptor, err := NewTokenEncryptor()
+	encryptor, err := NewTokenEncryptor(false)
 	require.NoError(t, err)
 
 	providerFactory := NewProviderFactory(make(map[string]ProviderConfig))
@@ -1032,7 +1032,7 @@ func TestAuthManager_writeTokensResponse(t *testing.T) {
 	db := setupTestDB(t)
 	queries := db.GetQueries()
 
-	encryptor, err := NewTokenEncryptor()
+	encryptor, err := NewTokenEncryptor(false)
 	require.NoError(t, err)
 
 	providerFactory := NewProviderFactory(make(map[string]ProviderConfig))
@@ -1086,7 +1086,7 @@ func TestAuthManager_writeTokensResponse_Empty(t *testing.T) {
 	db := setupTestDB(t)
 	queries := db.GetQueries()
 
-	encryptor, err := NewTokenEncryptor()
+	encryptor, err := NewTokenEncryptor(false)
 	require.NoError(t, err)
 
 	providerFactory := NewProviderFactory(make(map[string]ProviderConfig))
@@ -1114,7 +1114,7 @@ func TestAuthManager_writeTokensResponse_Single(t *testing.T) {
 	db := setupTestDB(t)
 	queries := db.GetQueries()
 
-	encryptor, err := NewTokenEncryptor()
+	encryptor, err := NewTokenEncryptor(false)
 	require.NoError(t, err)
 
 	providerFactory := NewProviderFactory(make(map[string]ProviderConfig))
@@ -1153,7 +1153,7 @@ func TestAuthManager_HandleRevokeAPIToken_MissingID(t *testing.T) {
 	db := setupTestDB(t)
 	queries := db.GetQueries()
 
-	encryptor, err := NewTokenEncryptor()
+	encryptor, err := NewTokenEncryptor(false)
 	require.NoError(t, err)
 
 	providerFactory := NewProviderFactory(make(map[string]ProviderConfig))
@@ -1200,7 +1200,7 @@ func TestAuthManager_HandleRevokeAPIToken_NotFound(t *testing.T) {
 	db := setupTestDB(t)
 	queries := db.GetQueries()
 
-	encryptor, err := NewTokenEncryptor()
+	encryptor, err := NewTokenEncryptor(false)
 	require.NoError(t, err)
 
 	providerFactory := NewProviderFactory(make(map[string]ProviderConfig))
@@ -1253,7 +1253,7 @@ func TestAuthManager_HandleGenerateAPIToken_WithExpiry(t *testing.T) {
 	db := setupTestDB(t)
 	queries := db.GetQueries()
 
-	encryptor, err := NewTokenEncryptor()
+	encryptor, err := NewTokenEncryptor(false)
 	require.NoError(t, err)
 
 	providerFactory := NewProviderFactory(make(map[string]ProviderConfig))
@@ -1323,7 +1323,7 @@ func TestHandleGenerateAPIToken_JSONIsValid_WithAdversarialName(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			db := setupTestDB(t)
 			queries := db.GetQueries()
-			encryptor, err := NewTokenEncryptor()
+			encryptor, err := NewTokenEncryptor(false)
 			require.NoError(t, err)
 			providerFactory := NewProviderFactory(make(map[string]ProviderConfig))
 			userService := NewUserService(queries, encryptor)
@@ -1377,7 +1377,7 @@ func TestHandleListAPITokens_JSONIsValid_WithAdversarialName(t *testing.T) {
 		t.Helper()
 		db := setupTestDB(t)
 		queries := db.GetQueries()
-		encryptor, err := NewTokenEncryptor()
+		encryptor, err := NewTokenEncryptor(false)
 		require.NoError(t, err)
 		providerFactory := NewProviderFactory(make(map[string]ProviderConfig))
 		userService := NewUserService(queries, encryptor)
@@ -1458,7 +1458,7 @@ func TestHandleListAPITokens_JSONIsValid_WithAdversarialName(t *testing.T) {
 func TestHandleGenerateAPIToken_MissingName(t *testing.T) {
 	db := setupTestDB(t)
 	queries := db.GetQueries()
-	encryptor, err := NewTokenEncryptor()
+	encryptor, err := NewTokenEncryptor(false)
 	require.NoError(t, err)
 	providerFactory := NewProviderFactory(make(map[string]ProviderConfig))
 	userService := NewUserService(queries, encryptor)

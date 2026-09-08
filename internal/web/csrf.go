@@ -96,21 +96,21 @@ const csrfTokenBytes = 32
 const csrfCookieMaxAge = 12 * 60 * 60
 
 // csrfEnabled reads the CSRF_ENABLED env var at middleware
-// construction time. The security review recommendation
-// (#3) is a strict CSRF posture for all mutating routes;
-// this commit lands the middleware + tests but leaves the
-// default at "false" so the existing form templates can be
-// migrated to the new csrf_token field in a follow-up.
-// Once CSRF_ENABLED=true is set, every POST/PUT/DELETE
-// route that lives under the middleware requires the field.
+// construction time. The default is true so production
+// deployments get CSRF protection out of the box — the
+// security review (#3) is explicit that a strict CSRF
+// posture for all mutating routes is the desired
+// behavior. Set CSRF_ENABLED=false to opt out (dev
+// environments, the e2e harness, integration tests that
+// issue direct HTTP POSTs without the cookie).
 func csrfEnabled() bool {
 	raw := os.Getenv("CSRF_ENABLED")
 	if raw == "" {
-		return false
+		return true
 	}
 	v, err := strconv.ParseBool(raw)
 	if err != nil {
-		return false
+		return true
 	}
 	return v
 }

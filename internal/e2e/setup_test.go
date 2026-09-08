@@ -115,6 +115,14 @@ func Start() (*Harness, error) {
 	cmd.Dir = workDir
 	cmd.Env = append(os.Environ(),
 		"SESSION_SECRET=test-secret-for-e2e-do-not-use-in-prod",
+		// The e2e harness issues direct HTTP POSTs via the
+		// postForm helper in flows_test.go, which doesn't
+		// carry the csrf cookie the CSRF middleware would
+		// require. Disable CSRF in the test environment;
+		// the form-template migration in commit d5f3c95
+		// ensures production forms carry the field when
+		// CSRF is on.
+		"CSRF_ENABLED=false",
 	)
 	// The server's support_rota.db is opened relative to CWD; we
 	// point CWD at workDir so the DB lives in the temp directory and

@@ -143,6 +143,27 @@ func TestCSRF_GetSkipsCheck(t *testing.T) {
 		"the underlying handler must have run")
 }
 
+// TestCSRF_DefaultEnabled_PostWithoutToken_Rejected pins the
+// "secure by default" posture. The security review's
+// recommendation was a strict CSRF posture for all
+// mutating routes; the env-var gate's default is therefore
+// true (CSRF_ENABLED unset → middleware active). A test
+// that doesn't set CSRF_ENABLED must still see the
+// middleware reject an unauthenticated POST.
+func TestCSRF_DefaultEnabled_PostWithoutToken_Rejected(t *testing.T) {
+	// Don't call t.Setenv here — the test exercises the
+	// "env var unset → CSRF on" path.
+	h := newCSRFTestHandler()
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/submit", nil)
+	require.NoError(t, req.ParseForm())
+	h.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusForbidden, rec.Code,
+		"the default CSRF posture must be enabled; a POST without csrf_token must be rejected with 403")
+}
+
 // TestCSRF_DisabledSkipsCheck is the dev / migration escape
 // hatch: when CSRF_ENABLED is false the middleware must be a
 // no-op so existing flows (and the e2e harness's dev-mode

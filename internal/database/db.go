@@ -51,9 +51,39 @@ func New(path string) (*DB, error) {
 
 	ctx := context.Background()
 
-	// Enable foreign keys
-	if _, err := db.ExecContext(ctx, "PRAGMA foreign_keys = ON"); err != nil {
-		return nil, err
+	// PRAGMAs are per-connection in SQLite (the ncruces/go-sqlite3
+	// driver exposes a connection pool, so we set them once here
+	// when the pool starts and the connection-level state
+	// persists across queries on the same connection).
+	//
+	// Security review finding #4: the pre-fix code only set
+	// foreign_keys, leaving the database in default
+	// journal_mode=DELETE with synchronous=FULL. That profile
+	// is fsync-heavy and prone to SQLITE_BUSY under concurrent
+	// dashboard + maintenance reads, and it leaves deleted rows
+	// readable in freed pages (a data-hygiene risk if a backup
+	// leaks). Apply the documented production-safe set here:
+	//
+	//   journal_mode = WAL    — concurrent readers + writers
+	//   synchronous  = NORMAL — pairs with WAL; safe durability
+	//                          without per-commit fsync
+	//   secure_delete = ON   — zero freed pages so deleted OAuth
+	//                          tokens, sessions, leave records
+	//                          don't survive page reuse
+	//   temp_store = MEMORY   — keep intermediate result sets in
+	//                          RAM instead of spilling to /tmp
+	//   foreign_keys = ON    — original behavior, preserved
+	pragmas := []string{
+		"PRAGMA foreign_keys = ON",
+		"PRAGMA journal_mode = WAL",
+		"PRAGMA synchronous = NORMAL",
+		"PRAGMA secure_delete = ON",
+		"PRAGMA temp_store = MEMORY",
+	}
+	for _, p := range pragmas {
+		if _, err := db.ExecContext(ctx, p); err != nil {
+			return nil, fmt.Errorf("set %s: %w", p, err)
+		}
 	}
 
 	// Run database migrations

@@ -188,4 +188,15 @@ func TestSecurityHeadersMiddleware_NoCDNHostsInCSP(t *testing.T) {
 		assert.NotContains(t, csp, host,
 			"CSP must not list %s — assets should be vendored under /static/", host)
 	}
+
+	// worker-src is needed for canvas-confetti's Web Worker.
+	// Without an explicit directive Chromium falls back to
+	// script-src, so a strict 'self' script-src blocks the
+	// worker and the dashboard confetti burst silently fails
+	// to render. Issue #62. The 'self' source lets the worker
+	// load; 'blob:' lets the library construct its worker
+	// inline (canvas-confetti v1.9.3 builds the worker via
+	// Blob-URL constructor).
+	require.Contains(t, csp, "worker-src 'self' blob:",
+		"worker-src must allow same-origin workers + blob: URLs for canvas-confetti's Web Worker (#62)")
 }

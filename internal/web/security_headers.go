@@ -50,6 +50,14 @@ func securityHeadersMiddleware(next http.Handler) http.Handler {
 				"img-src 'self' data:; "+
 				"style-src 'self' 'unsafe-inline'; "+
 				"script-src 'self'; "+
+				// canvas-confetti (the dashboard's full-team +
+				// birthday confetti bursts) spawns a Web Worker
+				// for particle physics. Without an explicit
+				// worker-src, Chromium falls back to script-src,
+				// which the strict 'self' directive blocks and
+				// the worker never starts — the confetti appears
+				// to do nothing. issue #62.
+				"worker-src 'self' blob:; "+
 				"font-src 'self'; "+
 				"connect-src 'self'; "+
 				"frame-ancestors 'none'; "+

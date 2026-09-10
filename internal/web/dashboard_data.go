@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -580,6 +581,22 @@ func (h *Handler) loadDashboardData(ctx context.Context, data map[string]any) {
 	// dashboard uses; the safety-cap'd forward walker handles the
 	// edge case where the holiday config is broken.
 	h.loadTodayContext(now, data)
+
+	// Birthday probe (#60). The DB query is the cheapest
+	// possible read of "active members with a birthdate"; the
+	// window filter (today..today+7, inclusive) and the
+	// year-wrap math run in db.GetUpcomingBirthdays. A probe
+	// error here must NOT fail the whole dashboard load —
+	// the birthday banner is nice-to-have, not load-bearing
+	// for the page to function. Log it and surface an empty
+	// slice so the template renders nothing.
+	const birthdayWindowDays = 7
+	if birthdays, bdayErr := h.db.GetUpcomingBirthdays(ctx, now, birthdayWindowDays); bdayErr != nil {
+		slog.WarnContext(ctx, "birthday probe failed", "error", bdayErr)
+		data["UpcomingBirthdays"] = []database.UpcomingBirthday{}
+	} else {
+		data["UpcomingBirthdays"] = birthdays
+	}
 
 	// The chairs row is conditional on the cap being set; when
 	// the picker is a no-op (cap <= 0 or service unconfigured) the

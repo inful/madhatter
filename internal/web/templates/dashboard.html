@@ -80,6 +80,39 @@
 </div>
 {{end}}
 
+{{/*
+    Birthday banner (#60). Renders when today is a business
+    day and at least one active member has a birthday in the
+    [today, today+7] window. The probe returns members sorted
+    by DaysUntil ascending; the first row determines whether
+    we show "X's birthday today" (DaysUntil=0) or the
+    multi-row "Birthdays this week" list.
+
+    Privacy: the year of birth is preserved in the probe for
+    admin auditing but never reaches this template — only
+    Name, BirthdayMonthDay, and DaysUntil are used here.
+*/}}
+{{if and .TodayIsBusinessDay .UpcomingBirthdays}}
+<div class="notification birthday-banner mb-4" role="status" aria-live="polite">
+    <span class="birthday-banner-emoji" aria-hidden="true">🎂</span>
+    <div class="birthday-banner-body">
+        {{$first := index .UpcomingBirthdays 0}}
+        {{if eq $first.DaysUntil 0}}
+        <div class="birthday-banner-title">{{$first.Name}}'s birthday today!</div>
+        <div class="birthday-banner-subtitle">Celebrate accordingly &mdash; cake, song, or just a kind word.</div>
+        {{else if eq (len .UpcomingBirthdays) 1}}
+        <div class="birthday-banner-title">{{$first.Name}}'s birthday this week</div>
+        <div class="birthday-banner-subtitle">{{$first.BirthdayMonthDay}} &mdash; in {{$first.DaysUntil}} {{if eq $first.DaysUntil 1}}day{{else}}days{{end}}.</div>
+        {{else}}
+        <div class="birthday-banner-title">Birthdays this week</div>
+        <div class="birthday-banner-subtitle">
+            {{range $i, $b := .UpcomingBirthdays}}{{if $i}}, {{end}}{{$b.Name}} ({{$b.BirthdayMonthDay}}{{if ne $b.DaysUntil 0}}, {{$b.DaysUntil}}d{{end}}){{end}}
+        </div>
+        {{end}}
+    </div>
+</div>
+{{end}}
+
 {{if .User}}
 {{if .CurrentUserPresenceStatus}}
 
@@ -884,6 +917,44 @@
         color: #1e40af;
     }
     .no-wfh-banner-subtitle {
+        font-size: 0.85rem;
+        font-weight: 500;
+        opacity: 0.92;
+        margin-top: 0.1rem;
+    }
+
+    /* Dashboard birthday banner (#60). Uses a warm pink/coral
+       gradient to sit between the gold "full team" celebration
+       and the blue "no WFH" informational — celebratory but
+       not as loud as the gold one. Renders above the status
+       card so the team notices before scrolling. The emoji is
+       deliberately not animated; the celebration copy
+       (specifically the "cake" reference) carries the energy. */
+    .birthday-banner {
+        display: flex;
+        align-items: center;
+        gap: 0.85rem;
+        padding: 0.85rem 1.1rem;
+        background: linear-gradient(135deg, #fbcfe8 0%, #f9a8d4 55%, #fb7185 100%);
+        color: #831843;
+        border: 1px solid rgba(190, 24, 93, 0.22);
+        border-radius: 10px;
+        box-shadow: 0 4px 14px rgba(251, 113, 133, 0.28);
+        font-weight: 600;
+    }
+    .birthday-banner-emoji {
+        font-size: 1.6rem;
+        line-height: 1;
+    }
+    .birthday-banner-body {
+        flex: 1 1 auto;
+    }
+    .birthday-banner-title {
+        font-size: 1.05rem;
+        font-weight: 700;
+        color: #9d174d;
+    }
+    .birthday-banner-subtitle {
         font-size: 0.85rem;
         font-weight: 500;
         opacity: 0.92;

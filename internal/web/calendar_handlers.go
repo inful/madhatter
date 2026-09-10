@@ -1,7 +1,9 @@
 package web
 
 import (
+	"context"
 	"html/template"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -12,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/inful/madhatter/internal/auth"
 	"github.com/inful/madhatter/internal/calendar"
+	"github.com/inful/madhatter/internal/envutil"
 )
 
 const maxCalendarFormBytes = 1 << 20
@@ -210,7 +213,7 @@ func (h *Handler) handleCalendarICS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	opts := h.buildSupportCalendarOptions()
+	opts := h.buildSupportCalendarOptions(r.Context())
 
 	// Generate ICS content using new calendar library.
 	icsContent, err := calendar.GenerateICalForTokenWithOptions(
@@ -241,8 +244,15 @@ func (h *Handler) handleCalendarICS(w http.ResponseWriter, r *http.Request) {
 // the operator's environment variables and the wired-in materialiser
 // and holiday lookup. The same options are reused by the team-calendar
 // handler so behavior is consistent.
-func (h *Handler) buildSupportCalendarOptions() calendar.SupportCalendarOptions {
-	return calendar.SupportCalendarOptions{
+//
+// The Birthday probe (db.GetActiveMembersWithBirthdates) is fetched
+// once per request unless CALENDAR_BIRTHDAYS_ENABLED is set to
+// \"false\". Operators who want a leaner feed (no birthday VEVENTs)
+// can flip the gate; an empty Birthdays slice is the same code
+// path as the gate being disabled — the generator emits no
+// birthday VEVENTs.
+func (h *Handler) buildSupportCalendarOptions(ctx context.Context) calendar.SupportCalendarOptions {
+	opts := calendar.SupportCalendarOptions{
 		SupportDayLinks:                   calendar.ParseMeetingLinks(os.Getenv("SUPPORT_DAY_LINKS")),
 		WithAlarm:                         true,
 		ShuffleSeed:                       os.Getenv("SUPPORT_DAY_SHUFFLE_SEED"),
@@ -256,7 +266,22 @@ func (h *Handler) buildSupportCalendarOptions() calendar.SupportCalendarOptions 
 		LeaveTemplateHTMLPath:             os.Getenv("LEAVE_TEMPLATE_HTML_PATH"),
 		HolidayTemplateTextPath:           os.Getenv("HOLIDAY_TEMPLATE_TEXT_PATH"),
 		HolidayTemplateHTMLPath:           os.Getenv("HOLIDAY_TEMPLATE_HTML_PATH"),
+		BirthdayTemplateTextPath:          os.Getenv("BIRTHDAY_TEMPLATE_TEXT_PATH"),
+		BirthdayTemplateHTMLPath:          os.Getenv("BIRTHDAY_TEMPLATE_HTML_PATH"),
 	}
+	if envutil.Bool("CALENDAR_BIRTHDAYS_ENABLED", true) {
+		if bdays, bErr := h.db.GetActiveMembersWithBirthdates(ctx); bErr != nil {
+			// Birthday probe is best-effort — log and continue
+			// with no birthdays. The feed still renders
+			// HAT/leave/WFH/holiday events; only the birthday
+			// VEVENTs are dropped. (This mirrors the dashboard
+			// birthday probe's soft-fail policy.)
+			slog.WarnContext(ctx, "birthday probe failed; calendar feed will omit birthday events", "error", bErr)
+		} else {
+			opts.Birthdays = bdays
+		}
+	}
+	return opts
 }
 
 // buildMeetingsOptions assembles the MeetingsOptions from the
@@ -371,7 +396,7 @@ func (h *Handler) handleTeamCalendarICS(w http.ResponseWriter, r *http.Request) 
 		h.db,
 		token,
 		defaultCalendarLookaheadDays,
-		h.buildSupportCalendarOptions(),
+		h.buildSupportCalendarOptions(r.Context()),
 	)
 	if err != nil {
 		httpError(w, r, http.StatusNotFound, "Not found.", err)

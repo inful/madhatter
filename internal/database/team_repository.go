@@ -38,6 +38,14 @@ type TeamRepository interface {
 	// expression; see db.GetUpcomingBirthdays for the rationale.
 	GetUpcomingBirthdays(ctx context.Context, today time.Time, windowDays int) ([]UpcomingBirthday, error)
 
+	// GetActiveMembersWithBirthdates returns every active
+	// member whose birthdate is set. Used by the calendar to
+	// emit one recurring VEVENT per member (#60 follow-up).
+	// Distinct from GetUpcomingBirthdays — that one filters
+	// by MM-DD window for the celebration banner; this one
+	// returns every active member with a birthdate on file.
+	GetActiveMembersWithBirthdates(ctx context.Context) ([]CalendarBirthday, error)
+
 	// UpdateTeamMember renames the member and writes birthdate.
 	// Pass nil for birthdate to clear the column back to SQL NULL.
 	UpdateTeamMember(ctx context.Context, id, name, email string, birthdate *time.Time) error

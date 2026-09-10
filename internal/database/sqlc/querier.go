@@ -119,6 +119,7 @@ type Querier interface {
 	// command then applies the captured pair to each side so the
 	// rota_assignments rows match the swap record.
 	GetAcceptedSwaps(ctx context.Context) ([]HatSwap, error)
+	GetActiveMembersWithBirthdates(ctx context.Context) ([]GetActiveMembersWithBirthdatesRow, error)
 	GetActiveTeamMembers(ctx context.Context) ([]TeamMember, error)
 	GetAllSubscriptions(ctx context.Context) ([]CalendarSubscription, error)
 	GetAllWFHRequests(ctx context.Context) ([]GetAllWFHRequestsRow, error)

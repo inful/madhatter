@@ -63,6 +63,49 @@ func (q *Queries) DeleteTeamMember(ctx context.Context, id string) error {
 	return err
 }
 
+const getActiveMembersWithBirthdates = `-- name: GetActiveMembersWithBirthdates :many
+SELECT id, name, email, birthdate
+FROM team_members
+WHERE is_active = 1
+  AND birthdate IS NOT NULL
+ORDER BY name
+`
+
+type GetActiveMembersWithBirthdatesRow struct {
+	ID        string       `json:"id"`
+	Name      string       `json:"name"`
+	Email     string       `json:"email"`
+	Birthdate sql.NullTime `json:"birthdate"`
+}
+
+func (q *Queries) GetActiveMembersWithBirthdates(ctx context.Context) ([]GetActiveMembersWithBirthdatesRow, error) {
+	rows, err := q.db.QueryContext(ctx, getActiveMembersWithBirthdates)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetActiveMembersWithBirthdatesRow{}
+	for rows.Next() {
+		var i GetActiveMembersWithBirthdatesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Email,
+			&i.Birthdate,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getActiveTeamMembers = `-- name: GetActiveTeamMembers :many
 SELECT id, name, email, is_active, is_permanent_wfh, is_exempt_from_assignment,
 	   recurring_wfh_monday, recurring_wfh_tuesday, recurring_wfh_wednesday,

@@ -198,3 +198,32 @@ func TestGetUpcomingBirthdays_DateAffinity(t *testing.T) {
 	require.Len(t, got, 1)
 	assert.Equal(t, 3, got[0].DaysUntil)
 }
+
+// TestGetActiveMembersWithBirthdates_HappyPath pins the
+// calendar-side probe (#60 follow-up): every active member
+// whose birthdate is set must come back, regardless of the
+// current date. The calendar uses this to emit one recurring
+// VEVENT per member — RRULE:FREQ=YEARLY handles the year-
+// to-year rollover, so the probe has no window parameter.
+func TestGetActiveMembersWithBirthdates_HappyPath(t *testing.T) {
+	ctx := context.Background()
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	bday := time.Date(1990, 5, 15, 0, 0, 0, 0, time.UTC)
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", &bday)
+	require.NoError(t, err)
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
+	require.NoError(t, err)
+	_, err = db.AddTeamMember(ctx, "Carol", "carol@example.com", &bday)
+	require.NoError(t, err)
+
+	got, err := db.GetActiveMembersWithBirthdates(ctx)
+	require.NoError(t, err)
+	require.Len(t, got, 2, "Alice and Carol have birthdates, Bob doesn't")
+	for _, b := range got {
+		assert.Equal(t, time.Month(5), b.Birthdate.Month(),
+			"the year is preserved for the calendar caller (audit); the calendar drops it")
+		assert.Equal(t, 15, b.Birthdate.Day())
+	}
+}

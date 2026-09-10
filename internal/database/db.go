@@ -205,11 +205,27 @@ func (db *DB) GetActiveTeamMembers(ctx context.Context) ([]TeamMember, error) {
 // surfaces only the Name + DaysUntil + BirthdayMonthDay triple
 // — the year is internal.
 type UpcomingBirthday struct {
-	MemberID         string
-	Name             string
+	MemberID        string
+	Name            string
 	BirthdayMonthDay string // "MM-DD" — for the dashboard banner copy.
-	DaysUntil        int    // 0 = today, 7 = exactly one week out.
-	BirthYear        int    // 0 when the stored birthdate has no year (rare; preserved for audits).
+	DaysUntil       int    // 0 = today, 7 = exactly one week out.
+	BirthYear       int    // 0 when the stored birthdate has no year (rare; preserved for audits).
+}
+
+// CalendarBirthday is the calendar-side view of a member whose
+// birthdate is set. Distinct from UpcomingBirthday: the calendar
+// emits one recurring VEVENT per member (RRULE:FREQ=YEARLY), so the
+// shape needs only Name + Birthdate. DaysUntil / BirthYear are not
+// exposed because the calendar handles year-to-year rollover
+// via RRULE rather than per-event date arithmetic.
+//
+// Privacy: the year of birth is preserved here for admin
+// auditing (the probe reads it from the DB), but the calendar's
+// AddBirthday function deliberately drops it before reaching the
+// SUMMARY field — the year never lands in the .ics output.
+type CalendarBirthday struct {
+	Name      string
+	Birthdate time.Time // MM-DD is preserved via time.Month() and time.Day()
 }
 
 // GetUpcomingBirthdays returns the active members whose MM-DD
@@ -281,6 +297,35 @@ func (db *DB) GetUpcomingBirthdays(ctx context.Context, today time.Time, windowD
 // chronological order).
 func mMDD(t time.Time) string {
 	return t.Format("01-02")
+}
+
+// GetActiveMembersWithBirthdates returns every active member
+// whose birthdate is set. The calendar's per-member and
+// team-wide feeds use this to emit one recurring VEVENT per
+// member (#60 follow-up). RRULE:FREQ=YEARLY handles year-to-
+// year rollover on the calendar client, so the probe does NOT
+// need a window or year — it's a single query for "every active
+// member with a birthdate on file".
+//
+// The query has no parameters; callers don't filter the
+// result further — they emit one event per returned member.
+func (db *DB) GetActiveMembersWithBirthdates(ctx context.Context) ([]CalendarBirthday, error) {
+	rows, err := db.queries.GetActiveMembersWithBirthdates(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("get active members with birthdates: %w", err)
+	}
+
+	result := make([]CalendarBirthday, 0, len(rows))
+	for _, r := range rows {
+		if !r.Birthdate.Valid {
+			continue // defensive — query already filters IS NOT NULL
+		}
+		result = append(result, CalendarBirthday{
+			Name:      r.Name,
+			Birthdate: r.Birthdate.Time,
+		})
+	}
+	return result, nil
 }
 
 // leapDayMMDD maps a stored birthdate to its canonical MM-DD

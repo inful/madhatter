@@ -32,6 +32,13 @@ FROM calendar_subscriptions cs
 JOIN team_members tm ON cs.member_id = tm.id
 WHERE cs.token = ?;
 
+-- name: GetActiveMembersWithBirthdates :many
+SELECT id, name, email, birthdate
+FROM team_members
+WHERE is_active = 1
+  AND birthdate IS NOT NULL
+ORDER BY name;
+
 -- name: DeactivateTeamMember :exec
 UPDATE team_members
 SET is_active = 0

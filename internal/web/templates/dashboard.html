@@ -100,7 +100,7 @@
         {{$first := index .UpcomingBirthdays 0}}
         {{if eq $first.DaysUntil 0}}
         <div class="birthday-banner-title">{{$first.Name}}'s birthday today!</div>
-        <div class="birthday-banner-subtitle">Celebrate accordingly &mdash; cake, song, or just a kind word.</div>
+        <div class="birthday-banner-subtitle">Birthday song time!</div>
         {{else if eq (len .UpcomingBirthdays) 1}}
         <div class="birthday-banner-title">{{$first.Name}}'s birthday this week</div>
         <div class="birthday-banner-subtitle">{{$first.BirthdayMonthDay}} &mdash; in {{$first.DaysUntil}} {{if eq $first.DaysUntil 1}}day{{else}}days{{end}}.</div>

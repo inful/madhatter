@@ -123,7 +123,20 @@
                     <div class="box member-card">
                         <div class="member-layout">
                             <div>
-                                <strong class="is-size-5">{{.Name}}</strong><br>
+                                <strong class="is-size-5">
+                                    {{.Name}}
+                                    {{/*
+                                        Birthday badge (#60). Renders
+                                        inline next to the name when the
+                                        member has shared a birthdate.
+                                        The cake emoji is a quiet cue —
+                                        full celebration copy lives on
+                                        the dashboard banner.
+                                    */}}
+                                    {{if .Birthdate}}
+                                        <span class="birthday-badge" title="Birthday on {{.Birthdate.Format "2006-01-02"}} (year stored but not displayed)">🎂</span>
+                                    {{end}}
+                                </strong><br>
                                 <span class="has-text-grey">{{.Email}}</span>
                             </div>
 
@@ -446,6 +459,18 @@
 <style>
     .member-card { border-left: 4px solid #667eea; transition: transform 0.2s; }
     .member-card:hover { transform: translateX(4px); }
+
+    /* Birthday badge (#60). Sits inline next to the
+       member's name — a quiet 🎂 cue that the dashboard
+       will pick up on the day itself. The badge uses no
+       background or border; the emoji alone is enough. */
+    .birthday-badge {
+        display: inline-block;
+        margin-left: 0.4rem;
+        font-size: 1rem;
+        line-height: 1;
+        cursor: help;
+    }
 
     .member-layout {
         display: flex;

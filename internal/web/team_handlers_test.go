@@ -189,6 +189,10 @@ func TestHandleTeamPost_ValidMember_RedirectsToTeam(t *testing.T) {
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/team", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	// Mirrors the auth-middleware injection. Tests must keep
+	// the handler-level auth check happy (see AGENTS.md
+	// security guarantees).
+	req = withUser(req, "admin@example.com", "Admin", true)
 	w := httptest.NewRecorder()
 
 	h.handleTeamPost(w, req)
@@ -219,6 +223,7 @@ func TestHandleTeamPost_DuplicateEmail_Returns500(t *testing.T) {
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/team", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req = withUser(req, "admin@example.com", "Admin", true)
 	w := httptest.NewRecorder()
 
 	h.handleTeamPost(w, req)
@@ -239,6 +244,7 @@ func TestHandleTeam_Get_Returns200(t *testing.T) {
 	require.NoError(t, err)
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/team", nil)
+	req = withUser(req, "admin@example.com", "Admin", true)
 	w := httptest.NewRecorder()
 
 	h.handleTeam(w, req)
@@ -320,6 +326,7 @@ func TestHandleTeam_Get_DevelopmentModeSyncsTeamMembersToApplicationUsers(t *tes
 	require.NoError(t, err)
 
 	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/team", nil)
+	req = withUser(req, "admin@example.com", "Admin", true)
 	w := httptest.NewRecorder()
 
 	h.handleTeam(w, req)
@@ -349,6 +356,7 @@ func TestHandleTeam_Post_DelegatesToHandleTeamPost(t *testing.T) {
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/team", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req = withUser(req, "admin@example.com", "Admin", true)
 	w := httptest.NewRecorder()
 
 	h.handleTeam(w, req)
@@ -389,6 +397,7 @@ func TestHandleTeamMemberEdit_InvalidInput_Returns400(t *testing.T) {
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/team/members/x/edit", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req = withUser(req, "admin@example.com", "Admin", true)
 	req = withChiParam(req, "x")
 	w := httptest.NewRecorder()
 
@@ -415,6 +424,7 @@ func TestHandleTeamMemberEdit_ValidPost_RedirectsToTeam(t *testing.T) {
 
 	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/team/members/"+memberID+"/edit", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req = withUser(req, "admin@example.com", "Admin", true)
 	req = withChiParam(req, memberID)
 	w := httptest.NewRecorder()
 

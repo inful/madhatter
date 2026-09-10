@@ -38,6 +38,24 @@
                 </div>
             </div>
 
+            {{/*
+                Optional birthdate (#60). The team decides
+                whether to surface birthdays on the dashboard
+                and team list; admins opt in per member. The
+                field is optional — empty means "not shared",
+                which the dashboard probe skips.
+            */}}
+            <div class="field">
+                <label class="label">Birthdate <span class="has-text-grey is-size-7">(optional, for birthday banner)</span></label>
+                <div class="control has-icons-left">
+                    <input class="input" type="date" name="birthdate" max="2099-12-31">
+                    <span class="icon is-small is-left">
+                        <i class="fas fa-birthday-cake"></i>
+                    </span>
+                </div>
+                <p class="help">Year is stored but never displayed in the celebration banner.</p>
+            </div>
+
             <div class="field">
                 <div class="control">
                     <button type="submit" class="button is-primary is-fullwidth submit-btn">
@@ -202,7 +220,7 @@
                                     </form>
 
                                     <div class="member-actions">
-                                        <button class="button is-small is-info is-light" data-edit-team data-id="{{.ID}}" data-name="{{.Name}}" data-email="{{.Email}}" aria-label="Edit team member">
+                                        <button class="button is-small is-info is-light" data-edit-team data-id="{{.ID}}" data-name="{{.Name}}" data-email="{{.Email}}" data-birthdate="{{if .Birthdate}}{{.Birthdate.Format "2006-01-02"}}{{end}}" aria-label="Edit team member">
                                             <i class="fas fa-edit"></i>
                                         </button>
                                         <form method="POST" action="/team/{{.ID}}/delete" data-confirm="Are you sure you want to delete {{.Name}}? This will also remove all associated assignments.">
@@ -394,6 +412,21 @@
                         <input id="editEmail" class="input" type="email" name="email" required>
                         <span class="icon is-small is-left">
                             <i class="fas fa-envelope"></i>
+                        </span>
+                    </div>
+                </div>
+                {{/*
+                    Optional birthdate (#60). The JS edit
+                    modal below populates this from
+                    data-birthdate so an admin can clear or
+                    change the existing value.
+                */}}
+                <div class="field">
+                    <label class="label">Birthdate <span class="has-text-grey is-size-7">(optional)</span></label>
+                    <div class="control has-icons-left">
+                        <input id="editBirthdate" class="input" type="date" name="birthdate" max="2099-12-31">
+                        <span class="icon is-small is-left">
+                            <i class="fas fa-birthday-cake"></i>
                         </span>
                     </div>
                 </div>

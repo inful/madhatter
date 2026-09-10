@@ -32,6 +32,23 @@ type teamUserView struct {
 func (h *Handler) handleTeamPost(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
+	// Defense in depth: even though the route is mounted in the
+	// admin-only subtree behind safeRequireAuth, the AGENTS.md
+	// security contract requires every handler that mutates
+	// per-user data to refuse with 401 when the session is
+	// missing — so a future route move can't regress the
+	// check. A nil/empty user context means the middleware was
+	// bypassed.
+	user, ok := auth.GetUserFromContext(ctx)
+	if !ok || user == nil {
+		httpError(w, r, http.StatusUnauthorized, "Authentication required.", nil)
+		return
+	}
+	if !auth.IsAdminSession(user) {
+		httpError(w, r, http.StatusForbidden, "Admin access required.", nil)
+		return
+	}
+
 	r.Body = http.MaxBytesReader(w, r.Body, maxTeamFormBytes)
 	if err := r.ParseForm(); err != nil {
 		httpError(w, r, http.StatusBadRequest, "Invalid request.", err)
@@ -312,6 +329,21 @@ func (h *Handler) handleTeamMemberEdit(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Defense in depth — see handleTeamPost. The route is
+	// mounted behind safeRequireAuth + RequireAdmin in
+	// routes.go, but the AGENTS.md security contract requires
+	// the handler to refuse when the session is missing so a
+	// future route-move can't regress the check.
+	user, ok := auth.GetUserFromContext(ctx)
+	if !ok || user == nil {
+		httpError(w, r, http.StatusUnauthorized, "Authentication required.", nil)
+		return
+	}
+	if !auth.IsAdminSession(user) {
+		httpError(w, r, http.StatusForbidden, "Admin access required.", nil)
 		return
 	}
 

@@ -15,15 +15,19 @@
 //     a window-scoped flag so re-renders don't stack duplicate
 //     handlers.
 (function () {
-    function showEditModal(id, name, email) {
+    function showEditModal(id, name, email, birthdate) {
         var modal = document.getElementById('editModal');
         var form = document.getElementById('editForm');
         var nameInput = document.getElementById('editName');
         var emailInput = document.getElementById('editEmail');
+        var birthdateInput = document.getElementById('editBirthdate');
 
         form.action = '/team/' + id + '/edit';
         nameInput.value = name;
         emailInput.value = email;
+        // Birthdate may be empty (member hasn't shared one);
+        // the date input clears itself when assigned ''.
+        birthdateInput.value = birthdate || '';
 
         modal.classList.add('is-active');
     }
@@ -39,8 +43,8 @@
     window.closeEditModal = closeEditModal;
 
     // Delegated handler for the data-edit-team action — the per-row
-    // Edit button carries the row's id/name/email as data-* attrs (the
-    // CSP-safe replacement for the old onclick='showEditModal(...)'
+    // Edit button carries the row's id/name/email/birthdate as data-*
+    // attrs (the CSP-safe replacement for the old onclick='...'
     // attribute, which the page's strict script-src CSP blocks).
     document.addEventListener('click', function (event) {
         var target = event.target.closest('[data-edit-team]');
@@ -50,7 +54,8 @@
         showEditModal(
             target.dataset.id,
             target.dataset.name,
-            target.dataset.email
+            target.dataset.email,
+            target.dataset.birthdate
         );
     });
 

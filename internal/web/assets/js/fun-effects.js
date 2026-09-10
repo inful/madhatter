@@ -100,19 +100,49 @@
     // escape hatch. The user-level
     // BIRTHDAY_CONFETTI_ENABLED env gate is handled at the Go
     // layer (data-birthday-confetti=false).
+    //
+    // The cake/heart emoji are baked into confetti shapes via
+    // shapeFromText. Some headless or minimal-font environments
+    // don't have Apple Color Emoji / Segoe UI Emoji / Noto Color
+    // Emoji installed; shapeFromText then returns an empty
+    // canvas, the particles render as 0×0 sprites, and the user
+    // sees nothing. The defensive fallback below tries each
+    // shape and drops the failing one — the burst still fires
+    // with whatever shapes survive. We log once so an operator
+    // notices if the team's emoji font is missing on the
+    // server side (uncommon but possible on a stripped-down
+    // container).
+    function safeShapeFromText(opts) {
+        try {
+            var shape = window.confetti.shapeFromText(opts);
+            if (!shape) return null;
+            return shape;
+        } catch (e) {
+            console.warn('fun-effects: shapeFromText failed for', opts && opts.text, e);
+            return null;
+        }
+    }
+
     function fireBirthdayBurst() {
+        console.log('fun-effects: firing birthday burst');
         var scalar = 1.5;
-        var cake = window.confetti.shapeFromText({ text: '🎂', scalar: scalar });
-        var heart = window.confetti.shapeFromText({ text: '💗', scalar: scalar });
+        var cake = safeShapeFromText({ text: '🎂', scalar: scalar });
+        var heart = safeShapeFromText({ text: '💗', scalar: scalar });
 
         // Side cannons — pink + gold particles, with the cake
         // and heart shapes interleaved. The cannons fire from
         // the top corners at angles that send the particles
-        // toward the center of the page.
+        // toward the center of the page. The shapes array
+        // excludes any nulls returned by safeShapeFromText so a
+        // missing-emoji-font deployment still sees the burst
+        // with whatever shapes survived.
+        var shapes = ['circle', 'square'];
+        if (cake) shapes.push(cake);
+        if (heart) shapes.push(heart);
         var defaults = {
             disableForReducedMotion: true,
             colors: ['#f9a8d4', '#fb7185', '#fde68a', '#fbbf24', '#ffffff'],
-            shapes: [cake, heart, 'circle', 'square']
+            shapes: shapes
         };
 
         window.confetti(Object.assign({}, defaults, {

@@ -50,9 +50,57 @@ func staticHandler() http.Handler {
 		if ct != "" {
 			w.Header().Set("Content-Type", ct)
 		}
-		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		w.Header().Set("Cache-Control", cacheControlFor(r.URL.Path))
 		fs.ServeHTTP(w, r)
 	}))
+}
+
+// cacheControlFor returns the right Cache-Control header for a
+// static asset path. The vendored third-party libs are pinned
+// in static.go's package doc and never change without a release
+// tag — they get the long-lived immutable cache. App-owned JS
+// is shipped in every release and must NOT be aggressively
+// cached, otherwise a user upgrading from one release to the
+// next keeps the OLD app-owned JS even though the vendored deps
+// updated. The fix: app-owned assets use must-revalidate with
+// a short max-age so the browser revalidates on the next
+// page load without a round trip when the response is 304, and
+// picks up the new file when it isn't.
+//
+// Vendored asset paths live in a vendor subdirectory
+// (htmx/, bulma/, fontawesome/) OR are a vendored top-level
+// file (canvas-confetti.browser.min.js). App-owned assets are
+// everything else — top-level JS in /static/js/ + top-level
+// CSS in /static/css/.
+func cacheControlFor(p string) string {
+	cleaned := strings.TrimPrefix(p, "/")
+	segments := strings.SplitN(cleaned, "/", 2) //nolint:mnd // 2 = split into first segment + rest; standard path-partition idiom.
+
+	// Top-level vendored files: only canvas-confetti is shipped
+	// at the top level. Any other top-level file (the app's
+	// own JS in /static/js/...) is app-owned.
+	if len(segments) == 2 { //nolint:mnd // 2 = "two-segment path"; standard idiom for "vendored subdir" detection.
+		// Vendored subdirectories: htmx/, bulma/, fontawesome/.
+		switch segments[0] {
+		case "htmx", "bulma", "fontawesome":
+			return "public, max-age=31536000, immutable"
+		}
+	}
+	base := strings.ToLower(path.Base(p))
+	if base == "canvas-confetti.browser.min.js" {
+		return "public, max-age=31536000, immutable"
+	}
+	switch strings.ToLower(path.Ext(p)) {
+	case ".css", ".js":
+		// App-owned. Short cache + must-revalidate so a release
+		// that edits dashboard.js / fun-effects.js / team.js
+		// lands on the next page load.
+		return "public, max-age=300, must-revalidate"
+	default:
+		// Webfonts and other long-lived binary assets. Version-
+		// pinned upstream.
+		return "public, max-age=31536000, immutable"
+	}
 }
 
 // staticContentType returns the Content-Type for a static asset

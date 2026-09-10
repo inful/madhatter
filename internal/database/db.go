@@ -205,11 +205,11 @@ func (db *DB) GetActiveTeamMembers(ctx context.Context) ([]TeamMember, error) {
 // surfaces only the Name + DaysUntil + BirthdayMonthDay triple
 // — the year is internal.
 type UpcomingBirthday struct {
-	MemberID        string
-	Name            string
+	MemberID         string
+	Name             string
 	BirthdayMonthDay string // "MM-DD" — for the dashboard banner copy.
-	DaysUntil       int    // 0 = today, 7 = exactly one week out.
-	BirthYear       int    // 0 when the stored birthdate has no year (rare; preserved for audits).
+	DaysUntil        int    // 0 = today, 7 = exactly one week out.
+	BirthYear        int    // 0 when the stored birthdate has no year (rare; preserved for audits).
 }
 
 // CalendarBirthday is the calendar-side view of a member whose

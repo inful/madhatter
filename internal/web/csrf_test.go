@@ -164,10 +164,11 @@ func TestCSRF_DefaultEnabled_PostWithoutToken_Rejected(t *testing.T) {
 		"the default CSRF posture must be enabled; a POST without csrf_token must be rejected with 403")
 }
 
-// TestCSRF_DisabledSkipsCheck is the dev / migration escape
-// hatch: when CSRF_ENABLED is false the middleware must be a
-// no-op so existing flows (and the e2e harness's dev-mode
-// login) keep working until form templates are migrated.
+// TestCSRF_DisabledSkipsCheck pins the opt-out hatch: when
+// CSRF_ENABLED is false the middleware must be a no-op so
+// the e2e harness (which POSTs directly via httptest
+// without the cookie) and any other direct-HTTP callers
+// can opt out of CSRF.
 func TestCSRF_DisabledSkipsCheck(t *testing.T) {
 	t.Setenv("CSRF_ENABLED", "false")
 	h := newCSRFTestHandler()

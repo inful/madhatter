@@ -51,13 +51,16 @@ func TestCSRFTokenTemplateFunc_RendersCookieValue(t *testing.T) {
 // TestCSRFTokenTemplateFunc_EmptyWhenNoCookie pins the
 // safety net: when the request has no csrf cookie, the
 // template func returns an empty string. This happens
-// during dev-mode rendering (CSRF_ENABLED=false) and when
-// a fresh request reaches the form before the middleware
-// has had a chance to mint a token. The empty value means
-// the form still renders (no template error) and the
-// resulting submission would fail the CSRF check at the
-// POST boundary — which is the desired behavior: a form
-// without a valid CSRF token must not be submittable.
+// when a template is rendered outside the request scope
+// (a unit test, or any caller that hits the helper
+// without first running the middleware) and when the
+// middleware itself was bypassed by setting
+// CSRF_ENABLED=false (the e2e harness, dev-mode
+// flows). The empty value means the form still renders
+// (no template error) and the resulting submission would
+// fail the CSRF check at the POST boundary — which is
+// the desired behavior: a form without a valid CSRF
+// token must not be submittable.
 func TestCSRFTokenTemplateFunc_EmptyWhenNoCookie(t *testing.T) {
 	tmpl, err := template.New("form").Funcs(template.FuncMap{
 		"csrfToken": csrfToken,

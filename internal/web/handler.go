@@ -272,11 +272,12 @@ func NewHandler(db *database.DB, authManager *auth.AuthManager, authMiddleware *
 	// handlers alike.
 	router.Use(securityHeadersMiddleware)
 	// CSRF protection (security review finding #3). The middleware
-	// is a no-op when CSRF_ENABLED is unset / false, so existing
-	// flows (dev login, e2e harness, pre-migration form templates)
-	// keep working. Set CSRF_ENABLED=true to opt in; a follow-up
-	// commit migrates each form template to include the csrf_token
-	// hidden field.
+	// enforces a double-submit-cookie pattern by default
+	// (CSRF_ENABLED=true); set CSRF_ENABLED=false to opt out —
+	// used by the e2e harness and dev-mode flows that POST
+	// directly without the cookie. Every form template has the
+	// csrf_token hidden field wired via the csrfToken template
+	// helper.
 	router.Use(csrfMiddleware)
 	// Vendored third-party assets (HTMX, Bulma, FontAwesome). Local
 	// URLs let the strict CSP keep default-src 'self' without

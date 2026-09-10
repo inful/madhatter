@@ -131,11 +131,11 @@ func csrfEnabled() bool {
 // render and every existing GET route working without
 // template changes.
 //
-// When CSRF_ENABLED is false the middleware is a no-op
-// pass-through so existing flows (dev login, e2e harness)
-// keep working until form templates are migrated to
-// include the csrf_token field. Set CSRF_ENABLED=true
-// to opt in.
+// CSRF_ENABLED defaults to true so production deployments
+// get protection out of the box. Set CSRF_ENABLED=false
+// to opt out — used by the e2e harness (which POSTs
+// directly via httptest) and by dev-mode flows that
+// don't go through a browser cookie jar.
 //
 // The middleware also stores the current request in
 // csrfCurrentRequest so the csrfToken template helper can

@@ -1,6 +1,9 @@
 package database
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // TeamRepository is the per-aggregate repository contract for the
 // team-member data plane. Pulling these methods off the *DB god
@@ -15,8 +18,10 @@ import "context"
 // DB drifts out of compliance with the contract.
 type TeamRepository interface {
 	// AddTeamMember creates a new active team member and returns
-	// its generated id.
-	AddTeamMember(ctx context.Context, name, email string) (string, error)
+	// its generated id. Pass nil for birthdate when the admin
+	// hasn't recorded one (the dashboard probe excludes nil
+	// rows from the celebration banner).
+	AddTeamMember(ctx context.Context, name, email string, birthdate *time.Time) (string, error)
 
 	// GetMemberByID returns the member by id.
 	GetMemberByID(ctx context.Context, id string) (*TeamMember, error)
@@ -27,8 +32,15 @@ type TeamRepository interface {
 	// GetActiveTeamMembers returns every active member.
 	GetActiveTeamMembers(ctx context.Context) ([]TeamMember, error)
 
-	// UpdateTeamMember renames the member.
-	UpdateTeamMember(ctx context.Context, id, name, email string) error
+	// GetUpcomingBirthdays returns members whose MM-DD falls in
+	// [today, today+windowDays], sorted by DaysUntil ascending.
+	// Pushing the wrap math into SQL would force a CASE
+	// expression; see db.GetUpcomingBirthdays for the rationale.
+	GetUpcomingBirthdays(ctx context.Context, today time.Time, windowDays int) ([]UpcomingBirthday, error)
+
+	// UpdateTeamMember renames the member and writes birthdate.
+	// Pass nil for birthdate to clear the column back to SQL NULL.
+	UpdateTeamMember(ctx context.Context, id, name, email string, birthdate *time.Time) error
 
 	// DeleteTeamMember removes the member.
 	DeleteTeamMember(ctx context.Context, id string) error

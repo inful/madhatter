@@ -36,7 +36,7 @@ func pickerTestConfig() Config {
 // seedPickerMember adds a member with the given name and email.
 func seedPickerMember(t *testing.T, ctx context.Context, db *database.DB, name, email string) string {
 	t.Helper()
-	id, err := db.AddTeamMember(ctx, name, email)
+	id, err := db.AddTeamMember(ctx, name, email, nil)
 	require.NoError(t, err)
 	return id
 }

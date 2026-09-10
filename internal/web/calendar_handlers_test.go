@@ -103,9 +103,9 @@ func TestHandleMeetingsDayHTML_BusinessDayRendersMeeting(t *testing.T) {
 	h := newCalendarTestHandler(t, db)
 
 	ctx := context.Background()
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	memberID, err := db.AddTeamMember(ctx, "Token Owner", "token@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Token Owner", "token@example.com", nil)
 	require.NoError(t, err)
 	token, err := db.CreateCalendarSubscription(ctx, memberID)
 	require.NoError(t, err)
@@ -126,7 +126,7 @@ func TestHandleMeetingsDayHTML_WeekendShowsEmptyState(t *testing.T) {
 	h := newCalendarTestHandler(t, db)
 
 	ctx := context.Background()
-	memberID, err := db.AddTeamMember(ctx, "Token Owner", "token@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Token Owner", "token@example.com", nil)
 	require.NoError(t, err)
 	token, err := db.CreateCalendarSubscription(ctx, memberID)
 	require.NoError(t, err)
@@ -145,7 +145,7 @@ func TestHandleMeetingsDayHTML_InvalidDateReturns400(t *testing.T) {
 	h := newCalendarTestHandler(t, db)
 
 	ctx := context.Background()
-	memberID, err := db.AddTeamMember(ctx, "Token Owner", "token@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Token Owner", "token@example.com", nil)
 	require.NoError(t, err)
 	token, err := db.CreateCalendarSubscription(ctx, memberID)
 	require.NoError(t, err)

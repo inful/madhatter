@@ -16,7 +16,7 @@ func TestUpdateLeaveRecord(t *testing.T) {
 	ctx := context.Background()
 
 	// Add a team member
-	memberID, err := db.AddTeamMember(ctx, "John Doe", "john@example.com")
+	memberID, err := db.AddTeamMember(ctx, "John Doe", "john@example.com", nil)
 	require.NoError(t, err)
 
 	// Create a leave record
@@ -46,7 +46,7 @@ func TestDeleteLeaveRecord(t *testing.T) {
 	ctx := context.Background()
 
 	// Add a team member
-	memberID, err := db.AddTeamMember(ctx, "John Doe", "john@example.com")
+	memberID, err := db.AddTeamMember(ctx, "John Doe", "john@example.com", nil)
 	require.NoError(t, err)
 
 	// Create a leave record

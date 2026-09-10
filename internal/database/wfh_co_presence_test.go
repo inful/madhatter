@@ -27,9 +27,9 @@ func TestRecordWFHCoPresencePair_Roundtrip(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	yesterday := time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
@@ -61,9 +61,9 @@ func TestInsertWFHCoPresencePair_ReportsInsertVsNoop(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	yesterday := time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
@@ -93,9 +93,9 @@ func TestPruneWFHCoPresenceOlderThan(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	old := time.Now().UTC().AddDate(0, 0, -10).Format("2006-01-02")
@@ -139,9 +139,9 @@ func TestPruneWFHCoPresenceOlderThan_TodaySurvives(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	today := time.Now().UTC().Format("2006-01-02")
@@ -265,9 +265,9 @@ func TestGetLatestCoPresenceWithCohort_NoHistoryReturnsZero(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	horizonStart := time.Now().UTC().AddDate(0, 0, -14)
@@ -291,9 +291,9 @@ func TestGetLatestCoPresenceWithCohort_SymmetricByNormalization(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	// Use a real YYYY-MM-DD date string so parseCoPresenceDate
@@ -335,7 +335,7 @@ func TestGetLatestCoPresenceWithCohort_PadsCohortToThree(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	horizonStart := time.Now().UTC().AddDate(0, 0, -14)
@@ -384,9 +384,9 @@ func TestGetLatestCoPresenceWithCohort_MidnightUpperBound(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	// Seed yesterday's co-presence (writer stores at

@@ -50,7 +50,7 @@ func TestSnapshotLeaveCovers(t *testing.T) {
 		defer cleanup()
 		ctx := context.Background()
 
-		aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+		aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 		require.NoError(t, err)
 		_ = aliceID // not needed for this case, but kept symmetric with the other cases
 
@@ -64,9 +64,9 @@ func TestSnapshotLeaveCovers(t *testing.T) {
 		defer cleanup()
 		ctx := context.Background()
 
-		aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+		aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 		require.NoError(t, err)
-		bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+		bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 		require.NoError(t, err)
 
 		// Build a five-day schedule. Each day gets Alice as the
@@ -96,9 +96,9 @@ func TestSnapshotLeaveCovers(t *testing.T) {
 		defer cleanup()
 		ctx := context.Background()
 
-		aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+		aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 		require.NoError(t, err)
-		bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+		bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 		require.NoError(t, err)
 
 		// One cover inside the window, one cover the day before, one
@@ -139,9 +139,9 @@ func TestSnapshotLeaveCovers(t *testing.T) {
 		defer cleanup()
 		ctx := context.Background()
 
-		aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+		aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 		require.NoError(t, err)
-		bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+		bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 		require.NoError(t, err)
 
 		// A single-day leave where start == end. The window still

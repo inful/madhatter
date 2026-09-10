@@ -159,11 +159,11 @@ func TestPresenceTodayEndpoint(t *testing.T) {
 	ctx := createTestContext(t, server)
 
 	// Create a few team members.
-	aliceID, err := server.db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := server.db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := server.db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := server.db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
-	_, err = server.db.AddTeamMember(ctx, "Charlie", "charlie@example.com")
+	_, err = server.db.AddTeamMember(ctx, "Charlie", "charlie@example.com", nil)
 	require.NoError(t, err)
 
 	today := time.Now().Format("2006-01-02")
@@ -210,7 +210,7 @@ func TestPresenceTodayEndpoint_RecurringWFHMember(t *testing.T) {
 
 	ctx := createTestContext(t, server)
 
-	aliceID, err := server.db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := server.db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 	require.NoError(t, server.db.SetTeamMemberPermanentWFH(ctx, aliceID, true))
 
@@ -253,11 +253,11 @@ func TestScheduleEndpoints(t *testing.T) {
 	ctx := createTestContext(t, server)
 
 	// Setup: Add team members
-	_, err := server.db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := server.db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	_, err = server.db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	_, err = server.db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
-	_, err = server.db.AddTeamMember(ctx, "Charlie", "charlie@example.com")
+	_, err = server.db.AddTeamMember(ctx, "Charlie", "charlie@example.com", nil)
 	require.NoError(t, err)
 
 	t.Run("GenerateSchedule", func(t *testing.T) {
@@ -283,9 +283,9 @@ func TestLeaveEndpoints(t *testing.T) {
 	ctx := createTestContext(t, server)
 
 	// Setup: Add team members and generate schedule
-	aliceID, _ := server.db.AddTeamMember(ctx, "Alice", "alice@example.com")
-	_, _ = server.db.AddTeamMember(ctx, "Bob", "bob@example.com")
-	_, _ = server.db.AddTeamMember(ctx, "Charlie", "charlie@example.com")
+	aliceID, _ := server.db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
+	_, _ = server.db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
+	_, _ = server.db.AddTeamMember(ctx, "Charlie", "charlie@example.com", nil)
 
 	engine := server.engine
 	err := engine.GenerateSchedule(
@@ -424,8 +424,8 @@ func TestCalendarEndpoints(t *testing.T) {
 	ctx := createTestContext(t, server)
 
 	// Setup: Add team member and generate schedule
-	aliceID, _ := server.db.AddTeamMember(ctx, "Alice", "alice@example.com")
-	_, _ = server.db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	aliceID, _ := server.db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
+	_, _ = server.db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 
 	engine := server.engine
 	err := engine.GenerateSchedule(
@@ -608,9 +608,9 @@ func TestReportWFHTodayEndpoint_Approves(t *testing.T) {
 	defer cleanup()
 
 	ctx := createTestContext(t, server)
-	testID, err := server.db.AddTeamMember(ctx, "Test User", "test@example.com")
+	testID, err := server.db.AddTeamMember(ctx, "Test User", "test@example.com", nil)
 	require.NoError(t, err)
-	_, err = server.db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	_, err = server.db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	resp, err := server.handleReportWFHToday(ctx, nil)
@@ -644,7 +644,7 @@ func TestReportWFHTodayEndpoint_DeniedAtFloor(t *testing.T) {
 	defer cleanup()
 
 	ctx := createTestContext(t, server)
-	_, err := server.db.AddTeamMember(ctx, "Test User", "test@example.com")
+	_, err := server.db.AddTeamMember(ctx, "Test User", "test@example.com", nil)
 	require.NoError(t, err)
 
 	resp, err := server.handleReportWFHToday(ctx, nil)
@@ -667,9 +667,9 @@ func TestReportWFHTodayEndpoint_DuplicateReturns409(t *testing.T) {
 	defer cleanup()
 
 	ctx := createTestContext(t, server)
-	_, err := server.db.AddTeamMember(ctx, "Test User", "test@example.com")
+	_, err := server.db.AddTeamMember(ctx, "Test User", "test@example.com", nil)
 	require.NoError(t, err)
-	_, err = server.db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	_, err = server.db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	_, err = server.handleReportWFHToday(ctx, nil)
@@ -707,9 +707,9 @@ func TestReportWFHTodayEndpoint_QuotaExhaustedReturns422(t *testing.T) {
 	defer cleanup()
 
 	ctx := createTestContext(t, server)
-	testID, err := server.db.AddTeamMember(ctx, "Test User", "test@example.com")
+	testID, err := server.db.AddTeamMember(ctx, "Test User", "test@example.com", nil)
 	require.NoError(t, err)
-	_, err = server.db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	_, err = server.db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	// Burn one weekday strictly after today, inside today's quota

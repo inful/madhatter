@@ -376,16 +376,16 @@ func TestAPIAuth_AllOperations(t *testing.T) {
 
 	// Seed data so operations can succeed past auth checks.
 	ctx := context.Background()
-	memberA, err := server.db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberA, err := server.db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	_, err = server.db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	_, err = server.db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
-	_, err = server.db.AddTeamMember(ctx, "Charlie", "charlie@example.com")
+	_, err = server.db.AddTeamMember(ctx, "Charlie", "charlie@example.com", nil)
 	require.NoError(t, err)
 
-	memberToUpdate, err := server.db.AddTeamMember(ctx, "Update Me", "update@example.com")
+	memberToUpdate, err := server.db.AddTeamMember(ctx, "Update Me", "update@example.com", nil)
 	require.NoError(t, err)
-	memberToDelete, err := server.db.AddTeamMember(ctx, "Delete Me", "delete@example.com")
+	memberToDelete, err := server.db.AddTeamMember(ctx, "Delete Me", "delete@example.com", nil)
 	require.NoError(t, err)
 
 	// Generate schedule so leave/ICS endpoints have data.

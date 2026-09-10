@@ -14,7 +14,7 @@ func TestCreateLeaveRecord_Success(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	// Use dynamic dates
@@ -62,7 +62,7 @@ func TestGetLeaveByDate_Range(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	memberID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 
 	// Use dynamic dates
 	baseDate := time.Now().AddDate(0, 0, 7)
@@ -105,8 +105,8 @@ func TestGetLeaveByDate_MultipleMembers(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	member1, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com")
-	member2, _ := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	member1, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
+	member2, _ := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 
 	// Use dynamic dates
 	baseDate := time.Now().AddDate(0, 0, 7)
@@ -132,7 +132,7 @@ func TestUpdateLeaveStatus(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	memberID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 
 	// Use dynamic dates
 	startDate := time.Now().AddDate(0, 0, 7).Format("2006-01-02")
@@ -156,7 +156,7 @@ func TestGetLeaveByID(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	memberID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 
 	// Use dynamic dates
 	startDate := time.Now().AddDate(0, 0, 7).Format("2006-01-02")
@@ -192,7 +192,7 @@ func TestDeleteExpiredLeaveRecords(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	memberID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	now := time.Now().UTC()

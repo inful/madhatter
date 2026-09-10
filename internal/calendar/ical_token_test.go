@@ -52,7 +52,7 @@ func TestGenerateICalForTokenWithOptions_NoUpcomingAssignments(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	token, err := db.CreateCalendarSubscription(ctx, memberID)
@@ -82,7 +82,7 @@ func TestGenerateICalForTokenWithOptions_IncludesUpcomingAssignments(t *testing.
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	// Pick a future weekday so the assignment is unambiguously inside
@@ -128,7 +128,7 @@ func TestGenerateICalForTokenWithOptions_IncludesUpcomingWFHEvents(t *testing.T)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	// Two WFH days: a future self-requested day and today's
@@ -185,7 +185,7 @@ func TestGenerateICalForTokenWithOptions_ExcludesPendingWFH(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	today := time.Now().UTC()
@@ -241,9 +241,9 @@ func TestGenerateICalForTokenWithTokenWithOptions_SuppressesCoveredOriginal(t *t
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	// Pick a future weekday so the assignment is unambiguously
@@ -314,11 +314,11 @@ func TestGenerateOthersICalForToken_SuppressesCoveredOriginal(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
-	carolID, err := db.AddTeamMember(ctx, "Carol", "carol@example.com")
+	carolID, err := db.AddTeamMember(ctx, "Carol", "carol@example.com", nil)
 	require.NoError(t, err)
 
 	date := time.Now().UTC().AddDate(0, 0, 5)

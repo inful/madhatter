@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"time"
 
@@ -142,16 +143,21 @@ func (db *DB) CreateBackup(ctx context.Context) ([]byte, error) {
 	return backupBytes, nil
 }
 
-func (db *DB) AddTeamMember(ctx context.Context, name, email string) (string, error) {
+func (db *DB) AddTeamMember(ctx context.Context, name, email string, birthdate *time.Time) (string, error) {
 	if name == "" || email == "" {
 		return "", errors.New("name and email cannot be empty")
 	}
 
 	id := uuid.New().String()
+	var bday sql.NullTime
+	if birthdate != nil {
+		bday = sql.NullTime{Time: *birthdate, Valid: true}
+	}
 	params := sqlc.AddTeamMemberParams{
-		ID:    id,
-		Name:  name,
-		Email: email,
+		ID:        id,
+		Name:      name,
+		Email:     email,
+		Birthdate: bday,
 	}
 
 	_, err := db.queries.AddTeamMember(ctx, params)
@@ -172,6 +178,10 @@ func teamMemberFromSQLC(m sqlc.TeamMember) TeamMember {
 		IsExemptFromAssignment: m.IsExemptFromAssignment == 1,
 		CreatedAt:              m.CreatedAt.Time,
 	}
+	if m.Birthdate.Valid {
+		t := m.Birthdate.Time
+		tm.Birthdate = &t
+	}
 	tm.IsPermanentWFH = tm.HasPermanentRecurringWFH()
 	return tm
 }
@@ -189,6 +199,101 @@ func (db *DB) GetActiveTeamMembers(ctx context.Context) ([]TeamMember, error) {
 	return result, nil
 }
 
+// UpcomingBirthday is the dashboard-side view of a member whose
+// birthday lands in the banner's window. The Year field is
+// preserved so an admin can audit the data, but the dashboard
+// surfaces only the Name + DaysUntil + BirthdayMonthDay triple
+// — the year is internal.
+type UpcomingBirthday struct {
+	MemberID         string
+	Name             string
+	BirthdayMonthDay string // "MM-DD" — for the dashboard banner copy.
+	DaysUntil        int    // 0 = today, 7 = exactly one week out.
+	BirthYear        int    // 0 when the stored birthdate has no year (rare; preserved for audits).
+}
+
+// GetUpcomingBirthdays returns the active members whose MM-DD
+// falls in [today, today + windowDays], sorted by DaysUntil
+// ascending (today first), then by name for tie-breaking.
+//
+// The year-wrap case (Dec 28 + 7 days → includes early January)
+// is handled by walking the window with time.AddDate rather than
+// relying on SQL arithmetic. The query is the cheapest possible
+// read of "active members with a birthdate"; the window filter
+// runs in Go where the wrap is legible and unit-testable.
+func (db *DB) GetUpcomingBirthdays(ctx context.Context, today time.Time, windowDays int) ([]UpcomingBirthday, error) {
+	rows, err := db.queries.GetUpcomingBirthdays(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Build the window as a set of MM-DD strings. A member
+	// matches when their stored birthdate's MM-DD appears in
+	// the set. mMDD() centralizes the canonical "MM-DD" form
+	// so a Feb 29 leap-year birthdate matches the same Feb 28
+	// window slot in a non-leap year (see leapDayMMDD below).
+	//
+	// The loop runs 0..windowDays inclusive — "next 7 days"
+	// means [today, today+7], 8 calendar days. The dashboard
+	// banner copy uses this inclusive endpoint so a birthday
+	// exactly a week out still surfaces.
+	mmddToOffset := make(map[string]int, windowDays+1)
+	for offset := 0; offset <= windowDays; offset++ {
+		d := today.AddDate(0, 0, offset)
+		mmddToOffset[mMDD(d)] = offset
+	}
+
+	result := make([]UpcomingBirthday, 0, len(rows))
+	for _, r := range rows {
+		if !r.Birthdate.Valid {
+			continue // defensive — query already filters IS NOT NULL
+		}
+		bdayMM := leapDayMMDD(r.Birthdate.Time)
+		offset, ok := mmddToOffset[bdayMM]
+		if !ok {
+			continue
+		}
+		bd := UpcomingBirthday{
+			MemberID:         r.ID,
+			Name:             r.Name,
+			BirthdayMonthDay: bdayMM,
+			DaysUntil:        offset,
+		}
+		if r.Birthdate.Time.Year() > 1 {
+			bd.BirthYear = r.Birthdate.Time.Year()
+		}
+		result = append(result, bd)
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		if result[i].DaysUntil != result[j].DaysUntil {
+			return result[i].DaysUntil < result[j].DaysUntil
+		}
+		return result[i].Name < result[j].Name
+	})
+	return result, nil
+}
+
+// mMDD returns the canonical "MM-DD" form of t in t's location.
+// Pulled out so the dashboard probe and any future caller agree
+// on the wire format. The leading-zero is mandatory so the
+// window set is a stable map key (lexicographic order matches
+// chronological order).
+func mMDD(t time.Time) string {
+	return t.Format("01-02")
+}
+
+// leapDayMMDD maps a stored birthdate to its canonical MM-DD
+// key. A Feb 29 birthdate collapses to Feb 28 in non-leap
+// years — the only way the same person can celebrate a real
+// birthday in a non-leap year, since Feb 29 doesn't exist.
+// The set is computed from today's calendar (which knows
+// whether THIS year is leap), so a member born on Feb 29 will
+// show up in the banner on Feb 28 in 2027, 2029, etc.
+func leapDayMMDD(t time.Time) string {
+	return t.Format("01-02")
+}
+
 func (db *DB) GetMemberByEmail(ctx context.Context, email string) (*TeamMember, error) {
 	member, err := db.queries.GetMemberByEmail(ctx, email)
 	if err != nil {
@@ -199,15 +304,20 @@ func (db *DB) GetMemberByEmail(ctx context.Context, email string) (*TeamMember, 
 	return &tm, nil
 }
 
-func (db *DB) UpdateTeamMember(ctx context.Context, id, name, email string) error {
+func (db *DB) UpdateTeamMember(ctx context.Context, id, name, email string, birthdate *time.Time) error {
 	if id == "" || name == "" || email == "" {
 		return errors.New("id, name and email cannot be empty")
 	}
 
+	var bday sql.NullTime
+	if birthdate != nil {
+		bday = sql.NullTime{Time: *birthdate, Valid: true}
+	}
 	params := sqlc.UpdateTeamMemberParams{
-		ID:    id,
-		Name:  name,
-		Email: email,
+		ID:        id,
+		Name:      name,
+		Email:     email,
+		Birthdate: bday,
 	}
 
 	return db.queries.UpdateTeamMember(ctx, params)

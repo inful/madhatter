@@ -15,11 +15,11 @@ func TestCreateHatSwap_RejectsConflictingPendingAssignmentAcrossColumns(t *testi
 	defer cleanup()
 
 	ctx := context.Background()
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
-	charlieID, err := db.AddTeamMember(ctx, "Charlie", "charlie@example.com")
+	charlieID, err := db.AddTeamMember(ctx, "Charlie", "charlie@example.com", nil)
 	require.NoError(t, err)
 
 	baseDate := time.Now().AddDate(0, 0, 7)
@@ -42,9 +42,9 @@ func TestExecuteSwap_RejectsPastAssignments(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	baseDate := time.Now().AddDate(0, 0, -3)
@@ -74,9 +74,9 @@ func TestExecuteSwap_SwapsMembersAndSetsIsSwapped(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	baseDate := time.Now().AddDate(0, 0, 7)
@@ -111,9 +111,9 @@ func TestCleanupExpiredPendingSwaps_CancelsExpiredPending(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	pastDate := time.Now().AddDate(0, 0, -3)
@@ -141,11 +141,11 @@ func TestExecuteSwap_DoesNotMarkUnrelatedAssignments(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
-	charlieID, err := db.AddTeamMember(ctx, "Charlie", "charlie@example.com")
+	charlieID, err := db.AddTeamMember(ctx, "Charlie", "charlie@example.com", nil)
 	require.NoError(t, err)
 
 	baseDate := time.Now().AddDate(0, 0, 7)
@@ -177,7 +177,7 @@ func TestValidateSwapAssignments_SameAssignment_ReturnsErrSwapSameAssignment(t *
 	defer cleanup()
 
 	ctx := context.Background()
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	date := time.Now().AddDate(0, 0, 7).Format("2006-01-02")
@@ -193,9 +193,9 @@ func TestValidateSwapAssignments_RequesterNotFound_ReturnsErrRequesterAssignment
 	defer cleanup()
 
 	ctx := context.Background()
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	date := time.Now().AddDate(0, 0, 7).Format("2006-01-02")
@@ -211,7 +211,7 @@ func TestValidateSwapAssignments_TargetNotFound_ReturnsErrTargetAssignmentNotFou
 	defer cleanup()
 
 	ctx := context.Background()
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	date := time.Now().AddDate(0, 0, 7).Format("2006-01-02")
@@ -227,11 +227,11 @@ func TestValidateSwapAssignments_NotOwner_ReturnsErrSwapNotOwner(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
-	charlieID, err := db.AddTeamMember(ctx, "Charlie", "charlie@example.com")
+	charlieID, err := db.AddTeamMember(ctx, "Charlie", "charlie@example.com", nil)
 	require.NoError(t, err)
 
 	baseDate := time.Now().AddDate(0, 0, 7)
@@ -250,7 +250,7 @@ func TestValidateSwapAssignments_SelfTarget_ReturnsErrSwapTargetSelf(t *testing.
 	defer cleanup()
 
 	ctx := context.Background()
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	baseDate := time.Now().AddDate(0, 0, 7)
@@ -269,9 +269,9 @@ func TestValidateSwapAssignments_RequesterDatePassed_ReturnsErrSwapRequesterDate
 		t.Cleanup(cleanup)
 
 		ctx := context.Background()
-		aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+		aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 		require.NoError(t, err)
-		bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+		bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 		require.NoError(t, err)
 
 		pastDate := time.Now().AddDate(0, 0, -3).Format("2006-01-02")
@@ -292,9 +292,9 @@ func TestValidateSwapAssignments_TargetDatePassed_ReturnsErrSwapTargetDatePassed
 		t.Cleanup(cleanup)
 
 		ctx := context.Background()
-		aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+		aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 		require.NoError(t, err)
-		bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+		bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 		require.NoError(t, err)
 
 		futureDate := time.Now().AddDate(0, 0, 7).Format("2006-01-02")
@@ -314,9 +314,9 @@ func TestValidateSwapAssignments_Valid_ReturnsAssignments(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	baseDate := time.Now().AddDate(0, 0, 7)
@@ -383,7 +383,7 @@ func TestCheckNoOpenSwaps_NoOpenSwap_ReturnsNil(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	date := time.Now().AddDate(0, 0, 7).Format("2006-01-02")
@@ -399,9 +399,9 @@ func TestCheckNoOpenSwaps_OpenSwapExists_ReturnsErrSwapAssignmentBusy(t *testing
 	defer cleanup()
 
 	ctx := context.Background()
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	baseDate := time.Now().AddDate(0, 0, 7)
@@ -422,11 +422,11 @@ func TestCheckNoOpenSwaps_SecondAssignmentBusy_ReturnsErrSwapAssignmentBusy(t *t
 	defer cleanup()
 
 	ctx := context.Background()
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
-	charlieID, err := db.AddTeamMember(ctx, "Charlie", "charlie@example.com")
+	charlieID, err := db.AddTeamMember(ctx, "Charlie", "charlie@example.com", nil)
 	require.NoError(t, err)
 
 	baseDate := time.Now().AddDate(0, 0, 7)
@@ -469,7 +469,7 @@ func TestExecuteSwap_RejectsSelfSwapAtExecutionTime(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	baseDate := time.Now().AddDate(0, 0, 7)
@@ -541,7 +541,7 @@ func TestCreateHatSwap_SelfSwapRejectedAtAPI(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	baseDate := time.Now().AddDate(0, 0, 7)
@@ -590,11 +590,11 @@ func TestExecuteSwap_UsesCapturedPairNotLiveOwners(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
-	carolID, err := db.AddTeamMember(ctx, "Carol", "carol@example.com")
+	carolID, err := db.AddTeamMember(ctx, "Carol", "carol@example.com", nil)
 	require.NoError(t, err)
 
 	baseDate := time.Now().AddDate(0, 0, 7)
@@ -665,9 +665,9 @@ func TestExecuteSwap_LivePairSelfSwapAtExecuteTime(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	baseDate := time.Now().AddDate(0, 0, 7)
@@ -716,9 +716,9 @@ func TestReconcileAcceptedSwap_DryRun(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	baseDate := time.Now().AddDate(0, 0, 7)
@@ -766,9 +766,9 @@ func TestReconcileAcceptedSwap_AppliesCapturedPair(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	baseDate := time.Now().AddDate(0, 0, 7)
@@ -818,9 +818,9 @@ func TestReconcileAcceptedSwap_Idempotent(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	baseDate := time.Now().AddDate(0, 0, 7)
@@ -855,9 +855,9 @@ func TestReconcileAcceptedSwap_NonAcceptedRefuses(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	baseDate := time.Now().AddDate(0, 0, 7)
@@ -893,9 +893,9 @@ func TestReconcileAllAcceptedSwaps_WalksAndReports(t *testing.T) {
 	defer cleanup()
 	ctx := context.Background()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	baseDate := time.Now().AddDate(0, 0, 7)
@@ -916,9 +916,9 @@ func TestReconcileAllAcceptedSwaps_WalksAndReports(t *testing.T) {
 
 	// Swap 2 (clean): Carol ↔ Dave — set up after a tick so the
 	// created_at order is deterministic.
-	carolID, err := db.AddTeamMember(ctx, "Carol", "carol@example.com")
+	carolID, err := db.AddTeamMember(ctx, "Carol", "carol@example.com", nil)
 	require.NoError(t, err)
-	daveID, err := db.AddTeamMember(ctx, "Dave", "dave@example.com")
+	daveID, err := db.AddTeamMember(ctx, "Dave", "dave@example.com", nil)
 	require.NoError(t, err)
 	time.Sleep(10 * time.Millisecond)
 	carolAssignmentID, err := db.CreateRotaAssignment(ctx, baseDate.AddDate(0, 0, 2).Format("2006-01-02"), carolID, false, nil)

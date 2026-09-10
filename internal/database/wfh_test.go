@@ -28,9 +28,9 @@ func TestWithdrawOwnWFHRequest(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	// Pick distinct future business days for each subtest, since the
@@ -142,7 +142,7 @@ func TestWithdrawOwnWFHRequest(t *testing.T) {
 	// subtests' rows don't pollute the (member, date) unique
 	// constraint or the row count.
 	t.Run("owner can withdraw future recurring request", func(t *testing.T) {
-		carolID, err := db.AddTeamMember(ctx, "Carol", "carol@example.com")
+		carolID, err := db.AddTeamMember(ctx, "Carol", "carol@example.com", nil)
 		require.NoError(t, err)
 
 		date := futureDay(25)
@@ -169,7 +169,7 @@ func TestWithdrawOwnWFHRequest(t *testing.T) {
 		// Use Dave so the (member, date) unique constraint on
 		// dateToday doesn't collide with Alice's earlier ad-hoc
 		// "today" row.
-		daveID, err := db.AddTeamMember(ctx, "Dave", "dave@example.com")
+		daveID, err := db.AddTeamMember(ctx, "Dave", "dave@example.com", nil)
 		require.NoError(t, err)
 
 		require.NoError(t, db.CreateApprovedRecurringWFHRequest(ctx, daveID, dateToday, time.Now().UTC()))
@@ -242,7 +242,7 @@ func TestCountWFHRequestsBefore(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	// Cutoff at 2026-03-15 — rows with date < cutoff should count.
@@ -273,7 +273,7 @@ func TestPurgeWFHRequestsBefore_DeletesOnlyPastRows(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	// Mix of statuses on both sides of the cutoff. Purge must delete
@@ -312,7 +312,7 @@ func TestPurgeWFHRequestsBefore_NoMatchingRowsReturnsZero(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	// Only future rows exist; nothing should be purged.

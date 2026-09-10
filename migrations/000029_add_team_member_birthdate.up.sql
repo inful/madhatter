@@ -1,0 +1,14 @@
+-- Add an optional birthdate column to team_members so the team
+-- can celebrate birthdays. Close of #60.
+--
+-- The column is nullable: not every member wants to share their
+-- birthday, and the existing rows pre-date this feature. A NULL
+-- birthdate means "don't celebrate / don't show a banner" — the
+-- dashboard probe (loadUpcomingBirthdays) joins on birthdate IS
+-- NOT NULL so missing rows never reach the banner.
+--
+-- No backfill is needed for production: the column starts empty
+-- for every existing member. Admins set the field per-member via
+-- the team-edit form. (Same UX as is_permanent_wfh, which also
+-- defaults to 0/false and is opt-in per member.)
+ALTER TABLE team_members ADD COLUMN birthdate DATE;

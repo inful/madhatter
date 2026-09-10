@@ -43,15 +43,15 @@ func TestReassignCovers_IdempotentWithMultiDayLeaveAndVariedWalks(t *testing.T) 
 
 	ctx := context.Background()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
-	_, err = db.AddTeamMember(ctx, "Carla", "carla@example.com")
+	_, err = db.AddTeamMember(ctx, "Carla", "carla@example.com", nil)
 	require.NoError(t, err)
-	_, err = db.AddTeamMember(ctx, "Dave", "dave@example.com")
+	_, err = db.AddTeamMember(ctx, "Dave", "dave@example.com", nil)
 	require.NoError(t, err)
-	_, err = db.AddTeamMember(ctx, "Eve", "eve@example.com")
+	_, err = db.AddTeamMember(ctx, "Eve", "eve@example.com", nil)
 	require.NoError(t, err)
 
 	maintenance := NewScheduleMaintenance(db)
@@ -136,11 +136,11 @@ func TestReassignCovers_NewLeaveBetweenRunsIsPickedUp(t *testing.T) {
 
 	ctx := context.Background()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
-	_, err = db.AddTeamMember(ctx, "Charlie", "charlie@example.com")
+	_, err = db.AddTeamMember(ctx, "Charlie", "charlie@example.com", nil)
 	require.NoError(t, err)
 
 	maintenance := NewScheduleMaintenance(db)
@@ -209,11 +209,11 @@ func TestReassignCovers_DoesNotDisturbAdHocState(t *testing.T) {
 
 	ctx := context.Background()
 
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
-	_, err = db.AddTeamMember(ctx, "Charlie", "charlie@example.com")
+	_, err = db.AddTeamMember(ctx, "Charlie", "charlie@example.com", nil)
 	require.NoError(t, err)
 
 	engine := NewEngine(db)
@@ -271,9 +271,9 @@ func TestReassignCovers_AdHocBetweenRunsShiftsCoversAsExpected(t *testing.T) {
 
 	ctx := context.Background()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	engine := NewEngine(db)

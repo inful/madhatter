@@ -22,7 +22,7 @@ func TestWFHAPI_RequestInvalidDate_Returns422(t *testing.T) {
 	sessionToken, err := server.createTestSession(ctx)
 	require.NoError(t, err)
 
-	_, err = server.db.AddTeamMember(ctx, "Test User", "test@example.com")
+	_, err = server.db.AddTeamMember(ctx, "Test User", "test@example.com", nil)
 	require.NoError(t, err)
 
 	api := humatest.Wrap(t, server.api)
@@ -70,7 +70,7 @@ func TestWFHAPI_RequestBeyondHorizon_Returns422(t *testing.T) {
 	sessionToken, err := server.createTestSession(ctx)
 	require.NoError(t, err)
 
-	_, err = server.db.AddTeamMember(ctx, "Test User", "test@example.com")
+	_, err = server.db.AddTeamMember(ctx, "Test User", "test@example.com", nil)
 	require.NoError(t, err)
 
 	// Submit a date one day beyond the horizon — tight off-by-one boundary.
@@ -102,7 +102,7 @@ func TestWFHAPI_ListExposesOriginField(t *testing.T) {
 	sessionToken, err := server.createTestSession(ctx)
 	require.NoError(t, err)
 
-	memberID, err := server.db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := server.db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	// Two rows on different future business days — one with the

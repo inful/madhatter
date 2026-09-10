@@ -50,9 +50,9 @@ func seedDriftedSwap(t *testing.T, db *database.DB) (aliceAssignmentID, bobAssig
 	t.Helper()
 	ctx := context.Background()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err = db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	baseDate := time.Now().UTC().AddDate(0, 0, 7)
@@ -163,9 +163,9 @@ func TestRunSwapReconcile_AllBulk(t *testing.T) {
 	aliceAssignmentID, bobAssignmentID, _, aliceID, bobID := seedDriftedSwap(t, db)
 
 	ctx := context.Background()
-	carolID, err := db.AddTeamMember(ctx, "Carol", "carol@example.com")
+	carolID, err := db.AddTeamMember(ctx, "Carol", "carol@example.com", nil)
 	require.NoError(t, err)
-	daveID, err := db.AddTeamMember(ctx, "Dave", "dave@example.com")
+	daveID, err := db.AddTeamMember(ctx, "Dave", "dave@example.com", nil)
 	require.NoError(t, err)
 	baseDate := time.Now().UTC().AddDate(0, 0, 7)
 	carolAssignmentID, err := db.CreateRotaAssignment(ctx, baseDate.AddDate(0, 0, 2).Format("2006-01-02"), carolID, false, nil)

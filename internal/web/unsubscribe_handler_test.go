@@ -29,7 +29,7 @@ func newUnsubscribeHandler(t *testing.T) (*Handler, *database.DB, string) {
 	t.Cleanup(func() { _ = db.Close() })
 
 	ctx := context.Background()
-	_, err = db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err = db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 	m, err := db.GetMemberByEmail(ctx, "alice@example.com")
 	require.NoError(t, err)

@@ -16,7 +16,7 @@ func TestGetQuotaStatus_RecurringDaysCountAfterMaterialization(t *testing.T) {
 	defer cleanup()
 
 	svc := NewService(db, testConfig())
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 	require.NoError(t, db.SetTeamMemberRecurringWFHDays(ctx, memberID, database.RecurringWFHDays{
 		Wednesday: true,
@@ -69,7 +69,7 @@ func TestWithdrawRecurringDayFreesQuotaForDifferentDay(t *testing.T) {
 	defer cleanup()
 
 	svc := NewService(db, testConfig())
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 	require.NoError(t, db.SetTeamMemberRecurringWFHDays(ctx, memberID, database.RecurringWFHDays{Thursday: true}))
 

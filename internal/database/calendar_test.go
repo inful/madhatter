@@ -15,7 +15,7 @@ func TestCreateCalendarSubscription_Success(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	// Act
@@ -53,7 +53,7 @@ func TestGetMemberByToken_Found(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	memberID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	token, _ := db.CreateCalendarSubscription(ctx, memberID)
 
 	// Act
@@ -87,7 +87,7 @@ func TestGetCalendarSubscriptionOperations(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	memberID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 
 	// Act - Create subscription
 	token, err := db.CreateCalendarSubscription(ctx, memberID)
@@ -112,7 +112,7 @@ func TestCalendarSubscriptionLifecycle(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	memberID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	token, _ := db.CreateCalendarSubscription(ctx, memberID)
 
 	// Act - Verify we can get member by token
@@ -132,8 +132,8 @@ func TestGetUpcomingAssignments_WithCovers(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	memberID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com")
-	coverMemberID, _ := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	memberID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
+	coverMemberID, _ := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 
 	// Create original assignment (tomorrow)
 	tomorrow := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
@@ -158,7 +158,7 @@ func TestGetUpcomingAssignments_BeyondRange(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	memberID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 
 	// Create assignment 15 days in future
 	fifteenDaysAway := time.Now().AddDate(0, 0, 15).Format("2006-01-02")
@@ -183,9 +183,9 @@ func TestGetCoveredOriginalIDsInRange(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	// Pick a future weekday so the cover is unambiguously inside
@@ -239,9 +239,9 @@ func TestGetCoveredOriginalIDsInRange_OutsideRange(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	// Cover sits 60 days out; the query window is the next 30

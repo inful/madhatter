@@ -157,7 +157,10 @@ func serveCommand(ctx context.Context, db *database.DB) {
 }
 
 func teamAddCommand(ctx context.Context, db *database.DB) {
-	id, err := db.AddTeamMember(ctx, CLI.Team.Add.Name, CLI.Team.Add.Email)
+	// The CLI's `team add` subcommand predates #60 and has no
+	// birthdate flag. Members added via CLI start with no
+	// birthdate — admins can set it later from the team page.
+	id, err := db.AddTeamMember(ctx, CLI.Team.Add.Name, CLI.Team.Add.Email, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

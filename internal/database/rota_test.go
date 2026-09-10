@@ -14,7 +14,7 @@ func TestCreateRotaAssignment_Success(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	// Use dynamic date
@@ -42,7 +42,7 @@ func TestCreateRotaAssignment_CoverAssignment(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	memberID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 
 	// Use dynamic date
 	testDate := time.Now().AddDate(0, 0, 7).Format("2006-01-02")
@@ -51,7 +51,7 @@ func TestCreateRotaAssignment_CoverAssignment(t *testing.T) {
 	originalAssignmentID, _ := db.CreateRotaAssignment(ctx, testDate, memberID, false, nil)
 
 	// Act - Create cover assignment
-	coverMemberID, _ := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	coverMemberID, _ := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	assignmentID, err := db.CreateRotaAssignment(ctx, testDate, coverMemberID, true, &originalAssignmentID)
 
 	// Assert
@@ -89,8 +89,8 @@ func TestGetAssignmentsByDate_MultipleAssignments(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	member1, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com")
-	member2, _ := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	member1, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
+	member2, _ := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 
 	// Use dynamic date
 	testDate := time.Now().AddDate(0, 0, 7).Format("2006-01-02")
@@ -131,7 +131,7 @@ func TestGetAssignmentsByDate_DifferentDates(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	memberID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 
 	// Use dynamic dates
 	baseDate := time.Now().AddDate(0, 0, 7)
@@ -155,7 +155,7 @@ func TestGetUpcomingAssignments(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	memberID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 
 	// Get current date and create assignments relative to it
 	tomorrow := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
@@ -180,7 +180,7 @@ func TestGetUpcomingAssignments_Empty(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	memberID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 
 	// Act
 	assignments, err := db.GetUpcomingAssignments(ctx, memberID, 10)

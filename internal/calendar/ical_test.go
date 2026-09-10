@@ -269,9 +269,9 @@ func TestGenerateOthersICalForToken_ExcludesTokenOwnerAssignments(t *testing.T) 
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	ownerID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	ownerID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	otherID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	otherID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	today := time.Now().Format("2006-01-02")

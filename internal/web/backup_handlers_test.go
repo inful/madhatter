@@ -45,7 +45,7 @@ func TestHandleDatabaseBackup_Admin_DownloadsSQLiteFile(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
 
-	_, err = db.AddTeamMember(context.Background(), "Alice", "alice@example.com")
+	_, err = db.AddTeamMember(context.Background(), "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
@@ -116,7 +116,7 @@ func TestHandleDatabaseRestore_PostAdmin_ValidBackup(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
 
-	_, err = db.AddTeamMember(context.Background(), "Alice", "alice@example.com")
+	_, err = db.AddTeamMember(context.Background(), "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	backupBytes, err := db.CreateBackup(context.Background())
@@ -184,7 +184,7 @@ func TestHandleDatabaseRestore_PostAdmin_ApplyWithoutConfirmation(t *testing.T) 
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
 
-	_, err = db.AddTeamMember(context.Background(), "Alice", "alice@example.com")
+	_, err = db.AddTeamMember(context.Background(), "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	backupBytes, err := db.CreateBackup(context.Background())
@@ -222,13 +222,13 @@ func TestHandleDatabaseRestore_PostAdmin_ApplyWithConfirmation(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
 
-	_, err = db.AddTeamMember(context.Background(), "Alice", "alice@example.com")
+	_, err = db.AddTeamMember(context.Background(), "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	backupBytes, err := db.CreateBackup(context.Background())
 	require.NoError(t, err)
 
-	_, err = db.AddTeamMember(context.Background(), "Bob", "bob@example.com")
+	_, err = db.AddTeamMember(context.Background(), "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
@@ -269,13 +269,13 @@ func TestHandleDatabaseRestore_ValidateThenApply_WithoutReupload(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
 
-	_, err = db.AddTeamMember(context.Background(), "Alice", "alice@example.com")
+	_, err = db.AddTeamMember(context.Background(), "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	backupBytes, err := db.CreateBackup(context.Background())
 	require.NoError(t, err)
 
-	_, err = db.AddTeamMember(context.Background(), "Bob", "bob@example.com")
+	_, err = db.AddTeamMember(context.Background(), "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
@@ -341,7 +341,7 @@ func TestHandleDatabaseRestore_PostAdmin_Apply_WhenRestoreBusy_ReturnsConflict(t
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
 
-	_, err = db.AddTeamMember(context.Background(), "Alice", "alice@example.com")
+	_, err = db.AddTeamMember(context.Background(), "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	backupBytes, err := db.CreateBackup(context.Background())

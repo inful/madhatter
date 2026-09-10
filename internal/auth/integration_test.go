@@ -117,7 +117,7 @@ func TestUserService_EnsureTeamMember_PreservesExistingName(t *testing.T) {
 	userService := NewUserService(db.GetQueries(), encryptor)
 	ctx := context.Background()
 
-	_, err = db.AddTeamMember(ctx, "Local Custom Name", "dev@example.com")
+	_, err = db.AddTeamMember(ctx, "Local Custom Name", "dev@example.com", nil)
 	require.NoError(t, err)
 
 	err = userService.EnsureTeamMember(ctx, &UserInfo{

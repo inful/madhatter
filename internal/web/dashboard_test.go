@@ -25,7 +25,7 @@ func TestLoadCurrentHAT_NormalCase(t *testing.T) {
 	db, h, cleanup := setupDashboardTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	today := time.Now().Format("2006-01-02")
@@ -56,9 +56,9 @@ func TestLoadCurrentHAT_WithCoverOnLeave(t *testing.T) {
 	db, h, cleanup := setupDashboardTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	today := time.Now().Format("2006-01-02")
@@ -101,7 +101,7 @@ func TestLoadCurrentHAT_IgnoresRejectedLeave(t *testing.T) {
 	db, h, cleanup := setupDashboardTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	today := time.Now().Format("2006-01-02")
@@ -201,7 +201,7 @@ func TestLoadChairsData_NoCap_OmitsRow(t *testing.T) {
 	defer cleanup()
 
 	// No wfhService wired — cap is implicitly zero.
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	data := map[string]any{}
@@ -232,7 +232,7 @@ func TestLoadChairsData_ServiceDisabled_StillRendersWhenCapSet(t *testing.T) {
 		SeatCap: 7,
 	})
 
-	_, err := db.AddTeamMember(ctx, "alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	data := map[string]any{}
@@ -258,7 +258,7 @@ func TestLoadChairsData_CapZeroWithServiceStillOmitsRow(t *testing.T) {
 		SeatCap: 0, // explicit zero — picker disabled
 	})
 
-	_, err := db.AddTeamMember(ctx, "alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	data := map[string]any{}
@@ -279,7 +279,7 @@ func TestLoadChairsData_AllOnSite_RendersSuccess(t *testing.T) {
 	defer cleanup()
 
 	for _, name := range []string{"Alice", "Bob", "Carol"} {
-		_, err := db.AddTeamMember(ctx, name, name+"@example.com")
+		_, err := db.AddTeamMember(ctx, name, name+"@example.com", nil)
 		require.NoError(t, err)
 	}
 
@@ -303,7 +303,7 @@ func TestLoadChairsData_SubtractsLeaveAndWFH(t *testing.T) {
 	defer cleanup()
 
 	for _, name := range []string{"alice", "bob", "carol", "dave", "eve"} {
-		_, err := db.AddTeamMember(ctx, name, name+"@example.com")
+		_, err := db.AddTeamMember(ctx, name, name+"@example.com", nil)
 		require.NoError(t, err)
 	}
 
@@ -341,7 +341,7 @@ func TestLoadChairsData_AtCap_RendersWarning(t *testing.T) {
 	defer cleanup()
 
 	for _, name := range []string{"Alice", "Bob", "Carol"} {
-		_, err := db.AddTeamMember(ctx, name, name+"@example.com")
+		_, err := db.AddTeamMember(ctx, name, name+"@example.com", nil)
 		require.NoError(t, err)
 	}
 
@@ -367,7 +367,7 @@ func TestLoadChairsData_OverCap_RendersDanger(t *testing.T) {
 	defer cleanup()
 
 	for _, name := range []string{"Alice", "Bob", "Carol", "Dave"} {
-		_, err := db.AddTeamMember(ctx, name, name+"@example.com")
+		_, err := db.AddTeamMember(ctx, name, name+"@example.com", nil)
 		require.NoError(t, err)
 	}
 
@@ -394,7 +394,7 @@ func TestLoadChairsData_StaleLeaveIgnored(t *testing.T) {
 	defer cleanup()
 
 	for _, name := range []string{"alice", "bob", "carol"} {
-		_, err := db.AddTeamMember(ctx, name, name+"@example.com")
+		_, err := db.AddTeamMember(ctx, name, name+"@example.com", nil)
 		require.NoError(t, err)
 	}
 
@@ -423,7 +423,7 @@ func TestLoadChairsData_PendingWFHIgnored(t *testing.T) {
 	defer cleanup()
 
 	for _, name := range []string{"alice", "bob", "carol"} {
-		_, err := db.AddTeamMember(ctx, name, name+"@example.com")
+		_, err := db.AddTeamMember(ctx, name, name+"@example.com", nil)
 		require.NoError(t, err)
 	}
 
@@ -456,7 +456,7 @@ func TestLoadChairsData_NegativeOnSiteClampsToZero(t *testing.T) {
 
 	// Two members: both on leave (engine-induced scenario).
 	for _, name := range []string{"alice", "bob"} {
-		_, err := db.AddTeamMember(ctx, name, name+"@example.com")
+		_, err := db.AddTeamMember(ctx, name, name+"@example.com", nil)
 		require.NoError(t, err)
 	}
 
@@ -496,7 +496,7 @@ func TestLoadChairsData_PresenceSnapshotWins(t *testing.T) {
 	// Seven members, all "active" per GetActiveTeamMembers.
 	memberIDs := make([]string, 0, 7)
 	for _, name := range []string{"alice", "bob", "carol", "dave", "eve", "frank", "grace"} {
-		id, err := db.AddTeamMember(ctx, name, name+"@example.com")
+		id, err := db.AddTeamMember(ctx, name, name+"@example.com", nil)
 		require.NoError(t, err)
 		memberIDs = append(memberIDs, id)
 	}
@@ -561,7 +561,7 @@ func TestLoadChairsData_PresenceSnapshotTrumpsRecompute(t *testing.T) {
 	// matrix, not with the flat-row scan.
 	memberIDs := make([]string, 0, 3)
 	for _, name := range []string{"alice", "bob", "carol"} {
-		id, err := db.AddTeamMember(ctx, name, name+"@example.com")
+		id, err := db.AddTeamMember(ctx, name, name+"@example.com", nil)
 		require.NoError(t, err)
 		memberIDs = append(memberIDs, id)
 	}
@@ -609,7 +609,7 @@ func TestLoadChairsData_NoPresenceSnapshotFallsBackToRecompute(t *testing.T) {
 	defer cleanup()
 
 	for _, name := range []string{"alice", "bob", "carol"} {
-		_, err := db.AddTeamMember(ctx, name, name+"@example.com")
+		_, err := db.AddTeamMember(ctx, name, name+"@example.com", nil)
 		require.NoError(t, err)
 	}
 
@@ -634,7 +634,7 @@ func TestLoadChairsData_EmptyPresenceSnapshotFallsBackToRecompute(t *testing.T) 
 	defer cleanup()
 
 	for _, name := range []string{"alice", "bob"} {
-		_, err := db.AddTeamMember(ctx, name, name+"@example.com")
+		_, err := db.AddTeamMember(ctx, name, name+"@example.com", nil)
 		require.NoError(t, err)
 	}
 
@@ -755,7 +755,7 @@ func TestDashboard_StatusLegendRendersAllSixStates(t *testing.T) {
 	db, h, cleanup := setupDashboardTestDB(t)
 	defer cleanup()
 
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 	// Seed a rota assignment for the next 5 business days so the
 	// schedule matrix has rows to render and the legend (which lives

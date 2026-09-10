@@ -37,14 +37,14 @@ func TestGenerateMeetingsICalForToken_IncludesDeterministicShuffle(t *testing.T)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	_, err = db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err = db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
-	_, err = db.AddTeamMember(ctx, "Charlie", "charlie@example.com")
+	_, err = db.AddTeamMember(ctx, "Charlie", "charlie@example.com", nil)
 	require.NoError(t, err)
 
-	memberID, err := db.AddTeamMember(ctx, "Token Owner", "token@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Token Owner", "token@example.com", nil)
 	require.NoError(t, err)
 	token, err := db.CreateCalendarSubscription(ctx, memberID)
 	require.NoError(t, err)
@@ -95,11 +95,11 @@ func TestGenerateMeetingsICalForToken_IsIdenticalAcrossDifferentSubscriptions(t 
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	memberAID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberAID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	memberBID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	memberBID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
-	_, err = db.AddTeamMember(ctx, "Charlie", "charlie@example.com")
+	_, err = db.AddTeamMember(ctx, "Charlie", "charlie@example.com", nil)
 	require.NoError(t, err)
 
 	tokenA, err := db.CreateCalendarSubscription(ctx, memberAID)
@@ -148,7 +148,7 @@ func TestGenerateMeetingsICalForToken_UsesTZIDForEventTimes(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	memberID, err := db.AddTeamMember(ctx, "Token Owner", "token@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Token Owner", "token@example.com", nil)
 	require.NoError(t, err)
 	token, err := db.CreateCalendarSubscription(ctx, memberID)
 	require.NoError(t, err)
@@ -185,7 +185,7 @@ func TestGenerateMeetingsICalForToken_AllowsTemplateOverrides(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	memberID, err := db.AddTeamMember(ctx, "Token Owner", "token@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Token Owner", "token@example.com", nil)
 	require.NoError(t, err)
 	token, err := db.CreateCalendarSubscription(ctx, memberID)
 	require.NoError(t, err)
@@ -234,7 +234,7 @@ func TestGenerateMeetingsICalForToken_DefaultTemplatesIncludeLinks(t *testing.T)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	memberID, err := db.AddTeamMember(ctx, "Token Owner", "token@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Token Owner", "token@example.com", nil)
 	require.NoError(t, err)
 	token, err := db.CreateCalendarSubscription(ctx, memberID)
 	require.NoError(t, err)
@@ -273,7 +273,7 @@ func TestGenerateMeetingsICalForToken_UsesDifferentLinksPerMeetingType(t *testin
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	memberID, err := db.AddTeamMember(ctx, "Token Owner", "token@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Token Owner", "token@example.com", nil)
 	require.NoError(t, err)
 	token, err := db.CreateCalendarSubscription(ctx, memberID)
 	require.NoError(t, err)
@@ -335,9 +335,9 @@ func TestGenerateMeetingsForDate_WeekdayReturnsOneMeeting(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	_, err = db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err = db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	memberID, err := db.AddTeamMember(ctx, "Token Owner", "token@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Token Owner", "token@example.com", nil)
 	require.NoError(t, err)
 	token, err := db.CreateCalendarSubscription(ctx, memberID)
 	require.NoError(t, err)
@@ -371,9 +371,9 @@ func TestGenerateMeetingsForDate_MondayReturnsProjectMeeting(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	_, err = db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err = db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	memberID, err := db.AddTeamMember(ctx, "Token Owner", "token@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Token Owner", "token@example.com", nil)
 	require.NoError(t, err)
 	_, err = db.CreateCalendarSubscription(ctx, memberID)
 	require.NoError(t, err)
@@ -466,9 +466,9 @@ func TestGetSupportForDate_PrefersCover(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	originalID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	originalID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	coverID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	coverID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	date := "2026-07-15"
@@ -491,7 +491,7 @@ func TestGetSupportForDate_OnlyOriginal(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 	date := "2026-07-16"
 	_, err = db.CreateRotaAssignment(ctx, date, memberID, false, nil)

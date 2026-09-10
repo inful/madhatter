@@ -18,11 +18,11 @@ func TestEngine_CoverReplacement(t *testing.T) {
 	ctx := context.Background()
 
 	// Setup: Alice, Bob, Charlie
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
-	charlieID, err := db.AddTeamMember(ctx, "Charlie", "charlie@example.com")
+	charlieID, err := db.AddTeamMember(ctx, "Charlie", "charlie@example.com", nil)
 	require.NoError(t, err)
 
 	engine := NewEngine(db)
@@ -97,9 +97,9 @@ func TestEngine_CoverReplacement_MultiDay(t *testing.T) {
 
 	ctx := context.Background()
 
-	aliceID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com")
-	bobID, _ := db.AddTeamMember(ctx, "Bob", "bob@example.com")
-	charlieID, _ := db.AddTeamMember(ctx, "Charlie", "charlie@example.com")
+	aliceID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
+	bobID, _ := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
+	charlieID, _ := db.AddTeamMember(ctx, "Charlie", "charlie@example.com", nil)
 
 	engine := NewEngine(db)
 

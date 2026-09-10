@@ -30,9 +30,9 @@ func TestHandleLeaveManagement_RegularUserSeesOnlyOwn(t *testing.T) {
 	db, h, cleanup := setupLeaveTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 	_, err = db.CreateLeaveRecord(ctx, aliceID, "2026-09-01", "2026-09-03", database.LeaveTypeLeave)
 	require.NoError(t, err)
@@ -76,9 +76,9 @@ func TestHandleLeaveManagement_AdminSeesAll(t *testing.T) {
 	db, h, cleanup := setupLeaveTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 	_, err = db.CreateLeaveRecord(ctx, aliceID, "2026-09-01", "2026-09-03", database.LeaveTypeLeave)
 	require.NoError(t, err)
@@ -116,9 +116,9 @@ func TestHandleLeaveReport_RawHTTPRejectsEscalation(t *testing.T) {
 	db, h, cleanup := setupLeaveTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	// Raw HTTP body Alice would send via curl with cookies:
@@ -161,9 +161,9 @@ func TestHandleLeaveReport_NonAdminForcesSelfMemberID(t *testing.T) {
 	db, h, cleanup := setupLeaveTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	// Alice (non-admin) submits the form with Bob's member_id.
@@ -206,9 +206,9 @@ func TestHandleLeaveReport_AdminMemberIDRespected(t *testing.T) {
 	db, h, cleanup := setupLeaveTestDB(t)
 	defer cleanup()
 
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	form := "member_id=" + bobID + "&start_date=2026-10-01&end_date=2026-10-03"
@@ -237,9 +237,9 @@ func TestHandleLeaveEdit_NonAdminRejectsOthersLeave(t *testing.T) {
 	db, _, cleanup := setupLeaveTestDB(t)
 	defer cleanup()
 
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 	// Bob's leave dates are anchored to today rather than
 	// hardcoded so this fixture is independent of the wall
@@ -290,9 +290,9 @@ func TestHandleLeaveDelete_NonAdminRejectsOthersLeave(t *testing.T) {
 	db, _, cleanup := setupLeaveTestDB(t)
 	defer cleanup()
 
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 	// Bob's leave dates are anchored to today rather than
 	// hardcoded so this fixture is independent of the wall
@@ -360,9 +360,9 @@ func TestHandleLeaveEdit_RawHTTPRejectsEscalation(t *testing.T) {
 	db, h, cleanup := setupLeaveTestDB(t)
 	defer cleanup()
 
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 	// Bob's leave dates are anchored to today rather than
 	// hardcoded so this fixture is independent of the wall
@@ -416,9 +416,9 @@ func TestHandleLeaveDelete_RawHTTPRejectsEscalation(t *testing.T) {
 	db, h, cleanup := setupLeaveTestDB(t)
 	defer cleanup()
 
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 	// Bob's leave dates are anchored to today rather than
 	// hardcoded so this fixture is independent of the wall
@@ -478,7 +478,7 @@ func TestHandleLeaveManagement_NonAdminSeesEditDeleteForOwnLeave(t *testing.T) {
 	db, h, cleanup := setupLeaveTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 	_, err = db.CreateLeaveRecord(ctx, aliceID, "2026-09-01", "2026-09-03", database.LeaveTypeLeave)
 	require.NoError(t, err)
@@ -511,7 +511,7 @@ func TestHandleLeaveManagement_NonAdminOmitsTeamPicker(t *testing.T) {
 	db, h, cleanup := setupLeaveTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 	_, err = db.CreateLeaveRecord(ctx, aliceID, "2026-09-01", "2026-09-03", database.LeaveTypeLeave)
 	require.NoError(t, err)
@@ -549,7 +549,7 @@ func TestHandleLeaveEdit_NonAdminEditsOwnLeave(t *testing.T) {
 	db, h, cleanup := setupLeaveTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 	_, err = db.CreateLeaveRecord(ctx, aliceID, "2026-09-01", "2026-09-03", database.LeaveTypeLeave)
 	require.NoError(t, err)
@@ -622,9 +622,9 @@ func TestHandleLeaveReportSick_NonAdminRegistersForOther(t *testing.T) {
 	db, h, cleanup := setupLeaveTestDB(t)
 	defer cleanup()
 
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	today := time.Now().Format("2006-01-02")
@@ -660,9 +660,9 @@ func TestHandleLeaveReportSick_AdminCanAlsoUse(t *testing.T) {
 	db, h, cleanup := setupLeaveTestDB(t)
 	defer cleanup()
 
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	today := time.Now().Format("2006-01-02")
@@ -692,9 +692,9 @@ func TestHandleLeaveReportSick_FutureDateRejected(t *testing.T) {
 	db, h, cleanup := setupLeaveTestDB(t)
 	defer cleanup()
 
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	tomorrow := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
@@ -734,9 +734,9 @@ func TestHandleLeaveReportSick_PastDateRejected(t *testing.T) {
 	db, h, cleanup := setupLeaveTestDB(t)
 	defer cleanup()
 
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	yesterday := time.Now().AddDate(0, 0, -1).Format("2006-01-02")
@@ -768,9 +768,9 @@ func TestHandleLeaveReportSick_RangeRejected(t *testing.T) {
 	db, h, cleanup := setupLeaveTestDB(t)
 	defer cleanup()
 
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	today := time.Now().Format("2006-01-02")
@@ -803,9 +803,9 @@ func TestHandleLeaveReportSick_DuplicateRejected(t *testing.T) {
 	db, h, cleanup := setupLeaveTestDB(t)
 	defer cleanup()
 
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	today := time.Now().Format("2006-01-02")
@@ -842,7 +842,7 @@ func TestHandleLeaveReportSick_EmptyMemberRejected(t *testing.T) {
 	db, h, cleanup := setupLeaveTestDB(t)
 	defer cleanup()
 
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	today := time.Now().Format("2006-01-02")
@@ -871,7 +871,7 @@ func TestHandleLeaveReportSick_UnknownMemberRejected(t *testing.T) {
 	db, h, cleanup := setupLeaveTestDB(t)
 	defer cleanup()
 
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	today := time.Now().Format("2006-01-02")
@@ -903,9 +903,9 @@ func TestHandleLeaveReportSick_RawHTTPRejectsMissingSession(t *testing.T) {
 	db, h, cleanup := setupLeaveTestDB(t)
 	defer cleanup()
 
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	today := time.Now().Format("2006-01-02")
@@ -946,9 +946,9 @@ func TestHandleLeaveReportSick_RawHTTPLeavesNoRowOnBadDate(t *testing.T) {
 	db, h, cleanup := setupLeaveTestDB(t)
 	defer cleanup()
 
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	tomorrow := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
@@ -994,9 +994,9 @@ func TestHandleLeaveReportSick_GetFormRendersWithTodayLocked(t *testing.T) {
 	db, h, cleanup := setupLeaveTestDB(t)
 	defer cleanup()
 
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	rec := httptest.NewRequestWithContext(ctx, http.MethodGet, "/leave/report-sick", nil)
@@ -1029,9 +1029,9 @@ func TestHandleLeaveReportSick_ConferenceOverride(t *testing.T) {
 	db, h, cleanup := setupLeaveTestDB(t)
 	defer cleanup()
 
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	today := time.Now().Format("2006-01-02")

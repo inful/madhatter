@@ -84,7 +84,7 @@ func seedFiveMemberTeam(t *testing.T, ctx context.Context, db teamMemberAdder, n
 	t.Helper()
 	ids := make([]string, len(names))
 	for i, name := range names {
-		id, err := db.AddTeamMember(ctx, name, name+"@example.com")
+		id, err := db.AddTeamMember(ctx, name, name+"@example.com", nil)
 		require.NoError(t, err)
 		ids[i] = id
 	}
@@ -94,9 +94,11 @@ func seedFiveMemberTeam(t *testing.T, ctx context.Context, db teamMemberAdder, n
 // teamMemberAdder is the minimal subset of *database.DB that the
 // leaf generator and member seeder need. Defining it as an
 // interface lets the helpers stay loosely coupled and makes them
-// easy to unit-test in isolation.
+// easy to unit-test in isolation. Tracks the signature drift
+// for #60's birthdate field — seed helpers don't care about
+// birthdays so they pass nil.
 type teamMemberAdder interface {
-	AddTeamMember(ctx context.Context, name, email string) (string, error)
+	AddTeamMember(ctx context.Context, name, email string, birthdate *time.Time) (string, error)
 }
 
 // tallyHatDays walks the calendar and counts HAT days per member.

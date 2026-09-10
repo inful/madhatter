@@ -21,7 +21,7 @@ func TestTeamRepository_AsInterface(t *testing.T) {
 	var repo TeamRepository = db
 
 	ctx := context.Background()
-	id, err := repo.AddTeamMember(ctx, "Alice", "alice@example.com")
+	id, err := repo.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, id)
 
@@ -42,7 +42,7 @@ func TestTeamRepository_RecurringWFHDays(t *testing.T) {
 
 	var repo TeamRepository = db
 	ctx := context.Background()
-	id, err := repo.AddTeamMember(ctx, "Bob", "bob@example.com")
+	id, err := repo.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	require.NoError(t, repo.SetTeamMemberRecurringWFHDays(ctx, id, RecurringWFHDays{
@@ -68,7 +68,7 @@ func TestTeamRepository_ExemptAndPermanent(t *testing.T) {
 
 	var repo TeamRepository = db
 	ctx := context.Background()
-	id, err := repo.AddTeamMember(ctx, "Carol", "carol@example.com")
+	id, err := repo.AddTeamMember(ctx, "Carol", "carol@example.com", nil)
 	require.NoError(t, err)
 
 	require.NoError(t, repo.SetTeamMemberExemptFromAssignment(ctx, id, true))

@@ -26,7 +26,7 @@ func TestHandleWFHSwapForm_OnlyAssignedOrSwapReachable(t *testing.T) {
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
-	mid, err := db.AddTeamMember(ctx, "alice@example.com", "alice@example.com")
+	mid, err := db.AddTeamMember(ctx, "alice@example.com", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	voluntaryDate := time.Now().UTC().AddDate(0, 0, 5).Format("2006-01-02")
@@ -55,9 +55,9 @@ func TestHandleWFHSwapCreate_409ConflictGuard(t *testing.T) {
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "alice@example.com", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "alice@example.com", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "bob@example.com", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "bob@example.com", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	date := time.Now().UTC().AddDate(0, 0, 5).Format("2006-01-02")
@@ -109,9 +109,9 @@ func TestHandleWFHSwapAcceptAndReject_StateTransitions(t *testing.T) {
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "alice@example.com", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "alice@example.com", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "bob@example.com", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "bob@example.com", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	date := time.Now().UTC().AddDate(0, 0, 5).Format("2006-01-02")
@@ -168,9 +168,9 @@ func TestHandleWFHSwapReject_FlowAcceptThenReject(t *testing.T) {
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "alice@example.com", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "alice@example.com", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "bob@example.com", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "bob@example.com", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	date := time.Now().UTC().AddDate(0, 0, 5).Format("2006-01-02")
@@ -214,9 +214,9 @@ func TestHandleWFHSwapCancel_OnlyRequesterCanCancel(t *testing.T) {
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "alice@example.com", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "alice@example.com", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "bob@example.com", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "bob@example.com", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	date := time.Now().UTC().AddDate(0, 0, 5).Format("2006-01-02")
@@ -273,9 +273,9 @@ func TestHandleWFHSwapInbox_RendersPending(t *testing.T) {
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
-	bobID, err := db.AddTeamMember(ctx, "bob@example.com", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "bob@example.com", "bob@example.com", nil)
 	require.NoError(t, err)
-	aliceID, err := db.AddTeamMember(ctx, "alice@example.com", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "alice@example.com", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	date := time.Now().UTC().AddDate(0, 0, 5).Format("2006-01-02")
@@ -317,9 +317,9 @@ func TestHandleWFHSwapInbox_RendersPending(t *testing.T) {
 // for further mutations.
 func setupWFHSwapWithPendingSwap(t *testing.T, ctx context.Context, db *database.DB) (swapID, aliceID, bobID string) {
 	t.Helper()
-	aliceID, err := db.AddTeamMember(ctx, "alice@example.com", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "alice@example.com", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err = db.AddTeamMember(ctx, "bob@example.com", "bob@example.com")
+	bobID, err = db.AddTeamMember(ctx, "bob@example.com", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	date := time.Now().UTC().AddDate(0, 0, 5).Format("2006-01-02")
@@ -345,8 +345,8 @@ func TestHandleWFHSwapCreate_FiresSwapRequested(t *testing.T) {
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
-	aliceID, _ := db.AddTeamMember(ctx, "alice@example.com", "alice@example.com")
-	bobID, err := db.AddTeamMember(ctx, "bob@example.com", "bob@example.com")
+	aliceID, _ := db.AddTeamMember(ctx, "alice@example.com", "alice@example.com", nil)
+	bobID, err := db.AddTeamMember(ctx, "bob@example.com", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	date := time.Now().UTC().AddDate(0, 0, 5).Format("2006-01-02")

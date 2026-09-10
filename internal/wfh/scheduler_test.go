@@ -25,7 +25,7 @@ func TestScheduler_StartStopAndSettle(t *testing.T) {
 		cfg.SettlementDays = 14
 		svc := NewService(db, cfg)
 
-		memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+		memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 		require.NoError(t, err)
 		date := time.Now().UTC().Format("2006-01-02")
 		request, err := db.CreateWFHRequest(ctx, memberID, date)
@@ -74,7 +74,7 @@ func TestScheduler_PurgesPastPeriodsWhenEnabled(t *testing.T) {
 		svc := NewService(db, cfg)
 		require.True(t, svc.IsPurgeEnabled(), "precondition: default config enables purge")
 
-		memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+		memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 		require.NoError(t, err)
 
 		// Compute the cutoff from the bubble clock so the test is
@@ -118,7 +118,7 @@ func TestScheduler_SkipsPurgeWhenPurgeDisabled(t *testing.T) {
 		svc := NewService(db, cfg)
 		require.False(t, svc.IsPurgeEnabled())
 
-		memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+		memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 		require.NoError(t, err)
 
 		cutoff, err := svc.previousPeriodStart(time.Now().UTC())

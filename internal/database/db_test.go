@@ -41,7 +41,7 @@ func TestAddTeamMember_Success(t *testing.T) {
 	ctx := context.Background()
 
 	// Act
-	id, err := db.AddTeamMember(ctx, "Alice Johnson", "alice@example.com")
+	id, err := db.AddTeamMember(ctx, "Alice Johnson", "alice@example.com", nil)
 
 	// Assert
 	require.NoError(t, err)
@@ -67,7 +67,7 @@ func TestSetTeamMemberPermanentWFH(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	require.NoError(t, db.SetTeamMemberPermanentWFH(ctx, memberID, true))
@@ -98,7 +98,7 @@ func TestSetTeamMemberRecurringWFHDays(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	require.NoError(t, db.SetTeamMemberRecurringWFHDays(ctx, memberID, RecurringWFHDays{
@@ -128,7 +128,7 @@ func TestSetTeamMemberExemptFromAssignment_Roundtrip(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	// Default: not exempt.
@@ -159,7 +159,7 @@ func TestSetTeamMemberExemptFromAssignment_IndependentOfPermanentWFH(t *testing.
 	defer cleanup()
 
 	ctx := context.Background()
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	require.NoError(t, db.SetTeamMemberExemptFromAssignment(ctx, memberID, true))
@@ -180,7 +180,7 @@ func TestCreateWFHRequest_RecurringDayReturnsDuplicateAfterMaterialization(t *te
 	defer cleanup()
 
 	ctx := context.Background()
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 	require.NoError(t, db.SetTeamMemberPermanentWFH(ctx, memberID, true))
 
@@ -202,7 +202,7 @@ func TestCreateWFHRequest_ResurrectsAfterCancel(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	date := nextWeekday(time.Now().UTC(), time.Wednesday).Format("2006-01-02")
@@ -245,7 +245,7 @@ func TestCreateWFHRequest_ResurrectsAfterSelfWithdraw(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	date := nextWeekday(time.Now().UTC(), time.Friday).Format("2006-01-02")
@@ -297,7 +297,7 @@ func TestCreateWFHRequest_ResurrectsAfterSelfWithdrawOfRecurring(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	date := nextWeekday(time.Now().UTC(), time.Monday)
@@ -347,7 +347,7 @@ func TestCreateWFHRequest_NonCancelledStillDuplicates(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	// Create an admin user so the admin-withdrawn subcase can record a real
@@ -452,7 +452,7 @@ func TestCreateWFHRequest_ResurrectRejectsPastDate(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	// Seed a cancelled row for a date that's already in the past — bypasses
@@ -487,7 +487,7 @@ func TestCreateWFHRequest_ResurrectRejectsHoliday(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	date := nextWeekday(time.Now().UTC(), time.Wednesday)
@@ -521,11 +521,11 @@ func TestAddTeamMember_DuplicateEmail(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	// Act
-	_, err = db.AddTeamMember(ctx, "Alice 2", "alice@example.com")
+	_, err = db.AddTeamMember(ctx, "Alice 2", "alice@example.com", nil)
 
 	// Assert
 	require.Error(t, err)
@@ -540,7 +540,7 @@ func TestAddTeamMember_EmptyName(t *testing.T) {
 	ctx := context.Background()
 
 	// Act
-	_, err := db.AddTeamMember(ctx, "", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "", "alice@example.com", nil)
 
 	// Assert
 	require.Error(t, err)
@@ -569,8 +569,8 @@ func TestGetActiveTeamMembers_OnlyActive(t *testing.T) {
 	ctx := context.Background()
 
 	// Add active members
-	id1, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com")
-	id2, _ := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	id1, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
+	id2, _ := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 
 	// Deactivate one
 	_, err := db.ExecContext(ctx, "UPDATE team_members SET is_active = 0 WHERE id = ?", id1)
@@ -592,7 +592,7 @@ func TestGetMemberByEmail_Found(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	// Act
@@ -642,8 +642,8 @@ func TestGetLatestAssignmentDate_WithAssignments(t *testing.T) {
 	ctx := context.Background()
 
 	// Add team members
-	id1, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com")
-	id2, _ := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	id1, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
+	id2, _ := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 
 	// Add assignments
 	today := "2025-01-15"
@@ -669,8 +669,8 @@ func TestGetAssignmentsByDateRange(t *testing.T) {
 	ctx := context.Background()
 
 	// Add team members
-	id1, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com")
-	id2, _ := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	id1, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
+	id2, _ := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 
 	// Add assignments
 	startDate := "2025-01-15"
@@ -703,7 +703,7 @@ func TestCreateBackup_ReturnsSQLiteSnapshot(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	backupBytes, err := db.CreateBackup(ctx)
@@ -717,7 +717,7 @@ func TestValidateRestoreCandidate_ValidBackup(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	_, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	_, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	backupBytes, err := db.CreateBackup(ctx)
@@ -741,13 +741,13 @@ func TestApplyRestoreCandidate_RestoresPreviousState(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	backupBytes, err := db.CreateBackup(ctx)
 	require.NoError(t, err)
 
-	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	err = db.ApplyRestoreCandidate(ctx, backupBytes)
@@ -764,7 +764,7 @@ func TestValidateRestoreCandidate_OlderBackupVersion_IsAccepted(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	backupBytes, err := db.CreateBackup(ctx)
@@ -811,13 +811,13 @@ func TestApplyRestoreCandidate_CopyFailure_RollsBack(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	backupBytes, err := db.CreateBackup(ctx)
 	require.NoError(t, err)
 
-	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	tmpPath, err := writeTempRestoreCandidate(backupBytes)

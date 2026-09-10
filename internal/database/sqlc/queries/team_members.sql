@@ -1,11 +1,11 @@
 -- name: AddTeamMember :execresult
-INSERT INTO team_members (id, name, email)
-VALUES (?, ?, ?);
+INSERT INTO team_members (id, name, email, birthdate)
+VALUES (?, ?, ?, ?);
 
 -- name: GetActiveTeamMembers :many
 SELECT id, name, email, is_active, is_permanent_wfh, is_exempt_from_assignment,
 	   recurring_wfh_monday, recurring_wfh_tuesday, recurring_wfh_wednesday,
-	   recurring_wfh_thursday, recurring_wfh_friday, created_at
+	   recurring_wfh_thursday, recurring_wfh_friday, birthdate, created_at
 FROM team_members
 WHERE is_active = 1
 ORDER BY name;
@@ -13,21 +13,21 @@ ORDER BY name;
 -- name: GetMemberByEmail :one
 SELECT id, name, email, is_active, is_permanent_wfh, is_exempt_from_assignment,
 	   recurring_wfh_monday, recurring_wfh_tuesday, recurring_wfh_wednesday,
-	   recurring_wfh_thursday, recurring_wfh_friday, created_at
+	   recurring_wfh_thursday, recurring_wfh_friday, birthdate, created_at
 FROM team_members
 WHERE email = ?;
 
 -- name: GetMemberByID :one
 SELECT id, name, email, is_active, is_permanent_wfh, is_exempt_from_assignment,
 	   recurring_wfh_monday, recurring_wfh_tuesday, recurring_wfh_wednesday,
-	   recurring_wfh_thursday, recurring_wfh_friday, created_at
+	   recurring_wfh_thursday, recurring_wfh_friday, birthdate, created_at
 FROM team_members
 WHERE id = ?;
 
 -- name: GetMemberByToken :one
 SELECT tm.id, tm.name, tm.email, tm.is_active, tm.is_permanent_wfh, tm.is_exempt_from_assignment,
 	   tm.recurring_wfh_monday, tm.recurring_wfh_tuesday, tm.recurring_wfh_wednesday,
-	   tm.recurring_wfh_thursday, tm.recurring_wfh_friday, tm.created_at
+	   tm.recurring_wfh_thursday, tm.recurring_wfh_friday, tm.birthdate, tm.created_at
 FROM calendar_subscriptions cs
 JOIN team_members tm ON cs.member_id = tm.id
 WHERE cs.token = ?;
@@ -44,7 +44,7 @@ WHERE id = ?;
 
 -- name: UpdateTeamMember :exec
 UPDATE team_members
-SET name = ?, email = ?
+SET name = ?, email = ?, birthdate = ?
 WHERE id = ?;
 
 -- name: SetTeamMemberPermanentWFH :exec
@@ -80,3 +80,16 @@ WHERE id = sqlc.arg(id);
 -- name: DeleteTeamMember :exec
 DELETE FROM team_members
 WHERE id = ?;
+
+-- name: GetUpcomingBirthdays :many
+-- Birthday probe for the dashboard banner (#60). Returns every
+-- active member whose birthdate is set. The Go wrapper
+-- (db.GetUpcomingBirthdays) applies the 7-day window and the
+-- year-wrap math in Go rather than as a SQL CASE expression,
+-- where the wrap math (Dec 28 + 7 days must include early-
+-- January birthdays) is harder to read and harder to test.
+SELECT tm.id, tm.name, tm.email, tm.birthdate
+FROM team_members tm
+WHERE tm.is_active = 1
+  AND tm.birthdate IS NOT NULL
+ORDER BY tm.id;

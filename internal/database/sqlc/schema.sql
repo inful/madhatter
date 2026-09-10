@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS team_members (
     recurring_wfh_wednesday INTEGER NOT NULL DEFAULT 0,
     recurring_wfh_thursday INTEGER NOT NULL DEFAULT 0,
     recurring_wfh_friday INTEGER NOT NULL DEFAULT 0,
+    birthdate DATE,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 

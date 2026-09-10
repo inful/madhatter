@@ -10,7 +10,7 @@ func TestDateDebug(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	memberID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	leaveID, err := db.CreateLeaveRecord(ctx, memberID, "2024-01-15", "2024-01-15", LeaveTypeLeave)
 	if err != nil {
 		t.Fatalf("CreateLeaveRecord failed: %v", err)

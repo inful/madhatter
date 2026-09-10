@@ -30,7 +30,7 @@ func TestDebugLeaveDates(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	aliceID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, _ := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 
 	// Create leave
 	leaveID, err := db.CreateLeaveRecord(ctx, aliceID, "2024-01-15", "2024-01-15", database.LeaveTypeLeave)
@@ -63,11 +63,11 @@ func TestEngine_GenerateSchedule_BasicRoundRobin(t *testing.T) {
 	ctx := context.Background()
 
 	// Add team members
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
-	charlieID, err := db.AddTeamMember(ctx, "Charlie", "charlie@example.com")
+	charlieID, err := db.AddTeamMember(ctx, "Charlie", "charlie@example.com", nil)
 	require.NoError(t, err)
 
 	engine := NewEngine(db)
@@ -105,9 +105,9 @@ func TestEngine_GenerateSchedule_WeekendSkipping(t *testing.T) {
 	ctx := context.Background()
 
 	// Add team members
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	engine := NewEngine(db)
@@ -157,9 +157,9 @@ func TestEngine_AssignCoversForLeave_BasicCover(t *testing.T) {
 	ctx := context.Background()
 
 	// Add team members
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	engine := NewEngine(db)
@@ -218,9 +218,9 @@ func TestEngine_AssignCoversForLeave_IgnoresUnscheduledLeave(t *testing.T) {
 
 	ctx := context.Background()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	engine := NewEngine(db)
@@ -256,11 +256,11 @@ func TestEngine_AssignCoversForLeave_MultiDayLeave(t *testing.T) {
 	ctx := context.Background()
 
 	// Add team members
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
-	_, err = db.AddTeamMember(ctx, "Charlie", "charlie@example.com")
+	_, err = db.AddTeamMember(ctx, "Charlie", "charlie@example.com", nil)
 	require.NoError(t, err)
 
 	engine := NewEngine(db)
@@ -321,9 +321,9 @@ func TestEngine_AssignCoversForLeave_CompletedLeaveRemovesCover(t *testing.T) {
 	ctx := context.Background()
 
 	// Add team members
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	engine := NewEngine(db)
@@ -381,7 +381,7 @@ func TestEngine_AssignCoversForLeave_LeaveOnWeekend(t *testing.T) {
 
 	ctx := context.Background()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	engine := NewEngine(db)
@@ -407,7 +407,7 @@ func TestEngine_findCover_AllMembersOnLeave(t *testing.T) {
 	ctx := context.Background()
 
 	// Add only one member
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	engine := NewEngine(db)
@@ -440,7 +440,7 @@ func TestEngine_processDate_SkipsWeekends(t *testing.T) {
 
 	ctx := context.Background()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	engine := NewEngine(db)
@@ -474,9 +474,9 @@ func TestEngine_determineCoveringMember_WithLeave(t *testing.T) {
 
 	ctx := context.Background()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	engine := NewEngine(db)
@@ -506,9 +506,9 @@ func TestEngine_determineCoveringMember_NoLeave(t *testing.T) {
 
 	ctx := context.Background()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	engine := NewEngine(db)
@@ -536,9 +536,9 @@ func TestEngine_createAssignment_Cover(t *testing.T) {
 
 	ctx := context.Background()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	engine := NewEngine(db)
@@ -578,7 +578,7 @@ func TestEngine_createAssignment_NoCover(t *testing.T) {
 
 	ctx := context.Background()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	engine := NewEngine(db)
@@ -604,7 +604,7 @@ func TestEngine_ensureOriginalAssignment_Existing(t *testing.T) {
 
 	ctx := context.Background()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	engine := NewEngine(db)
@@ -632,7 +632,7 @@ func TestEngine_ensureOriginalAssignment_NotScheduled(t *testing.T) {
 
 	ctx := context.Background()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	engine := NewEngine(db)
@@ -654,11 +654,11 @@ func TestEngine_findCover_SkipsOnLeave(t *testing.T) {
 
 	ctx := context.Background()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
-	charlieID, err := db.AddTeamMember(ctx, "Charlie", "charlie@example.com")
+	charlieID, err := db.AddTeamMember(ctx, "Charlie", "charlie@example.com", nil)
 	require.NoError(t, err)
 
 	engine := NewEngine(db)
@@ -689,9 +689,9 @@ func TestEngine_findCover_WrapsAround(t *testing.T) {
 
 	ctx := context.Background()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	engine := NewEngine(db)
@@ -718,7 +718,7 @@ func TestEngine_processLeaveDate_SkipsWeekends(t *testing.T) {
 
 	ctx := context.Background()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	engine := NewEngine(db)
@@ -743,9 +743,9 @@ func TestEngine_AssignCoversForLeave_LeaveStatusUpdate(t *testing.T) {
 
 	ctx := context.Background()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	engine := NewEngine(db)
@@ -788,13 +788,13 @@ func TestEngine_CoverRotationDeterministic(t *testing.T) {
 	ctx := context.Background()
 
 	// Add team members
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
-	_, err = db.AddTeamMember(ctx, "Charlie", "charlie@example.com")
+	_, err = db.AddTeamMember(ctx, "Charlie", "charlie@example.com", nil)
 	require.NoError(t, err)
-	_, err = db.AddTeamMember(ctx, "Dave", "dave@example.com")
+	_, err = db.AddTeamMember(ctx, "Dave", "dave@example.com", nil)
 	require.NoError(t, err)
 
 	engine := NewEngine(db)
@@ -887,11 +887,11 @@ func TestEngine_AssignCoversForLeave_FiresCoverAssignedOnce(t *testing.T) {
 	defer cleanup()
 	ctx := context.Background()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
-	_, err = db.AddTeamMember(ctx, "Charlie", "charlie@example.com")
+	_, err = db.AddTeamMember(ctx, "Charlie", "charlie@example.com", nil)
 	require.NoError(t, err)
 
 	engine := NewEngine(db)

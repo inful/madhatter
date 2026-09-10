@@ -35,7 +35,7 @@ func TestHandleWFHList_MaterializesRecurringRows(t *testing.T) {
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 	require.NoError(t, db.SetTeamMemberRecurringWFHDays(ctx, memberID, database.RecurringWFHDays{
 		Wednesday: true,
@@ -103,7 +103,7 @@ func TestHandleWFHRequestPost_BeyondHorizon_RendersError(t *testing.T) {
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	svc := wfh.NewService(db, wfh.Config{
@@ -181,7 +181,7 @@ func TestHandleWFHPurge_AdminPreview(t *testing.T) {
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	svc := wfh.NewService(db, wfh.Config{
@@ -228,7 +228,7 @@ func TestHandleWFHPurge_ConfirmDeletesAndRedirects(t *testing.T) {
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	svc := wfh.NewService(db, wfh.Config{
@@ -273,7 +273,7 @@ func TestHandleWFHPurge_RejectsWithoutConfirm(t *testing.T) {
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	svc := wfh.NewService(db, wfh.Config{
@@ -309,7 +309,7 @@ func TestHandleWFHPurge_DisabledHidesForm(t *testing.T) {
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	svc := wfh.NewService(db, wfh.Config{
@@ -355,7 +355,7 @@ func TestHandleWFHAdminPage_FiltersPastAndRecurring(t *testing.T) {
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 	_, err = db.GetQueries().CreateActiveUser(ctx, sqlc.CreateActiveUserParams{
 		ID:         "admin-1",
@@ -501,9 +501,9 @@ func TestHandleWFHReportToday_Approves_RedirectsWithFlashBanner(t *testing.T) {
 	require.NoError(t, err)
 	h.wfhService = svc
 
-	_, err = db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err = db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/wfh/report-today", nil)
@@ -551,7 +551,7 @@ func TestHandleWFHTodayOnSite_RedirectsToDashboardFlash(t *testing.T) {
 	require.NoError(t, err)
 	h.wfhService = svc
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 	today := time.Now().UTC().Format("2006-01-02")
 	require.NoError(t, db.CreateApprovedRecurringWFHRequest(ctx, aliceID, today, time.Now().UTC()))
@@ -601,7 +601,7 @@ func TestHandleWFHTodayOnSite_NoRow_FlashesError(t *testing.T) {
 	require.NoError(t, err)
 	h.wfhService = svc
 
-	_, err = db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err = db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 	// No WFH rows seeded — nothing to override.
 
@@ -648,7 +648,7 @@ func TestHandleWFHOnSiteOnDate_RedirectsToDashboardFlash(t *testing.T) {
 	require.NoError(t, err)
 	h.wfhService = svc
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 	today := time.Now().UTC()
 	targetStr := today.AddDate(0, 0, 3).Format("2006-01-02")
@@ -703,7 +703,7 @@ func TestHandleWFHOnSiteOnDate_NoRow_FlashesError(t *testing.T) {
 	require.NoError(t, err)
 	h.wfhService = svc
 
-	_, err = db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err = db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	targetStr := time.Now().UTC().AddDate(0, 0, 5).Format("2006-01-02")
@@ -747,7 +747,7 @@ func TestHandleWFHOnSiteOnDate_PastDate_FlashesError(t *testing.T) {
 	require.NoError(t, err)
 	h.wfhService = svc
 
-	_, err = db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err = db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	yesterday := time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
@@ -790,7 +790,7 @@ func TestHandleWFHOnSiteOnDate_MissingDate_FlashesError(t *testing.T) {
 	require.NoError(t, err)
 	h.wfhService = svc
 
-	_, err = db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err = db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/wfh/on-site", nil)
@@ -829,7 +829,7 @@ func TestHandleWFHReportToday_Denied_AtFloor(t *testing.T) {
 	require.NoError(t, err)
 	h.wfhService = svc
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/wfh/report-today", nil)
@@ -873,9 +873,9 @@ func TestHandleWFHReportToday_RawHTTPRejectsEscalation(t *testing.T) {
 	require.NoError(t, err)
 	h.wfhService = svc
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	// Bob is logged in but tries to report WFH "for Alice" via a
@@ -934,9 +934,9 @@ func TestHandleWFHReportToday_QuotaExhausted_FlashesError(t *testing.T) {
 	require.NoError(t, err)
 	h.wfhService = svc
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	// Burn the quota on two future-dated business days inside the
@@ -1002,7 +1002,7 @@ func TestRenderWFHRequestForm_CurrentPeriodBannerIsActiveByDefault(t *testing.T)
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	h := newRenderFormTestHandler(t, db, wfh.Config{
@@ -1054,7 +1054,7 @@ func TestRenderWFHRequestForm_NextPeriodBannerActiveWhenQueryParamDateIsInNextPe
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	h := newRenderFormTestHandler(t, db, wfh.Config{
@@ -1139,7 +1139,7 @@ func TestRenderWFHRequestForm_SubmitStaysEnabledWhenCurrentPeriodExhausted(t *te
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	h := newRenderFormTestHandler(t, db, wfh.Config{
@@ -1208,7 +1208,7 @@ func TestRenderWFHRequestForm_HolidaySelectDisablesSubmit(t *testing.T) {
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	// Pick a date 3 days out (still in the horizon, still in the
@@ -1254,7 +1254,7 @@ func TestHandleWFHRequestPost_BeyondHorizon_PreservesSelectedDate(t *testing.T) 
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	svc := wfh.NewService(db, wfh.Config{
@@ -1303,7 +1303,7 @@ func TestWFHRequest_QuotaBannerHasSpacesBetweenValues(t *testing.T) {
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	svc := wfh.NewService(db, wfh.Config{
@@ -1372,7 +1372,7 @@ func TestHandleWFHList_RecurringRowsRenderComingInInsteadButton(t *testing.T) {
 	// picks today via the recurring weekday pattern), is approved,
 	// and is_recurring=1 — exactly the case the new labeling
 	// targets.
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 	require.NoError(t, db.SetTeamMemberRecurringWFHDays(ctx, memberID, database.RecurringWFHDays{
 		Monday: true, Tuesday: true, Wednesday: true, Thursday: true, Friday: true,

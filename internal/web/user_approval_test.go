@@ -243,7 +243,7 @@ func TestUserApprovalFlow_TeamPage_DeactivateReactivate(t *testing.T) {
 	require.NoError(t, err)
 	activeUser, err := db.GetQueries().CreateActiveUser(ctx, activeUserParams("active-4", "dave@example.com", "Dave", 0))
 	require.NoError(t, err)
-	_, err = db.AddTeamMember(ctx, "Dave", "dave@example.com")
+	_, err = db.AddTeamMember(ctx, "Dave", "dave@example.com", nil)
 	require.NoError(t, err)
 
 	// Sanity: Dave is active, his team member is active.

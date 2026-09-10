@@ -14,7 +14,7 @@ func TestCreateApprovedRecurringWFHRequest(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	future := time.Now().UTC().AddDate(0, 0, 10).Format("2006-01-02")
@@ -37,7 +37,7 @@ func TestCreateApprovedRecurringWFHRequest(t *testing.T) {
 
 	t.Run("duplicate date returns ErrWFHDuplicateRequest", func(t *testing.T) {
 		// Different member, same date — not a duplicate by (member, date).
-		otherMemberID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+		otherMemberID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 		require.NoError(t, err)
 		// (member, future) doesn't exist for Bob; should succeed.
 		require.NoError(t, db.CreateApprovedRecurringWFHRequest(ctx, otherMemberID, future, time.Now().UTC()))
@@ -64,7 +64,7 @@ func TestHasWFHRequestOnDate(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	future := time.Now().UTC().AddDate(0, 0, 10).Format("2006-01-02")
@@ -115,7 +115,7 @@ func TestGetWFHRequestsVoluntaryInPeriod_ExcludesAssigned(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	// 2 voluntary WFHs in the same period.
@@ -192,7 +192,7 @@ func TestWithdrawAssignedWFH_ReturnsErrWFHAssigned(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	future := time.Now().UTC().AddDate(0, 0, 5).Format("2006-01-02")
@@ -235,7 +235,7 @@ func TestWithdrawSwapWFH_ReturnsErrWFHAssigned(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	future := time.Now().UTC().AddDate(0, 0, 5).Format("2006-01-02")
@@ -262,7 +262,7 @@ func TestWithdrawVoluntaryWFH_Succeeds(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	future := time.Now().UTC().AddDate(0, 0, 5).Format("2006-01-02")

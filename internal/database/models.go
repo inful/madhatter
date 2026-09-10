@@ -39,8 +39,15 @@ type TeamMember struct {
 	// Separate concept from IsPermanentWFH (a permanent on-site
 	// exception; the picker also excludes permanent-WFH members
 	// from its candidate pool).
-	IsExemptFromAssignment bool      `json:"is_exempt_from_assignment"`
-	CreatedAt              time.Time `json:"created_at"`
+	IsExemptFromAssignment bool `json:"is_exempt_from_assignment"`
+	// Birthdate is an optional Y-M-D. nil means the member has
+	// not shared their birthday with the rota — the dashboard
+	// probe excludes nil rows so the celebration banner stays
+	// quiet. Year is preserved (admin-entered) but the dashboard
+	// surfaces only the MM-DD; the year is kept so an admin can
+	// audit the data without losing precision.
+	Birthdate *time.Time `json:"birthdate,omitempty"`
+	CreatedAt time.Time  `json:"created_at"`
 }
 
 // IsRecurringWFHOn reports whether the member has a contractual

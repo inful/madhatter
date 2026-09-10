@@ -15,11 +15,11 @@ func TestUpdateTeamMember(t *testing.T) {
 	ctx := context.Background()
 
 	// Add a team member
-	memberID, err := db.AddTeamMember(ctx, "John Doe", "john@example.com")
+	memberID, err := db.AddTeamMember(ctx, "John Doe", "john@example.com", nil)
 	require.NoError(t, err)
 
 	// Update the team member
-	err = db.UpdateTeamMember(ctx, memberID, "Jane Doe", "jane@example.com")
+	err = db.UpdateTeamMember(ctx, memberID, "Jane Doe", "jane@example.com", nil)
 	require.NoError(t, err)
 
 	// Verify the update
@@ -36,7 +36,7 @@ func TestDeleteTeamMember(t *testing.T) {
 	ctx := context.Background()
 
 	// Add a team member
-	memberID, err := db.AddTeamMember(ctx, "John Doe", "john@example.com")
+	memberID, err := db.AddTeamMember(ctx, "John Doe", "john@example.com", nil)
 	require.NoError(t, err)
 
 	// Delete the team member
@@ -55,7 +55,7 @@ func TestDeleteTeamMemberWithRelatedRecords(t *testing.T) {
 	ctx := context.Background()
 
 	// Add team members
-	memberID, err := db.AddTeamMember(ctx, "John Doe", "john@example.com")
+	memberID, err := db.AddTeamMember(ctx, "John Doe", "john@example.com", nil)
 	require.NoError(t, err)
 
 	// Create related records

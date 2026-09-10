@@ -33,10 +33,10 @@ func TestGetUpcomingPresenceFrom_SkipsNonBusinessDays(t *testing.T) {
 	db, cleanup := setupPresenceTestDB(t)
 	defer cleanup()
 
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	_, err = db.CreateLeaveRecord(ctx, bobID, "2024-01-08", "2024-01-08", database.LeaveTypeLeave)
@@ -77,9 +77,9 @@ func TestGetUpcomingPresenceFrom_ShowsSwapBadgeForSwappedAssignment(t *testing.T
 	db, cleanup := setupPresenceTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	start := testutil.NextBusinessDay(time.Now().AddDate(0, 0, 7))
@@ -113,7 +113,7 @@ func TestLoadCurrentUserPresenceStatus_SetsHatDayAndLeave(t *testing.T) {
 	db, cleanup := setupPresenceTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	today := time.Now().Format("2006-01-02")
@@ -148,9 +148,9 @@ func TestLoadCurrentUserPresenceStatus_CoverDutyIsNextHAT(t *testing.T) {
 	db, cleanup := setupPresenceTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	// Pick three distinct future business days via the n-day helper
@@ -192,9 +192,9 @@ func TestLoadCurrentUserPresenceStatus_CoverDutyToday_ShowsHATBadge(t *testing.T
 	db, cleanup := setupPresenceTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	// Bob's primary HAT day is today; Alice is the cover for Bob today.
@@ -220,9 +220,9 @@ func TestLoadCurrentUserPresenceStatus_CoverDutyToday_OnLeave_StillHidesBadge(t 
 	db, cleanup := setupPresenceTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	// Bob's primary HAT day is today; Alice is the cover for Bob today,
@@ -253,7 +253,7 @@ func TestLoadCurrentUserPresenceStatus_RejectedLeave_DoesNotHideHAT(t *testing.T
 	db, cleanup := setupPresenceTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	// Alice has a HAT day in the future and a leave for that day, but
@@ -284,7 +284,7 @@ func TestLoadCurrentUserPresenceStatus_AllLeaveDays_NoNextHAT(t *testing.T) {
 	db, cleanup := setupPresenceTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	// Two upcoming HAT days, both entirely covered by leave. The
@@ -322,9 +322,9 @@ func TestLoadCurrentUserPresenceStatus_SwapReflectedInNextHAT(t *testing.T) {
 	db, cleanup := setupPresenceTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	aliceOriginal := testutil.NextBusinessDay(time.Now().AddDate(0, 0, 3)).Format("2006-01-02")
@@ -355,7 +355,7 @@ func TestLoadCurrentUserPresenceStatus_NextWFHUsesEarliestUpcomingDate(t *testin
 	db, cleanup := setupPresenceTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	nearDate := testutil.NextBusinessDay(time.Now().AddDate(0, 0, 1)).Format("2006-01-02")
@@ -379,7 +379,7 @@ func TestLoadCurrentUserPresenceStatus_NextWFHUpdatesAfterSettlement(t *testing.
 	db, cleanup := setupPresenceTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	nearDate := testutil.NextBusinessDay(time.Now().AddDate(0, 0, 1)).Format("2006-01-02")
@@ -417,7 +417,7 @@ func TestLoadCurrentUserPresenceStatus_RecurringWFH(t *testing.T) {
 	db, cleanup := setupPresenceTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 	require.NoError(t, db.SetTeamMemberPermanentWFH(ctx, aliceID, true))
 
@@ -448,7 +448,7 @@ func TestLoadCurrentUserPresenceStatus_ConferenceLeaveShowsAtConference(t *testi
 	db, cleanup := setupPresenceTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	today := time.Now().Format("2006-01-02")
@@ -473,7 +473,7 @@ func TestLoadCurrentUserPresenceStatus_PlainLeaveStaysOnLeave(t *testing.T) {
 	db, cleanup := setupPresenceTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	today := time.Now().Format("2006-01-02")
@@ -498,9 +498,9 @@ func TestGetUpcomingPresenceFrom_ConferenceLeaveTagsCell(t *testing.T) {
 	db, cleanup := setupPresenceTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	// Pin a future Monday so the second business day (Tuesday) lands
@@ -560,7 +560,7 @@ func TestLoadCurrentUserPresenceStatus_WithdrawnRecurringWFH_ShowsOnSite(t *test
 	db, cleanup := setupPresenceTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 	// Permanent recurring WFH makes IsRecurringWFHOn(now) return true
 	// regardless of which weekday the test runs on.
@@ -598,9 +598,9 @@ func TestGetUpcomingPresenceFrom_WithdrawnRecurringWFH_NotInWFHSet(t *testing.T)
 	db, cleanup := setupPresenceTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	// Pick a known Monday at least a week in the future so the recurring

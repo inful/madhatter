@@ -40,6 +40,11 @@ func (h *Handler) handleTeamPost(w http.ResponseWriter, r *http.Request) {
 
 	name := strings.TrimSpace(r.PostForm.Get("name"))
 	email := strings.TrimSpace(r.PostForm.Get("email"))
+	birthdate, birthErr := parseOptionalBirthdate(r.PostForm.Get("birthdate"))
+	if birthErr != nil {
+		httpError(w, r, http.StatusBadRequest, "Invalid birthdate.", birthErr)
+		return
+	}
 
 	// Validate at handler level so an admin typing an env-var
 	// name (or any other non-address) into the email field gets
@@ -49,7 +54,7 @@ func (h *Handler) handleTeamPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err := h.db.AddTeamMember(ctx, name, email)
+	_, err := h.db.AddTeamMember(ctx, name, email, birthdate)
 	if err != nil {
 		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
@@ -270,6 +275,37 @@ func rejectControlCharacters(field, value string) error {
 	return nil
 }
 
+// parseOptionalBirthdate parses the optional `birthdate` form
+// field for #60. Returns:
+//   - (nil, nil) when the field is empty (admin didn't enter one
+//     or admin explicitly cleared it via the edit form).
+//   - (*time.Time, nil) when the field parses as "YYYY-MM-DD".
+//   - (nil, err) when the field is present but malformed or out
+//     of range (rejected by the caller with a 400).
+//
+// Future-dated birthdates are rejected because they have no
+// celebratory meaning. Pre-1900 birthdates are also rejected
+// as a sanity check — admin likely mistyped a year.
+func parseOptionalBirthdate(raw string) (*time.Time, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil //nolint:nilnil // empty input is a valid "no birthdate" signal.
+	}
+	t, err := time.ParseInLocation("2006-01-02", raw, time.UTC)
+	if err != nil {
+		return nil, fmt.Errorf("birthdate must be in YYYY-MM-DD form: %w", err)
+	}
+	today := time.Now().UTC().Truncate(24 * time.Hour) //nolint:mnd // 24h = 1 day; constant mirrors time.Hour convention.
+	if t.After(today) {
+		return nil, errors.New("birthdate cannot be in the future")
+	}
+	// pre-1900 dates are almost certainly typos; sanity check.
+	if t.Year() < 1900 { //nolint:mnd // year-of-birth sanity floor; not a derived value.
+		return nil, errors.New("birthdate year must be 1900 or later")
+	}
+	return &t, nil
+}
+
 func (h *Handler) handleTeamMemberEdit(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	memberID := chi.URLParam(r, "id")
@@ -287,6 +323,11 @@ func (h *Handler) handleTeamMemberEdit(w http.ResponseWriter, r *http.Request) {
 
 	name := strings.TrimSpace(r.PostForm.Get("name"))
 	email := strings.TrimSpace(r.PostForm.Get("email"))
+	birthdate, err := parseOptionalBirthdate(r.PostForm.Get("birthdate"))
+	if err != nil {
+		httpError(w, r, http.StatusBadRequest, "Invalid birthdate.", err)
+		return
+	}
 
 	// Validate input at handler level.
 	if err := validateTeamMemberInput(name, email); err != nil {
@@ -294,7 +335,7 @@ func (h *Handler) handleTeamMemberEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.db.UpdateTeamMember(ctx, memberID, name, email); err != nil {
+	if err := h.db.UpdateTeamMember(ctx, memberID, name, email, birthdate); err != nil {
 		httpError(w, r, http.StatusInternalServerError, "Internal server error.", err)
 		return
 	}

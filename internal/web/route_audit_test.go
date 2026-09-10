@@ -201,7 +201,7 @@ func TestScheduleGenerateRoute_GETRendersForm(t *testing.T) {
 	// name/email don't need to match anything; the test
 	// only checks that the route reaches the render path,
 	// not the no-team-members 400 branch.
-	_, err := db.AddTeamMember(t.Context(), "Schedule Member", "schedule-member@example.com")
+	_, err := db.AddTeamMember(t.Context(), "Schedule Member", "schedule-member@example.com", nil)
 	require.NoError(t, err)
 
 	rec := httptest.NewRecorder()

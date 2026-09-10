@@ -24,9 +24,9 @@ func TestChannelNotifier_EndToEnd_WritesOutboxRowsForRealRecipient(t *testing.T)
 	ctx := context.Background()
 
 	// Real team member so the recipient resolver can find an email.
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	// Real renderer and worker, with a fake channel.
@@ -76,7 +76,7 @@ func TestChannelNotifier_EndToEnd_TwoEnabledChannels_WritesTwoRows(t *testing.T)
 	defer cleanup()
 	ctx := context.Background()
 
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	r, err := NewRenderer("https://x", nil)
@@ -139,7 +139,7 @@ func TestResolver_RoundTrip_WorkerDeliversOutboxRows(t *testing.T) {
 	defer cleanup()
 	ctx := context.Background()
 
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	r, err := NewRenderer("https://x", nil)

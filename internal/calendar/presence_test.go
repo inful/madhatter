@@ -73,15 +73,15 @@ func TestComputePresenceSnapshot_TwoOnLeaveThreeOnSite(t *testing.T) {
 	ctx := context.Background()
 	db := newCalendarTestDB(t)
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
-	_, err = db.AddTeamMember(ctx, "Carol", "carol@example.com")
+	_, err = db.AddTeamMember(ctx, "Carol", "carol@example.com", nil)
 	require.NoError(t, err)
-	_, err = db.AddTeamMember(ctx, "Dave", "dave@example.com")
+	_, err = db.AddTeamMember(ctx, "Dave", "dave@example.com", nil)
 	require.NoError(t, err)
-	_, err = db.AddTeamMember(ctx, "Eve", "eve@example.com")
+	_, err = db.AddTeamMember(ctx, "Eve", "eve@example.com", nil)
 	require.NoError(t, err)
 
 	// Alice and Bob on leave today.
@@ -104,7 +104,7 @@ func TestComputePresenceSnapshot_WFHIncluded(t *testing.T) {
 	ctx := context.Background()
 	db := newCalendarTestDB(t)
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	// Use a date strictly in the future so the DB doesn't reject it
@@ -127,7 +127,7 @@ func TestComputePresenceSnapshot_HATNonCover(t *testing.T) {
 	ctx := context.Background()
 	db := newCalendarTestDB(t)
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 	_, err = db.CreateRotaAssignment(ctx, "2026-06-10", aliceID, false, nil)
 	require.NoError(t, err)
@@ -144,7 +144,7 @@ func TestComputePresenceSnapshot_HATCoverOnly(t *testing.T) {
 	ctx := context.Background()
 	db := newCalendarTestDB(t)
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 	_, err = db.CreateRotaAssignment(ctx, "2026-06-10", aliceID, true, nil)
 	require.NoError(t, err)
@@ -160,7 +160,7 @@ func TestComputePresenceSnapshot_StableOrderSameSeed(t *testing.T) {
 	ctx := context.Background()
 	db := newCalendarTestDB(t)
 	for _, name := range []string{"Alice", "Bob", "Carol", "Dave"} {
-		_, err := db.AddTeamMember(ctx, name, name+"@example.com")
+		_, err := db.AddTeamMember(ctx, name, name+"@example.com", nil)
 		require.NoError(t, err)
 	}
 
@@ -182,7 +182,7 @@ func TestComputePresenceSnapshot_DifferentSeedDifferentOrder(t *testing.T) {
 	ctx := context.Background()
 	db := newCalendarTestDB(t)
 	for _, name := range []string{"Alice", "Bob", "Carol", "Dave", "Eve", "Frank"} {
-		_, err := db.AddTeamMember(ctx, name, name+"@example.com")
+		_, err := db.AddTeamMember(ctx, name, name+"@example.com", nil)
 		require.NoError(t, err)
 	}
 
@@ -318,9 +318,9 @@ func TestGetHATForDate_PrefersCover(t *testing.T) {
 	ctx := context.Background()
 	db := newCalendarTestDB(t)
 
-	originalID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	originalID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	coverID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	coverID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	date := "2026-07-15"
@@ -340,7 +340,7 @@ func TestGetHATForDate_OnlyOriginal(t *testing.T) {
 	ctx := context.Background()
 	db := newCalendarTestDB(t)
 
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 	date := "2026-07-16"
 	_, err = db.CreateRotaAssignment(ctx, date, memberID, false, nil)

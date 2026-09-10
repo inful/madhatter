@@ -35,9 +35,9 @@ func TestCreateWFHAssignmentSwap_Roundtrip(t *testing.T) {
 	ctx := context.Background()
 	requester := "alice@example.com"
 	target := "bob@example.com"
-	requesterID, err := db.AddTeamMember(ctx, requester, requester)
+	requesterID, err := db.AddTeamMember(ctx, requester, requester, nil)
 	require.NoError(t, err)
-	targetID, err := db.AddTeamMember(ctx, target, target)
+	targetID, err := db.AddTeamMember(ctx, target, target, nil)
 	require.NoError(t, err)
 
 	future := time.Now().UTC().AddDate(0, 0, 5).Format("2006-01-02")
@@ -69,9 +69,9 @@ func TestGetPendingWFHSwapForRequesterRow_ConflictGuard(t *testing.T) {
 	ctx := context.Background()
 	requester := "alice@example.com"
 	target := "bob@example.com"
-	requesterID, err := db.AddTeamMember(ctx, requester, requester)
+	requesterID, err := db.AddTeamMember(ctx, requester, requester, nil)
 	require.NoError(t, err)
-	targetID, err := db.AddTeamMember(ctx, target, target)
+	targetID, err := db.AddTeamMember(ctx, target, target, nil)
 	require.NoError(t, err)
 
 	future := time.Now().UTC().AddDate(0, 0, 5).Format("2006-01-02")
@@ -109,17 +109,17 @@ func TestGetPendingWFHSwapsForTarget_Inbox(t *testing.T) {
 	ctx := context.Background()
 	requester := "alice@example.com"
 	target := "bob@example.com"
-	requesterID, err := db.AddTeamMember(ctx, requester, requester)
+	requesterID, err := db.AddTeamMember(ctx, requester, requester, nil)
 	require.NoError(t, err)
-	targetID, err := db.AddTeamMember(ctx, target, target)
+	targetID, err := db.AddTeamMember(ctx, target, target, nil)
 	require.NoError(t, err)
 
 	// Three swaps from Alice to Bob (target), one from Carol to Dave.
 	carol := "carol@example.com"
 	dave := "dave@example.com"
-	carolID, err := db.AddTeamMember(ctx, carol, carol)
+	carolID, err := db.AddTeamMember(ctx, carol, carol, nil)
 	require.NoError(t, err)
-	daveID, err := db.AddTeamMember(ctx, dave, dave)
+	daveID, err := db.AddTeamMember(ctx, dave, dave, nil)
 	require.NoError(t, err)
 
 	for i, offset := range []int{1, 2, 3} {
@@ -156,9 +156,9 @@ func TestUpdateWFHAssignmentSwapStatus_StateTransitions(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	requesterID, err := db.AddTeamMember(ctx, "alice@example.com", "alice@example.com")
+	requesterID, err := db.AddTeamMember(ctx, "alice@example.com", "alice@example.com", nil)
 	require.NoError(t, err)
-	targetID, err := db.AddTeamMember(ctx, "bob@example.com", "bob@example.com")
+	targetID, err := db.AddTeamMember(ctx, "bob@example.com", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	future := time.Now().UTC().AddDate(0, 0, 5).Format("2006-01-02")
@@ -195,9 +195,9 @@ func TestCancelExpiredWFHSwaps_TodaySurvives(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	aliceID, err := db.AddTeamMember(ctx, "alice@example.com", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "alice@example.com", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "bob@example.com", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "bob@example.com", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	today := time.Now().UTC()
@@ -225,9 +225,9 @@ func TestCancelExpiredWFHSwaps(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	aliceID, err := db.AddTeamMember(ctx, "alice@example.com", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "alice@example.com", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "bob@example.com", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "bob@example.com", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	// Pending swap with swap_date yesterday — must cancel.
@@ -288,9 +288,9 @@ func TestProbe_CancelExpiredSwapsInspect(t *testing.T) {
 	defer cleanup()
 
 	ctx := context.Background()
-	aliceID, err := db.AddTeamMember(ctx, "alice@example.com", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "alice@example.com", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "bob@example.com", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "bob@example.com", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	yesterday := time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")

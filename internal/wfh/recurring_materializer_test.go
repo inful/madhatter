@@ -41,7 +41,7 @@ func TestEnsureRecurringMaterialized_FillsGaps(t *testing.T) {
 	defer cleanup()
 
 	svc := NewService(db, testConfig())
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 	require.NoError(t, db.SetTeamMemberRecurringWFHDays(ctx, memberID, database.RecurringWFHDays{
 		Wednesday: true,
@@ -72,7 +72,7 @@ func TestEnsureRecurringMaterialized_IsIdempotent(t *testing.T) {
 	defer cleanup()
 
 	svc := NewService(db, testConfig())
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 	require.NoError(t, db.SetTeamMemberRecurringWFHDays(ctx, memberID, database.RecurringWFHDays{Thursday: true}))
 
@@ -96,7 +96,7 @@ func TestEnsureRecurringMaterialized_SkipsPastDates(t *testing.T) {
 	defer cleanup()
 
 	svc := NewService(db, testConfig())
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 	require.NoError(t, db.SetTeamMemberRecurringWFHDays(ctx, memberID, database.RecurringWFHDays{Monday: true}))
 
@@ -114,7 +114,7 @@ func TestEnsureRecurringMaterialized_SkipsMembersWithoutRecurring(t *testing.T) 
 	defer cleanup()
 
 	svc := NewService(db, testConfig())
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 	// No SetTeamMemberRecurringWFHDays call.
 
@@ -133,7 +133,7 @@ func TestEnsureRecurringMaterialized_PreservesWithdrawnRow(t *testing.T) {
 	defer cleanup()
 
 	svc := NewService(db, testConfig())
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 	require.NoError(t, db.SetTeamMemberRecurringWFHDays(ctx, memberID, database.RecurringWFHDays{Thursday: true}))
 
@@ -174,9 +174,9 @@ func TestEnsureRecurringMaterialized_AllMembers(t *testing.T) {
 	defer cleanup()
 
 	svc := NewService(db, testConfig())
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 	require.NoError(t, db.SetTeamMemberRecurringWFHDays(ctx, aliceID, database.RecurringWFHDays{Wednesday: true}))
 	// Bob has no recurring schedule.

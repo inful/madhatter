@@ -31,11 +31,11 @@ func TestLeaveCreationIntegration(t *testing.T) {
 	ctx := context.Background()
 
 	// Add a test team member
-	memberID, err := db.AddTeamMember(ctx, "Test User", "test@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Test User", "test@example.com", nil)
 	require.NoError(t, err)
 
 	// Add another member for assignments
-	_, err = db.AddTeamMember(ctx, "Test User 2", "test2@example.com")
+	_, err = db.AddTeamMember(ctx, "Test User 2", "test2@example.com", nil)
 	require.NoError(t, err)
 
 	// Create mock auth components
@@ -198,7 +198,7 @@ func TestLeaveCreationDatabaseSchema(t *testing.T) {
 	ctx := context.Background()
 
 	// Add a test team member
-	memberID, err := db.AddTeamMember(ctx, "Test User", "test@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Test User", "test@example.com", nil)
 	require.NoError(t, err)
 
 	// Try to create a leave record directly
@@ -232,7 +232,7 @@ func TestHandleLeaveReport_LeaveTypeRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	handler.maintenance = maintenance
 
-	adminMemberID, err := db.AddTeamMember(ctx, "Admin", "admin@example.com")
+	adminMemberID, err := db.AddTeamMember(ctx, "Admin", "admin@example.com", nil)
 	require.NoError(t, err)
 
 	startDate := time.Now().Format("2006-01-02")
@@ -309,7 +309,7 @@ func TestHandleLeaveEdit_LeaveTypeRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	handler.maintenance = maintenance
 
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	startDate := time.Now().Format("2006-01-02")
@@ -369,9 +369,9 @@ func TestHandleLeaveEdit_RawHTTPRejectsLeaveTypeEscalation(t *testing.T) {
 	require.NoError(t, err)
 	handler.maintenance = maintenance
 
-	ownerID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	ownerID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	otherID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	otherID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	startDate := time.Now().Format("2006-01-02")

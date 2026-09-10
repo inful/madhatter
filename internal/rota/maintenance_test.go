@@ -17,9 +17,9 @@ func TestScheduleMaintenance_EnsureSchedule(t *testing.T) {
 	ctx := context.Background()
 
 	// Add team members first
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	maintenance := NewScheduleMaintenance(db)
@@ -71,9 +71,9 @@ func TestScheduleMaintenance_GetScheduleGap(t *testing.T) {
 	ctx := context.Background()
 
 	// Add team members first
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	maintenance := NewScheduleMaintenance(db)
@@ -110,9 +110,9 @@ func TestScheduleMaintenance_GenerateMissingDays(t *testing.T) {
 	ctx := context.Background()
 
 	// Add team members first
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	maintenance := NewScheduleMaintenance(db)
@@ -185,9 +185,9 @@ func TestScheduleMaintenance_GenerateMissingDays_SkipsHolidays(t *testing.T) {
 
 	ctx := context.Background()
 
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	maintenance := NewScheduleMaintenance(db)
@@ -225,9 +225,9 @@ func TestScheduleMaintenance_HandleTeamChange(t *testing.T) {
 	ctx := context.Background()
 
 	// Add team members first
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	maintenance := NewScheduleMaintenance(db)
@@ -238,7 +238,7 @@ func TestScheduleMaintenance_HandleTeamChange(t *testing.T) {
 
 	t.Run("TeamChangeTriggersScheduleUpdate", func(t *testing.T) {
 		// Add a new team member
-		_, err := db.AddTeamMember(ctx, "New Member", "new@example.com")
+		_, err := db.AddTeamMember(ctx, "New Member", "new@example.com", nil)
 		require.NoError(t, err)
 
 		// Handle team change
@@ -262,9 +262,9 @@ func TestScheduleMaintenance_HandleLeaveChange_LeaveCreatesCover(t *testing.T) {
 	ctx := context.Background()
 
 	// Add team members first
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	maintenance := NewScheduleMaintenance(db)
@@ -318,9 +318,9 @@ func TestScheduleMaintenance_HandleLeaveChange_DeleteRemovesCover(t *testing.T) 
 	ctx := context.Background()
 
 	// Add team members first
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	maintenance := NewScheduleMaintenance(db)
@@ -388,9 +388,9 @@ func TestScheduleMaintenance_RotationPreservation(t *testing.T) {
 	ctx := context.Background()
 
 	// Add team members first
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	maintenance := NewScheduleMaintenance(db)
@@ -470,11 +470,11 @@ func TestScheduleMaintenance_HandleTeamChange_DeleteMemberReschedulesRota(t *tes
 	ctx := context.Background()
 
 	// Add three team members
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
-	charlieID, err := db.AddTeamMember(ctx, "Charlie", "charlie@example.com")
+	charlieID, err := db.AddTeamMember(ctx, "Charlie", "charlie@example.com", nil)
 	require.NoError(t, err)
 
 	maintenance := NewScheduleMaintenance(db)
@@ -590,9 +590,9 @@ func TestGenerateMissingDays_HolidayOnlyRange(t *testing.T) {
 
 	ctx := context.Background()
 
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	// 2026-01-06 is a Tuesday; make it a holiday.
@@ -630,11 +630,11 @@ func TestGenerateMissingDays_ContinuesFromPersistedR1State(t *testing.T) {
 
 	ctx := context.Background()
 
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
-	_, err = db.AddTeamMember(ctx, "Charlie", "charlie@example.com")
+	_, err = db.AddTeamMember(ctx, "Charlie", "charlie@example.com", nil)
 	require.NoError(t, err)
 
 	engine := NewEngine(db)
@@ -683,11 +683,11 @@ func TestScheduleMaintenance_DeleteLeave_RestoresOriginalAssignments(t *testing.
 
 	ctx := context.Background()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
-	charlieID, err := db.AddTeamMember(ctx, "Charlie", "charlie@example.com")
+	charlieID, err := db.AddTeamMember(ctx, "Charlie", "charlie@example.com", nil)
 	require.NoError(t, err)
 
 	engine := NewEngine(db)

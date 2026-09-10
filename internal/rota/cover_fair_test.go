@@ -18,15 +18,15 @@ func TestEngine_MultipleSeparateLeaves(t *testing.T) {
 	ctx := context.Background()
 
 	// Add 5 team members
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
-	charlieID, err := db.AddTeamMember(ctx, "Charlie", "charlie@example.com")
+	charlieID, err := db.AddTeamMember(ctx, "Charlie", "charlie@example.com", nil)
 	require.NoError(t, err)
-	_, err = db.AddTeamMember(ctx, "Dave", "dave@example.com")
+	_, err = db.AddTeamMember(ctx, "Dave", "dave@example.com", nil)
 	require.NoError(t, err)
-	_, err = db.AddTeamMember(ctx, "Eve", "eve@example.com")
+	_, err = db.AddTeamMember(ctx, "Eve", "eve@example.com", nil)
 	require.NoError(t, err)
 
 	engine := NewEngine(db)
@@ -127,13 +127,13 @@ func TestEngine_CoverRotationAcrossMultipleMembers(t *testing.T) {
 	ctx := context.Background()
 
 	// Add 4 team members
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
-	charlieID, err := db.AddTeamMember(ctx, "Charlie", "charlie@example.com")
+	charlieID, err := db.AddTeamMember(ctx, "Charlie", "charlie@example.com", nil)
 	require.NoError(t, err)
-	daveID, err := db.AddTeamMember(ctx, "Dave", "dave@example.com")
+	daveID, err := db.AddTeamMember(ctx, "Dave", "dave@example.com", nil)
 	require.NoError(t, err)
 
 	engine := NewEngine(db)

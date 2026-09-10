@@ -22,7 +22,7 @@ func TestSwapAPI_CreateSwapWithOwnAssignments_Returns422(t *testing.T) {
 	sessionToken, err := server.createTestSession(ctx)
 	require.NoError(t, err)
 
-	_, err = server.db.AddTeamMember(ctx, "Test User", "test@example.com")
+	_, err = server.db.AddTeamMember(ctx, "Test User", "test@example.com", nil)
 	require.NoError(t, err)
 
 	member, err := server.db.GetMemberByEmail(ctx, "test@example.com")
@@ -69,9 +69,9 @@ func TestSwapAPI_AcceptPastSwap_Returns409(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	aliceID, err := server.db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := server.db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := server.db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := server.db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	baseDate := time.Now().AddDate(0, 0, -3)

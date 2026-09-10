@@ -2,16 +2,50 @@ package api
 
 import (
 	"context"
+	"strings"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/inful/madhatter/internal/auth"
 	"github.com/inful/madhatter/internal/database"
 )
 
+// apiBirthdateLayout is the wire format for #60's optional
+// birthdate field. Mirrors the form-input parser in the web
+// layer (parseOptionalBirthdate) so the API and form stay
+// in lockstep.
+const apiBirthdateLayout = "2006-01-02"
+
+// parseAPIBirthdate mirrors web.parseOptionalBirthdate. Kept as
+// a package-local helper rather than shared so the API layer
+// doesn't pull in net/http. Returns the same (nil, nil) on
+// empty / (nil, err) on malformed / (*time.Time, nil) on
+// success contract.
+func parseAPIBirthdate(raw string) (*time.Time, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil //nolint:nilnil // empty input is a valid "no birthdate" signal.
+	}
+	t, err := time.Parse(apiBirthdateLayout, raw)
+	if err != nil {
+		return nil, err
+	}
+	today := time.Now().UTC().Truncate(24 * time.Hour) //nolint:mnd // 24h = 1 day; constant mirrors time.Hour convention.
+	if t.After(today) {
+		return nil, huma.Error400BadRequest("birthdate cannot be in the future.")
+	}
+	// pre-1900 dates are almost certainly typos; sanity check.
+	if t.Year() < 1900 { //nolint:mnd // year-of-birth sanity floor; not a derived value.
+		return nil, huma.Error400BadRequest("birthdate year must be 1900 or later.")
+	}
+	return &t, nil
+}
+
 type AddTeamInput struct {
 	Body struct {
-		Name  string `json:"name" minLength:"1"`
-		Email string `format:"email" json:"email"`
+		Name      string `json:"name" minLength:"1"`
+		Email     string `format:"email" json:"email"`
+		Birthdate string `description:"Optional YYYY-MM-DD birthdate (#60)." json:"birthdate,omitempty"`
 	}
 }
 
@@ -39,7 +73,12 @@ func (s *Server) handleAddTeam(ctx context.Context, input *AddTeamInput) (*AddTe
 		return nil, huma.Error403Forbidden("Admin privileges required")
 	}
 
-	id, err := s.db.AddTeamMember(ctx, input.Body.Name, input.Body.Email)
+	bday, err := parseAPIBirthdate(input.Body.Birthdate)
+	if err != nil {
+		return nil, huma.Error400BadRequest("Invalid birthdate.", err)
+	}
+
+	id, err := s.db.AddTeamMember(ctx, input.Body.Name, input.Body.Email, bday)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to add team member", err)
 	}
@@ -83,8 +122,9 @@ func (s *Server) handleListTeam(ctx context.Context, input *struct{}) (*ListTeam
 type UpdateTeamInput struct {
 	ID   string `minLength:"1" path:"id"`
 	Body struct {
-		Name  string `json:"name" minLength:"1"`
-		Email string `format:"email" json:"email"`
+		Name      string `json:"name" minLength:"1"`
+		Email     string `format:"email" json:"email"`
+		Birthdate string `description:"Optional YYYY-MM-DD birthdate (#60). Pass empty string to clear." json:"birthdate,omitempty"`
 	}
 }
 
@@ -111,7 +151,12 @@ func (s *Server) handleUpdateTeam(ctx context.Context, input *UpdateTeamInput) (
 		return nil, huma.Error403Forbidden("Admin privileges required")
 	}
 
-	err := s.db.UpdateTeamMember(ctx, input.ID, input.Body.Name, input.Body.Email)
+	bday, err := parseAPIBirthdate(input.Body.Birthdate)
+	if err != nil {
+		return nil, huma.Error400BadRequest("Invalid birthdate.", err)
+	}
+
+	err = s.db.UpdateTeamMember(ctx, input.ID, input.Body.Name, input.Body.Email, bday)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to update team member", err)
 	}

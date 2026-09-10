@@ -21,9 +21,9 @@ func TestService_AutoCancelExpiredSwaps(t *testing.T) {
 	db, cleanup := setupWFHTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "alice@example.com", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "alice@example.com", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "bob@example.com", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "bob@example.com", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	yesterday := time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
@@ -84,9 +84,9 @@ func TestService_AdminReassignWFH(t *testing.T) {
 	db, cleanup := setupWFHTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "alice@example.com", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "alice@example.com", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "bob@example.com", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "bob@example.com", "bob@example.com", nil)
 	require.NoError(t, err)
 	// Seed a real admin user so the FK on wfh_requests.withdrawn_by
 	// is satisfied (the schema references users(id)). The fixture
@@ -131,9 +131,9 @@ func TestService_AdminReassignWFH_RejectsVoluntary(t *testing.T) {
 	db, cleanup := setupWFHTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "alice@example.com", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "alice@example.com", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "bob@example.com", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "bob@example.com", "bob@example.com", nil)
 	require.NoError(t, err)
 	adminID := seedAdminUser(t, ctx, db, "admin-reassign-2", "Admin", "admin-reassign-2@example.com")
 

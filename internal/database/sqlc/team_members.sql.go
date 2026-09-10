@@ -22,18 +22,24 @@ func (q *Queries) ActivateTeamMember(ctx context.Context, id string) error {
 }
 
 const addTeamMember = `-- name: AddTeamMember :execresult
-INSERT INTO team_members (id, name, email)
-VALUES (?, ?, ?)
+INSERT INTO team_members (id, name, email, birthdate)
+VALUES (?, ?, ?, ?)
 `
 
 type AddTeamMemberParams struct {
-	ID    string `json:"id"`
-	Name  string `json:"name"`
-	Email string `json:"email"`
+	ID        string       `json:"id"`
+	Name      string       `json:"name"`
+	Email     string       `json:"email"`
+	Birthdate sql.NullTime `json:"birthdate"`
 }
 
 func (q *Queries) AddTeamMember(ctx context.Context, arg AddTeamMemberParams) (sql.Result, error) {
-	return q.db.ExecContext(ctx, addTeamMember, arg.ID, arg.Name, arg.Email)
+	return q.db.ExecContext(ctx, addTeamMember,
+		arg.ID,
+		arg.Name,
+		arg.Email,
+		arg.Birthdate,
+	)
 }
 
 const deactivateTeamMember = `-- name: DeactivateTeamMember :exec
@@ -60,7 +66,7 @@ func (q *Queries) DeleteTeamMember(ctx context.Context, id string) error {
 const getActiveTeamMembers = `-- name: GetActiveTeamMembers :many
 SELECT id, name, email, is_active, is_permanent_wfh, is_exempt_from_assignment,
 	   recurring_wfh_monday, recurring_wfh_tuesday, recurring_wfh_wednesday,
-	   recurring_wfh_thursday, recurring_wfh_friday, created_at
+	   recurring_wfh_thursday, recurring_wfh_friday, birthdate, created_at
 FROM team_members
 WHERE is_active = 1
 ORDER BY name
@@ -87,6 +93,7 @@ func (q *Queries) GetActiveTeamMembers(ctx context.Context) ([]TeamMember, error
 			&i.RecurringWfhWednesday,
 			&i.RecurringWfhThursday,
 			&i.RecurringWfhFriday,
+			&i.Birthdate,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -105,7 +112,7 @@ func (q *Queries) GetActiveTeamMembers(ctx context.Context) ([]TeamMember, error
 const getMemberByEmail = `-- name: GetMemberByEmail :one
 SELECT id, name, email, is_active, is_permanent_wfh, is_exempt_from_assignment,
 	   recurring_wfh_monday, recurring_wfh_tuesday, recurring_wfh_wednesday,
-	   recurring_wfh_thursday, recurring_wfh_friday, created_at
+	   recurring_wfh_thursday, recurring_wfh_friday, birthdate, created_at
 FROM team_members
 WHERE email = ?
 `
@@ -125,6 +132,7 @@ func (q *Queries) GetMemberByEmail(ctx context.Context, email string) (TeamMembe
 		&i.RecurringWfhWednesday,
 		&i.RecurringWfhThursday,
 		&i.RecurringWfhFriday,
+		&i.Birthdate,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -133,7 +141,7 @@ func (q *Queries) GetMemberByEmail(ctx context.Context, email string) (TeamMembe
 const getMemberByID = `-- name: GetMemberByID :one
 SELECT id, name, email, is_active, is_permanent_wfh, is_exempt_from_assignment,
 	   recurring_wfh_monday, recurring_wfh_tuesday, recurring_wfh_wednesday,
-	   recurring_wfh_thursday, recurring_wfh_friday, created_at
+	   recurring_wfh_thursday, recurring_wfh_friday, birthdate, created_at
 FROM team_members
 WHERE id = ?
 `
@@ -153,6 +161,7 @@ func (q *Queries) GetMemberByID(ctx context.Context, id string) (TeamMember, err
 		&i.RecurringWfhWednesday,
 		&i.RecurringWfhThursday,
 		&i.RecurringWfhFriday,
+		&i.Birthdate,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -161,7 +170,7 @@ func (q *Queries) GetMemberByID(ctx context.Context, id string) (TeamMember, err
 const getMemberByToken = `-- name: GetMemberByToken :one
 SELECT tm.id, tm.name, tm.email, tm.is_active, tm.is_permanent_wfh, tm.is_exempt_from_assignment,
 	   tm.recurring_wfh_monday, tm.recurring_wfh_tuesday, tm.recurring_wfh_wednesday,
-	   tm.recurring_wfh_thursday, tm.recurring_wfh_friday, tm.created_at
+	   tm.recurring_wfh_thursday, tm.recurring_wfh_friday, tm.birthdate, tm.created_at
 FROM calendar_subscriptions cs
 JOIN team_members tm ON cs.member_id = tm.id
 WHERE cs.token = ?
@@ -182,9 +191,59 @@ func (q *Queries) GetMemberByToken(ctx context.Context, token string) (TeamMembe
 		&i.RecurringWfhWednesday,
 		&i.RecurringWfhThursday,
 		&i.RecurringWfhFriday,
+		&i.Birthdate,
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const getUpcomingBirthdays = `-- name: GetUpcomingBirthdays :many
+SELECT tm.id, tm.name, tm.email, tm.birthdate
+FROM team_members tm
+WHERE tm.is_active = 1
+  AND tm.birthdate IS NOT NULL
+ORDER BY tm.id
+`
+
+type GetUpcomingBirthdaysRow struct {
+	ID        string       `json:"id"`
+	Name      string       `json:"name"`
+	Email     string       `json:"email"`
+	Birthdate sql.NullTime `json:"birthdate"`
+}
+
+// Birthday probe for the dashboard banner (#60). Returns every
+// active member whose birthdate is set. The Go wrapper
+// (db.GetUpcomingBirthdays) applies the 7-day window and the
+// year-wrap math in Go rather than as a SQL CASE expression,
+// where the wrap math (Dec 28 + 7 days must include early-
+// January birthdays) is harder to read and harder to test.
+func (q *Queries) GetUpcomingBirthdays(ctx context.Context) ([]GetUpcomingBirthdaysRow, error) {
+	rows, err := q.db.QueryContext(ctx, getUpcomingBirthdays)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetUpcomingBirthdaysRow{}
+	for rows.Next() {
+		var i GetUpcomingBirthdaysRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Email,
+			&i.Birthdate,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const setTeamMemberExemptFromAssignment = `-- name: SetTeamMemberExemptFromAssignment :exec
@@ -263,17 +322,23 @@ func (q *Queries) SetTeamMemberRecurringWFHDays(ctx context.Context, arg SetTeam
 
 const updateTeamMember = `-- name: UpdateTeamMember :exec
 UPDATE team_members
-SET name = ?, email = ?
+SET name = ?, email = ?, birthdate = ?
 WHERE id = ?
 `
 
 type UpdateTeamMemberParams struct {
-	Name  string `json:"name"`
-	Email string `json:"email"`
-	ID    string `json:"id"`
+	Name      string       `json:"name"`
+	Email     string       `json:"email"`
+	Birthdate sql.NullTime `json:"birthdate"`
+	ID        string       `json:"id"`
 }
 
 func (q *Queries) UpdateTeamMember(ctx context.Context, arg UpdateTeamMemberParams) error {
-	_, err := q.db.ExecContext(ctx, updateTeamMember, arg.Name, arg.Email, arg.ID)
+	_, err := q.db.ExecContext(ctx, updateTeamMember,
+		arg.Name,
+		arg.Email,
+		arg.Birthdate,
+		arg.ID,
+	)
 	return err
 }

@@ -207,7 +207,7 @@ func TestHandleTeamPost_DuplicateEmail_Returns500(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
 
-	_, err = db.AddTeamMember(context.Background(), "Existing", "dup@example.com")
+	_, err = db.AddTeamMember(context.Background(), "Existing", "dup@example.com", nil)
 	require.NoError(t, err)
 
 	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
@@ -253,7 +253,7 @@ func TestHandleTeam_TabBodyClass(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
 
-	_, err = db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err = db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
@@ -286,7 +286,7 @@ func TestHandleTeam_RecurringWFHFieldsetLabel(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { _ = db.Close() }()
 
-	_, err = db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err = db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
@@ -313,7 +313,7 @@ func TestHandleTeam_Get_DevelopmentModeSyncsTeamMembersToApplicationUsers(t *tes
 	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
-	_, err = db.AddTeamMember(ctx, "Dev Member", "dev-member@example.com")
+	_, err = db.AddTeamMember(ctx, "Dev Member", "dev-member@example.com", nil)
 	require.NoError(t, err)
 
 	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, true, nil)
@@ -403,7 +403,7 @@ func TestHandleTeamMemberEdit_ValidPost_RedirectsToTeam(t *testing.T) {
 	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
-	memberID, err := db.AddTeamMember(ctx, "Old Name", "old@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Old Name", "old@example.com", nil)
 	require.NoError(t, err)
 
 	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
@@ -448,11 +448,11 @@ func TestHandleTeamMemberDelete_ValidPost_RedirectsToTeam(t *testing.T) {
 	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
-	memberID, err := db.AddTeamMember(ctx, "To Delete", "todelete@example.com")
+	memberID, err := db.AddTeamMember(ctx, "To Delete", "todelete@example.com", nil)
 	require.NoError(t, err)
 
 	// A second member must remain so HandleTeamChange can still build the schedule.
-	_, err = db.AddTeamMember(ctx, "Remaining", "remaining@example.com")
+	_, err = db.AddTeamMember(ctx, "Remaining", "remaining@example.com", nil)
 	require.NoError(t, err)
 
 	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
@@ -513,7 +513,7 @@ func TestHandleTeamMemberPermanentWFHUpdate_ValidPost_UpdatesRecurringDays(t *te
 	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)
@@ -619,7 +619,7 @@ func TestHandleTeamMemberExemptUpdate_ValidPost_TogglesFlag(t *testing.T) {
 	defer func() { _ = db.Close() }()
 
 	ctx := context.Background()
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	h, err := NewHandler(db, &auth.AuthManager{}, &auth.Middleware{}, false, nil)

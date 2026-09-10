@@ -219,10 +219,10 @@ func TestHandleSwaps_TeamMember_RendersPage(t *testing.T) {
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
-	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	h := newSwapHandler(t, db)
@@ -249,7 +249,7 @@ func TestHandleSwaps_InboxSectionAlwaysRenders(t *testing.T) {
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	h := newSwapHandler(t, db)
@@ -286,10 +286,10 @@ func TestHandleSwaps_Post_MissingIDs_ShowsError(t *testing.T) {
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
-	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	h := newSwapHandler(t, db)
@@ -311,10 +311,10 @@ func TestHandleSwaps_Post_SameIDs_ShowsError(t *testing.T) {
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
-	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	seedSchedule(t, db)
@@ -345,10 +345,10 @@ func TestHandleSwaps_Post_NotOwner_ShowsError(t *testing.T) {
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	seedSchedule(t, db)
@@ -383,10 +383,10 @@ func TestHandleSwaps_Post_ValidSwap_Redirects(t *testing.T) {
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	seedSchedule(t, db)
@@ -420,9 +420,9 @@ func TestHandleSwaps_Post_ValidSwap_NotifiesTarget(t *testing.T) {
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	seedSchedule(t, db)
@@ -461,10 +461,10 @@ func TestHandleSwaps_Post_DuplicateSwap_ShowsError(t *testing.T) {
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	seedSchedule(t, db)
@@ -506,9 +506,9 @@ func TestHandleSwaps_GetPendingOutgoingSwap_ShowsCancelButton(t *testing.T) {
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	seedSchedule(t, db)
@@ -558,7 +558,7 @@ func TestHandleSwapCancel_SwapNotFound_404(t *testing.T) {
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	h := newSwapHandler(t, db)
@@ -578,10 +578,10 @@ func TestHandleSwapCancel_NotRequester_403(t *testing.T) {
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	seedSchedule(t, db)
@@ -615,10 +615,10 @@ func TestHandleSwapCancel_AlreadyAccepted_400(t *testing.T) {
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	seedSchedule(t, db)
@@ -653,10 +653,10 @@ func TestHandleSwapCancel_Valid_Redirects(t *testing.T) {
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	seedSchedule(t, db)
@@ -713,10 +713,10 @@ func TestHandleSwapAccept_NotTarget_403(t *testing.T) {
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	seedSchedule(t, db)
@@ -750,10 +750,10 @@ func TestHandleSwapAccept_Valid_ExecutesSwapAndRedirects(t *testing.T) {
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	seedSchedule(t, db)
@@ -799,9 +799,9 @@ func TestHandleSwapAccept_PastAssignments_RendersSwapsPageErrorAndCancelsSwap(t 
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	baseDate := time.Now().AddDate(0, 0, -3)
@@ -843,10 +843,10 @@ func TestHandleSwapReject_NotTarget_403(t *testing.T) {
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	seedSchedule(t, db)
@@ -880,10 +880,10 @@ func TestHandleSwapReject_Valid_SetsStatusAndRedirects(t *testing.T) {
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	seedSchedule(t, db)
@@ -940,7 +940,7 @@ func TestHandleSwapAdminDelete_NonAdmin_403(t *testing.T) {
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	h := newSwapHandler(t, db)
@@ -960,10 +960,10 @@ func TestHandleSwapAdminDelete_Valid_Redirects(t *testing.T) {
 	db, cleanup := setupSwapTestDB(t)
 	defer cleanup()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	seedSchedule(t, db)

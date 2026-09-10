@@ -65,7 +65,7 @@ func seedTeam(t *testing.T, ctx context.Context, db *database.DB, names []string
 	t.Helper()
 	ids := make([]string, len(names))
 	for i, name := range names {
-		id, err := db.AddTeamMember(ctx, name, name+"@example.com")
+		id, err := db.AddTeamMember(ctx, name, name+"@example.com", nil)
 		require.NoError(t, err)
 		ids[i] = id
 	}

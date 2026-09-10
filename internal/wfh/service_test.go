@@ -200,7 +200,7 @@ func TestCheckQuota_UsesCurrentPeriodLimit(t *testing.T) {
 	defer cleanup()
 
 	svc := NewService(db, testConfig())
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	today := testutil.NextBusinessDay(time.Now().UTC())
@@ -237,7 +237,7 @@ func TestGetQuotaStatus_DateAffinityBoundaryFix(t *testing.T) {
 	db, cleanup := setupWFHTestDB(t)
 	defer cleanup()
 
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	svc := NewService(db, testConfig())
@@ -339,7 +339,7 @@ func TestCheckQuota_FarFutureDate_ComputesPeriodForThatDate(t *testing.T) {
 	defer cleanup()
 
 	svc := NewService(db, testConfig())
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	farFuture := testutil.NextBusinessDay(time.Now().UTC().AddDate(0, 0, 60))
@@ -356,7 +356,7 @@ func TestCheckQuota_RecurringDaysReduceBudget(t *testing.T) {
 	defer cleanup()
 
 	svc := NewService(db, testConfig())
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	require.NoError(t, db.SetTeamMemberRecurringWFHDays(ctx, memberID, database.RecurringWFHDays{
@@ -404,11 +404,11 @@ func TestPrioritisePending_SortsByUsageThenCreatedAt(t *testing.T) {
 	dateStr := date.Format("2006-01-02")
 	previousDateStr := baseDate.Format("2006-01-02")
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
-	carolID, err := db.AddTeamMember(ctx, "Carol", "carol@example.com")
+	carolID, err := db.AddTeamMember(ctx, "Carol", "carol@example.com", nil)
 	require.NoError(t, err)
 
 	carolPrior, err := db.CreateWFHRequest(ctx, carolID, previousDateStr)
@@ -453,13 +453,13 @@ func TestSettlePendingRequests_ApprovesHighestPriorityWithinSlots(t *testing.T) 
 	targetDateStr := targetDate.Format("2006-01-02")
 	todayStr := today.Format("2006-01-02")
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
-	carolID, err := db.AddTeamMember(ctx, "Carol", "carol@example.com")
+	carolID, err := db.AddTeamMember(ctx, "Carol", "carol@example.com", nil)
 	require.NoError(t, err)
-	daveID, err := db.AddTeamMember(ctx, "Dave", "dave@example.com")
+	daveID, err := db.AddTeamMember(ctx, "Dave", "dave@example.com", nil)
 	require.NoError(t, err)
 
 	_, err = db.CreateLeaveRecord(ctx, daveID, targetDateStr, targetDateStr, database.LeaveTypeLeave)
@@ -506,13 +506,13 @@ func TestSettlePendingRequests_RecurringWFHConsumesRemoteCapacity(t *testing.T) 
 	targetDate := testutil.NextBusinessDay(time.Now().UTC().AddDate(0, 0, 1))
 	targetDateStr := targetDate.Format("2006-01-02")
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
-	carolID, err := db.AddTeamMember(ctx, "Carol", "carol@example.com")
+	carolID, err := db.AddTeamMember(ctx, "Carol", "carol@example.com", nil)
 	require.NoError(t, err)
-	daveID, err := db.AddTeamMember(ctx, "Dave", "dave@example.com")
+	daveID, err := db.AddTeamMember(ctx, "Dave", "dave@example.com", nil)
 	require.NoError(t, err)
 
 	require.NoError(t, db.SetTeamMemberRecurringWFHDays(ctx, daveID, database.RecurringWFHDays{Monday: true, Tuesday: true, Wednesday: true, Thursday: true, Friday: true}))
@@ -556,13 +556,13 @@ func TestSettlePendingRequests_NoDoubleCountForApprovedRecurringWFH(t *testing.T
 	targetDate := testutil.NextBusinessDay(today.AddDate(0, 0, 1))
 	targetDateStr := targetDate.Format("2006-01-02")
 
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
-	carolID, err := db.AddTeamMember(ctx, "Carol", "carol@example.com")
+	carolID, err := db.AddTeamMember(ctx, "Carol", "carol@example.com", nil)
 	require.NoError(t, err)
-	daveID, err := db.AddTeamMember(ctx, "Dave", "dave@example.com")
+	daveID, err := db.AddTeamMember(ctx, "Dave", "dave@example.com", nil)
 	require.NoError(t, err)
 
 	require.NoError(t, db.SetTeamMemberRecurringWFHDays(ctx, daveID, database.RecurringWFHDays{Monday: true, Tuesday: true, Wednesday: true, Thursday: true, Friday: true}))
@@ -610,7 +610,7 @@ func TestCreateWFHRequest_RejectsHoliday(t *testing.T) {
 		return d.Format("2006-01-02") == holidayDate.Format("2006-01-02")
 	})
 
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	_, err = db.CreateWFHRequest(ctx, memberID, holidayDate.Format("2006-01-02"))
@@ -627,7 +627,7 @@ func TestCreateWFHRequest_AllowsNonHolidayWhenCheckerSet(t *testing.T) {
 		return d.Format("2006-01-02") == holidayDate.Format("2006-01-02")
 	})
 
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	nonHoliday := testutil.NextBusinessDay(holidayDate.AddDate(0, 0, 1))
@@ -646,7 +646,7 @@ func TestCheckQuota_RejectsHoliday(t *testing.T) {
 	})
 
 	svc := NewService(db, testConfig())
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	hasQuota, err := svc.CheckQuota(ctx, memberID, holidayDate.Format("2006-01-02"))
@@ -690,13 +690,13 @@ func TestSettlePendingRequests_FiresNotifierForEachTransition(t *testing.T) {
 	targetDateStr := targetDate.Format("2006-01-02")
 	todayStr := today.Format("2006-01-02")
 
-	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
-	carolID, err := db.AddTeamMember(ctx, "Carol", "carol@example.com")
+	carolID, err := db.AddTeamMember(ctx, "Carol", "carol@example.com", nil)
 	require.NoError(t, err)
-	daveID, err := db.AddTeamMember(ctx, "Dave", "dave@example.com")
+	daveID, err := db.AddTeamMember(ctx, "Dave", "dave@example.com", nil)
 	require.NoError(t, err)
 
 	// Dave on leave so on-site capacity is reduced.
@@ -771,7 +771,7 @@ func TestService_PurgePastPeriods(t *testing.T) {
 	svc := NewService(db, testConfig())
 	require.True(t, svc.IsPurgeEnabled(), "precondition: default config enables purge")
 
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	// Anchor is 2026-01-05 (Monday), PeriodDays=7. The current period
@@ -813,7 +813,7 @@ func TestService_PurgePastPeriods_DryRunDoesNotDelete(t *testing.T) {
 	defer cleanup()
 
 	svc := NewService(db, testConfig())
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	// Seed rows across periods so the dry-run has something to count.
@@ -848,7 +848,7 @@ func TestService_PurgePastPeriods_PurgeFlagOff(t *testing.T) {
 
 	assert.False(t, svc.IsPurgeEnabled(), "purge flag off must disable purge even when WFH is on")
 
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 	today := time.Now().UTC()
 	currentStart, _, err := svc.ComputePeriodBounds(today)
@@ -884,7 +884,7 @@ func TestService_PurgePastPeriods_WFHDisabled(t *testing.T) {
 
 	assert.False(t, svc.IsPurgeEnabled(), "feature off must disable purge regardless of PurgeEnabled")
 
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 	today := time.Now().UTC()
 	currentStart, _, err := svc.ComputePeriodBounds(today)
@@ -955,7 +955,7 @@ func TestSettlePendingRequests_CoversNextWeekMonday(t *testing.T) {
 	require.GreaterOrEqual(t, svc.Config().SettlementDays, 5,
 		"this test depends on the settlement window being at least 5 days")
 
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	// today + 5 business days. testutil.NextBusinessDay handles the
@@ -1026,9 +1026,9 @@ func TestReportToday_HappyPath_Approves(t *testing.T) {
 	today := testutil.NextBusinessDay(time.Now().UTC())
 	todayStr := today.Format("2006-01-02")
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	got, err := svc.ReportToday(ctx, aliceID)
@@ -1065,7 +1065,7 @@ func TestReportToday_AtFloor_Denies(t *testing.T) {
 
 	// 1-member team: floor is 1, so any approved WFH today means
 	// the floor is at capacity.
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	got, err := svc.ReportToday(ctx, aliceID)
@@ -1095,7 +1095,7 @@ func TestReportToday_DuplicateRefuses(t *testing.T) {
 	today := testutil.NextBusinessDay(time.Now().UTC())
 	todayStr := today.Format("2006-01-02")
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	// Seed a recurring (approved) row for today — same UNIQUE(member, date)
@@ -1141,9 +1141,9 @@ func TestReportToday_QuotaExhausted(t *testing.T) {
 	date1 := today.AddDate(0, 0, 1).Format("2006-01-02")
 	date2 := today.AddDate(0, 0, 2).Format("2006-01-02")
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	_, err = db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	for _, d := range []string{date1, date2} {
@@ -1171,7 +1171,7 @@ func TestReportToday_FeatureDisabled(t *testing.T) {
 	cfg.Enabled = false
 	svc := NewService(db, cfg)
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	got, err := svc.ReportToday(ctx, aliceID)
@@ -1200,7 +1200,7 @@ func TestReportToday_HolidayFails(t *testing.T) {
 
 	svc := NewService(db, testConfig())
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	got, err := svc.ReportToday(ctx, aliceID)
@@ -1235,7 +1235,7 @@ func TestMarkWFH_CreatesAdminMarkedRow(t *testing.T) {
 	today := testutil.NextBusinessDay(time.Now().UTC())
 	todayStr := today.Format("2006-01-02")
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	const adminID = "admin-1"
@@ -1299,7 +1299,7 @@ func TestMarkWFH_AllowedWhenQuotaExhausted(t *testing.T) {
 	day2 := testutil.NextBusinessDay(day1.AddDate(0, 0, 1))
 	nowUTC := time.Now().UTC()
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	// Fill the quota with two already-approved WFH rows in the same period.
@@ -1355,11 +1355,11 @@ func TestMarkWFH_AllowedWhenFloorWouldBeViolated(t *testing.T) {
 	today := testutil.NextBusinessDay(time.Now().UTC())
 	todayStr := today.Format("2006-01-02")
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
-	carolID, err := db.AddTeamMember(ctx, "Carol", "carol@example.com")
+	carolID, err := db.AddTeamMember(ctx, "Carol", "carol@example.com", nil)
 	require.NoError(t, err)
 
 	adminID := seedAdminUser(t, ctx, db, "admin-1", "Admin", "admin@example.com")
@@ -1400,7 +1400,7 @@ func TestMarkWFH_DuplicateReturnsExisting(t *testing.T) {
 	today := testutil.NextBusinessDay(time.Now().UTC())
 	todayStr := today.Format("2006-01-02")
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	adminID := seedAdminUser(t, ctx, db, "admin-1", "Admin", "admin@example.com")
@@ -1436,7 +1436,7 @@ func TestMarkWFH_RejectsNonTodayDate(t *testing.T) {
 	defer cleanup()
 
 	svc := NewService(db, testConfig())
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	tomorrow := time.Now().UTC().AddDate(0, 0, 1).Format("2006-01-02")
@@ -1463,7 +1463,7 @@ func TestMarkWFH_RejectsHoliday(t *testing.T) {
 	db.SetHolidayChecker(func(d time.Time) bool { return d.Equal(today) })
 
 	svc := NewService(db, testConfig())
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	_, err = svc.MarkWFH(ctx, aliceID, todayStr, "admin-1", "Admin")
@@ -1489,7 +1489,7 @@ func TestWithdrawAdminMark_RefundsQuota(t *testing.T) {
 	today := testutil.NextBusinessDay(time.Now().UTC())
 	todayStr := today.Format("2006-01-02")
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	adminID := seedAdminUser(t, ctx, db, "admin-1", "Admin", "admin@example.com")
@@ -1528,7 +1528,7 @@ func TestQuotaStatus_ReportsOverQuotaBy(t *testing.T) {
 	cfg.MaxDaysPerPeriod = 1
 	svc := NewService(db, cfg)
 
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	// Under quota: OverQuotaBy is 0.
@@ -1586,9 +1586,9 @@ func TestSettlePendingRequests_DenialReasonIsRecorded(t *testing.T) {
 
 	// Two-person team (50% of 2 = 1, min-absolute 1, floor 1).
 	// Two pending requests. Approve the first, deny the second.
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
 
 	aliceReq, err := db.CreateWFHRequest(ctx, aliceID, targetDateStr)
@@ -1651,11 +1651,11 @@ func TestSettlePendingRequests_DenialReasonCarriesFloorValue(t *testing.T) {
 
 	// Three-person team. Two pending requests; one approval, one
 	// denial (floor is 2 of 3, so only one slot opens up).
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
-	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
+	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com", nil)
 	require.NoError(t, err)
-	carolID, err := db.AddTeamMember(ctx, "Carol", "carol@example.com")
+	carolID, err := db.AddTeamMember(ctx, "Carol", "carol@example.com", nil)
 	require.NoError(t, err)
 
 	aliceReq, err := db.CreateWFHRequest(ctx, aliceID, targetDateStr)
@@ -1695,7 +1695,7 @@ func TestGetQuotaStatusForDate_MirrorsCheckQuotaAcrossPeriods(t *testing.T) {
 	defer cleanup()
 
 	svc := NewService(db, testConfig())
-	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	memberID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	today := time.Now().UTC()
@@ -1906,7 +1906,7 @@ func TestSignalOnSiteToday_WithdrawsApprovedRow(t *testing.T) {
 	defer cleanup()
 
 	svc := NewService(db, testConfig())
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	todayStr := time.Now().UTC().Format("2006-01-02")
@@ -1938,7 +1938,7 @@ func TestSignalOnSiteToday_NoApprovedRow_Errors(t *testing.T) {
 	defer cleanup()
 
 	svc := NewService(db, testConfig())
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	got, err := svc.SignalOnSiteToday(ctx, aliceID)
@@ -1957,7 +1957,7 @@ func TestSignalOnSiteToday_RejectsAssignedRow(t *testing.T) {
 	defer cleanup()
 
 	svc := NewService(db, testConfig())
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	// Seed a system-assigned approved row for today.
@@ -1988,7 +1988,7 @@ func TestSignalOnSiteOnDate_WithdrawsFutureRow(t *testing.T) {
 	defer cleanup()
 
 	svc := NewService(db, testConfig())
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	today := time.Now().UTC()
@@ -2024,7 +2024,7 @@ func TestSignalOnSiteOnDate_PastDate_Errors(t *testing.T) {
 	defer cleanup()
 
 	svc := NewService(db, testConfig())
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	yesterday := time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
@@ -2044,7 +2044,7 @@ func TestSignalOnSiteOnDate_TodayDate_Allowed(t *testing.T) {
 	defer cleanup()
 
 	svc := NewService(db, testConfig())
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	today := time.Now().UTC().Format("2006-01-02")
@@ -2065,7 +2065,7 @@ func TestSignalOnSiteOnDate_NoApprovedRow_Errors(t *testing.T) {
 	defer cleanup()
 
 	svc := NewService(db, testConfig())
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	future := time.Now().UTC().AddDate(0, 0, 5).Format("2006-01-02")
@@ -2085,7 +2085,7 @@ func TestSignalOnSiteOnDate_RejectsInvalidDate(t *testing.T) {
 	defer cleanup()
 
 	svc := NewService(db, testConfig())
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	got, err := svc.SignalOnSiteOnDate(ctx, aliceID, "not-a-date")
@@ -2103,7 +2103,7 @@ func TestSignalOnSiteOnDate_RejectsAssignedRow(t *testing.T) {
 	defer cleanup()
 
 	svc := NewService(db, testConfig())
-	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com")
+	aliceID, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
 	require.NoError(t, err)
 
 	today := time.Now().UTC()

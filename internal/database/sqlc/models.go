@@ -131,6 +131,7 @@ type TeamMember struct {
 	RecurringWfhWednesday  int64         `json:"recurring_wfh_wednesday"`
 	RecurringWfhThursday   int64         `json:"recurring_wfh_thursday"`
 	RecurringWfhFriday     int64         `json:"recurring_wfh_friday"`
+	Birthdate              sql.NullTime  `json:"birthdate"`
 	CreatedAt              sql.NullTime  `json:"created_at"`
 }
 

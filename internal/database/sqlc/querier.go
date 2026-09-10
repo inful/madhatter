@@ -182,6 +182,13 @@ type Querier interface {
 	GetSwapByID(ctx context.Context, id string) (WfhAssignmentSwap, error)
 	GetSwapsForMember(ctx context.Context, arg GetSwapsForMemberParams) ([]HatSwap, error)
 	GetUpcomingAssignments(ctx context.Context, arg GetUpcomingAssignmentsParams) ([]GetUpcomingAssignmentsRow, error)
+	// Birthday probe for the dashboard banner (#60). Returns every
+	// active member whose birthdate is set. The Go wrapper
+	// (db.GetUpcomingBirthdays) applies the 7-day window and the
+	// year-wrap math in Go rather than as a SQL CASE expression,
+	// where the wrap math (Dec 28 + 7 days must include early-
+	// January birthdays) is harder to read and harder to test.
+	GetUpcomingBirthdays(ctx context.Context) ([]GetUpcomingBirthdaysRow, error)
 	GetUpcomingWFHForMember(ctx context.Context, arg GetUpcomingWFHForMemberParams) ([]GetUpcomingWFHForMemberRow, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id string) (User, error)

@@ -454,11 +454,55 @@ const autumnalEquinoxDay = 23
 // The signature is intentionally pure (takes all six inputs as
 // parameters) so the test cases can pin every branch without
 // faking a Handler or a database connection.
-func funEffectsFor(now time.Time, fullTeamOnSite, isBusinessDay, confettiEnabled, snowEnabled, leavesEnabled bool) (confetti, snow, leaves bool) {
+// funEffectsFor resolves every celebratory / seasonal effect
+// gate for the dashboard. The return tuple is (confetti, snow,
+// leaves, birthday):
+//
+//   - confetti: full-team-on-site burst (#59). Triggered when
+//     every active member is on-site on a normal business day.
+//   - snow: December falling snow. Calendar window only —
+//     fires regardless of presence.
+//   - leaves: autumnal-equinox falling leaves. Calendar
+//     window AND full-team-on-site piggyback.
+//   - birthday (#60 follow-up): celebratory birthday burst.
+//     Triggered on the exact day of a member's birthday
+//     (DaysUntil=0) on a business day. The banner uses the
+//     inclusive 7-day window, but the BLAST only fires on
+//     the exact day — a birthday "this week" copy is calmer
+//     and the right register for a future date.
+//
+// All four gates are operator-disableable via env vars
+// resolved at Handler construction (CONFETTI_ENABLED,
+// SNOW_ENABLED, LEAVES_ENABLED, BIRTHDAY_CONFETTI_ENABLED).
+// The reduced-motion OS preference is respected at the
+// JS-effect site, not here — the data map only carries the
+// intent; the vendored canvas-confetti and our snow/leaves
+// storms opt out at runtime.
+func funEffectsFor(
+	now time.Time,
+	fullTeamOnSite, isBusinessDay, birthdayToday bool,
+	confettiEnabled, snowEnabled, leavesEnabled, birthdayEnabled bool,
+) (confetti, snow, leaves, birthday bool) {
 	confetti = confettiEnabled && fullTeamOnSite && isBusinessDay
 	snow = snowEnabled && now.Month() == time.December
 	leaves = leavesEnabled && now.Month() == time.September && now.Day() == autumnalEquinoxDay && fullTeamOnSite && isBusinessDay
-	return confetti, snow, leaves
+	birthday = birthdayEnabled && birthdayToday && isBusinessDay
+	return confetti, snow, leaves, birthday
+}
+
+// hasBirthdayToday reports whether the dashboard probe has
+// loaded a member whose birthday lands exactly today
+// (DaysUntil=0). The blast only fires on the same day; the
+// banner uses a wider 7-day window, so this probe is a
+// stricter subset. Empty / nil data and probe errors map to
+// false so the dashboard still renders cleanly when the
+// birthday probe hasn't run yet.
+func hasBirthdayToday(data map[string]any) bool {
+	bdays, ok := data["UpcomingBirthdays"].([]database.UpcomingBirthday)
+	if !ok || len(bdays) == 0 {
+		return false
+	}
+	return bdays[0].DaysUntil == 0
 }
 
 // loadDashboardData populates the dashboard with today's and week's
@@ -481,26 +525,33 @@ func (h *Handler) loadTodayContext(now time.Time, data map[string]any) {
 	data["TodayIsHoliday"] = isHoliday
 	data["TodayIsBusinessDay"] = !isWeekend && !isHoliday
 
-	// Fun effects (issue #59). confettiEnabled / snowEnabled /
-	// leavesEnabled were resolved once at Handler construction from
-	// CONFETTI_ENABLED / SNOW_ENABLED / LEAVES_ENABLED (defaults
-	// true). The per-request work here is just the date-and-context
-	// check — fullTeamOnSite probes the already-built
-	// ScheduleMatrix, and the snow / leaves tests are single month
-	// comparisons. The dashboard template turns the booleans into a
-	// hidden <div> with data-confetti / data-snow / data-leaves
+	// Fun effects (issue #59 + #60). confettiEnabled /
+	// snowEnabled / leavesEnabled / birthdayConfettiEnabled were
+	// resolved once at Handler construction from
+	// CONFETTI_ENABLED / SNOW_ENABLED / LEAVES_ENABLED /
+	// BIRTHDAY_CONFETTI_ENABLED (defaults true). The per-request
+	// work here is just the date-and-context check —
+	// fullTeamOnSite probes the already-built ScheduleMatrix, the
+	// snow / leaves tests are single month comparisons, and
+	// birthdayToday probes the already-loaded UpcomingBirthdays
+	// slice for an exact-day match. The dashboard template turns
+	// the booleans into a hidden <div> with data-confetti /
+	// data-snow / data-leaves / data-birthday-confetti
 	// attributes that fun-effects.js reads.
-	confetti, snow, leaves := funEffectsFor(
+	confetti, snow, leaves, birthday := funEffectsFor(
 		now,
 		todayFullTeamOnSite(data),
 		data["TodayIsBusinessDay"].(bool),
+		hasBirthdayToday(data),
 		h.confettiEnabled,
 		h.snowEnabled,
 		h.leavesEnabled,
+		h.birthdayConfettiEnabled,
 	)
 	data["FunEffectsConfetti"] = confetti
 	data["FunEffectsSnow"] = snow
 	data["FunEffectsLeaves"] = leaves
+	data["FunEffectsBirthday"] = birthday
 
 	if isHoliday && h.holidayLookup != nil {
 		if name, ok := h.holidayLookup.GetHoliday(now.Format("2006-01-02")); ok {

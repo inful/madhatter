@@ -145,29 +145,57 @@
             shapes: shapes
         };
 
-        window.confetti(Object.assign({}, defaults, {
-            particleCount: 60,
-            angle: 60,
-            spread: 70,
-            origin: { x: 0, y: 0 }
-        }));
-        window.confetti(Object.assign({}, defaults, {
-            particleCount: 60,
-            angle: 120,
-            spread: 70,
-            origin: { x: 1, y: 0 }
-        }));
+        // Schedule: 5 staggered waves spread over ~3 seconds.
+        // The user asked for "at least twice as long" as the
+        // original single-encore recipe (which finished in
+        // ~1.5s of visible confetti). Each wave fires at a
+        // distinct timestamp with different particle physics
+        // — later waves use lower startVelocity and lighter
+        // gravity so the particles linger longer in the
+        // air, building the impression of a sustained
+        // celebration rather than a single burst.
+        //
+        // The schedule is intentionally declarative (an array
+        // of objects) rather than five hand-rolled setTimeout
+        // calls so a test can grep the schedule directly and
+        // confirm the duration stays above the threshold. The
+        // Go test reads this same source file and asserts the
+        // maximum delay >= 1500ms plus at least 3 distinct
+        // delays, so a future shortcut to "just make the
+        // first burst bigger" fails the regression guard.
+        var schedule = [
+            // Wave 0 (t=0ms): twin side cannons from the top
+            // corners. Mirrors the original recipe's opening
+            // burst — fast, dramatic, anchors the celebration.
+            { delayMs: 0,    opts: { particleCount: 60, angle: 60,  spread: 70, origin: { x: 0, y: 0 } } },
+            { delayMs: 0,    opts: { particleCount: 60, angle: 120, spread: 70, origin: { x: 1, y: 0 } } },
 
-        // One full-width encore from the center-top, 350ms
-        // after the side cannons, to fill in the gaps.
-        setTimeout(function () {
-            window.confetti(Object.assign({}, defaults, {
-                particleCount: 80,
-                spread: 120,
-                startVelocity: 35,
-                origin: { x: 0.5, y: 0 }
-            }));
-        }, 350);
+            // Wave 1 (t=400ms): center-top full-width spread.
+            // Fills in the gap between the two side cannons
+            // and gives the celebration a single coherent
+            // "burst" rather than two disjoint corners.
+            { delayMs: 400,  opts: { particleCount: 80, spread: 120, startVelocity: 35, origin: { x: 0.5, y: 0 } } },
+
+            // Wave 2 (t=1100ms): a slower, wider spread from
+            // the center. Lower startVelocity + lower gravity
+            // so the particles drift down over ~2s rather than
+            // falling fast. The cake/heart shapes dominate
+            // here because the lower density lets each particle
+            // be read individually.
+            { delayMs: 1100, opts: { particleCount: 50, spread: 150, startVelocity: 22, gravity: 0.4, drift: 0.3, origin: { x: 0.5, y: 0 } } },
+
+            // Wave 3 (t=2000ms): the finale. Slow trickle from
+            // the very top so the celebration doesn't just
+            // stop — it trails off. Lower particle count keeps
+            // the page responsive on long-running dashboards.
+            { delayMs: 2000, opts: { particleCount: 30, spread: 180, startVelocity: 14, gravity: 0.3, drift: -0.2, origin: { x: 0.5, y: 0 } } }
+        ];
+
+        schedule.forEach(function (entry) {
+            setTimeout(function () {
+                window.confetti(Object.assign({}, defaults, entry.opts));
+            }, entry.delayMs);
+        });
     }
 
     function fireFullTeamBurst() {

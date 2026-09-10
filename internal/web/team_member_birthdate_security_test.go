@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"net/http"
@@ -20,8 +21,13 @@ import (
 // the security-review safety-net tests in this file. Mirrors
 // the existing `withUser` helper shape so the new tests
 // read consistently with the rest of internal/web's suite.
+// Uses context.Background() (not t.Context()) because the
+// helper is called from multiple tests; the noctx linter
+// wants a context on every request, and the existing
+// handlers_leave_test.go pattern uses context.Background()
+// for the same reason.
 func rawPost(path, body string) *http.Request {
-	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, path, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	return req
 }

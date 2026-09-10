@@ -87,7 +87,13 @@ func cacheControlFor(p string) string {
 		}
 	}
 	base := strings.ToLower(path.Base(p))
-	if base == "canvas-confetti.browser.min.js" {
+	if base == "canvas-confetti.browser.min.js" || base == "favicon.ico" || base == "apple-touch-icon.png" {
+		// Vendored / baked-from-system-emoji assets. The favicons
+		// are pinned to the project mascot (🎩 for MadHatter —
+		// see scripts/gen_favicon.py); they don't change between
+		// releases unless the mascot does, so the long cache is
+		// safe. Browsers revalidate aggressively on hard-refresh,
+		// so an updated mascot just needs a release.
 		return "public, max-age=31536000, immutable"
 	}
 	switch strings.ToLower(path.Ext(p)) {
@@ -103,29 +109,28 @@ func cacheControlFor(p string) string {
 	}
 }
 
+// staticContentTypes maps file extensions to their Content-Type.
+// Go's mime.TypeByExtension doesn't know about woff/woff2/ttf/
+// ico/png (the FontAwesome webfont extensions + favicon), so
+// this helper supplies the right values. Extension is the key;
+// matches are case-insensitive (the lookup normalizes to lower
+// case before consulting the map).
+var staticContentTypes = map[string]string{
+	".css":   "text/css; charset=utf-8",
+	".js":    "application/javascript; charset=utf-8",
+	".woff2": "font/woff2",
+	".woff":  "font/woff",
+	".ttf":   "font/ttf",
+	".otf":   "font/otf",
+	".eot":   "application/vnd.ms-fontobject",
+	".svg":   "image/svg+xml",
+	".ico":   "image/x-icon",
+	".png":   "image/png",
+}
+
 // staticContentType returns the Content-Type for a static asset
-// path. Go's mime.TypeByExtension doesn't know about woff/woff2/ttf
-// (the FontAwesome webfont extensions), so this helper supplies the
-// right values. Returns "" for extensions the default FileServer
-// would already get right — the caller then leaves the header alone.
+// path. Returns "" for extensions the default FileServer would
+// already get right — the caller then leaves the header alone.
 func staticContentType(p string) string {
-	switch strings.ToLower(path.Ext(p)) {
-	case ".css":
-		return "text/css; charset=utf-8"
-	case ".js":
-		return "application/javascript; charset=utf-8"
-	case ".woff2":
-		return "font/woff2"
-	case ".woff":
-		return "font/woff"
-	case ".ttf":
-		return "font/ttf"
-	case ".otf":
-		return "font/otf"
-	case ".eot":
-		return "application/vnd.ms-fontobject"
-	case ".svg":
-		return "image/svg+xml"
-	}
-	return ""
+	return staticContentTypes[strings.ToLower(path.Ext(p))]
 }

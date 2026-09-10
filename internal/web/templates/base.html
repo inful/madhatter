@@ -5,6 +5,16 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="Support Rota — schedule, leave, and on-call management for small teams.">
+    {{/*
+        Favicon surface (#61): both the standard browser-tab
+        favicon.ico and the iOS home-screen pin preview
+        apple-touch-icon.png. Both assets are baked from the
+        🎩 top-hat emoji by scripts/gen_favicon.py and embedded
+        via go:embed under /static/. Long-cached (the mascot
+        doesn't change between releases).
+    */}}
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <link rel="apple-touch-icon" type="image/png" href="/static/apple-touch-icon.png">
     <title>
         {{- if .Template -}}
             {{- render (printf "%s_title" .Template) . -}}

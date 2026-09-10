@@ -627,12 +627,6 @@ func (h *Handler) loadDashboardData(ctx context.Context, data map[string]any) {
 
 	h.loadMeetingsToken(ctx, data)
 
-	// Today classification (weekend / holiday / next business day).
-	// Computed last so it sees the same "now" the rest of the
-	// dashboard uses; the safety-cap'd forward walker handles the
-	// edge case where the holiday config is broken.
-	h.loadTodayContext(now, data)
-
 	// Birthday probe (#60). The DB query is the cheapest
 	// possible read of "active members with a birthdate"; the
 	// window filter (today..today+7, inclusive) and the
@@ -641,6 +635,13 @@ func (h *Handler) loadDashboardData(ctx context.Context, data map[string]any) {
 	// the birthday banner is nice-to-have, not load-bearing
 	// for the page to function. Log it and surface an empty
 	// slice so the template renders nothing.
+	//
+	// The probe MUST run before loadTodayContext because
+	// loadTodayContext calls funEffectsFor, which reads
+	// data["UpcomingBirthdays"][0].DaysUntil == 0 to compute
+	// the data-birthday-confetti attribute. If the probe ran
+	// after loadTodayContext, the confetti blast would never
+	// fire for the birthday kid.
 	const birthdayWindowDays = 7
 	if birthdays, bdayErr := h.db.GetUpcomingBirthdays(ctx, now, birthdayWindowDays); bdayErr != nil {
 		slog.WarnContext(ctx, "birthday probe failed", "error", bdayErr)
@@ -648,6 +649,12 @@ func (h *Handler) loadDashboardData(ctx context.Context, data map[string]any) {
 	} else {
 		data["UpcomingBirthdays"] = birthdays
 	}
+
+	// Today classification (weekend / holiday / next business day).
+	// Computed last so it sees the same "now" the rest of the
+	// dashboard uses; the safety-cap'd forward walker handles the
+	// edge case where the holiday config is broken.
+	h.loadTodayContext(now, data)
 
 	// The chairs row is conditional on the cap being set; when
 	// the picker is a no-op (cap <= 0 or service unconfigured) the

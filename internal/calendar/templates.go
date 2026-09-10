@@ -57,18 +57,34 @@ var defaultWFHHTMLTemplate = template.Must(template.New("wfhHTML").Funcs(support
 	`{{htmlHeading .Summary}}{{htmlParagraph .BaseText}}`,
 ))
 
+// defaultBirthdayTextTemplate reproduces the birthday event
+// description. Same terse pattern as WFH: a calendar client renders
+// the SUMMARY prominently, so the alt-desc just adds a small note
+// about who's celebrating. The SUMMARY already carries the cake
+// emoji + name, so the description doesn't need to repeat it.
+var defaultBirthdayTextTemplate = texttemplate.Must(texttemplate.New("birthdayText").Parse(`{{.BaseText}}`))
+
+// defaultBirthdayHTMLTemplate is the HTML alt-desc body for the
+// birthday event. Mirrors the other event kinds (heading + paragraph)
+// so custom operator overrides can reuse the same shape.
+var defaultBirthdayHTMLTemplate = template.Must(template.New("birthdayHTML").Funcs(supportHTMLFuncs).Parse(
+	`{{htmlHeading .Summary}}{{htmlParagraph .BaseText}}`,
+))
+
 // per-event-kind on-disk template caches. Each cache is keyed by the
 // operator-supplied file path; an empty path maps to the built-in
 // default at lookup time.
 var (
-	supportTextCache sync.Map // map[string]*texttemplate.Template
-	supportHTMLCache sync.Map // map[string]*template.Template
-	leaveTextCache   sync.Map // map[string]*texttemplate.Template
-	leaveHTMLCache   sync.Map // map[string]*template.Template
-	holidayTextCache sync.Map // map[string]*texttemplate.Template
-	holidayHTMLCache sync.Map // map[string]*template.Template
-	wfhTextCache     sync.Map // map[string]*texttemplate.Template
-	wfhHTMLCache     sync.Map // map[string]*template.Template
+	supportTextCache  sync.Map // map[string]*texttemplate.Template
+	supportHTMLCache  sync.Map // map[string]*template.Template
+	leaveTextCache    sync.Map // map[string]*texttemplate.Template
+	leaveHTMLCache    sync.Map // map[string]*template.Template
+	holidayTextCache  sync.Map // map[string]*texttemplate.Template
+	holidayHTMLCache  sync.Map // map[string]*template.Template
+	wfhTextCache      sync.Map // map[string]*texttemplate.Template
+	wfhHTMLCache      sync.Map // map[string]*template.Template
+	birthdayTextCache sync.Map // map[string]*texttemplate.Template
+	birthdayHTMLCache sync.Map // map[string]*template.Template
 )
 
 // supportHTMLFuncs is registered on every support HTML template so
@@ -145,6 +161,23 @@ func loadWFHHTML(path string) (*template.Template, error) {
 		return defaultWFHHTMLTemplate, nil
 	}
 	return loadHTMLFromFile(path, "wfhHTML", &wfhHTMLCache, supportHTMLFuncs)
+}
+
+// loadBirthdayText returns the operator's birthday text template,
+// or the built-in default.
+func loadBirthdayText(path string) (*texttemplate.Template, error) {
+	if path == "" {
+		return defaultBirthdayTextTemplate, nil
+	}
+	return loadTextFromFile(path, "birthdayText", &birthdayTextCache)
+}
+
+// loadBirthdayHTML returns the operator's birthday HTML template.
+func loadBirthdayHTML(path string) (*template.Template, error) {
+	if path == "" {
+		return defaultBirthdayHTMLTemplate, nil
+	}
+	return loadHTMLFromFile(path, "birthdayHTML", &birthdayHTMLCache, supportHTMLFuncs)
 }
 
 // loadTextFromFile is the shared text-template loader. The cache is
@@ -239,6 +272,24 @@ type wfhData struct {
 	Date        string
 	AdminMarked bool
 	Origin      string
+}
+
+// birthdayData is the data exposed to the birthday-event
+// templates. Mirrors the other event kinds' shape so custom
+// operator overrides have a familiar pattern. MonthDay is the
+// canonical "MM-DD" form (year suppressed); Date is the
+// human-readable form ("May 15") that custom templates can
+// branch on if they want a month name in the description. The
+// year is intentionally NOT exposed to templates — it stays
+// internal to the database adapter.
+type birthdayData struct {
+	//nolint:unused // Read by template execution.
+	presenceSnapshot
+	Summary    string
+	BaseText   string
+	MemberName string
+	MonthDay   string
+	Date       string
 }
 
 // renderTemplate executes a text/template against data and returns the

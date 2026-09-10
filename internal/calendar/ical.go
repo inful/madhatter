@@ -106,6 +106,8 @@ type ICalGenerator struct {
 	holidayHTMLTemplate           *template.Template
 	wfhTextTemplate               *texttemplate.Template
 	wfhHTMLTemplate               *template.Template
+	birthdayTextTemplate          *texttemplate.Template
+	birthdayHTMLTemplate          *template.Template
 }
 
 type SupportCalendarOptions struct {
@@ -152,6 +154,19 @@ type SupportCalendarOptions struct {
 	HolidayTemplateHTMLPath           string
 	WFHTemplateTextPath               string
 	WFHTemplateHTMLPath               string
+	BirthdayTemplateTextPath          string
+	BirthdayTemplateHTMLPath          string
+
+	// Birthdays carries the calendar-side birthday probe
+	// (#60 follow-up): every active member whose birthdate is
+	// set. The Handler populates this by calling
+	// db.GetActiveMembersWithBirthdates; the generator walks
+	// the slice once per feed and emits one recurring VEVENT
+	// per member (RRULE:FREQ=YEARLY). Empty slice = no birthday
+	// events, so the operator can disable the feature by
+	// refusing to populate this field (e.g. on
+	// CALENDAR_BIRTHDAYS_ENABLED=false).
+	Birthdays []database.CalendarBirthday
 }
 
 // NewICalGeneratorWithMetadata creates a new iCalendar generator with custom metadata.
@@ -276,6 +291,26 @@ func (g *ICalGenerator) WithWFHTemplate(textPath, htmlPath string) (*ICalGenerat
 	return g, nil
 }
 
+// WithBirthdayTemplate loads the operator's text and HTML templates
+// for the birthday event kind. Mirrors WithWFHTemplate so operators
+// have a familiar override shape — empty string falls back to the
+// built-in defaults that reproduce the standard "🎂 X's birthday"
+// SUMMARY with a small alt-desc.
+func (g *ICalGenerator) WithBirthdayTemplate(textPath, htmlPath string) (*ICalGenerator, error) {
+	tmpl, err := loadBirthdayText(textPath)
+	if err != nil {
+		return nil, err
+	}
+	g.birthdayTextTemplate = tmpl
+
+	htmlTmpl, err := loadBirthdayHTML(htmlPath)
+	if err != nil {
+		return nil, err
+	}
+	g.birthdayHTMLTemplate = htmlTmpl
+	return g, nil
+}
+
 // resolvedSupportAssignmentTextTemplate returns the configured template
 // or the built-in default.
 func (g *ICalGenerator) resolvedSupportAssignmentTextTemplate() *texttemplate.Template {
@@ -346,6 +381,24 @@ func (g *ICalGenerator) resolvedWFHHTMLTemplate() *template.Template {
 		return defaultWFHHTMLTemplate
 	}
 	return g.wfhHTMLTemplate
+}
+
+// resolvedBirthdayTextTemplate returns the configured birthday text
+// template or the built-in default.
+func (g *ICalGenerator) resolvedBirthdayTextTemplate() *texttemplate.Template {
+	if g.birthdayTextTemplate == nil {
+		return defaultBirthdayTextTemplate
+	}
+	return g.birthdayTextTemplate
+}
+
+// resolvedBirthdayHTMLTemplate returns the configured birthday HTML
+// template or the built-in default.
+func (g *ICalGenerator) resolvedBirthdayHTMLTemplate() *template.Template {
+	if g.birthdayHTMLTemplate == nil {
+		return defaultBirthdayHTMLTemplate
+	}
+	return g.birthdayHTMLTemplate
 }
 
 // AddAssignment adds a rota assignment as a calendar event using the
@@ -601,6 +654,112 @@ func (g *ICalGenerator) AddWFHEventWithSnapshot(memberName string, date time.Tim
 	return nil
 }
 
+// AddBirthday adds a per-member birthday event to the calendar. The
+// event is an all-day VEVENT with RRULE:FREQ=YEARLY so the calendar
+// client renders it every year without an annual refresh or a
+// server-side annual migration. The SUMMARY carries the cake emoji
+// + the member's name; the alt-desc adds a small operator-
+// overridable note about who's celebrating.
+//
+// Privacy: the year of birth is dropped before reaching the
+// calendar. The caller (AddBirthdayEventsFromMembers) reads the
+// birthdate from database.CalendarBirthday but only the MM-DD
+// reaches the .ics output — the year is preserved for admin
+// auditing but never lands in the feed.
+//
+// The DTSTART uses the current calendar year (the year of the
+// subscription window) for the MM-DD anchor. Combined with
+// FREQ=YEARLY, this means: a subscriber downloading a calendar
+// feed on 2026-12-15 sees the member's 2026-12-20 birthday
+// immediately, and the same VEVENT surfaces on 2027-12-20
+// without any server-side work.
+//
+// SECURITY: the member name is run through sanitizeICalText
+// (security review #7) before reaching SUMMARY. CRLF or NUL in
+// the name cannot forge a new ICS line. The control-character
+// check at the form layer catches the obvious cases; this is
+// the defense-in-depth at the calendar layer.
+func (g *ICalGenerator) AddBirthday(memberName string, birthDate time.Time) error {
+	// Build the canonical MM-DD anchor in the subscription
+	// window's year. Today (or the feed's "now") is the right
+	// year to use: a calendar client subscribes once and the
+	// RRULE carries the date forward. The MM-DD is the only
+	// value that matters — the year of birth never reaches the
+	// calendar, and the year of subscription is implicit in
+	// DTSTART.
+	now := time.Now().UTC()
+	anchor := time.Date(now.Year(), birthDate.Month(), birthDate.Day(), 0, 0, 0, 0, time.UTC)
+
+	event := g.calendar.AddEvent(fmt.Sprintf(
+		"birthday-%s-%02d-%02d",
+		sanitizeICalText(memberName),
+		birthDate.Month(),
+		birthDate.Day(),
+	))
+
+	// All-day event on the anchor day. End date is exclusive in
+	// iCalendar, so add 24h.
+	event.SetAllDayStartAt(anchor)
+	event.SetAllDayEndAt(anchor.Add(hoursPerDay * time.Hour))
+
+	// RRULE:FREQ=YEARLY so the calendar client renders the
+	// event every year. The DTSTART sets the anchor MM-DD.
+	event.AddRrule("FREQ=YEARLY")
+
+	sanitizedName := sanitizeICalText(memberName)
+	summary := fmt.Sprintf("🎂 %s's birthday", sanitizedName)
+	baseText := fmt.Sprintf("%s is celebrating a birthday", sanitizedName)
+	event.SetSummary(summary)
+
+	data := birthdayData{
+		Summary:    summary,
+		BaseText:   baseText,
+		MemberName: sanitizedName,
+		MonthDay:   birthDate.Format("01-02"),
+		Date:       birthDate.Format("January 2"),
+	}
+
+	textDescription, err := renderTemplate(g.resolvedBirthdayTextTemplate(), "birthdayText", data)
+	if err != nil {
+		return fmt.Errorf("render birthday text: %w", err)
+	}
+	event.SetDescription(textDescription)
+
+	htmlDescription, err := renderHTMLTemplate(g.resolvedBirthdayHTMLTemplate(), "birthdayHTML", data)
+	if err != nil {
+		return fmt.Errorf("render birthday html: %w", err)
+	}
+	setAltDescHTML(event, htmlDescription)
+
+	// Birthdays are confirmed / opaque — there's no "tentative"
+	// state for a calendar the user opted into.
+	event.SetStatus(ics.ObjectStatusConfirmed)
+	event.SetTimeTransparency(ics.TransparencyOpaque)
+
+	return nil
+}
+
+// AddBirthdayEventsFromMembers emits one birthday VEVENT per
+// member in birthdays, calling AddBirthday for each. Returns the
+// first error encountered. Members with a zero-value
+// BirthdayMonthDay or a zero-value Birthdate are skipped —
+// the caller's probe (database.GetActiveMembersWithBirthdates)
+// is responsible for filtering, but the defensive guard here
+// keeps a future caller from accidentally rendering blank
+// entries.
+func AddBirthdayEventsFromMembers(g *ICalGenerator, birthdays []database.CalendarBirthday) error {
+	for i := range birthdays {
+		b := birthdays[i]
+		if b.Birthdate.IsZero() || b.Name == "" {
+			continue
+		}
+		if err := g.AddBirthday(b.Name, b.Birthdate); err != nil {
+			return fmt.Errorf("add birthday for %s: %w", b.Name, err)
+		}
+	}
+	return nil
+}
+
 // AddHolidayWithSnapshot renders a holiday event with the configured
 // holiday templates. The snapshot is embedded in the template data so
 // operators can reference per-day fields.
@@ -705,6 +864,10 @@ func newSupportGenerator(opts SupportCalendarOptions) (*ICalGenerator, error) {
 	if err != nil {
 		return nil, err
 	}
+	generator, err = generator.WithBirthdayTemplate(opts.BirthdayTemplateTextPath, opts.BirthdayTemplateHTMLPath)
+	if err != nil {
+		return nil, err
+	}
 	return generator, nil
 }
 
@@ -729,21 +892,7 @@ func GenerateICalForTokenWithOptions(ctx context.Context, db *database.DB, token
 		return "", err
 	}
 
-	// Build a per-day snapshot once per date and reuse it across all
-	// events added for that date.
-	builder := newPresenceBuilder(db, opts.WFHMaterialiser, opts.WFHAssigner, opts.WFHCopresenceWriter, opts.HolidayLookup, opts.ShuffleSeed)
-	snapshotByDate := make(map[string]*presenceSnapshot, lookaheadDays)
-	snapshotFor := func(dateStr string) (*presenceSnapshot, error) {
-		if s, ok := snapshotByDate[dateStr]; ok {
-			return s, nil
-		}
-		s, sErr := builder.RefreshFor(ctx, dateStr)
-		if sErr != nil {
-			return nil, sErr
-		}
-		snapshotByDate[dateStr] = s
-		return s, nil
-	}
+	snapshotFor := buildSnapshotFor(ctx, db, opts, lookaheadDays)
 
 	// Drop covered originals so the subscriber doesn't see "HAT day
 	// (Alice)" on a day Bob covered for her. The cover row itself
@@ -754,17 +903,21 @@ func GenerateICalForTokenWithOptions(ctx context.Context, db *database.DB, token
 	// "others" feed. Issue #54.
 	assignments = suppressCoveredOriginals(assignments, coveredOriginals)
 
-	for _, assignment := range assignments {
-		snap, sErr := snapshotFor(assignment.Date)
-		if sErr != nil {
-			return "", fmt.Errorf("build snapshot for %s: %w", assignment.Date, sErr)
-		}
-		if addErr := generator.AddAssignmentWithSnapshot(assignment, member.Name, snap); addErr != nil {
-			return "", fmt.Errorf("failed to add assignment: %w", addErr)
-		}
+	if addErr := addMemberEventStreams(generator, member.Name, assignments, snapshotFor); addErr != nil {
+		return "", addErr
 	}
 
+	// WFH events ride along on the per-member feed via the same
+	// snapshot lookup. Extracted as a separate step so the
+	// orchestrator's cyclop count stays under the cap.
 	if addErr := addUpcomingWFHEvents(ctx, generator, wfhDays, member.Name, snapshotFor); addErr != nil {
+		return "", addErr
+	}
+
+	// Birthday events (#60 follow-up): one recurring VEVENT per
+	// active member whose birthdate is set. Extracted into a
+	// helper so the orchestrator stays under the cyclop cap.
+	if addErr := addBirthdayEventsIfPresent(generator, opts.Birthdays); addErr != nil {
 		return "", addErr
 	}
 
@@ -774,6 +927,56 @@ func GenerateICalForTokenWithOptions(ctx context.Context, db *database.DB, token
 	}
 
 	return icalContent, nil
+}
+
+// buildSnapshotFor returns a per-day snapshot lookup for the
+// generator's duration window. Extracted so the per-member
+// orchestrator stays under the cyclop cap. Always succeeds —
+// failures surface lazily on the first snapshot lookup.
+func buildSnapshotFor(ctx context.Context, db *database.DB, opts SupportCalendarOptions, lookaheadDays int) func(string) (*presenceSnapshot, error) {
+	builder := newPresenceBuilder(db, opts.WFHMaterialiser, opts.WFHAssigner, opts.WFHCopresenceWriter, opts.HolidayLookup, opts.ShuffleSeed)
+	snapshotByDate := make(map[string]*presenceSnapshot, lookaheadDays)
+	return func(dateStr string) (*presenceSnapshot, error) {
+		if s, ok := snapshotByDate[dateStr]; ok {
+			return s, nil
+		}
+		s, sErr := builder.RefreshFor(ctx, dateStr)
+		if sErr != nil {
+			return nil, sErr
+		}
+		snapshotByDate[dateStr] = s
+		return s, nil
+	}
+}
+
+// addMemberEventStreams walks a member's assignments and emits
+// the matching calendar events. Extracted from
+// GenerateICalForTokenWithOptions so that orchestrator stays
+// under the cyclop cap. The WFH events ride along via
+// addUpcomingWFHEvents so the per-day snapshot lookup is shared
+// across both event kinds.
+func addMemberEventStreams(generator *ICalGenerator, memberName string, assignments []database.RotaAssignment, snapshotFor func(string) (*presenceSnapshot, error)) error {
+	for _, assignment := range assignments {
+		snap, sErr := snapshotFor(assignment.Date)
+		if sErr != nil {
+			return fmt.Errorf("build snapshot for %s: %w", assignment.Date, sErr)
+		}
+		if addErr := generator.AddAssignmentWithSnapshot(assignment, memberName, snap); addErr != nil {
+			return fmt.Errorf("failed to add assignment: %w", addErr)
+		}
+	}
+	return nil
+}
+
+// addBirthdayEventsIfPresent emits one birthday VEVENT per member
+// in birthdays. Empty slice = no-op, which is the same code path
+// the operator gate (CALENDAR_BIRTHDAYS_ENABLED=false) takes —
+// the Handler just doesn't populate the slice.
+func addBirthdayEventsIfPresent(g *ICalGenerator, birthdays []database.CalendarBirthday) error {
+	if len(birthdays) == 0 {
+		return nil
+	}
+	return AddBirthdayEventsFromMembers(g, birthdays)
 }
 
 // loadCalendarData resolves a subscription token to the
@@ -1026,6 +1229,16 @@ func GenerateTeamCalendarWithOptions(ctx context.Context, db *database.DB, assig
 		if err := generator.AddAssignmentWithSnapshot(assignment, memberName, snap); err != nil {
 			return "", fmt.Errorf("failed to add assignment: %w", err)
 		}
+	}
+
+	// Birthday events (#60 follow-up): one recurring VEVENT per
+	// active member whose birthdate is set. The opts.Birthdays
+	// slice is populated by the Handler (via db.GetActiveMembersWithBirthdates)
+	// when the operator has the feature enabled. Empty slice =
+	// no birthday events, which is the same code path the
+	// operator gate (CALENDAR_BIRTHDAYS_ENABLED=false) takes.
+	if addErr := AddBirthdayEventsFromMembers(generator, opts.Birthdays); addErr != nil {
+		return "", addErr
 	}
 
 	return generator.Serialize()

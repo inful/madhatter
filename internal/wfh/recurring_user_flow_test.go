@@ -48,10 +48,19 @@ func TestGetQuotaStatus_RecurringDaysCountAfterMaterialization(t *testing.T) {
 	used, err := db.GetWFHRequestsVoluntaryInPeriod(ctx, memberID,
 		periodStart.Format("2006-01-02"), periodEnd.Format("2006-01-02"))
 	require.NoError(t, err)
-	// 14 days contains 1-2 occurrences of each of Wed and Thu, so
-	// 1-2 rows per period.
-	assert.GreaterOrEqual(t, len(used), 1)
-	assert.LessOrEqual(t, len(used), 2)
+	// 14 days of Wed+Thu recurring materializes up to 5 rows
+	// (2 Wed + 2 Thu inside the window, plus Thu-of-today if
+	// today is Thursday). They can all land in the same period
+	// when the periodStart happens to anchor on a Monday just
+	// before the window's first row — so the test must allow
+	// the full 4-or-5-row worst case, not the 1-or-2 average.
+	// (Original assertion was ≤2, which only held when the
+	// test happened to run on a day-of-week that straddled two
+	// periods; today=Thursday broke the invariant.)
+	assert.GreaterOrEqual(t, len(used), 1,
+		"at least one materialized Wed/Thu row must land in the period")
+	assert.LessOrEqual(t, len(used), 5,
+		"14 days of Wed+Thu can produce at most 5 rows in a single period")
 }
 
 func TestWithdrawRecurringDayFreesQuotaForDifferentDay(t *testing.T) {

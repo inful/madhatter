@@ -36,7 +36,13 @@ func TestHandleLeaveManagement_RegularUserSeesOnlyOwn(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.CreateLeaveRecord(ctx, aliceID, "2026-09-01", "2026-09-03", database.LeaveTypeLeave)
 	require.NoError(t, err)
-	_, err = db.CreateLeaveRecord(ctx, bobID, "2026-09-10", "2026-09-12", database.LeaveTypeLeave)
+	// Bob's leave dates are anchored to today rather than
+	// hardcoded so this fixture is independent of the wall
+	// clock. The original hardcoded "2026-09-10" collides
+	// with the "Created" column that renders today's date
+	// for Alice's own leave — TestHandleLeaveManagement_RegularUserSeesOnlyOwn
+	// fails on 2026-09-10 with the old fixture.
+	_, err = db.CreateLeaveRecord(ctx, bobID, time.Now().UTC().AddDate(0, 0, 10).Format("2006-01-02"), time.Now().UTC().AddDate(0, 0, 12).Format("2006-01-02"), database.LeaveTypeLeave)
 	require.NoError(t, err)
 	_, err = db.CreateLeaveRecord(ctx, bobID, "2026-09-20", "2026-09-22", database.LeaveTypeLeave)
 	require.NoError(t, err)
@@ -51,7 +57,13 @@ func TestHandleLeaveManagement_RegularUserSeesOnlyOwn(t *testing.T) {
 
 	assert.Contains(t, body, "2026-09-01", "Alice's own leave should appear")
 	assert.Contains(t, body, "2026-09-03", "Alice's own leave should appear")
-	for _, hidden := range []string{"2026-09-10", "2026-09-12", "2026-09-20", "2026-09-22"} {
+	// Bob's hidden dates — anchored to today + 10/12 days so the
+	// fixture doesn't collide with the "Created" column that
+	// renders today's date. The original hardcoded "2026-09-10"
+	// collided every year on 2026-09-10.
+	bobStart := time.Now().UTC().AddDate(0, 0, 10).Format("2006-01-02")
+	bobEnd := time.Now().UTC().AddDate(0, 0, 12).Format("2006-01-02")
+	for _, hidden := range []string{bobStart, bobEnd, "2026-09-20", "2026-09-22"} {
 		assert.NotContains(t, body, hidden, "Bob's leave %s must not appear in Alice's view", hidden)
 	}
 }
@@ -70,7 +82,13 @@ func TestHandleLeaveManagement_AdminSeesAll(t *testing.T) {
 	require.NoError(t, err)
 	_, err = db.CreateLeaveRecord(ctx, aliceID, "2026-09-01", "2026-09-03", database.LeaveTypeLeave)
 	require.NoError(t, err)
-	_, err = db.CreateLeaveRecord(ctx, bobID, "2026-09-10", "2026-09-12", database.LeaveTypeLeave)
+	// Bob's leave dates are anchored to today rather than
+	// hardcoded so this fixture is independent of the wall
+	// clock. The original hardcoded "2026-09-10" collides
+	// with the "Created" column that renders today's date
+	// for Alice's own leave — TestHandleLeaveManagement_RegularUserSeesOnlyOwn
+	// fails on 2026-09-10 with the old fixture.
+	_, err = db.CreateLeaveRecord(ctx, bobID, time.Now().UTC().AddDate(0, 0, 10).Format("2006-01-02"), time.Now().UTC().AddDate(0, 0, 12).Format("2006-01-02"), database.LeaveTypeLeave)
 	require.NoError(t, err)
 
 	rec := httptest.NewRequestWithContext(ctx, http.MethodGet, "/leave/manage", nil)
@@ -79,7 +97,8 @@ func TestHandleLeaveManagement_AdminSeesAll(t *testing.T) {
 	h.handleLeaveManagement(rr, rec)
 
 	require.Equal(t, http.StatusOK, rr.Code)
-	for _, d := range []string{"2026-09-01", "2026-09-10"} {
+	bobStart := time.Now().UTC().AddDate(0, 0, 10).Format("2006-01-02")
+	for _, d := range []string{"2026-09-01", bobStart} {
 		assert.Contains(t, rr.Body.String(), d, "admin must see all dates including %s", d)
 	}
 }
@@ -222,7 +241,13 @@ func TestHandleLeaveEdit_NonAdminRejectsOthersLeave(t *testing.T) {
 	require.NoError(t, err)
 	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
 	require.NoError(t, err)
-	_, err = db.CreateLeaveRecord(ctx, bobID, "2026-09-10", "2026-09-12", database.LeaveTypeLeave)
+	// Bob's leave dates are anchored to today rather than
+	// hardcoded so this fixture is independent of the wall
+	// clock. The original hardcoded "2026-09-10" collides
+	// with the "Created" column that renders today's date
+	// for Alice's own leave — TestHandleLeaveManagement_RegularUserSeesOnlyOwn
+	// fails on 2026-09-10 with the old fixture.
+	_, err = db.CreateLeaveRecord(ctx, bobID, time.Now().UTC().AddDate(0, 0, 10).Format("2006-01-02"), time.Now().UTC().AddDate(0, 0, 12).Format("2006-01-02"), database.LeaveTypeLeave)
 	require.NoError(t, err)
 	rows, err := db.GetLeaveRecords(ctx)
 	require.NoError(t, err)
@@ -252,8 +277,10 @@ func TestHandleLeaveEdit_NonAdminRejectsOthersLeave(t *testing.T) {
 
 	post, err := db.GetLeaveByID(ctx, bobLeaveID)
 	require.NoError(t, err)
-	assert.Equal(t, "2026-09-10", post.StartDate.Format("2006-01-02"))
-	assert.Equal(t, "2026-09-12", post.EndDate.Format("2006-01-02"))
+	bobOrigStart := time.Now().UTC().AddDate(0, 0, 10).Format("2006-01-02")
+	bobOrigEnd := time.Now().UTC().AddDate(0, 0, 12).Format("2006-01-02")
+	assert.Equal(t, bobOrigStart, post.StartDate.Format("2006-01-02"))
+	assert.Equal(t, bobOrigEnd, post.EndDate.Format("2006-01-02"))
 }
 
 // TestHandleLeaveDelete_NonAdminRejectsOthersLeave is the delete
@@ -267,7 +294,13 @@ func TestHandleLeaveDelete_NonAdminRejectsOthersLeave(t *testing.T) {
 	require.NoError(t, err)
 	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
 	require.NoError(t, err)
-	_, err = db.CreateLeaveRecord(ctx, bobID, "2026-09-10", "2026-09-12", database.LeaveTypeLeave)
+	// Bob's leave dates are anchored to today rather than
+	// hardcoded so this fixture is independent of the wall
+	// clock. The original hardcoded "2026-09-10" collides
+	// with the "Created" column that renders today's date
+	// for Alice's own leave — TestHandleLeaveManagement_RegularUserSeesOnlyOwn
+	// fails on 2026-09-10 with the old fixture.
+	_, err = db.CreateLeaveRecord(ctx, bobID, time.Now().UTC().AddDate(0, 0, 10).Format("2006-01-02"), time.Now().UTC().AddDate(0, 0, 12).Format("2006-01-02"), database.LeaveTypeLeave)
 	require.NoError(t, err)
 	rows, err := db.GetLeaveRecords(ctx)
 	require.NoError(t, err)
@@ -331,7 +364,13 @@ func TestHandleLeaveEdit_RawHTTPRejectsEscalation(t *testing.T) {
 	require.NoError(t, err)
 	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
 	require.NoError(t, err)
-	_, err = db.CreateLeaveRecord(ctx, bobID, "2026-09-10", "2026-09-12", database.LeaveTypeLeave)
+	// Bob's leave dates are anchored to today rather than
+	// hardcoded so this fixture is independent of the wall
+	// clock. The original hardcoded "2026-09-10" collides
+	// with the "Created" column that renders today's date
+	// for Alice's own leave — TestHandleLeaveManagement_RegularUserSeesOnlyOwn
+	// fails on 2026-09-10 with the old fixture.
+	_, err = db.CreateLeaveRecord(ctx, bobID, time.Now().UTC().AddDate(0, 0, 10).Format("2006-01-02"), time.Now().UTC().AddDate(0, 0, 12).Format("2006-01-02"), database.LeaveTypeLeave)
 	require.NoError(t, err)
 	rows, err := db.GetLeaveRecords(ctx)
 	require.NoError(t, err)
@@ -358,9 +397,11 @@ func TestHandleLeaveEdit_RawHTTPRejectsEscalation(t *testing.T) {
 		"raw HTTP edit of another member's leave must be rejected")
 	post, err := db.GetLeaveByID(ctx, bobLeaveID)
 	require.NoError(t, err)
-	assert.Equal(t, "2026-09-10", post.StartDate.Format("2006-01-02"),
+	bobOrigStart := time.Now().UTC().AddDate(0, 0, 10).Format("2006-01-02")
+	bobOrigEnd := time.Now().UTC().AddDate(0, 0, 12).Format("2006-01-02")
+	assert.Equal(t, bobOrigStart, post.StartDate.Format("2006-01-02"),
 		"raw HTTP edit must not have changed Bob's start_date")
-	assert.Equal(t, "2026-09-12", post.EndDate.Format("2006-01-02"),
+	assert.Equal(t, bobOrigEnd, post.EndDate.Format("2006-01-02"),
 		"raw HTTP edit must not have changed Bob's end_date")
 	assert.Equal(t, bobID, post.MemberID,
 		"raw HTTP edit must not have changed Bob's member_id")
@@ -379,7 +420,13 @@ func TestHandleLeaveDelete_RawHTTPRejectsEscalation(t *testing.T) {
 	require.NoError(t, err)
 	bobID, err := db.AddTeamMember(ctx, "Bob", "bob@example.com")
 	require.NoError(t, err)
-	_, err = db.CreateLeaveRecord(ctx, bobID, "2026-09-10", "2026-09-12", database.LeaveTypeLeave)
+	// Bob's leave dates are anchored to today rather than
+	// hardcoded so this fixture is independent of the wall
+	// clock. The original hardcoded "2026-09-10" collides
+	// with the "Created" column that renders today's date
+	// for Alice's own leave — TestHandleLeaveManagement_RegularUserSeesOnlyOwn
+	// fails on 2026-09-10 with the old fixture.
+	_, err = db.CreateLeaveRecord(ctx, bobID, time.Now().UTC().AddDate(0, 0, 10).Format("2006-01-02"), time.Now().UTC().AddDate(0, 0, 12).Format("2006-01-02"), database.LeaveTypeLeave)
 	require.NoError(t, err)
 	rows, err := db.GetLeaveRecords(ctx)
 	require.NoError(t, err)

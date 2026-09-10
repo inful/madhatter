@@ -251,7 +251,17 @@ func TestGetQuotaStatus_DateAffinityBoundaryFix(t *testing.T) {
 	require.GreaterOrEqual(t, maxDays, 2,
 		"this test needs at least 2 days to burn so the off-by-one matters")
 
-	now := time.Now().UTC()
+	// Truncate `now` to UTC midnight before using it as a
+	// "today" marker — `time.Now().UTC()` returns the wall-clock
+	// time (e.g. 14:00 UTC), but the cursor walks in midnight-
+	// precision days. Without truncation, `cursor.Before(now)`
+	// silently skips "today" when the wall clock is past
+	// midnight, and the loop walks past the period end before
+	// reaching maxDays. (This test broke on 2026-09-10 — today
+	// was the first business day after the period-start skip
+	// threshold, so the missing day landed in the next period
+	// and the assertion failed.)
+	now := time.Now().UTC().Truncate(24 * time.Hour)
 	periodStart, _, perr := svc.ComputePeriodBounds(now)
 	require.NoError(t, perr)
 

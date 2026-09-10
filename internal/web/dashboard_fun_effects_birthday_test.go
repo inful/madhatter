@@ -4,7 +4,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/inful/madhatter/internal/database"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestFunEffectsFor_BirthdayFiresToday pins the headline case
@@ -78,4 +80,53 @@ func TestFunEffectsFor_BirthdayAndFullTeamFireTogether(t *testing.T) {
 		"confetti must fire when full-team + business day")
 	assert.True(t, birthday,
 		"birthday blast must also fire when a member has a birthday today")
+}
+
+// TestHasBirthdayToday_HappyPath pins the dashboard
+// data-layer probe: when UpcomingBirthdays is loaded with
+// a member whose DaysUntil=0, hasBirthdayToday() returns
+// true. This is the input contract for the funEffectsFor
+// call that fun-effects.js reads off the rendered
+// data-birthday-confetti attribute.
+func TestHasBirthdayToday_HappyPath(t *testing.T) {
+	data := map[string]any{
+		"UpcomingBirthdays": []database.UpcomingBirthday{
+			{Name: "Alice", DaysUntil: 0, BirthdayMonthDay: "09-15"},
+		},
+	}
+	require.True(t, hasBirthdayToday(data),
+		"a member with DaysUntil=0 must register as 'birthday today'")
+}
+
+// TestHasBirthdayToday_FutureOnly pins the negative path:
+// when the banner shows 'X's birthday this week' (DaysUntil=3),
+// the probe must NOT fire the blast. The blast only fires on
+// the exact day.
+func TestHasBirthdayToday_FutureOnly(t *testing.T) {
+	data := map[string]any{
+		"UpcomingBirthdays": []database.UpcomingBirthday{
+			{Name: "Alice", DaysUntil: 3, BirthdayMonthDay: "09-18"},
+		},
+	}
+	require.False(t, hasBirthdayToday(data),
+		"a future birthday (DaysUntil=3) must NOT register as 'birthday today'")
+}
+
+// TestHasBirthdayToday_NoBirthdays pins the no-op path: an
+// empty UpcomingBirthdays slice returns false. The probe
+// must not panic on the empty slice or missing key.
+func TestHasBirthdayToday_NoBirthdays(t *testing.T) {
+	t.Run("empty slice", func(t *testing.T) {
+		data := map[string]any{"UpcomingBirthdays": []database.UpcomingBirthday{}}
+		require.False(t, hasBirthdayToday(data))
+	})
+	t.Run("missing key", func(t *testing.T) {
+		data := map[string]any{}
+		require.False(t, hasBirthdayToday(data))
+	})
+	t.Run("wrong type", func(t *testing.T) {
+		data := map[string]any{"UpcomingBirthdays": "not-a-slice"}
+		require.False(t, hasBirthdayToday(data),
+			"a type assertion failure must yield false rather than panic")
+	})
 }

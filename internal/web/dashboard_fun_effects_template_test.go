@@ -16,7 +16,7 @@ import (
 // gracefully degrade to "no data" when their inputs are missing,
 // which is exactly what we want for an isolated test of the
 // fun-effects plumbing.
-func renderDashboardForFunEffects(t *testing.T, funEffectsConfetti, funEffectsSnow, funEffectsLeaves bool) string {
+func renderDashboardForFunEffects(t *testing.T, funEffectsConfetti, funEffectsSnow, funEffectsLeaves, funEffectsBirthday bool) string {
 	t.Helper()
 
 	mockDB := &database.DB{}
@@ -30,6 +30,7 @@ func renderDashboardForFunEffects(t *testing.T, funEffectsConfetti, funEffectsSn
 		"FunEffectsConfetti": funEffectsConfetti,
 		"FunEffectsSnow":     funEffectsSnow,
 		"FunEffectsLeaves":   funEffectsLeaves,
+		"FunEffectsBirthday": funEffectsBirthday,
 	}
 
 	w := httptest.NewRecorder()
@@ -49,7 +50,7 @@ func renderDashboardForFunEffects(t *testing.T, funEffectsConfetti, funEffectsSn
 // This is the contract fun-effects.js reads at runtime; if any
 // of these go missing, the effect silently no-ops in the browser.
 func TestDashboard_FunEffects_ConfigDivAndScripts(t *testing.T) {
-	body := renderDashboardForFunEffects(t, true, true, true)
+	body := renderDashboardForFunEffects(t, true, true, true, false)
 
 	assert.Contains(t, body, `src="/static/js/canvas-confetti.browser.min.js"`,
 		"the vendored canvas-confetti bundle must be loaded on the dashboard when fun effects are enabled")
@@ -72,7 +73,7 @@ func TestDashboard_FunEffects_ConfigDivAndScripts(t *testing.T) {
 // not script-loading-driven — saves a round-trip and keeps the
 // CSP simple.
 func TestDashboard_FunEffects_FalseFlagsRenderFalse(t *testing.T) {
-	body := renderDashboardForFunEffects(t, false, false, false)
+	body := renderDashboardForFunEffects(t, false, false, false, false)
 
 	assert.Contains(t, body, `data-confetti="false"`,
 		"data-confetti must be false when FunEffectsConfetti=false")
@@ -80,6 +81,8 @@ func TestDashboard_FunEffects_FalseFlagsRenderFalse(t *testing.T) {
 		"data-snow must be false when FunEffectsSnow=false")
 	assert.Contains(t, body, `data-leaves="false"`,
 		"data-leaves must be false when FunEffectsLeaves=false")
+	assert.Contains(t, body, `data-birthday-confetti="false"`,
+		"data-birthday-confetti must be false when FunEffectsBirthday=false")
 	// The script tags still load even when all flags are false
 	// — fun-effects.js no-ops on data-X="false". This avoids
 	// the page re-fetching the vendored bundle on the rare day
@@ -95,7 +98,7 @@ func TestDashboard_FunEffects_FalseFlagsRenderFalse(t *testing.T) {
 // not December and not the equinox, so only data-confetti is
 // true. The other attributes stay false.
 func TestDashboard_FunEffects_OnlyConfettiTrue(t *testing.T) {
-	body := renderDashboardForFunEffects(t, true, false, false)
+	body := renderDashboardForFunEffects(t, true, false, false, false)
 
 	assert.Contains(t, body, `data-confetti="true"`)
 	assert.Contains(t, body, `data-snow="false"`)
@@ -107,7 +110,7 @@ func TestDashboard_FunEffects_OnlyConfettiTrue(t *testing.T) {
 // data-snow is true. fun-effects.js will run the snow storm but
 // skip the confetti burst.
 func TestDashboard_FunEffects_OnlySnowTrue(t *testing.T) {
-	body := renderDashboardForFunEffects(t, false, true, false)
+	body := renderDashboardForFunEffects(t, false, true, false, false)
 
 	assert.Contains(t, body, `data-confetti="false"`)
 	assert.Contains(t, body, `data-snow="true"`)
@@ -119,11 +122,41 @@ func TestDashboard_FunEffects_OnlySnowTrue(t *testing.T) {
 // gates aren't all true (the test renders only one flag at a
 // time). The leaves attribute is the one under test.
 func TestDashboard_FunEffects_OnlyLeavesTrue(t *testing.T) {
-	body := renderDashboardForFunEffects(t, false, false, true)
+	body := renderDashboardForFunEffects(t, false, false, true, false)
 
 	assert.Contains(t, body, `data-confetti="false"`)
 	assert.Contains(t, body, `data-snow="false"`)
 	assert.Contains(t, body, `data-leaves="true"`)
+	assert.Contains(t, body, `data-birthday-confetti="false"`)
+}
+
+// TestDashboard_FunEffects_OnlyBirthdayTrue pins the
+// birthday-only path (#60 follow-up): a member has a birthday
+// today, but it's not a full-team day, it's not December, and
+// it's not the equinox — so only the birthday blast should
+// fire. The other three attributes stay false.
+func TestDashboard_FunEffects_OnlyBirthdayTrue(t *testing.T) {
+	body := renderDashboardForFunEffects(t, false, false, false, true)
+
+	assert.Contains(t, body, `data-confetti="false"`)
+	assert.Contains(t, body, `data-snow="false"`)
+	assert.Contains(t, body, `data-leaves="false"`)
+	assert.Contains(t, body, `data-birthday-confetti="true"`,
+		"data-birthday-confetti must be true when FunEffectsBirthday=true")
+}
+
+// TestDashboard_FunEffects_BirthdayAndFullTeamTrue pins the
+// combined positive case: a birthday on a full-team business
+// day fires both bursts. Two independent celebrations on the
+// same day — the user gets confetti from the bottom (full
+// team) AND a top-corner cake-and-heart burst (birthday).
+// The two recipes use different origins, so visually they
+// don't overlap.
+func TestDashboard_FunEffects_BirthdayAndFullTeamTrue(t *testing.T) {
+	body := renderDashboardForFunEffects(t, true, false, false, true)
+
+	assert.Contains(t, body, `data-confetti="true"`)
+	assert.Contains(t, body, `data-birthday-confetti="true"`)
 }
 
 // TestDashboard_FunEffects_HiddenDivIsAriaHidden pins the
@@ -132,7 +165,7 @@ func TestDashboard_FunEffects_OnlyLeavesTrue(t *testing.T) {
 // data attributes consumed by JS. A screen reader should never
 // announce it.
 func TestDashboard_FunEffects_HiddenDivIsAriaHidden(t *testing.T) {
-	body := renderDashboardForFunEffects(t, true, true, true)
+	body := renderDashboardForFunEffects(t, true, true, true, false)
 
 	assert.Contains(t, body, `aria-hidden="true"`,
 		"the fun-effects config div must be hidden from screen readers")

@@ -1,23 +1,27 @@
 // Fun effects for the dashboard — celebratory confetti when the
-// entire team is on-site, and gently falling snow through the
-// month of December. The trigger flags are rendered into a hidden
-// <div id="fun-effects-config"> by the dashboard template; this
-// file reads them once on DOMContentLoaded and fires the
-// configured effect exactly once per page load.
+// entire team is on-site, gently falling snow through the
+// month of December, autumnal-equinox falling leaves, and a
+// dedicated birthday blast on the day a member has a birthday
+// (#60 follow-up). The trigger flags are rendered into a
+// hidden <div id="fun-effects-config"> by the dashboard
+// template; this file reads them once on DOMContentLoaded and
+// fires the configured effect exactly once per page load.
 //
-// The two effects use canvas-confetti (vendored at
+// The effects use canvas-confetti (vendored at
 // /static/js/canvas-confetti.browser.min.js, which exposes a
-// global `confetti` function), so the only third-party code path
-// is the library itself. The two recipes are adapted from the
-// upstream demos (realistic / snow on kirilv.com/canvas-confetti/);
-// the modifications are documented inline.
+// global `confetti` function), so the only third-party code
+// path is the library itself. The recipes are adapted from the
+// upstream demos (realistic / snow / shapeFromText on
+// kirilv.com/canvas-confetti/); the modifications are
+// documented inline.
 //
-// Respecting prefers-reduced-motion: canvas-confetti has a built-in
-// `disableForReducedMotion: true` option that no-ops the confetti
-// burst when the user has the OS-level reduced-motion preference
-// set. The snow effect wraps the whole loop in a manual check
-// because the library option only covers individual confetti()
-// calls, not the requestAnimationFrame-driven snow storm.
+// Respecting prefers-reduced-motion: canvas-confetti has a
+// built-in `disableForReducedMotion: true` option that no-ops
+// the confetti bursts when the user has the OS-level
+// reduced-motion preference set. The snow / leaves storms wrap
+// their loops in a manual check because the library option only
+// covers individual confetti() calls, not the
+// requestAnimationFrame-driven storm.
 //
 // Why an external file: the page's strict CSP (`script-src 'self'`)
 // blocks inline <script> blocks. Vendoring the script under /static/
@@ -33,13 +37,14 @@
         var wantConfetti = cfg.getAttribute('data-confetti') === 'true';
         var wantSnow = cfg.getAttribute('data-snow') === 'true';
         var wantLeaves = cfg.getAttribute('data-leaves') === 'true';
+        var wantBirthday = cfg.getAttribute('data-birthday-confetti') === 'true';
 
         if (typeof window.confetti !== 'function') {
             // The vendored bundle failed to load (offline deploy,
             // blocked by an upstream CSP mistake, etc.). Fail
             // closed: the dashboard still renders, just without
             // the celebration. Logged so an operator notices.
-            if (wantConfetti || wantSnow || wantLeaves) {
+            if (wantConfetti || wantSnow || wantLeaves || wantBirthday) {
                 console.warn('fun-effects: canvas-confetti global not available; effects skipped');
             }
             return;
@@ -53,6 +58,9 @@
         }
         if (wantLeaves && !prefersReducedMotion()) {
             startAutumnLeaves();
+        }
+        if (wantBirthday) {
+            fireBirthdayBurst();
         }
     }
 
@@ -68,6 +76,70 @@
     // disableForReducedMotion: true is the library's built-in
     // escape hatch — when the user has the OS-level reduced-motion
     // preference set, the entire burst no-ops.
+    // fireBirthdayBurst fires a celebratory burst specifically
+    // for the birthday-person path. Distinct from fireFullTeamBurst
+    // in three ways:
+    //
+    //   1. Origin: top corners (angle 60° / 120°), not bottom.
+    //      The blast drops from above like a surprise.
+    //   2. Emoji: 🎂 + pink-heart shapes interleaved with
+    //      regular confetti particles, baked into confetti
+    //      shapes via shapeFromText (same pattern as the
+    //      autumn-leaves effect).
+    //   3. Colors: pink + gold, matching the birthday banner's
+    //      pink/coral gradient. Distinct from the gold-green
+    //      full-team gradient so a user watching both effects
+    //      can tell them apart at a glance.
+    //
+    // The burst is sized smaller than fireFullTeamBurst —
+    // 150 particles vs 200 — because the birthday banner is
+    // already a louder visual cue. The blast complements the
+    // banner copy, not replaces it.
+    //
+    // disableForReducedMotion: true is the library's built-in
+    // escape hatch. The user-level
+    // BIRTHDAY_CONFETTI_ENABLED env gate is handled at the Go
+    // layer (data-birthday-confetti=false).
+    function fireBirthdayBurst() {
+        var scalar = 1.5;
+        var cake = window.confetti.shapeFromText({ text: '🎂', scalar: scalar });
+        var heart = window.confetti.shapeFromText({ text: '💗', scalar: scalar });
+
+        // Side cannons — pink + gold particles, with the cake
+        // and heart shapes interleaved. The cannons fire from
+        // the top corners at angles that send the particles
+        // toward the center of the page.
+        var defaults = {
+            disableForReducedMotion: true,
+            colors: ['#f9a8d4', '#fb7185', '#fde68a', '#fbbf24', '#ffffff'],
+            shapes: [cake, heart, 'circle', 'square']
+        };
+
+        window.confetti(Object.assign({}, defaults, {
+            particleCount: 60,
+            angle: 60,
+            spread: 70,
+            origin: { x: 0, y: 0 }
+        }));
+        window.confetti(Object.assign({}, defaults, {
+            particleCount: 60,
+            angle: 120,
+            spread: 70,
+            origin: { x: 1, y: 0 }
+        }));
+
+        // One full-width encore from the center-top, 350ms
+        // after the side cannons, to fill in the gaps.
+        setTimeout(function () {
+            window.confetti(Object.assign({}, defaults, {
+                particleCount: 80,
+                spread: 120,
+                startVelocity: 35,
+                origin: { x: 0.5, y: 0 }
+            }));
+        }, 350);
+    }
+
     function fireFullTeamBurst() {
         var count = 200;
         var defaults = { origin: { y: 0.7 }, disableForReducedMotion: true };

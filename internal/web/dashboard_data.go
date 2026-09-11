@@ -605,6 +605,14 @@ func nextBusinessDayFrom(start time.Time, isBusinessDay func(time.Time) bool) ti
 func (h *Handler) loadDashboardData(ctx context.Context, data map[string]any) {
 	now := time.Now()
 	today := now.Format("2006-01-02")
+	// Today is exposed both as data["Today"] (for the
+	// dashboard template's `<meta name="current-day">`
+	// tag) and as the canonical date the schedule matrix,
+	// leaves, and birthday probes read. Single source of
+	// truth: every other "today" derivation in the dashboard
+	// reads from this value, so a future date-format change
+	// is a single edit.
+	data["Today"] = today
 	assignments, err := h.db.GetAssignmentsByDate(ctx, today)
 	if err == nil && len(assignments) > 0 {
 		data["TodayAssignment"] = assignments[0]

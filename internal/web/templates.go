@@ -5,6 +5,7 @@ import (
 	"embed"
 	"errors"
 	"html/template"
+	"time"
 
 	"github.com/inful/madhatter/internal/version"
 )
@@ -23,6 +24,23 @@ func parseTemplates() (*template.Template, error) {
 		// every page so users can see exactly which build they
 		// are looking at when filing a bug.
 		"version": version.Current,
+		// currentDay returns today's date as a YYYY-MM-DD string.
+		// Used by the base template's
+		// `<meta name="current-day" content="...">` tag, which the
+		// day-rollover.js wrapper reads on the client to detect
+		// "stale tab open past midnight". Pages that populate
+		// data["Today"] with a server-side date use that value
+		// directly (so the meta tag is consistent with the rest
+		// of the dashboard's date arithmetic); pages that don't
+		// fall back to the client's clock via this helper so the
+		// meta tag is never empty.
+		"currentDay": currentDayForTemplate,
+		// currentDayFromData returns data["Today"] if present,
+		// else currentDayForTemplate(). Templates call this so
+		// the dashboard's `<meta name="current-day" content="...">`
+		// matches the server-rendered schedule date when
+		// available, falling back to the client clock otherwise.
+		"currentDayFromData": currentDayFromDataForTemplate,
 		// csrfToken is the template helper that injects the
 		// current request's CSRF cookie value as a hidden
 		// form field. Form templates use it as
@@ -88,4 +106,27 @@ func parseTemplates() (*template.Template, error) {
 	}
 
 	return tmpl, nil
+}
+
+// currentDayForTemplate returns today's date as a YYYY-MM-DD
+// string in the server's local time zone. Used by the
+// current-day meta tag on pages that don't have a server-
+// computed "today" (e.g. login screen, calendar subscriptions).
+// Pages that do have a server-computed today (the dashboard)
+// use currentDayFromDataForTemplate so the meta tag matches
+// the rest of the page's date arithmetic.
+func currentDayForTemplate() string {
+	return time.Now().Format("2006-01-02")
+}
+
+// currentDayFromDataForTemplate returns data["Today"] when
+// present (dashboard path), else falls back to the server's
+// current date (other paths). Templates use this so the
+// meta tag matches whichever "today" the rest of the page
+// was rendered against.
+func currentDayFromDataForTemplate(data map[string]any) string {
+	if v, ok := data["Today"].(string); ok && v != "" {
+		return v
+	}
+	return currentDayForTemplate()
 }

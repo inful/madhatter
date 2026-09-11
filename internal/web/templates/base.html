@@ -6,6 +6,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="Support Rota — schedule, leave, and on-call management for small teams.">
     {{/*
+        Day-rollover anchor (#day-rollover): the base template
+        writes a `<meta name="current-day">` carrying the date
+        this page was rendered. The day-rollover.js wrapper
+        captures this value at load time and forces a page
+        reload when the user returns to a tab on a new day
+        (visibilitychange event fires). Without this, a tab
+        left open overnight keeps showing yesterday's HAT
+        banner, leaves, schedule matrix, and birthday copy
+        until the user does a manual refresh.
+
+        currentDayFromData reads data["Today"] if present
+        (dashboard pages set it explicitly) or falls back to
+        the server's current date for pages that don't compute
+        a server-side "today" (login, etc.). The result is
+        always a YYYY-MM-DD string the JS can compare against
+        new Date().toDateString() slice.
+    */}}
+    <meta name="current-day" content="{{currentDayFromData .}}">
+    {{/*
         Favicon surface (#61): both the standard browser-tab
         favicon.ico and the iOS home-screen pin preview
         apple-touch-icon.png. Both assets are baked from the
@@ -25,6 +44,7 @@
     <script src="/static/htmx/htmx.min.js"></script>
     <script src="/static/js/common.js"></script>
     <script src="/static/js/dashboard.js"></script>
+    <script src="/static/js/day-rollover.js"></script>
     <link rel="stylesheet" href="/static/bulma/bulma.min.css">
     <link rel="stylesheet" href="/static/fontawesome/all.min.css">
     <style>

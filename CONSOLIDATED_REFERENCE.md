@@ -236,6 +236,13 @@ CREATE TABLE calendar_subscriptions (
 ```
 The cutoff defaults to the start of the previous quota period (computed from `WFH_PERIOD_ANCHOR` and `WFH_PERIOD_DAYS`). Errors with `WFH feature is disabled` when `WFH_ENABLED=false`. The same operation is exposed at `GET /admin/wfh/purge` (preview) and `POST /admin/wfh/purge` (commit).
 
+### Migration Management
+```bash
+# Print the database's migration state without applying pending migrations.
+./support-rota migrate status
+```
+Reads `support_rota.db` via `database/sql` directly (not `database.New`) so a dirty or pending schema never blocks the inspection. Reports the applied version, dirty flag, latest migration on disk, and the count of pending migrations. Migrations still auto-apply on every `serve` startup — this command is for diagnostics. When the database is dirty, the output includes the SQL to clear the flag.
+
 ---
 
 ## Web Interface

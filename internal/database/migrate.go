@@ -7,6 +7,9 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
+	"strconv"
+	"strings"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/sqlite"
@@ -198,4 +201,56 @@ func MigrateToVersion(db *sql.DB, version uint) error {
 	}
 
 	return nil
+}
+
+// ListMigrationVersions returns the numeric prefixes of every
+// *.up.sql file in the migrations directory, sorted ascending.
+//
+// Used by the migrate-status CLI command to display
+// "latest on disk" and "pending" counts alongside the applied
+// version. Returns an empty slice and a nil error when no
+// migrations directory is found on disk — that's the production
+// "binary packaged without embedded migrations" path. The
+// apply-time migration runner falls back to embedded migrations
+// in that case, but a status inspection has nothing to report.
+//
+// Files whose name does not start with a numeric prefix are
+// silently skipped (e.g. the .gitkeep placeholder); parse errors
+// do not abort the listing. The intent is "best-effort count";
+// strict validation belongs in a future migrate-validate command.
+func ListMigrationVersions() ([]uint, error) {
+	path, err := getMigrationsPath()
+	if err != nil {
+		if errors.Is(err, errMigrationsNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return nil, fmt.Errorf("read migrations dir: %w", err)
+	}
+
+	versions := make([]uint, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if !strings.HasSuffix(name, ".up.sql") {
+			continue
+		}
+		// Filename format: NNNNNN_description.up.sql. strings.Cut
+		// splits on the first underscore so descriptive names with
+		// embedded underscores still parse to their numeric prefix.
+		prefix, _, _ := strings.Cut(name, "_")
+		v, parseErr := strconv.ParseUint(prefix, 10, 32)
+		if parseErr != nil {
+			continue
+		}
+		versions = append(versions, uint(v))
+	}
+	slices.Sort(versions)
+	return versions, nil
 }

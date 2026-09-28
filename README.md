@@ -503,6 +503,39 @@ The cutoff defaults to the start of the previous quota period (computed from `WF
 
 The output lists each swap with a per-side drift report (`member_id: old → new`, `is_swapped: old → new`, or `<none>` if the row already matches). The command is idempotent — re-running on an already-reconciled swap produces no drift. `--id` and `--all` are mutually exclusive.
 
+### Migration Status
+
+`migrate status` reports the migration state of `support_rota.db` *without* applying pending migrations — useful when a deployment is suspected to have missed a migration, or when a schema is reported dirty. Migrations still auto-apply on every `serve` startup via `database.New`; this command is read-only and works even when the database refuses to advance (e.g., a dirty `schema_migrations` row).
+
+```bash
+./support-rota migrate status
+```
+
+Sample output on a healthy database:
+
+```
+Database: support_rota.db
+  Applied version: 29
+  Dirty:           false
+  Latest on disk:  29
+  Pending:         0
+```
+
+When the database is dirty the command prints a recovery hint with the SQL to clear the flag:
+
+```
+Database: support_rota.db
+  Applied version: 24
+  Dirty:           true
+  Latest on disk:  29
+  Pending:         0
+
+WARNING: the database is in a dirty state. golang-migrate
+refuses to advance past a dirty schema; inspect the failing
+migration manually, then clear the flag with:
+  UPDATE schema_migrations SET dirty = 0;
+```
+
 ## Development
 
 ### Code Quality Standards

@@ -50,8 +50,8 @@ This file provides guidance to agents when working with code in this repository.
 **Migration Commands:**
 ```bash
 # Migrations run automatically during database.New()
-# Manual migration status check
-go run main.go migrate-status
+# Print migration state without applying (works even on a dirty DB).
+./support-rota migrate status
 
 # Create new migration
 # File format: migrations/NNNNNN_description.{up,down}.sql

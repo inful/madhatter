@@ -22,6 +22,12 @@ import (
 const (
 	// File permissions for exported ICS files.
 	filePermissionICS = 0o600
+
+	// supportRotaDBPath is the default on-disk database file the
+	// CLI opens. Production runs against this path. Tests inject
+	// their own temp-dir paths into the run* helpers so this value
+	// is exercised only by the production entry point.
+	supportRotaDBPath = "support_rota.db"
 )
 
 var CLI struct {
@@ -91,19 +97,33 @@ var CLI struct {
 			MemberID string `name:"member-id" help:"Member ID (UUID) or email" arg:""`
 		} `cmd:"" help:"Report WFH for today (settled inline against the on-site floor)"`
 	} `cmd:"" help:"WFH management"`
+
+	Migrate struct {
+		Status struct{} `cmd:"" help:"Show the migration status of the database without applying pending migrations"`
+	} `cmd:"" help:"Database migration management"`
 }
 
 func Execute() {
+	ctx := kong.Parse(&CLI)
+	command := ctx.Command()
+	ctxBg := context.Background()
+
+	// migrate-status is the only command that must NOT auto-apply
+	// pending migrations before inspecting the database — a dirty
+	// schema would refuse to open via database.New, taking the
+	// inspection command down with the very thing it's diagnosing.
+	// Route through the migrate-status path before the New() call.
+	if command == "migrate status" {
+		migrateStatusCommand(ctxBg)
+		return
+	}
+
 	// Initialize database
-	db, err := database.New("support_rota.db")
+	db, err := database.New(supportRotaDBPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
-
-	ctx := kong.Parse(&CLI)
-	command := ctx.Command()
-	ctxBg := context.Background()
 
 	// Map command to handler
 	handlers := map[string]func(context.Context, *database.DB){

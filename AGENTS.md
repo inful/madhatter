@@ -688,6 +688,7 @@ The following features are planned but not yet implemented:
 
 ## References
 
+- **Documentation Index**: [DOCS_INDEX.md](DOCS_INDEX.md) — start here when you don't know where to look.
 - **Main Documentation**: `README.md`
 - **Holiday Implementation**: `HOLIDAY_IMPLEMENTATION.md`
 - **SQLC Migration**: `SQLC_MIGRATION_GUIDE.md`

@@ -811,13 +811,18 @@ WantedBy=multi-user.target
 #### Calendar subscription not working
 **Solution**: Verify token exists in database and user has assignments
 
+## Documentation
+
+A navigable map of every Markdown file in this repo — one-line descriptions, audience, last-touched dates, and accuracy status — lives in [DOCS_INDEX.md](DOCS_INDEX.md). Start there if you don't know which doc you need.
+
 ## Support
 
 For issues or questions:
-1. Check the logs for error messages
-2. Verify configuration syntax
-3. Test OAuth flow manually
-4. Check database schema matches expected structure
+1. Check [DOCS_INDEX.md](DOCS_INDEX.md) — the docs index lists where to look for each topic.
+2. Check the logs for error messages
+3. Verify configuration syntax
+4. Test OAuth flow manually
+5. Check database schema matches expected structure
 
 ## License
 

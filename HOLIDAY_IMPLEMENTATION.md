@@ -48,13 +48,12 @@ This implementation adds comprehensive holiday support to the support rota syste
 ```bash
 # Comma-separated list of iCal URLs
 HOLIDAY_URLS=https://www.officeholidays.com/subscribe/norway,https://www.officeholidays.com/subscribe/uk
-
-# Optional: Custom fetch interval (hours)
-HOLIDAY_FETCH_INTERVAL=24
-
-# Optional: Custom lookahead days
-HOLIDAY_LOOKAHEAD=365
 ```
+
+The only holiday-related environment variable the application reads
+is `HOLIDAY_URLS`. The fetch interval and lookahead window are not
+exposed as env vars; the scheduler's behaviour is configured in code
+(see [`internal/holiday/scheduler.go`](../internal/holiday/scheduler.go)).
 
 ### Example iCal URLs
 
@@ -234,9 +233,9 @@ go test ./internal/rota -v
 # Required for holiday support
 export HOLIDAY_URLS="https://www.officeholidays.com/subscribe/norway"
 
-# Optional customizations
-export HOLIDAY_FETCH_INTERVAL="24"  # hours
-export HOLIDAY_LOOKAHEAD="365"      # days
+# `HOLIDAY_FETCH_INTERVAL` and `HOLIDAY_LOOKAHEAD` are NOT read from
+# the environment — they were planned but never wired. The fetch
+# cadence and lookahead window are configured in code.
 ```
 
 ### Monitoring

@@ -16,35 +16,9 @@ The system supports OAuth2 authentication with multiple providers. Currently imp
 
 ## Configuration
 
-Create a configuration file `config.yaml` in the project root:
-
-```yaml
-# Server Configuration
-server:
-  address: ":8080"
-  session_secret: "your-secret-key-change-in-production"
-
-# OAuth2 Providers
-oauth:
-  # Base URL for your application (used for callback URLs)
-  app_url: "http://localhost:8080"
-  
-  # Forgejo Configuration
-  forgejo:
-    enabled: true
-    client_id: "your-forgejo-client-id"
-    client_secret: "your-forgejo-client-secret"
-    # Base URL of your Forgejo instance
-    base_url: "https://git.example.com"
-  
-  # GitLab Configuration
-  gitlab:
-    enabled: true
-    client_id: "your-gitlab-client-id"
-    client_secret: "your-gitlab-client-secret"
-    # Base URL of your GitLab instance (https://gitlab.com for SaaS)
-    base_url: "https://gitlab.com"
-```
+All configuration is read from environment variables. The full env-var
+table is in the [README](README.md#environment-variables) — the auth-specific
+variables are summarised below.
 
 ## Setting Up OAuth2 Applications
 
@@ -87,18 +61,6 @@ export GITLAB_CLIENT_SECRET="your-secret"
 export GITLAB_REDIRECT_URL="http://your-domain:8080/auth/callback?provider=gitlab"
 export GITLAB_ALLOWED_GROUP="myorg/myteam"  # Optional: restrict to group members
 # Note: When GITLAB_ALLOWED_GROUP is set, scope automatically includes "read_api read_user"
-```
-
-**Configuration via YAML**:
-```yaml
-oauth:
-  gitlab:
-    enabled: true
-    client_id: "your-gitlab-client-id"
-    client_secret: "your-gitlab-client-secret"
-    base_url: "https://gitlab.com"
-    scope: "read_api read_user"  # Required when using group restrictions
-    allowed_group: "myorg/myteam"  # Optional: restrict to group members
 ```
 
 **Group Path Format**:
@@ -175,22 +137,7 @@ go build -o support-rota
     
     > **Note**: Without `TOKEN_ENCRYPTION_KEY`, a random key is generated at startup, which means OAuth tokens won't survive application restarts.
 
-4. **Create configuration file** (`config.yaml`):
-    ```yaml
-    server:
-      address: ":8080"
-      session_secret: "${SESSION_SECRET}"
-    
-    oauth:
-      app_url: "http://localhost:8080"
-      forgejo:
-        enabled: true
-        client_id: "your-client-id"
-        client_secret: "your-client-secret"
-        base_url: "https://git.example.com"
-    ```
-
-5. **Run with config**:
+4. **Run the server**:
     ```bash
     ./support-rota serve --port 8080
     ```
@@ -240,13 +187,12 @@ The system implements several security measures to protect sensitive data:
 
 ### Production Deployment
 
-1. **Use HTTPS**:
-   ```yaml
-   server:
-     address: ":443"
-   oauth:
-     app_url: "https://your-domain.com"
-   ```
+1. **Use HTTPS** — front the application with a TLS-terminating reverse
+   proxy (Caddy, nginx, traefik). The server itself speaks plain HTTP on
+   the configured port; set the proxy's listener to `:443` and forward
+   to the support-rota port internally. The application emits
+   `Strict-Transport-Security` headers on HTTPS connections (see
+   [README: Authentication & Security](../README.md#authentication--security)).
 
 2. **Strong Session Secret**:
    ```bash
@@ -359,14 +305,41 @@ func (p *Provider) GetUserEmail(token string) (string, error) {
 
 ## API Authentication
 
-**Important:** In the current version, the `/api/v1/*` HTTP API endpoints do **not** enforce authentication by themselves. Requests without any `Authorization` header or session cookie are accepted by the server.
+Every `/api/v1/*` endpoint requires an authenticated user. Two schemes are accepted on every protected endpoint:
 
-If you expose these endpoints, you **must** protect them using external mechanisms such as:
+- **`sessionAuth`** — the same `session_token` cookie the web UI uses. Log in via OAuth, send the resulting cookie.
+- **`apiTokenAuth`** — `Authorization: Bearer <token>` where the token was generated via `POST /api/v1/tokens/generate` while logged in as a user (admin or not).
 
-- An authenticated reverse proxy (e.g. OAuth2/OIDC proxy, SSO gateway)
-- Network-level controls (firewall rules, VPN, private network)
+Both schemes are declared on every protected operation in `internal/api/operations.go`; see the OpenAPI document served at `GET /docs` for the full list. Use the bearer header for shell scripts and CI; use the cookie for browser-driven flows.
 
-Future versions may add first-class API authentication (e.g. validating `Authorization: Bearer <session_token>` headers or session cookies on `/api/v1/*` routes). Until that is implemented in the server code, treat the HTTP API as unauthenticated and rely on external protection.
+**Exceptions** — the following endpoints are public:
+
+- `GET /api/v1/holidays`
+- `GET /api/v1/holidays/status`
+- `POST /api/v1/holidays/refresh`
+- `GET /api/v1/calendar/{token}/ics` and the related `/calendar/{token}/{team.ics,meetings.ics,meetings/{date}.html}` calendar feeds (the per-subscription UUID in the path is the auth — rotating it revokes access).
+
+Every handler still calls `auth.GetUserFromContext(ctx)` and refuses with `401 Unauthorized` when no user is present, so a missing session is a hard error — there is no permissive "anonymous request" path on the protected endpoints.
+
+### Generating an API token
+
+```bash
+# Log in via the web UI to obtain a session cookie, then:
+curl -X POST http://localhost:8080/api/v1/tokens/generate \
+  -H "Cookie: session_token=<your-session-cookie>" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "my-cli-token", "expires_in_days": 30}'
+
+# Response
+{
+  "token": "rota_api_...",  # shown ONCE — store it now
+  "id":    "<token-uuid>",
+  "expires_at": "2026-10-28T..."
+}
+```
+
+Use the returned token as `Authorization: Bearer rota_api_...`. List your tokens with `GET /api/v1/tokens` and revoke with `DELETE /api/v1/tokens/{id}`.
+
 ## Calendar Subscriptions
 
 Authenticated users can create calendar subscriptions:

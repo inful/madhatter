@@ -198,8 +198,9 @@ CREATE TABLE calendar_subscriptions (
 
 ### Leave Management
 ```bash
-# Report leave
-./support-rota leave report alice@example.com sick 2024-01-15 2024-01-17
+# Report leave (always records LeaveTypeLeave; for conference leave
+# use the web form at /leave/report).
+./support-rota leave report alice@example.com <YYYY-MM-DD> <YYYY-MM-DD>
 
 # List all leave records
 ./support-rota leave list
@@ -576,9 +577,9 @@ go build -o support-rota
 # - Cover assignments created when members take leave
 
 # 5. Optional: Manual operations
-./support-rota schedule generate 2024-01-01 2024-01-31  # Regenerate if needed
-./support-rota leave report alice@example.com sick 2024-01-15 2024-01-17  # Triggers auto-cover
-./support-rota calendar subscribe alice@example.com  # Get personal calendar URL
+./support-rota schedule generate <YYYY-MM-DD> <YYYY-MM-DD>            # Regenerate if needed
+./support-rota leave report alice@example.com <YYYY-MM-DD> <YYYY-MM-DD>  # Always records LeaveTypeLeave
+./support-rota calendar subscribe alice@example.com                   # Get personal calendar URL
 ```
 
 **Key Point**: The web server automatically maintains the schedule. No manual generation needed!

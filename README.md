@@ -95,11 +95,14 @@ on tag builds.
 #### 4. Report Leave
 ```bash
 # Via CLI
-./support-rota leave report alice@example.com sick 2024-01-15 2024-01-17
+./support-rota leave report alice@example.com <YYYY-MM-DD> <YYYY-MM-DD>
 
 # Via Web Interface
 # Navigate to /leave/report (requires login)
 ```
+
+The CLI always records `LeaveTypeLeave`; for conference leave, use
+the web form at `/leave/report`. The end date is inclusive.
 
 #### 5. Create Calendar Subscription
 ```bash
@@ -205,7 +208,6 @@ At least one provider must be configured for production authentication.
 | `WFH_PERIOD_DAYS` | `7` | Length of one WFH quota period. |
 | `WFH_PERIOD_ANCHOR` | `2026-01-05` | Reference date used to compute WFH periods. Must use `YYYY-MM-DD`. |
 | `WFH_SETTLEMENT_DAYS` | `7` | Number of days ahead that pending WFH requests are auto-settled. The default matches `WFH_PERIOD_DAYS` so a request submitted any time in the current period is settled by the next scheduler tick. |
-| `WFH_WITHDRAWAL_HOURS` | `24` | Hours before the WFH day after which an approved request can no longer be withdrawn by the member or an admin. |
 | `WFH_REQUEST_HORIZON_DAYS` | `90` | Maximum number of days ahead a WFH request can be submitted. Requests beyond this horizon are rejected with a 422 in the API and a banner in the web form. |
 | `WFH_PURGE_ENABLED` | `true` | When `true`, the daily scheduler hard-deletes `wfh_requests` rows whose date is strictly before the start of the previous quota period. The current and previous periods are always preserved. Opt out with `WFH_PURGE_ENABLED=false`. The same cutoff is exposed via `wfh purge [--apply]` and `/admin/wfh/purge`; both default to dry-run. |
 | `WFH_SETTLEMENT_INTERVAL` | `15m` | Period between settlement scheduler ticks (Go duration format, e.g. `5m`, `1h`, `30s`). Lower values reduce the perceived latency between a request submission and the approve/deny decision; higher values save on CPU. |
@@ -454,7 +456,8 @@ This uses a fake OAuth provider that automatically creates an admin user.
 
 ### Leave Management
 ```bash
-./support-rota leave report email@example.com sick 2024-01-15 2024-01-17
+# Always records LeaveTypeLeave; for conference leave use the web form.
+./support-rota leave report email@example.com <YYYY-MM-DD> <YYYY-MM-DD>
 ./support-rota leave list
 ```
 

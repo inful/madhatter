@@ -306,9 +306,7 @@ This is implemented in:
 - API endpoints for status and refresh
 
 **Environment Variables**:
-- `HOLIDAY_URLS` - Comma-separated iCal URLs
-- `HOLIDAY_FETCH_INTERVAL` - Hours between fetches (default: 24)
-- `HOLIDAY_LOOKAHEAD` - Days to look ahead (default: 365)
+- `HOLIDAY_URLS` - Comma-separated iCal URLs. The only holiday env var the application reads; `HOLIDAY_FETCH_INTERVAL` and `HOLIDAY_LOOKAHEAD` are not exposed (the scheduler is configured in code).
 
 **Components**:
 - `service.go` - Main service coordinating store and scheduler
@@ -588,21 +586,6 @@ Documentation is part of the same commit as the change that requires it — not 
 | Internal refactor (no user-visible change) | Nothing | Don't add user-facing noise — but do mention internal-only changes in the commit body so the next agent knows the surface didn't change |
 | Bug fix in user-visible flow | Mention in commit body | The PR description is the changelog; no separate doc file unless the bug had a documented workaround |
 | Change that adds/relaxes a per-user-data mutation handler | `internal/web/*_test.go` (raw-HTTP safety net) | The new guarantee: a non-admin POST against another member's row must produce the right failure status AND leave the row unchanged. See [Security Guarantees](#security-guarantees) |
-
-## Documentation Triggers
-
-Documentation is part of the same commit as the change that requires it — not a follow-up. When the commit lands, the docs in `main` already describe the new behaviour. For every change, walk this table before committing:
-
-| Change category | Files to update | Specific edits |
-|---|---|---|
-| New or renamed env var in `internal/*/service.go` `LoadConfigFromEnv` | `README.md` config table (env-vars section) and `internal/web/templates/help.html` (config table if the var surfaces in `/help`) | Add a row to the env-var table with default + meaning; if it appears in `help_handler.go`, also add a row to the help config table |
-| Existing env var's default changes | `README.md` config table, `help.html` config table, and any in-line doc comment that quotes the old default | Update the default column; grep for the var name in `*.md` and `*.html` to catch inline references |
-| New user-facing web feature | `README.md` (Features list) and `internal/web/templates/help.html` (relevant section) | Add a bullet to the matching feature section; add a paragraph to help if the feature has user-visible behaviour worth explaining |
-| New user-facing API endpoint | `README.md` (Features) and `CONSOLIDATED_REFERENCE.md` (API Endpoints) | Bullet + endpoint entry |
-| New CLI subcommand | `README.md` (Features / CLI) and `CONSOLIDATED_REFERENCE.md` (CLI Commands) | Add to both lists |
-| In-app help text | `internal/web/templates/help.html` | Update the prose and config table; check the handler that sets the data context (`help_handler.go`) exposes any new fields |
-| Internal refactor (no user-visible change) | Nothing | Don't add user-facing noise — but do mention internal-only changes in the commit body so the next agent knows the surface didn't change |
-| Bug fix in user-visible flow | Mention in commit body | The PR description is the changelog; no separate doc file unless the bug had a documented workaround |
 
 **Concrete commands to run before commit** when the change touches an env var, the help page, or the README feature list:
 

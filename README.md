@@ -24,9 +24,9 @@ A comprehensive support duty management system with automatic scheduling, leave 
 - **OAuth2 authentication**: Support for Forgejo and GitLab providers
 - **Group-based access control**: Optional GitLab group membership validation
 - **Session management**: Secure token hashing (SHA-256) and encryption (AES-256-GCM)
-- **Role-based access**: Admin and Regular user roles
+- **Role-based access**: Admin and Regular user roles. The **first user to sign in becomes admin automatically**; subsequent users land in a pending state and must be approved by an existing admin from `/team/users` before they can sign in. Admins can also promote other users to admin, deactivate, or reactivate accounts.
 - **Development mode**: Fake OAuth provider for local testing
-- **Per-IP rate limiting**: Token-bucket limiter on `/auth/login/{provider}` (10 req/min default) and `/api/v1/tokens/*` (30 req/min default). Excessive requests get a 429 with a `Retry-After` header. Set `WFH_SETTLEMENT_DAYS` and the bucket size per route in production.
+- **Per-IP rate limiting**: Token-bucket limiter on `/auth/login/{provider}` (10 req/min default) and `/api/v1/tokens/*` (30 req/min default). Excessive requests get a `429` with a `Retry-After` header. The bucket sizes are hardcoded today — env-var overrides are planned but not wired.
 - **Defensive HTTP response headers**: Every response carries a strict `Content-Security-Policy` (`default-src 'self'` with no external exceptions), `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, and `Referrer-Policy: same-origin`. HTTPS requests additionally get `Strict-Transport-Security: max-age=63072000; includeSubDomains`. The CSP can stay tight because all third-party CSS/JS/fonts (HTMX, Bulma, FontAwesome) are vendored under `internal/web/assets/` and served from `/static/*`.
 
 ### Advanced Features
@@ -211,6 +211,11 @@ At least one provider must be configured for production authentication.
 | `WFH_REQUEST_HORIZON_DAYS` | `90` | Maximum number of days ahead a WFH request can be submitted. Requests beyond this horizon are rejected with a 422 in the API and a banner in the web form. |
 | `WFH_PURGE_ENABLED` | `true` | When `true`, the daily scheduler hard-deletes `wfh_requests` rows whose date is strictly before the start of the previous quota period. The current and previous periods are always preserved. Opt out with `WFH_PURGE_ENABLED=false`. The same cutoff is exposed via `wfh purge [--apply]` and `/admin/wfh/purge`; both default to dry-run. |
 | `WFH_SETTLEMENT_INTERVAL` | `15m` | Period between settlement scheduler ticks (Go duration format, e.g. `5m`, `1h`, `30s`). Lower values reduce the perceived latency between a request submission and the approve/deny decision; higher values save on CPU. |
+| `WFH_SEAT_CAP` | _unset_ | Hard seat cap on the office. When set, the settlement scheduler inserts system-allocated **Assigned** WFH rows for any day where the on-site headcount would exceed the cap. Picks prefer members with the fewest voluntary WFHs in the period, then a co-presence tiebreaker, then alphabetical. See [`docs/ASSIGNED_WFH.md`](docs/ASSIGNED_WFH.md) for the full reference. |
+| `WFH_ASSIGNMENT_ENABLED` | `true` | Master switch for the seat-cap picker. Setting this to `false` leaves the cap in the dashboard math but disables the picker so no `Assigned` rows are written. |
+| `WFH_COPRESENCE_ENABLED` | `true` | Master switch for the co-presence tiebreaker. When `false`, the picker falls back to "fewest voluntary WFHs in the period, then alphabetical". |
+| `WFH_COPRESENCE_HORIZON_DAYS` | `14` | Calendar days the co-presence scanner looks back when scoring members for a pick. |
+| `WFH_COPRESENCE_RETENTION_DAYS` | `30` | How long the co-presence history rows are kept in `wfh_co_presence` before they're pruned. |
 
 #### Dashboard
 
@@ -249,6 +254,38 @@ At least one provider must be configured for production authentication.
 | --- | --- | --- |
 | `HOLIDAY_URLS` | none | Comma-separated holiday iCal feed URLs. If unset, holiday support is effectively disabled. |
 | `MIGRATIONS_PATH` | auto-detected | Optional absolute or relative path to the migrations directory. If unset, the app searches common repo-relative locations. |
+
+#### Notifications
+
+The notification subsystem (`internal/notify/`) is configured entirely
+from env vars. The two design knobs are **enable email delivery** and
+the **per-event template overrides**; see [`docs/NOTIFICATIONS.md`](docs/NOTIFICATIONS.md)
+for the full reference (what fires when, the unsubscribe flow, the
+"add a new channel" checklist, ops queries for the outbox).
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `NOTIFY_EMAIL_ENABLED` | `false` | When `true`, the email channel is registered. Required for any email delivery. |
+| `NOTIFY_SMTP_HOST` | _none_ | `host:port` of the SMTP server. Required when email is enabled. |
+| `NOTIFY_SMTP_FROM` | `MadHatter Rota <noreply@example.com>` | The `From:` address (display name + email). |
+| `NOTIFY_BASE_URL` | `http://localhost:8080` | Used in templates for "view in dashboard" links. |
+| `NOTIFY_PUBLIC_BASE_URL` | _falls back to `NOTIFY_BASE_URL`_ | Externally-visible origin for absolute URLs in emails (one-click unsubscribe links). Should be the public HTTPS host users actually visit. |
+| `NOTIFY_OUTBOX_POLL_INTERVAL` | `30s` | How often the outbox worker checks for due rows. |
+| `NOTIFY_OUTBOX_MAX_ATTEMPTS` | `5` | After this many failures an outbox row is marked `dead`. |
+| `NOTIFY_OUTBOX_BACKOFF_BASE` | `30s` | First retry delay. Subsequent retries double, capped at 1h. |
+
+#### Rate limiting
+
+Per-IP token-bucket throttles (see [`internal/ratelimit/`](internal/ratelimit/))
+protect the OAuth initiation route and the API token endpoints. The
+default bucket sizes are **10 req/min for `/auth/login/{provider}`**
+(constants `defaultAuthRateLimit` / `defaultAuthRateRefill` in
+[`internal/web/handler.go`](internal/web/handler.go)) and **30 req/min
+for `/api/v1/tokens/*`** (constants `defaultTokenRatePerIP` /
+`defaultTokenRateRefillS` in [`internal/api/server.go`](internal/api/server.go)).
+Excessive requests get a `429` with a `Retry-After` header. These
+values are hardcoded today — operator overrides via env vars are
+[planned but not wired](https://github.com/inful/madhatter/blob/main/API_AUTH_IMPLEMENTATION.md#roadmap).
 
 Example production setup:
 
@@ -401,37 +438,69 @@ This uses a fake OAuth provider that automatically creates an admin user.
 
 ## API Reference
 
-### Team Management
-- `POST /api/v1/team` - Add team member
-- `GET /api/v1/team` - List team members
+The full API surface is published as an interactive OpenAPI document at `GET /docs` (HUMA generates it from `internal/api/operations.go`, which is the source of truth). Every `/api/v1/*` operation except the holidays endpoints and the per-token calendar feeds requires an authenticated user — see [API Authentication](#api-authentication) below for how to obtain a bearer token.
 
-### Leave Management
-- `POST /api/v1/leave` - Report leave (triggers auto-cover)
+The table below summarises the route groups; the OpenAPI doc has the exact request/response shapes and admin requirements.
 
-### Schedule
-- `POST /api/v1/schedule/generate` - Generate schedule for date range
+| Route group | Path prefix | Auth | Notes |
+| --- | --- | --- | --- |
+| Team | `/api/v1/team` | session or bearer | Full CRUD; write paths require admin. |
+| Leave | `/api/v1/leave` | session or bearer | Full CRUD; write paths require admin. |
+| Schedule | `/api/v1/schedule/generate` | bearer, admin | Regenerate the schedule for a date range. |
+| Calendar | `/api/v1/calendar/subscribe` | session or bearer | Create a personal ICS subscription. |
+| WFH | `/api/v1/wfh` | session or bearer | Full WFH lifecycle (ad-hoc, recurring, assigned, swap). |
+| Swaps | `/api/v1/swaps` | session or bearer | HAT-day swap requests (create / list / accept / reject / cancel / admin-delete). |
+| API tokens | `/api/v1/tokens` | session or bearer | Generate / list / revoke bearer tokens. |
+| Holidays | `/api/v1/holidays` | **public** | The only public `/api/v1/*` endpoints. |
+| Presence | `/api/v1/presence/today` | session or bearer | Today's on-site / leave / WFH roster. |
 
-### Calendar
-- `POST /api/v1/calendar/subscribe` - Create calendar subscription
-- `GET /api/v1/calendar/{token}/ics` - Get ICS calendar feed
+### API Authentication
 
-### Holidays
-- `GET /api/v1/holidays` - Get upcoming holidays
-- `GET /api/v1/holidays/status` - Get holiday service status
-- `POST /api/v1/holidays/refresh` - Manually refresh holidays
+Every protected `/api/v1/*` endpoint accepts either the `session_token` cookie (same as the web UI) or `Authorization: Bearer <token>`. Generate a token with the web UI (User menu → API tokens) or directly:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/tokens/generate \
+  -H "Cookie: session_token=<session-cookie>" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "my-cli-token", "expires_in_days": 30}'
+```
+
+The plaintext token is shown once. List your tokens with `GET /api/v1/tokens` and revoke with `DELETE /api/v1/tokens/{id}`. See [`API_AUTH_IMPLEMENTATION.md`](API_AUTH_IMPLEMENTATION.md) for the design notes and security model.
 
 ### OpenAPI Documentation
-- `GET /docs` - Interactive OpenAPI documentation (auto-generated)
+
+- `GET /docs` - Interactive OpenAPI documentation (auto-generated by HUMA from `internal/api/operations.go`).
 
 ## Web Interface
 
-### Pages
-- `/` - Dashboard with current schedule and upcoming presence
+The full route table is in [`internal/web/routes.go`](internal/web/routes.go) — that's the source of truth and changes whenever a route is added. The summary below groups the routes by role; the registration table in `routes.go` has the exact path, method, and middleware for each one.
+
+### Public
+
+- `/` - Dashboard (the only public route in production; shows today's roster and upcoming presence)
 - `/login` - Login page (redirects to OAuth provider)
-- `/team` - Team management (admin only)
-- `/leave/report` - Report leave (requires login)
-- `/schedule/generate` - Schedule generation (admin only)
-- `/calendar` - Calendar subscription management (requires login)
+- `/auth/login/{provider}`, `/auth/callback`, `/auth/logout` - OAuth flow
+- `/calendar/{token}/ics`, `/calendar/{token}/team.ics`, `/calendar/{token}/meetings.ics`, `/calendar/{token}/meetings/{date}.html` - per-member calendar feeds (token in URL is the auth)
+- `/help` - In-app help and env-var reference
+- `/unsubscribe`, `/unsubscribe/resume` - one-click email unsubscribe (HMAC token in the URL is the auth)
+
+### Authenticated (any user)
+
+- `/leave/report`, `/leave/report-sick`, `/leave/manage`, `/leave/{id}/edit`, `/leave/{id}/delete`
+- `/calendar` - personal subscription management
+- `/swaps`, `/swaps/{id}/{accept,reject,cancel}` - HAT-swap requests
+- `/wfh`, `/wfh/request`, `/wfh/report-today`, `/wfh/today/on-site`, `/wfh/on-site` - WFH self-service
+- `/wfh/{id}/{cancel,withdraw,swap}`, `/wfh/swap/inbox`, `/wfh/swap/{swapId}/{accept,reject,cancel}` - WFH swap flow
+
+### Admin
+
+- `/team` (list/add), `/team/{id}/{edit,recurring-wfh,permanent-wfh,exempt,delete}` - team management
+- `/team/users/{id}/{admin,approve,deny,deactivate,reactivate}` - user approval and role management (the first user becomes admin automatically; subsequent users need approval from an existing admin before they can sign in)
+- `/schedule/generate` - regenerate the schedule
+- `/admin/database/backup`, `/admin/database/restore` - database backup and restore
+- `/calendar/subscriptions`, `/calendar/subscriptions/cleanup` - manage all subscriptions
+- `/admin/wfh`, `/admin/wfh/{id}/{withdraw,reassign,unmark}`, `/admin/wfh/{settle,purge,mark}` - WFH admin and lifecycle
+- `/swaps/{id}/delete` - admin-delete a swap
 
 ### Features
 - **Dashboard**: Shows today's assignment, upcoming presence, current/next week, holidays
@@ -446,6 +515,7 @@ This uses a fake OAuth provider that automatically creates an admin user.
 ```bash
 ./support-rota serve --port 8080
 ./support-rota serve --port 8080 --development
+./support-rota serve --port 8080 --reassign-covers=false   # skip the startup cover-reassignment
 ```
 
 ### Team Management
@@ -463,8 +533,8 @@ This uses a fake OAuth provider that automatically creates an admin user.
 
 ### Schedule
 ```bash
-./support-rota schedule generate 2024-01-01 2024-01-31
-./support-rota schedule view 2024-01-15
+./support-rota schedule generate <YYYY-MM-DD> <YYYY-MM-DD>
+./support-rota schedule view <YYYY-MM-DD>
 ```
 
 ### Calendar
@@ -482,9 +552,22 @@ This uses a fake OAuth provider that automatically creates an admin user.
 ./support-rota wfh purge --apply
 
 # One-off catch-up clean with a custom cutoff.
-./support-rota wfh purge --before 2024-01-01 --apply
+./support-rota wfh purge --before <YYYY-MM-DD> --apply
+
+# Report WFH for today (settled inline against the on-site floor).
+./support-rota wfh report <member-id-or-email>
 ```
+
 The cutoff defaults to the start of the previous quota period (computed from `WFH_PERIOD_ANCHOR` and `WFH_PERIOD_DAYS`). The same operation is exposed at `GET /admin/wfh/purge` for a preview and `POST /admin/wfh/purge` to commit from the web UI. Errors with `WFH feature is disabled` when `WFH_ENABLED=false`.
+
+### Cover reassignment
+
+`reassign-covers` re-runs the cover-assignment algorithm against every leave in the database. The operation is idempotent on a steady-state rota, so it's safe to invoke at any time — including to recover from manual cover edits or to confirm a deploy. The same logic also runs automatically on every `serve` startup unless `--reassign-covers=false` is passed.
+
+```bash
+# Run on demand.
+./support-rota reassign-covers
+```
 
 ### HAT Swap Repair
 
@@ -631,6 +714,22 @@ go test -race ./...
 
 ## Deployment
 
+### Database backup and restore
+
+Admin users can take a live SQLite snapshot from the web UI:
+
+- `GET /admin/database/backup` — downloads a `.db` file copy of the running database (the route holds a short lock; large databases may briefly block reads).
+- `GET /admin/database/restore` — upload a previously downloaded `.db`. The route validates compatibility (current migration version, schema match) and shows a diff before any apply.
+- `POST /admin/database/restore` — applies the uploaded `.db` (irreversible — keep a fresh backup first).
+
+For scripted backups (cron, systemd timers, etc.) prefer copying the file out of band while the server is stopped, or use SQLite's `.backup` command while it's running:
+
+```bash
+sqlite3 support_rota.db ".backup /var/backups/support-rota-$(date +%F).db"
+```
+
+Both paths produce a file you can drop onto the restore page.
+
 ### Single Binary
 ```bash
 go build -o support-rota
@@ -677,7 +776,7 @@ WantedBy=multi-user.target
 ### OAuth Tokens
 - Encrypted with AES-256-GCM before storage
 - Require `TOKEN_ENCRYPTION_KEY` environment variable
-- Tokens are not currently used for API access (future feature)
+- **API access uses a separate token system** (the `api_tokens` table). OAuth tokens are stored for the lifetime of the user's session in case a future feature needs to call the upstream provider's API on their behalf; they are not consumed by the support-rota API. Generate an API token via the web UI (User menu → API tokens) or `POST /api/v1/tokens/generate`. See [API Authentication](#api-authentication).
 
 ### Database
 - Foreign keys must be enabled manually

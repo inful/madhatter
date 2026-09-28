@@ -210,6 +210,117 @@
                 WFH service is currently disabled, so settlement rules are not active.
             </div>
             {{end}}
+
+            {{if .WFHSeatCapConfigured}}
+            <h4 class="title is-6 mb-2 mt-5">Seat cap &amp; co-presence</h4>
+            <table class="table is-fullwidth is-striped is-hoverable is-size-7">
+                <caption class="is-sr-only">
+                    Seat cap and co-presence tiebreaker configuration. Only shown when WFH_SEAT_CAP is set.
+                </caption>
+                <tbody>
+                    <tr>
+                        <th scope="row">Seat cap</th>
+                        <td><code>WFH_SEAT_CAP={{.WFHSeatCap}}</code> &mdash; the picker inserts Assigned WFH rows for any day where the on-site headcount would exceed this.</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Assignment picker</th>
+                        <td><code>WFH_ASSIGNMENT_ENABLED={{.WFHAssignmentEnabled}}</code> &mdash; master switch for the picker.</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Co-presence tiebreaker</th>
+                        <td><code>WFH_COPRESENCE_ENABLED={{.WFHCoPresenceEnabled}}</code> &mdash; when off, the picker falls back to alphabetical.</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Co-presence horizon</th>
+                        <td><code>WFH_COPRESENCE_HORIZON_DAYS={{.WFHCoPresenceHorizonDays}}</code> &mdash; calendar days the scanner looks back.</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Co-presence retention</th>
+                        <td><code>WFH_COPRESENCE_RETENTION_DAYS={{.WFHCoPresenceRetentionDays}}</code> &mdash; how long history rows are kept.</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Past-period purge</th>
+                        <td><code>WFH_PURGE_ENABLED={{.WFHPurgeEnabled}}</code> &mdash; opt out of the daily scheduler-driven cleanup.</td>
+                    </tr>
+                </tbody>
+            </table>
+            <p class="help-block">See <a href="/docs/ASSIGNED_WFH.md">docs/ASSIGNED_WFH.md</a> for the picker priority (fewest voluntary WFHs → co-presence → alphabetical), the exempt flag, and the swap mechanic.</p>
+            {{end}}
+
+            {{if .NotificationEmailEnabled}}
+            <h4 class="title is-6 mb-2 mt-5">Email notifications</h4>
+            <table class="table is-fullwidth is-striped is-hoverable is-size-7">
+                <caption class="is-sr-only">
+                    Email notification channel configuration. Shown when NOTIFY_EMAIL_ENABLED is true.
+                </caption>
+                <tbody>
+                    <tr>
+                        <th scope="row">Email channel</th>
+                        <td><code>NOTIFY_EMAIL_ENABLED={{.NotificationEmailEnabled}}</code></td>
+                    </tr>
+                    {{if .NotificationSMTPHost}}
+                    <tr>
+                        <th scope="row">SMTP host</th>
+                        <td><code>NOTIFY_SMTP_HOST={{.NotificationSMTPHost}}</code></td>
+                    </tr>
+                    {{end}}
+                    {{if .NotificationPublicBaseURL}}
+                    <tr>
+                        <th scope="row">Public base URL</th>
+                        <td><code>NOTIFY_PUBLIC_BASE_URL={{.NotificationPublicBaseURL}}</code> &mdash; used for one-click unsubscribe links.</td>
+                    </tr>
+                    {{end}}
+                    <tr>
+                        <th scope="row">Outbox worker</th>
+                        <td><code>NOTIFY_OUTBOX_POLL_INTERVAL=30s</code>, <code>NOTIFY_OUTBOX_MAX_ATTEMPTS=5</code>, <code>NOTIFY_OUTBOX_BACKOFF_BASE=30s</code> (defaults).</td>
+                    </tr>
+                </tbody>
+            </table>
+            <p class="help-block">See <a href="/docs/NOTIFICATIONS.md">docs/NOTIFICATIONS.md</a> for the full pipeline (what fires when, the unsubscribe flow, the per-event template overrides, the "add a new channel" checklist, ops queries for the outbox).</p>
+            {{end}}
+
+            {{if .AuthConfigured}}
+            <h4 class="title is-6 mb-2 mt-5">Authentication</h4>
+            <table class="table is-fullwidth is-striped is-hoverable is-size-7">
+                <caption class="is-sr-only">
+                    OAuth provider configuration. Shown when at least one provider has its CLIENT_ID set.
+                </caption>
+                <tbody>
+                    <tr>
+                        <th scope="row">Configured providers</th>
+                        <td>
+                            {{range .AuthProviders}}
+                            <span class="tag is-info is-light mr-1">{{.}}</span>
+                            {{end}}
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Session secret</th>
+                        <td>
+                            {{if .SessionSecretConfigured}}<span class="tag is-success is-light">set</span>{{else}}<span class="tag is-warning is-light">unset</span> &mdash; required in production for session signing and validation.{{end}}
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+            <p class="help-block">Set <code>SESSION_SECRET</code> (and per-provider <code>FORGEJO_CLIENT_ID</code> / <code>GITLAB_CLIENT_ID</code> + <code>*_CLIENT_SECRET</code> + <code>*_REDIRECT_URL</code>) in production. See <a href="/AUTH_SETUP.md">AUTH_SETUP.md</a> for the full provider setup and the API token system.</p>
+            {{end}}
+
+            <h4 class="title is-6 mb-2 mt-5">Rate limiting</h4>
+            <table class="table is-fullwidth is-striped is-hoverable is-size-7">
+                <caption class="is-sr-only">
+                    Per-IP token-bucket rate limits. Bucket sizes are hardcoded today; env-var overrides are planned but not wired.
+                </caption>
+                <tbody>
+                    <tr>
+                        <th scope="row">OAuth initiation</th>
+                        <td><code>/auth/login/{provider}</code> &mdash; {{.RateLimitAuthBucket}} {{.RateLimitAuthBucketUnit}}</td>
+                    </tr>
+                    <tr>
+                        <th scope="row">API token endpoints</th>
+                        <td><code>/api/v1/tokens/*</code> &mdash; {{.RateLimitTokensBucket}} {{.RateLimitTokensBucketUnit}}</td>
+                    </tr>
+                </tbody>
+            </table>
         </div>
     </div>
 </div>

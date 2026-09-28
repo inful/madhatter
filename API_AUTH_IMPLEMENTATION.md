@@ -26,7 +26,7 @@ This document describes the authentication layer implementation for the Support 
 
 ```sql
 CREATE TABLE api_tokens (
-    id TEXT PRIMARY KEY,
+    id TEXT PRIMARY KEY,                 -- UUID, not an integer
     user_id TEXT NOT NULL,
     name TEXT NOT NULL,
     token_hash TEXT NOT NULL UNIQUE,
@@ -95,36 +95,65 @@ router.With(middleware.OptionalAuth).Get("/api/v1/team", apiHandlers.GetTeam)
 // Handler checks auth: auth.GetUserFromContext(ctx)
 ```
 
-### 4. HUMA v2 API Endpoints (`internal/api/server.go`)
+### 4. HUMA v2 API Endpoints (`internal/api/operations.go`)
 
 **Token Management:**
-- `POST /api/v1/tokens` - Generate new token
-- `GET /api/v1/tokens` - List tokens
-- `DELETE /api/v1/tokens/{id}` - Revoke token
+- `POST /api/v1/tokens/generate` - Generate a new API token (returns the plaintext once)
+- `GET /api/v1/tokens` - List tokens owned by the authenticated user
+- `DELETE /api/v1/tokens/{id}` - Revoke a token
+- `POST /api/v1/tokens/cleanup` - Hard-delete tokens whose `expires_at` is in the past (admin)
 
-**Protected Endpoints:**
-- `GET /api/v1/team` - Get team members (requires auth)
-- `POST /api/v1/team` - Add team member (requires admin)
-- `GET /api/v1/schedule` - Get schedule (requires auth)
-- `POST /api/v1/schedule/generate` - Generate schedule (requires admin)
+**Protected Endpoints (representative):**
+- `GET /api/v1/team` - List team members
+- `POST /api/v1/team` - Add team member (admin)
+- `PUT /api/v1/team/{id}` - Update member (admin)
+- `DELETE /api/v1/team/{id}` - Delete member (admin)
+- `GET /api/v1/presence/today` - Today's on-site / leave / WFH roster
+- `POST /api/v1/leave` - Report leave (triggers auto-cover)
+- `GET /api/v1/leave` - List leave records
+- `PUT /api/v1/leave/{id}` - Update leave (admin)
+- `DELETE /api/v1/leave/{id}` - Delete leave (admin)
+- `POST /api/v1/schedule/generate` - Regenerate the schedule for a date range (admin)
+- `POST /api/v1/calendar/subscribe` - Create a calendar subscription
+- `GET /api/v1/wfh`, `POST /api/v1/wfh`, `DELETE /api/v1/wfh/{id}`, `POST /api/v1/wfh/{id}/withdraw` (admin)
+- `POST /api/v1/wfh/report-today`, `POST /api/v1/wfh/settle` (admin), `GET /api/v1/wfh/quota`, `GET /api/v1/wfh/date/{date}` (admin)
+- `GET /api/v1/swaps`, `POST /api/v1/swaps`, `POST /api/v1/swaps/{id}/{accept,reject,cancel}`, `DELETE /api/v1/swaps/{id}` (admin)
+
+The full list is in `internal/api/operations.go` and is also published as the live OpenAPI document at `GET /docs` (HUMA generates this from the same source of truth — the doc-table here is a summary, not a contract).
+
+**Public endpoints (no auth required):**
+- `GET /api/v1/holidays`
+- `GET /api/v1/holidays/status`
+- `POST /api/v1/holidays/refresh`
+- `GET /api/v1/calendar/{token}/ics` and the related `/calendar/{token}/{team.ics,meetings.ics,meetings/{date}.html}` calendar feeds (the per-subscription UUID in the path is the auth — rotating it revokes access).
 
 ## Usage Examples
 
 ### 1. Generate API Token
 
 ```bash
-# Via web interface
-curl -X POST http://localhost:8080/api/v1/tokens \
-  -H "Cookie: session_token=<session_hash>" \
+# Log in via the web UI first to obtain a session cookie, then:
+curl -X POST http://localhost:8080/api/v1/tokens/generate \
+  -H "Cookie: session_token=<session-cookie>" \
   -H "Content-Type: application/json" \
   -d '{"name": "my-cli-token", "expires_in_days": 30}'
 
 # Response
 {
-  "token": "rota_api_abc123...",
-  "token_id": 123,
-  "expires_at": "2024-02-09T23:30:00Z"
+  "token": "rota_api_abc123...",   # shown ONCE — store it now
+  "id":    "<token-uuid>",          # TEXT PRIMARY KEY (UUID), not an integer
+  "expires_at": "2026-10-28T..."
 }
+```
+
+If you don't have a session cookie handy, the bearer token of an
+existing admin token works just as well:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/tokens/generate \
+  -H "Authorization: Bearer rota_api_<existing-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "ci-token", "expires_in_days": 0}'
 ```
 
 ### 2. Use API Token
@@ -269,50 +298,55 @@ func TestAPITokenSecurity(t *testing.T) {
 - Log authentication failures
 - Track token usage patterns
 
-## Future Enhancements
+## Roadmap
 
-### Planned Features
-1. **Token Scopes**: Limit token permissions (read-only, admin-only)
-2. **Rate Limiting**: Per-token rate limits
-3. **Token Rotation**: Automatic rotation reminders
-4. **Audit Logging**: Detailed access logs per token
-5. **Multiple Providers**: Support for additional OAuth providers
+### Shipped since this doc was written
 
-### API Extensions
-1. **Leave Management**: Report leave via API
-2. **Schedule Queries**: Get schedule for date ranges
-3. **Holiday Integration**: Query holidays via API
-4. **Calendar Subscriptions**: Manage subscriptions via API
+- **Multiple OAuth providers** — Forgejo and GitLab are both wired through per-provider env vars (`FORGEJO_*`, `GITLAB_*`).
+- **IP-based rate limiting** — `internal/ratelimit/` throttles `/auth/login/{provider}` and `/api/v1/tokens/*`; per-IP, configurable via env. Per-token rate limiting is not implemented.
+- **API surface** — leave CRUD, schedule read/write, holiday queries, calendar subscription, full WFH lifecycle (ad-hoc, recurring, assigned, swap), hat-swap CRUD, presence query, and an admin database backup/restore surface are all available under `/api/v1/*`. See `internal/api/operations.go` or `GET /docs` for the full list.
+- **Backup / restore** — `/admin/database/backup` and `/admin/database/restore` (admin-only web routes; no API equivalents yet).
+
+### Still planned
+
+1. **Token Scopes** — limit token permissions (read-only, admin-only).
+2. **Per-token rate limits** — currently per-IP only.
+3. **Token rotation reminders** — operators must rotate by policy today.
+4. **Per-token audit logging** — `last_used_at` is updated on every authenticated request, but a richer audit trail is not.
 
 ## Migration Guide
 
-### From Unauthenticated API
+### Database migrations
 
-1. **Update Database Schema**
+Schema migrations are managed by `golang-migrate` and auto-apply on every `serve` startup via `database.RunMigrations()`. The `api_tokens` table is created by the initial schema migration `000001_initial_schema.up.sql`; no manual SQL load is required. The source of truth for the schema is the `migrations/` directory; `internal/database/sqlc/schema.sql` is a single-file snapshot used by SQLC for code generation. Inspect migration state with:
+
 ```bash
-# Add api_tokens table
-sqlite3 support_rota.db < internal/database/sqlc/schema.sql
+./support-rota migrate status
 ```
 
-2. **Set Environment Variables**
-```bash
-export SESSION_SECRET="your-strong-secret-here"
-```
+### First-time setup
 
-3. **Rebuild Application**
-```bash
-go build -o support-rota
-```
+1. **Set environment variables**
+   ```bash
+   export SESSION_SECRET="$(openssl rand -base64 32)"
+   export TOKEN_ENCRYPTION_KEY="$(openssl rand -base64 32)"
+   ```
 
-4. **Generate Tokens**
-Users can generate tokens via web interface after logging in with OAuth.
+2. **Start the server**
+   ```bash
+   ./support-rota serve --port 8080
+   ```
+   Migrations apply on first boot.
 
-### Backward Compatibility
+3. **Log in via OAuth** (or `--development` for the fake provider). The first user becomes admin.
 
-- Existing web interface unchanged
-- Existing database data preserved
-- No breaking changes to existing APIs
-- Optional authentication for public endpoints
+4. **Generate an API token** for scripts/CI via the web UI (User menu → API tokens) or directly with `curl` against `POST /api/v1/tokens/generate` — see the example above.
+
+### Backward compatibility
+
+- Existing web interface unchanged.
+- Existing database data preserved (migrations are additive).
+- The three public endpoints (`/api/v1/holidays`, `/api/v1/holidays/status`, `/api/v1/holidays/refresh`) and the per-token calendar feeds continue to accept anonymous traffic; every other `/api/v1/*` endpoint requires authentication. There is no "optional" toggle.
 
 ## Security Best Practices
 

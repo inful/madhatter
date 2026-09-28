@@ -234,7 +234,7 @@ go test ./internal/database -v
 - `RequireAuth` - Requires authentication
 - `RequireAdmin` - Requires admin privileges
 
-**Configuration**: YAML-based OAuth provider settings
+**Configuration**: Environment-variable-based OAuth provider settings. Each provider has its own `*_CLIENT_ID`, `*_CLIENT_SECRET`, `*_REDIRECT_URL`, `*_AUTH_URL`, `*_TOKEN_URL`, `*_USERINFO_URL`, `*_SCOPE` variables — see [README: Configuration](../README.md#configuration) and [AUTH_SETUP.md](../AUTH_SETUP.md) for the full list.
 
 **Admin Features**: Team management, schedule generation, leave approval
 
@@ -243,19 +243,20 @@ go test ./internal/database -v
 **Auth Flow**:
 1. User clicks login → Redirects to provider
 2. Provider callback → Exchange code for token
-3. Get user email → Check/create user account
+3. Get user email → Check/create user account (first user becomes admin automatically; subsequent users are created with `is_active=0` and require admin approval via `/team/users/{id}/approve`)
 4. Create session → Set secure cookie
 5. Middleware validates session on protected routes
 
 **Critical Auth Gotchas**:
-- First user to login becomes admin automatically
+- First user to login automatically becomes admin
 - Sessions expire after 24 hours by default
-- OAuth tokens are stored but not currently used (for future API access)
+- OAuth tokens (the upstream-provider access/refresh tokens stored in `oauth_tokens`) are stored encrypted at rest but are **not** used by the support-rota API. The API uses a separate bearer-token system in the `api_tokens` table — see [API_AUTH_IMPLEMENTATION.md](../API_AUTH_IMPLEMENTATION.md).
 - Provider base URLs must be accessible from the server
 - Callback URLs must be registered exactly with providers
 - Session secret must be strong and kept secure
 - Database foreign keys must be enabled for session cleanup
 - Admin privileges required for team/leave/schedule operations
+- Every `/api/v1/*` endpoint requires an authenticated user (session cookie **or** `Authorization: Bearer <token>`); only `/api/v1/holidays*` and the per-token calendar feeds are public
 
 ### Development Mode
 
@@ -434,48 +435,63 @@ madhatter/
 │   └── root.go                    # CLI command definitions
 ├── internal/
 │   ├── api/
-│   │   └── server.go              # HUMA API server
+│   │   ├── operations.go          # HUMA endpoint registrations
+│   │   └── server.go              # HUMA API server + middleware wiring
 │   ├── auth/
 │   │   ├── config.go              # OAuth configuration
 │   │   ├── session.go             # Session management
 │   │   ├── middleware.go          # Auth middleware
 │   │   ├── fake_provider.go       # Development mode provider
 │   │   └── handlers.go            # Auth handlers
+│   ├── calendar/
+│   │   ├── ical.go                # ICS generation
+│   │   └── ical_test.go           # Tests
 │   ├── database/
 │   │   ├── db.go                  # Database wrapper
 │   │   ├── migrate.go             # Migration runner and utilities
 │   │   ├── models.go              # Go models
 │   │   ├── sqlc/                  # Generated SQLC code
-│   │   │   ├── schema.sql         # Database schema
+│   │   │   ├── schema.sql         # Database schema snapshot
 │   │   │   ├── queries/           # SQL queries
 │   │   │   └── *.sql.go           # Generated Go code
 │   │   └── sqlc_wrapper.go        # Backward compatibility
-│   ├── rota/
-│   │   ├── engine.go              # Scheduling engine
-│   │   ├── maintenance.go         # Automatic maintenance
-│   │   └── *_test.go              # Tests
+│   ├── e2e/                       # End-to-end test rig
+│   ├── envutil/                   # env-var helpers used by service configs
 │   ├── holiday/
 │   │   ├── service.go             # Main service
 │   │   ├── scheduler.go           # Background fetcher
 │   │   ├── scheduler_test.go      # Scheduler tests
 │   │   ├── ical.go                # iCal parsing
-│   │   └── store.go               # In-memory storage
-│   ├── calendar/
-│   │   ├── ical.go                # ICS generation
-│   │   └── ical_test.go           # Tests
-│   ├── wfh/
-│   │   ├── service.go             # WFH request settlement service
-│   │   ├── scheduler.go           # Settlement scheduler
-│   │   ├── service_test.go        # Service tests
-│   │   └── scheduler_test.go      # Scheduler tests (uses synctest)
-│   └── web/
-│       ├── handlers.go            # Web UI handlers
-│       └── templates/             # HTML templates
-├── migrations/                     # Database migrations
+│   │   └── store.go               # In-memory holiday storage
+│   ├── notify/                    # Multi-channel notifier (email + log today)
+│   │   ├── notify.go              # Public Notifier interface
+│   │   ├── events.go              # Event payloads
+│   │   ├── channel_notifier.go    # Outbox writer
+│   │   ├── outbox_worker.go       # Background drain + retry
+│   │   ├── renderer.go            # text/template renderer
+│   │   └── channels/              # Per-channel implementations
+│   ├── ratelimit/                 # Per-IP token-bucket limiter
+│   ├── rota/
+│   │   ├── engine.go              # Scheduling engine
+│   │   ├── maintenance.go         # Automatic maintenance
+│   │   └── *_test.go              # Tests
+│   ├── testutil/                  # Shared test helpers (DB fixtures, etc.)
+│   ├── version/                   # Build-time identity (Version, Commit, BuildTime)
+│   ├── web/
+│   │   ├── routes.go              # Web route registrations
+│   │   ├── handler.go             # Web UI handlers + auth wiring
+│   │   └── templates/             # HTML templates
+│   └── wfh/
+│       ├── service.go             # WFH request settlement service
+│       ├── scheduler.go           # Settlement scheduler
+│       ├── service_test.go        # Service tests
+│       └── scheduler_test.go      # Scheduler tests (uses synctest)
+├── docs/                           # User-facing feature docs (NOTIFICATIONS, ASSIGNED_WFH, …)
+├── migrations/                     # Database migrations (golang-migrate)
 │   ├── 000001_initial_schema.up.sql
 │   ├── 000001_initial_schema.down.sql
 │   └── ...
-├── plans/                          # Documentation plans
+├── plans/                          # Historical and active planning docs
 ├── sqlc.yaml                       # SQLC configuration
 ├── go.mod                          # Go dependencies
 └── main.go                         # Entry point
@@ -663,8 +679,9 @@ A PR is incomplete if a code change ships without its documentation. The CI / li
 ## Future Enhancements
 
 The following features are planned but not yet implemented:
-- API authentication (currently unauthenticated)
-- More OAuth providers
+- More OAuth providers (Forgejo and GitLab are wired today via per-provider env vars)
+- Token scopes for the API token system (limit read-only vs. admin-only)
+- Per-token rate limits (today the limiter is per-IP only)
 - Team-specific holiday calendars
 - Advanced reporting
 - Mobile app integration

@@ -1,5 +1,18 @@
 # SQLC Migration Guide
 
+> **Historical document.** This guide outlined the original
+> hand-written-SQL to SQLC migration. The migration itself was
+> completed; the codebase now lives in a state where most new
+> callers use SQLC directly via two patterns (see
+> [`internal/database/sqlc/queries/USAGE.md`](internal/database/sqlc/queries/USAGE.md)
+> for the current caller-pattern note). The 16 `*.sql` files under
+> `internal/database/sqlc/queries/` produce ~138 generated methods,
+> all of which have non-zero callers; the migration is no longer
+> "in progress" and the phase checklist below is preserved for
+> historical reference only.
+
+**Original guide (preserved for reference):**
+
 This document outlines the step-by-step migration plan for moving from manual SQL handling to sqlc for improved type safety in the support rota application.
 
 ## Overview

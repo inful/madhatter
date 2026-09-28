@@ -1,6 +1,31 @@
 # Auto-Generated Schedule System - Implementation Plan
 
-**Status:** 🚧 IN PROGRESS - Phase 6  
+> **Historical document.** This plan describes the implementation work
+> that shipped the auto-generated schedule system (the `ScheduleMaintenance`
+> service in `internal/rota/maintenance.go` with `EnsureSchedule()`,
+> `GenerateMissingDays()`, `RegenerateSchedule()`, `HandleTeamChange()`,
+> `HandleLeaveChange()`). All phases are complete; the function names
+> and CLI subcommands referenced below are **out of date** — use
+> [README.md](README.md) and [CONSOLIDATED_REFERENCE.md](CONSOLIDATED_REFERENCE.md)
+> for the current state. In particular:
+>
+> - `EnsureScheduleExists()` → `EnsureSchedule()` (post-refactor).
+> - `findAvailableMemberForDate()` is no longer a single named export;
+>   the picker is internal to the engine.
+> - `UpdateScheduleForLeave(memberID, start, end)` → `HandleLeaveChange(ctx, leaveID)`
+>   (signature changed; trigger is now leave-id, not member-id + range).
+> - `UpdateScheduleForTeamChange()` → `HandleTeamChange(ctx, memberID)` (now takes a member-id).
+> - The CLI has **no** `schedule auto-ensure` subcommand; maintenance fires automatically
+>   on every web request (dashboard, leave report, team add, etc.) and on every
+>   `serve` startup via `database.New`.
+> - `GenerateSchedule(ctx, start, end)` is the CLI's `schedule generate <start> <end>`.
+> - `GetRotaAssignments` / `GetLeavesByDate` / `UpdateRotaAssignment` renamed to
+>   `GetAssignmentsByDateRange` / `GetLeavesByDateRange` / split among several
+>   schedule-maintenance helpers in `internal/database/rota.go`.
+
+**Original header (preserved for reference):**
+
+**Status (January 2024):** 🚧 IN PROGRESS - Phase 6  
 **Last Updated:** 2024-01-07  
 **Priority:** HIGH
 

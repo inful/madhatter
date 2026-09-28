@@ -1,5 +1,21 @@
 # OAuth2 Authentication Specification
 
+> **Historical document.** This is the pre-implementation spec that
+> shipped the OAuth2 authentication system (see
+> [`../AUTH_SETUP.md`](../AUTH_SETUP.md) for the operator-facing setup
+> guide and [`../internal/auth/`](../internal/auth/) for the code).
+> The spec was written against the original `OAUTH_PROVIDER` +
+> `OAUTH_CLIENT_ID` env var design; the implementation instead uses
+> per-provider variables (`FORGEJO_*`, `GITLAB_*`) which is what
+> [`../AUTH_SETUP.md`](../AUTH_SETUP.md) and
+> [`../README.md: Configuration`](../README.md#configuration) describe.
+> The allowed-routes list, the `users` / `sessions` / `oauth_tokens`
+> schema, and the `Configuration` example section below are all
+> implemented but the env-var names in the spec predate the per-provider
+> redesign.
+
+**Original spec (preserved for reference):**
+
 ## Overview
 Add OAuth2 authentication with GitLab/Forgejo to protect admin routes while keeping schedule view public.
 

@@ -90,59 +90,32 @@ go test ./internal/database -v
 
 ## Database Schema
 
-### team_members
-```sql
-CREATE TABLE team_members (
-    id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    email TEXT UNIQUE NOT NULL,
-    is_active INTEGER DEFAULT 1,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
+The schema is the source of truth in `internal/database/sqlc/schema.sql`
+(SQLC's single-file snapshot) and the `migrations/` directory (the
+`golang-migrate` migrations applied on every `serve` startup). Both
+files are co-maintained — adding a table or column requires a new
+migration AND a regenerated `schema.sql`. For migration state in a
+running deployment, run:
+
+```bash
+./support-rota migrate status
 ```
 
-### leave_records
-```sql
-CREATE TABLE leave_records (
-    id TEXT PRIMARY KEY,
-    member_id TEXT NOT NULL,
-    start_date DATE NOT NULL,
-    end_date DATE NOT NULL,
-    cover_member_id TEXT,
-    status TEXT NOT NULL, -- 'pending', 'assigned', 'completed'
-    leave_type TEXT NOT NULL DEFAULT 'leave' CHECK (leave_type IN ('leave', 'conference')),
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (member_id) REFERENCES team_members(id) ON DELETE CASCADE,
-    FOREIGN KEY (cover_member_id) REFERENCES team_members(id) ON DELETE SET NULL
-);
-```
+This document does not duplicate the schema; doing so would drift on
+every migration (the codebase already has 29 migrations covering
+team members, leave records, rota assignments, calendar subscriptions,
+users, sessions, OAuth tokens, API tokens, hat swaps, notification
+outbox and preferences, WFH requests and assignments, WFH co-presence
+metrics, rotation state, and reassignment anchors — the full list
+grows with every feature). For the current state, read the two files
+above directly.
 
-`leave_type` tags a leave as plain `leave` (default) or `conference`. The tag is purely a UI signal: the dashboard's "Today" badge swaps "On leave" for "@conference" and the schedule-matrix cell swaps the plane icon for a people-group icon. Scheduling, cover assignment, and quotas are unchanged.
-
-### rota_assignments
-```sql
-CREATE TABLE rota_assignments (
-    id TEXT PRIMARY KEY,
-    date DATE NOT NULL,
-    member_id TEXT NOT NULL,
-    is_cover INTEGER DEFAULT 0,
-    original_assignment_id TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (member_id) REFERENCES team_members(id),
-    FOREIGN KEY (original_assignment_id) REFERENCES rota_assignments(id)
-);
-```
-
-### calendar_subscriptions
-```sql
-CREATE TABLE calendar_subscriptions (
-    id TEXT PRIMARY KEY,
-    member_id TEXT NOT NULL,
-    token TEXT UNIQUE NOT NULL,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (member_id) REFERENCES team_members(id)
-);
-```
+`leave_records.leave_type` is the one schema field worth calling out
+explicitly: it tags a leave as plain `leave` (default) or `conference`.
+The tag is purely a UI signal — the dashboard's "Today" badge swaps
+"On leave" for "@conference" and the schedule-matrix cell swaps the
+plane icon for a people-group icon. Scheduling, cover assignment,
+and quotas are unchanged.
 
 ---
 
@@ -538,144 +511,16 @@ Examples:
 
 ---
 
-## Key Features Summary
+## See also
 
-✅ **Weekday Support**: Monday-Friday only, no weekends
-✅ **Round-Robin Fairness**: Each person gets one day per cycle
-✅ **Leave Management**: Unified system for sick leave and vacation
-✅ **Automatic Cover Assignment**: System assigns covers immediately
-✅ **Automatic Schedule Maintenance**: 14-day rolling schedule, no manual intervention
-✅ **Static Scheduling**: Preserves existing assignments, only fills gaps
-✅ **Event-Driven**: Triggers on team changes, leave reports, web requests
-✅ **Calendar Subscriptions**: Personal ICS URLs for any calendar app
-✅ **Web Dashboard**: HTMX-based user interface
-✅ **REST API**: HUMA with automatic OpenAPI documentation
-✅ **CLI Tools**: Kong-based command-line interface
-✅ **SQLite Database**: Zero setup, file-based
-✅ **Single Binary**: Deploy anywhere, no external dependencies
-
----
-
-## Quick Start
-
-```bash
-# 1. Build
-go build -o support-rota
-
-# 2. Add team members
-./support-rota team add "Alice" alice@example.com
-./support-rota team add "Bob" bob@example.com
-./support-rota team add "Charlie" charlie@example.com
-
-# 3. Start web server (automatic schedule maintenance begins)
-./support-rota serve --port 8080
-# Visit: http://localhost:8080
-
-# 4. Schedule is automatically maintained!
-# - 14-day rolling schedule created on first visit
-# - Gaps filled automatically when team changes
-# - Cover assignments created when members take leave
-
-# 5. Optional: Manual operations
-./support-rota schedule generate <YYYY-MM-DD> <YYYY-MM-DD>            # Regenerate if needed
-./support-rota leave report alice@example.com <YYYY-MM-DD> <YYYY-MM-DD>  # Always records LeaveTypeLeave
-./support-rota calendar subscribe alice@example.com                   # Get personal calendar URL
-```
-
-**Key Point**: The web server automatically maintains the schedule. No manual generation needed!
-
----
-
-## Support
-
-For issues or questions, refer to:
-- **README.md** - Main project documentation
-- **AGENTS.md** - Code standards and development guidelines
-- **AUTH_SETUP.md** - OAuth2 authentication setup
-- **HOLIDAY_IMPLEMENTATION.md** - Holiday support implementation
-- **SQLC_MIGRATION_GUIDE.md** - Database layer migration guide
-
----
-
-**System Status**: ✅ Production Ready
-**Test Coverage**: ✅ 90%+
-**Linting**: ✅ Zero issues
-**Build**: ✅ Successful
-**SQLC Migration**: ✅ Complete - Type-safe database layer with sqlc
-**Automatic Schedule Maintenance**: ✅ Implemented and tested
-**Cyclomatic Complexity**: ✅ Reduced to meet standards
-**Calendar UX**: ✅ Enhanced with copy button and notifications
-
-## New Features Summary
-
-### Automatic Schedule Maintenance
-- **Service**: `internal/rota/maintenance.go` - `ScheduleMaintenance` struct
-- **Methods**: `EnsureSchedule()`, `GenerateMissingDays()`, `RegenerateSchedule()`, `HandleTeamChange()`, `HandleLeaveChange()`
-- **Integration**: Web handlers automatically trigger maintenance on key events
-- **Behavior**: 14-day rolling schedule, preserves existing assignments, fills gaps automatically
-- **Testing**: 8 comprehensive test cases covering all scenarios
-
-### Calendar Subscription Enhancement
-- **Copy Button**: Added to calendar subscription URL display
-- **Visual Feedback**: Notification popup when URL is copied
-- **JavaScript**: Proper text extraction excluding button content
-- **Layout**: Responsive flexbox design
-- **User Experience**: One-click copying, no manual text selection needed
-
-### Code Quality Improvements
-- **Cyclomatic Complexity**: Reduced from 12 to well below 10 in `GenerateMissingDays()`
-- **Function Decomposition**: Broke complex function into 4 focused helper functions
-- **All Linting Issues**: Fixed (gofumpt, godot, govet, unparam, unused, mnd, cyclop, nestif, testifylint)
-- **All Tests**: 8/8 passing in rota package, all packages passing
-
-### Database Layer Enhancements
-- **New Methods**: `GetAssignmentsByDateRange()`, `GetLatestAssignmentDate()`, `DeleteAssignmentsInRange()`
-- **SQLC Integration**: Type-safe queries for schedule maintenance operations
-- **Backward Compatibility**: All existing functionality preserved
-
-### Web Interface Updates
-- **Dashboard**: Handles "no team members" case gracefully
-- **Schedule Generate**: Dual-mode support (fill gaps vs regenerate)
-- **Automatic Triggers**: Schedule maintenance on team changes, leave reports, page loads
-- **Calendar Template**: Enhanced with copy functionality and visual feedback
-
-## Key Files Modified
-
-### Core Implementation
-- `internal/rota/maintenance.go` - New automatic schedule maintenance service
-- `internal/rota/engine.go` - Enhanced cover assignment logic
-- `internal/database/rota.go` - Removed duplicate checks, added range delete
-- `internal/database/db_new.go` - New database methods for maintenance
-- `internal/database/sqlc/queries/rota_assignments.sql` - New queries
-
-### Web Layer
-- `internal/web/handlers.go` - Automatic schedule checks, team validation
-- `internal/web/templates/dashboard.html` - Fixed template, added no-team handling
-- `internal/web/templates/schedule_generate.html` - Dual-mode UI
-
-### Documentation
-- `AGENTS.md` - Updated with automatic maintenance details
-- `CONSOLIDATED_REFERENCE.md` - Comprehensive updates for new features
-
-## Commands
-
-```bash
-# Generate sqlc code (if schema/queries change)
-export PATH=$PATH:$(go env GOPATH)/bin && sqlc generate
-
-# Run all tests
-go test ./... -v -cover
-
-# Run linter
-golangci-lint run
-
-# Build
-go build -o support-rota
-
-# Test specific package
-go test ./internal/rota -v
-```
-
-**Migration Status**: ✅ **COMPLETE AND PRODUCTION-READY**
-**Automatic Schedule Maintenance**: ✅ **FULLY IMPLEMENTED**
-**Code Quality**: ✅ **ALL STANDARDS MET**
+- **README.md** — Primary user + operator documentation, env-var reference, and quick start.
+- **AGENTS.md** — Developer guidance, security guarantees, and documentation triggers.
+- **AUTH_SETUP.md** — OAuth2 setup for Forgejo and GitLab.
+- **API_AUTH_IMPLEMENTATION.md** — API token design and security model.
+- **HOLIDAY_IMPLEMENTATION.md** — Holiday subsystem architecture (note: some env vars in this doc are not read by the code; see [`README.md: Holidays and database`](../README.md#holidays-and-database)).
+- **SQLC_MIGRATION_GUIDE.md** — Historical account of the SQLC migration (see [`internal/database/sqlc/queries/USAGE.md`](../internal/database/sqlc/queries/USAGE.md) for the current caller-pattern note).
+- **docs/NOTIFICATIONS.md** — Notification pipeline, unsubscribe flow, ops queries.
+- **docs/ASSIGNED_WFH.md** — Seat-cap feature reference.
+- **plans/assigned-wfh-plan.md** — Implementation plan with shipped-drift tracker (historical planning artifact).
+- **`internal/api/operations.go`** — Canonical source for the API surface; published as the live OpenAPI document at `GET /docs`.
+- **`internal/web/routes.go`** — Canonical source for the web route table.

@@ -19,7 +19,7 @@ Status legend: **Current** — verified against the code on 2026-09-28 · **Hist
 | Understand the seat-cap / Assigned WFH picker | [docs/ASSIGNED_WFH.md](docs/ASSIGNED_WFH.md) |
 | Find a SQLC query and the right caller pattern | [internal/database/sqlc/queries/USAGE.md](internal/database/sqlc/queries/USAGE.md) |
 | Add a WFH feature | [plans/assigned-wfh-plan.md](plans/assigned-wfh-plan.md) — the model for spec-with-shipped-drift docs |
-| Confirm the running deployment matches the docs (in-app) | [`/help`](README.md#api-reference) on the running server — the in-app help page renders the seat-cap / notification / auth / rate-limit config tables gated on what's actually configured |
+| Learn how to use madhatter as an end user | [`/help`](README.md#api-reference) on the running server — short user guide (no operator details, no env vars, no reference links) |
 
 ## The files
 

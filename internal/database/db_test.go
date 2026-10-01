@@ -712,6 +712,48 @@ func TestCreateBackup_ReturnsSQLiteSnapshot(t *testing.T) {
 	require.True(t, strings.HasPrefix(string(backupBytes), "SQLite format 3\x00"))
 }
 
+func TestCreateBackupTo_WritesSQLiteFileToTargetPath(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	_, err := db.AddTeamMember(ctx, "Alice", "alice@example.com", nil)
+	require.NoError(t, err)
+
+	targetPath := filepath.Join(t.TempDir(), "out.db")
+	require.NoFileExists(t, targetPath, "precondition: target must not pre-exist")
+
+	require.NoError(t, db.CreateBackupTo(ctx, targetPath))
+
+	require.FileExists(t, targetPath)
+	//nolint:gosec // targetPath is constructed from t.TempDir().
+	gotBytes, err := os.ReadFile(targetPath)
+	require.NoError(t, err)
+	require.NotEmpty(t, gotBytes)
+	require.True(t, strings.HasPrefix(string(gotBytes), "SQLite format 3\x00"),
+		"CreateBackupTo must produce a valid SQLite file (header prefix)")
+}
+
+func TestCreateBackupTo_OverwritesExistingFile(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Seed the target with garbage so the test can prove the
+	// operation overwrote it.
+	targetPath := filepath.Join(t.TempDir(), "out.db")
+	require.NoError(t, os.WriteFile(targetPath, []byte("not a sqlite file"), 0o600))
+
+	require.NoError(t, db.CreateBackupTo(ctx, targetPath))
+
+	//nolint:gosec // targetPath is constructed from t.TempDir().
+	gotBytes, err := os.ReadFile(targetPath)
+	require.NoError(t, err)
+	require.True(t, strings.HasPrefix(string(gotBytes), "SQLite format 3\x00"),
+		"CreateBackupTo must overwrite the target with a valid SQLite snapshot")
+}
+
 func TestValidateRestoreCandidate_ValidBackup(t *testing.T) {
 	db, cleanup := setupTestDB(t)
 	defer cleanup()

@@ -217,6 +217,20 @@ The cutoff defaults to the start of the previous quota period (computed from `WF
 ```
 Reads `support_rota.db` via `database/sql` directly (not `database.New`) so a dirty or pending schema never blocks the inspection. Reports the applied version, dirty flag, latest migration on disk, and the count of pending migrations. Migrations still auto-apply on every `serve` startup — this command is for diagnostics. When the database is dirty, the output includes the SQL to clear the flag.
 
+### Database Backup and Restore
+```bash
+# Take a consistent SQLite snapshot to <path>. Refuses to overwrite
+# an existing file; pass --force to clobber.
+./support-rota backup /var/backups/support-rota-2026-09-30.db
+
+# Validate a candidate backup without mutating the live database.
+./support-rota restore /var/backups/support-rota-2026-09-30.db
+
+# Validate, then commit.
+./support-rota restore /var/backups/support-rota-2026-09-30.db --apply
+```
+Mirrors the web UI's `/admin/database/backup` and `/admin/database/restore` so scripted operators (cron, systemd timers, ansible) can snapshot and restore without a browser. `backup` writes via `VACUUM INTO` (the same primitive the web handler uses) and produces a drop-in `.db` file. `restore` defaults to validate-only — same validation gate the web UI runs in the review step — and commits with `--apply`. Empty input is refused up front; the read is capped at 50 MB to match the web handler's upload ceiling. Files are written with `0o600` perms.
+
 ---
 
 ## Web Interface

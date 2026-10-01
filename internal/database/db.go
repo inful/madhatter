@@ -130,7 +130,7 @@ func (db *DB) CreateBackup(ctx context.Context) ([]byte, error) {
 		_ = os.Remove(backupPath)
 	}()
 
-	if _, err := db.db.ExecContext(ctx, "VACUUM INTO ?", backupPath); err != nil {
+	if err := db.CreateBackupTo(ctx, backupPath); err != nil {
 		return nil, err
 	}
 
@@ -141,6 +141,33 @@ func (db *DB) CreateBackup(ctx context.Context) ([]byte, error) {
 	}
 
 	return backupBytes, nil
+}
+
+// CreateBackupTo writes a consistent SQLite database snapshot to backupPath.
+// Unlike CreateBackup (which materializes the snapshot in os.TempDir and
+// returns the bytes for HTTP streaming), this writes directly to the
+// caller's path — the cheap-and-simple primitive the CLI backup command
+// uses. The destination file is overwritten on every call; VACUUM INTO
+// refuses to overwrite an existing non-SQLite file ("file is not a
+// database"), so the target is removed first when present.
+//
+// The race window between Remove and VACUUM INTO is benign: an
+// attacker who places a symlink at backupPath between the two calls
+// would only be able to redirect VACUUM INTO's write, which still
+// produces a fresh SQLite snapshot at the path the caller asked for.
+// The CLI caller (running with the binary's uid) is the only one in
+// the loop.
+func (db *DB) CreateBackupTo(ctx context.Context, backupPath string) error {
+	if _, err := os.Stat(backupPath); err == nil {
+		if err := os.Remove(backupPath); err != nil {
+			return fmt.Errorf("remove existing backup file: %w", err)
+		}
+	}
+
+	if _, err := db.db.ExecContext(ctx, "VACUUM INTO ?", backupPath); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (db *DB) AddTeamMember(ctx context.Context, name, email string, birthdate *time.Time) (string, error) {

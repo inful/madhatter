@@ -561,6 +561,27 @@ The full route table is in [`internal/web/routes.go`](internal/web/routes.go) �
 
 The cutoff defaults to the start of the previous quota period (computed from `WFH_PERIOD_ANCHOR` and `WFH_PERIOD_DAYS`). The same operation is exposed at `GET /admin/wfh/purge` for a preview and `POST /admin/wfh/purge` to commit from the web UI. Errors with `WFH feature is disabled` when `WFH_ENABLED=false`.
 
+### Database backup and restore (CLI)
+
+Mirrors the web UI's `/admin/database/backup` and `/admin/database/restore` so scripted operators (cron, systemd timers, ansible) can snapshot and restore without going through a browser.
+
+```bash
+# Take a consistent SQLite snapshot to <path>. Refuses to overwrite
+# an existing file; pass --force to clobber.
+./support-rota backup /var/backups/support-rota-$(date -F).db
+
+# Validate a candidate backup without mutating the live database.
+# Same validation the web UI runs in the review step before apply.
+./support-rota restore /var/backups/support-rota-2026-09-30.db
+
+# Validate, then commit. Re-runs the same validation gate the web
+# UI applies before flipping to the apply step; a failed validation
+# aborts without touching state.
+./support-rota restore /var/backups/support-rota-2026-09-30.db --apply
+```
+
+`backup` produces a 0o600 SQLite snapshot via the same `VACUUM INTO` the web handler uses — the file is a drop-in replacement for the one downloaded from `/admin/database/backup`. `restore` reads the candidate, validates against the live schema, and (with `--apply`) commits. By default it validates only, so an operator can dry-run before committing. Empty input is refused with a clear error before any database method is dispatched. Restore is capped at 50 MB to match the web handler's upload ceiling.
+
 ### Cover reassignment
 
 `reassign-covers` re-runs the cover-assignment algorithm against every leave in the database. The operation is idempotent on a steady-state rota, so it's safe to invoke at any time — including to recover from manual cover edits or to confirm a deploy. The same logic also runs automatically on every `serve` startup unless `--reassign-covers=false` is passed.
@@ -723,13 +744,20 @@ Admin users can take a live SQLite snapshot from the web UI:
 - `GET /admin/database/restore` — upload a previously downloaded `.db`. The route validates compatibility (current migration version, schema match) and shows a diff before any apply.
 - `POST /admin/database/restore` — applies the uploaded `.db` (irreversible — keep a fresh backup first).
 
-For scripted backups (cron, systemd timers, etc.) prefer copying the file out of band while the server is stopped, or use SQLite's `.backup` command while it's running:
+The same operations are also exposed on the CLI for scripted operators — see [Database backup and restore (CLI)](#database-backup-and-restore-cli):
+
+```bash
+./support-rota backup /var/backups/support-rota-$(date +%F).db
+./support-rota restore /var/backups/support-rota-$(date +%F).db --apply
+```
+
+For scripted backups without the binary on the server, copy the file out of band while the server is stopped, or use SQLite's `.backup` command while it's running:
 
 ```bash
 sqlite3 support_rota.db ".backup /var/backups/support-rota-$(date +%F).db"
 ```
 
-Both paths produce a file you can drop onto the restore page.
+All three paths produce a file you can drop onto the restore page (web UI or CLI).
 
 ### Single Binary
 ```bash

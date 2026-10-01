@@ -101,6 +101,16 @@ var CLI struct {
 	Migrate struct {
 		Status struct{} `cmd:"" help:"Show the migration status of the database without applying pending migrations"`
 	} `cmd:"" help:"Database migration management"`
+
+	Backup struct {
+		Output string `help:"Output file path for the SQLite snapshot" arg:""`
+		Force  bool   `help:"Overwrite the output file if it already exists"`
+	} `cmd:"" help:"Take a consistent SQLite snapshot of the support-rota database to <path>"`
+
+	Restore struct {
+		Input string `help:"Backup file path to restore from" arg:""`
+		Apply bool   `help:"Apply the restore to the live database. Without this flag the command validates the file and reports the outcome without mutating."`
+	} `cmd:"" help:"Restore the support-rota database from a backup <path> (validates by default; --apply to commit)"`
 }
 
 func Execute() {
@@ -141,6 +151,8 @@ func Execute() {
 		"swap reconcile":                   swapReconcileCommand,
 		"wfh purge":                        wfhPurgeCommand,
 		"wfh report <member-id>":           wfhReportTodayCommand,
+		"backup <output>":                  backupCommand,
+		"restore <input>":                  restoreCommand,
 	}
 
 	if handler, exists := handlers[command]; exists {
